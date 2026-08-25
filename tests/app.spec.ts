@@ -143,6 +143,18 @@ test('authors Markdown in place with shortcuts and interactive HTML blocks', asy
   await page.getByRole('button', { name: '预览 HTML 元素' }).click();
   await preview.locator('#counter').click();
   await expect(preview.locator('#counter')).toHaveText('1');
+
+  await page.getByRole('button', { name: '编辑 HTML 元素' }).click();
+  await htmlSource.fill(`<style>body { margin: 0; } #content { height: 360px; background: #e4f2eb; }</style>
+<button id="expand" type="button" onclick="document.querySelector('#content').style.height = '680px'">展开</button>
+<div id="content"></div>`);
+  await page.getByRole('button', { name: '预览 HTML 元素' }).click();
+  const iframe = page.locator('.raw-html-block iframe');
+  await expect.poll(async () => iframe.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(380);
+  const beforeExpansion = await iframe.evaluate((element) => element.getBoundingClientRect().height);
+  await preview.locator('#expand').click();
+  await expect.poll(async () => iframe.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(beforeExpansion + 250);
+  expect(await preview.locator('html').evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
   await page.screenshot({ path: '/tmp/derivon-tiptap-editor.png', fullPage: true });
 
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!));
@@ -152,8 +164,8 @@ test('authors Markdown in place with shortcuts and interactive HTML blocks', asy
     format: 'markdown',
   });
   expect(stored.files['docs/concept-c-1/document.md']).toContain('# **Tiptap document**');
-  expect(stored.files['docs/concept-c-1/document.md']).toContain('<button id="counter"');
-  expect(stored.files['docs/concept-c-1/index.html']).toContain('<button id="counter"');
+  expect(stored.files['docs/concept-c-1/document.md']).toContain('<button id="expand"');
+  expect(stored.files['docs/concept-c-1/index.html']).toContain('<button id="expand"');
 });
 
 test('renders and edits inline and block KaTeX syntax', async ({ page }) => {

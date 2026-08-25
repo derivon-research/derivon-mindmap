@@ -92,6 +92,9 @@ describe('authoring workspace', () => {
     expect(skills[0]).toContain('Required model references');
     expect(skills[0]).toContain('Review a derivation');
     expect(skills[0]).toContain('missing prerequisite');
+    expect(skills[0]).toContain('SVG diagrams, Canvas simulations');
+    expect(skills[0]).toContain('including one hosted by GitHub Pages');
+    expect(skills[0]).toContain('It automatically grows with its');
     expect(WORKSPACE_AGENT_FILES['.derivon/agent/references/README.md']).toContain('Migration when official documentation ships');
     const model = WORKSPACE_AGENT_FILES['.derivon/agent/references/model.md'];
     expect(model).toContain('Empty tail is not the start set');

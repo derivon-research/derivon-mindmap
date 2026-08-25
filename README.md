@@ -63,7 +63,7 @@ my-workspace/
 
 每个点和超边独占一个文档目录。不同对象不能引用同一目录。`document.md` 是主源文件，`index.html` 是始终可直接访问的发布入口；每次编辑都会由 Markdown 同步生成完整 HTML 文档。
 
-Markdown 正文可以直接嵌入 HTML 块。样式、表单、脚本和交互组件会作为 Tiptap `rawHtml` 节点原样保留，并在隔离 iframe 中运行。协议仍接受旧工作区的 `format: html`；这类文档首次打开时会自动迁移为包含原 HTML 的 Markdown，不会删除脚本或样式。
+Markdown 正文可以直接嵌入 HTML 块。样式、表单、脚本和交互组件会作为 Tiptap `rawHtml` 节点原样保留，并在隔离 iframe 中运行；iframe 会随普通内容、响应式重排和交互产生的高度变化自动伸缩，不在组件外层形成独立的纵向滚动区。协议仍接受旧工作区的 `format: html`；这类文档首次打开时会自动迁移为包含原 HTML 的 Markdown，不会删除脚本或样式。
 
 工具栏中的文件夹按钮用于连接工作区目录：
 
@@ -125,7 +125,7 @@ node .derivon/agent/validate-workspace.mjs . --review h-1
 
 公式由 KaTeX 渲染。在正文中键入标准的行内 `$E = mc^2$` 或块级 `$$...$$` 语法，闭合美元符号后会立即转为公式。工具栏也可以直接插入两种公式；点击已渲染的公式会在页面内打开带 `$`/`$$` 边界的 LaTeX 编辑条，不使用浏览器提示框。生成的 `index.html` 会同步包含 KaTeX 渲染结果。
 
-工具栏可插入带滑块和实时可视化的 HTML 交互示例，示例内明确标注 HTML、CSS 和 JavaScript 均可自由改写。每个 HTML 节点可在源码和交互预览之间切换；预览 iframe 不具有同源权限，不能访问 Derivon 应用页面和本地工作区 API。
+工具栏可插入带滑块和实时可视化的 HTML 交互示例，示例内明确标注 HTML、CSS 和 JavaScript 均可自由改写。每个 HTML 节点可在源码和交互预览之间切换；预览 iframe 不具有同源权限，不能访问 Derivon 应用页面、本地工作区 API、Cookie 或同源存储。发布后的 `index.html` 不受编辑器 iframe 的 sandbox 限制，也没有 GitHub Pages 特有的“禁止外部脚本”规则；外部资源能否工作仍取决于 HTTPS、资源服务端的 CORS/CSP 配置和网络可用性，因此附带的 Agent Skill 默认建议组件自包含，并要求外部依赖提供可读降级。
 
 移动端使用约 78/22 的编辑区和对象上下文布局。
 
