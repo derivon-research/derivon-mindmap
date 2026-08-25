@@ -33,11 +33,19 @@ test('authors source concepts and derivations without persisting React Flow obje
   await expect(page.locator('.react-flow__node[data-id="c-1"]')).toContainText('AA');
 
   await connect(page, 'A', 'B');
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5') ?? '{}'));
-  expect(saved.graph.concepts).toHaveLength(6);
-  expect(saved.graph.derivations).toHaveLength(8);
-  expect(saved.graph.derivations.at(-1)).toMatchObject({ premises: ['A'], conclusion: 'B', weight: 1 });
-  expect(saved.graph).not.toHaveProperty('edges');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0') ?? '{}'));
+  expect(saved.graph.points).toHaveLength(6);
+  expect(saved.graph.points.at(-1)).toEqual({ id: 'c-1', data: { label: 'AA', definition: '' } });
+  expect(saved.graph.hyperedges).toHaveLength(8);
+  expect(saved.graph.hyperedges.at(-1)).toEqual({
+    id: 'h-1',
+    weight: 1,
+    tails: ['A'],
+    head: 'B',
+    data: { introduction: '', reasoning: '' },
+  });
+  expect(saved.graph).not.toHaveProperty('concepts');
+  expect(saved.graph).not.toHaveProperty('derivations');
   expect(errors).toEqual([]);
 });
 
@@ -45,16 +53,16 @@ test('keeps a concept rendered during drag and persists only on drag stop', asyn
   const node = page.locator('.react-flow__node[data-id="A"]');
   const beforeBox = await node.boundingBox();
   if (!beforeBox) throw new Error('A is not visible');
-  const beforePosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!).view.positions.A);
+  const beforePosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A);
 
   await page.mouse.move(beforeBox.x + beforeBox.width / 2, beforeBox.y + beforeBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(beforeBox.x + beforeBox.width / 2 + 70, beforeBox.y + beforeBox.height / 2 + 35, { steps: 8 });
   await expect(node).toBeVisible();
-  const duringPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!).view.positions.A);
+  const duringPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A);
   expect(duringPosition).toEqual(beforePosition);
   await page.mouse.up();
-  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!).view.positions.A)).not.toEqual(beforePosition);
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A)).not.toEqual(beforePosition);
 });
 
 test('opens the editable local layout only on the second click', async ({ page }) => {
@@ -71,14 +79,14 @@ test('opens the editable local layout only on the second click', async ({ page }
   await expect(page.locator('.concept-node.is-dimmed')).toHaveCount(1);
   await expect(page.locator('.react-flow__node[data-id="D"] .concept-node')).toHaveClass(/is-dimmed/);
 
-  const overviewPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!).view.positions.A);
+  const overviewPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A);
   const box = await node.boundingBox();
   if (!box) throw new Error('focused A is not visible');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + 55, box.y + box.height / 2 + 25, { steps: 6 });
   await page.mouse.up();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!).view.positions.A)).toEqual(overviewPosition);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A)).toEqual(overviewPosition);
 });
 
 test('switches between the detailed A B path and X inside the shared C D graph', async ({ page }) => {
@@ -100,9 +108,9 @@ test('switches between the detailed A B path and X inside the shared C D graph',
   await page.waitForTimeout(450);
   await page.screenshot({ path: '/tmp/derivon-replacement-view.png', fullPage: true });
 
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!));
-  expect(saved.graph.concepts.map((concept: { id: string }) => concept.id)).toEqual(['A', 'B', 'C', 'D', 'X']);
-  expect(saved.graph.derivations).toHaveLength(7);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!));
+  expect(saved.graph.points.map((concept: { id: string }) => concept.id)).toEqual(['A', 'B', 'C', 'D', 'X']);
+  expect(saved.graph.hyperedges).toHaveLength(7);
   expect(saved.view.replacements[0]).toEqual({
     points: ['A', 'B'],
     replaceWith: 'X',
@@ -126,7 +134,7 @@ test('defines replace with by selecting a point set and an existing target', asy
 
   await expect(page.locator('.react-flow__node[data-id="X"]')).toHaveCount(0);
   await expect(page.locator('.react-flow__node-concept')).toHaveCount(4);
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!));
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!));
   expect(saved.view.replacements).toEqual([{
     points: ['A', 'B'],
     replaceWith: 'X',

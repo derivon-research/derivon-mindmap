@@ -6,8 +6,10 @@ describe('authoring document', () => {
   it('round-trips the A B C D → X sample without projected objects', () => {
     const parsed = parseDocument(JSON.stringify(sampleDocument));
     expect(parsed.schema).toBe(DOCUMENT_SCHEMA);
-    expect(parsed.graph.concepts.map((concept) => concept.id)).toEqual(['A', 'B', 'C', 'D', 'X']);
-    expect(parsed.graph.derivations).toHaveLength(7);
+    expect(parsed.graph.points.map((point) => point.id)).toEqual(['A', 'B', 'C', 'D', 'X']);
+    expect(Object.keys(parsed.graph.points[0])).toEqual(['id', 'data']);
+    expect(Object.keys(parsed.graph.hyperedges[0])).toEqual(['id', 'weight', 'tails', 'head', 'data']);
+    expect(parsed.graph.hyperedges).toHaveLength(7);
     expect(parsed.view.replacements).toEqual([{
       points: ['A', 'B'],
       replaceWith: 'X',
@@ -16,41 +18,39 @@ describe('authoring document', () => {
     expect(JSON.stringify(parsed)).not.toContain('sourceHandle');
   });
 
-  it('migrates v2 module views into view replacements', () => {
-    const legacy = structuredClone(sampleDocument) as unknown as Record<string, any>;
-    legacy.schema = 'derivon.authoring/v2';
-    legacy.modules = [{ parent: 'X', concepts: ['A', 'B'], derivations: ['h-a'] }];
-    legacy.view = { positions: legacy.view.positions, expanded: ['X'] };
-
-    const parsed = parseDocument(JSON.stringify(legacy));
-    expect(parsed.schema).toBe(DOCUMENT_SCHEMA);
-    expect(parsed.view.replacements).toEqual([{
-      points: ['A', 'B'],
-      replaceWith: 'X',
-      show: 'points',
-    }]);
-    expect(parsed).not.toHaveProperty('modules');
-    expect(parsed.view).not.toHaveProperty('expanded');
+  it('rejects dangling references and duplicate tails', () => {
+    const invalid = structuredClone(sampleDocument);
+    invalid.graph.hyperedges[0].tails = ['missing', 'missing'];
+    const issues = validateDocument(invalid);
+    expect(issues.some((issue) => issue.message.includes('尾部不能重复'))).toBe(true);
+    expect(issues.some((issue) => issue.message.includes('未知点'))).toBe(true);
   });
 
-  it('rejects dangling references and duplicate premises', () => {
-    const invalid = structuredClone(sampleDocument);
-    invalid.graph.derivations[0].premises = ['missing', 'missing'];
+  it('rejects business fields outside data', () => {
+    const invalid = structuredClone(sampleDocument) as unknown as Record<string, any>;
+    invalid.graph.points[0].label = 'A';
+    invalid.graph.hyperedges[0].introduction = '业务内容';
     const issues = validateDocument(invalid);
-    expect(issues.some((issue) => issue.message.includes('前提不能重复'))).toBe(true);
-    expect(issues.some((issue) => issue.message.includes('未知概念'))).toBe(true);
+    expect(issues).toContainEqual({
+      path: 'graph.points[0].label',
+      message: '不允许出现在数学模型外层，请移入 data',
+    });
+    expect(issues).toContainEqual({
+      path: 'graph.hyperedges[0].introduction',
+      message: '不允许出现在数学模型外层，请移入 data',
+    });
   });
 
   it('rejects node id collisions and invalid view coordinates', () => {
     const invalid = structuredClone(sampleDocument);
-    invalid.graph.derivations[0].id = 'A';
+    invalid.graph.hyperedges[0].id = 'A';
     invalid.view.positions.A = { x: Number.NaN, y: 0 };
     const issues = validateDocument(invalid);
-    expect(issues.some((issue) => issue.message.includes('不能与概念 ID 相同'))).toBe(true);
+    expect(issues.some((issue) => issue.message.includes('不能与点 ID 相同'))).toBe(true);
     expect(issues.some((issue) => issue.message.includes('有限数值'))).toBe(true);
   });
 
-  it('accepts nested replacement relations without defining parent concepts', () => {
+  it('accepts nested replacement relations without defining parent objects', () => {
     const nested = structuredClone(sampleDocument);
     nested.view.replacements = [
       { points: ['A', 'B'], replaceWith: 'C', show: 'points' },

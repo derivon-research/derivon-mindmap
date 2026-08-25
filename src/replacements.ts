@@ -17,13 +17,13 @@ export function analyzeReplacement(
   replacement: ViewReplacement,
 ): ReplacementAnalysis {
   const issues: ReplacementIssue[] = [];
-  const conceptIds = new Set(document.graph.concepts.map((concept) => concept.id));
+  const pointIds = new Set(document.graph.points.map((point) => point.id));
   const other = document.view.replacements.filter((item) => item.replaceWith !== replacement.replaceWith);
   const ownerByPoint = new Map<string, string>();
   other.forEach((item) => item.points.forEach((id) => ownerByPoint.set(id, item.replaceWith)));
 
   if (!replacement.points.length) issues.push(issue('empty', '至少选择一个概念'));
-  if (!conceptIds.has(replacement.replaceWith)) issues.push(issue('target', '替换点不存在'));
+  if (!pointIds.has(replacement.replaceWith)) issues.push(issue('target', '替换点不存在'));
   if (replacement.points.includes(replacement.replaceWith)) issues.push(issue('self', '替换点不能位于所选点集中'));
   if (document.view.replacements.some((item) => item.replaceWith === replacement.replaceWith)) {
     issues.push(issue('target', `${replacement.replaceWith} 已经是一条替换关系的结果`));
@@ -52,7 +52,7 @@ export function replacementFromSelection(
   replaceWith: string,
 ): { replacement: ViewReplacement | null; analysis: ReplacementAnalysis } {
   const selected = new Set(selectedIds);
-  const points = document.graph.concepts.filter((concept) => selected.has(concept.id)).map((concept) => concept.id);
+  const points = document.graph.points.filter((point) => selected.has(point.id)).map((point) => point.id);
   const replacement: ViewReplacement = { points, replaceWith, show: 'points' };
   const analysis = analyzeReplacement(document, replacement);
   return { replacement: analysis.valid ? replacement : null, analysis };

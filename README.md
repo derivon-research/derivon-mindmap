@@ -97,28 +97,30 @@ H_view = { h ∈ H | T(h) ∪ {head(h)} ⊆ P_view }
 
 ```json
 {
-  "schema": "derivon.authoring/v3",
+  "schema": "derivon.authoring/v0.1.0",
   "document": {
     "title": "A + B → X",
     "description": "视图替换示例",
     "updatedAt": "2026-08-24T20:00:00.000Z"
   },
   "graph": {
-    "concepts": [
-      { "id": "A", "label": "A", "definition": "点 A。" },
-      { "id": "B", "label": "B", "definition": "点 B。" },
-      { "id": "C", "label": "C", "definition": "点 C。" },
-      { "id": "D", "label": "D", "definition": "点 D。" },
-      { "id": "X", "label": "X", "definition": "现有替换点。" }
+    "points": [
+      { "id": "A", "data": { "label": "A", "definition": "点 A。" } },
+      { "id": "B", "data": { "label": "B", "definition": "点 B。" } },
+      { "id": "C", "data": { "label": "C", "definition": "点 C。" } },
+      { "id": "D", "data": { "label": "D", "definition": "点 D。" } },
+      { "id": "X", "data": { "label": "X", "definition": "现有替换点。" } }
     ],
-    "derivations": [
+    "hyperedges": [
       {
         "id": "h-1",
-        "premises": ["A", "B"],
-        "conclusion": "C",
-        "introduction": "",
-        "reasoning": "",
-        "weight": 1
+        "weight": 1,
+        "tails": ["A", "B"],
+        "head": "C",
+        "data": {
+          "introduction": "",
+          "reasoning": ""
+        }
       }
     ]
   },
@@ -142,16 +144,20 @@ H_view = { h ∈ H | T(h) ∪ {head(h)} ⊆ P_view }
 }
 ```
 
+`graph` 的数学模型外层是严格的：
+
+- 点只允许 `id` 和 `data`；
+- 超边只允许 `id`、`weight`、`tails`、`head` 和 `data`；
+- `label`、`definition`、`introduction`、`reasoning` 等业务属性只能位于对应对象的 `data` 中。
+
 `show` 只接受：
 
 - `points`：显示点集一侧；
 - `replacement`：显示替换点一侧。
 
-v1 的 `view.modules` 和 v2 的顶层 `modules` 会在导入时迁移成 v3 的 `view.replacements`。
-
 ## 分层边界
 
-`graph` 是提交给 Derivon 核心的语义数据，包含概念点和原始超边。
+`graph` 是提交给 Derivon 核心的数学模型数据，只由点和原始超边组成；业务载荷封装在各对象的 `data` 中。
 
 `view` 是前端作者视图：
 

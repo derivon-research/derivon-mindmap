@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
-import type { AuthoringDocument, Concept, Derivation, Position, ViewReplacement } from './domain';
+import type { AuthoringDocument, Hyperedge, Point, Position, ViewReplacement } from './domain';
 import { parseDocument, touchDocument, uniqueId } from './domain';
 import { ConceptNode, DerivationNode, type AuthoringFlowNode } from './GraphNodes';
 import { layoutDocument, layoutNeighborhood } from './layout';
@@ -38,7 +38,7 @@ import { projectDocument } from './projection';
 import { replacementFromSelection } from './replacements';
 import { sampleDocument } from './sample';
 
-const STORAGE_KEY = 'derivon.authoring.demo/v5';
+const STORAGE_KEY = 'derivon.authoring.demo/v0.1.0';
 const nodeTypes = { concept: ConceptNode, derivation: DerivationNode };
 
 type ProjectedEdgeData = {
@@ -48,6 +48,7 @@ type ProjectedEdgeData = {
 };
 
 type ProjectedEdge = Edge<ProjectedEdgeData>;
+type HyperedgePatch = Partial<Omit<Hyperedge, 'id' | 'data'>> & { data?: Partial<Hyperedge['data']> };
 
 function initialDocument(): AuthoringDocument {
   try {
@@ -64,11 +65,11 @@ function initialDocument(): AuthoringDocument {
 function neighborhood(document: AuthoringDocument, selectedId: string | null): Set<string> {
   if (!selectedId) return new Set();
   const ids = new Set([selectedId]);
-  for (const derivation of document.graph.derivations) {
-    if (derivation.id === selectedId || derivation.conclusion === selectedId || derivation.premises.includes(selectedId)) {
+  for (const derivation of document.graph.hyperedges) {
+    if (derivation.id === selectedId || derivation.head === selectedId || derivation.tails.includes(selectedId)) {
       ids.add(derivation.id);
-      ids.add(derivation.conclusion);
-      derivation.premises.forEach((id) => ids.add(id));
+      ids.add(derivation.head);
+      derivation.tails.forEach((id) => ids.add(id));
     }
   }
   return ids;
@@ -147,10 +148,10 @@ function AuthoringCanvas() {
 
   const deleteItem = useCallback((id: string) => {
     commit((current) => {
-      const isConcept = current.graph.concepts.some((concept) => concept.id === id);
+      const isConcept = current.graph.points.some((concept) => concept.id === id);
       const removedDerivations = new Set(
         isConcept
-          ? current.graph.derivations.filter((item) => item.conclusion === id || item.premises.includes(id)).map((item) => item.id)
+          ? current.graph.hyperedges.filter((item) => item.head === id || item.tails.includes(id)).map((item) => item.id)
           : [id],
       );
       const positions = { ...current.view.positions };
@@ -159,8 +160,8 @@ function AuthoringCanvas() {
       return {
         ...current,
         graph: {
-          concepts: isConcept ? current.graph.concepts.filter((concept) => concept.id !== id) : current.graph.concepts,
-          derivations: current.graph.derivations.filter((item) => !removedDerivations.has(item.id)),
+          points: isConcept ? current.graph.points.filter((point) => point.id !== id) : current.graph.points,
+          hyperedges: current.graph.hyperedges.filter((item) => !removedDerivations.has(item.id)),
         },
         view: {
           positions,
@@ -231,19 +232,19 @@ function AuthoringCanvas() {
   );
 
   const projectedNodes = useMemo<AuthoringFlowNode[]>(() => {
-    const conceptById = new Map(document.graph.concepts.map((concept) => [concept.id, concept]));
+    const conceptById = new Map(document.graph.points.map((concept) => [concept.id, concept]));
     const dimmed = (id: string) => !!focusedId && !activeIds.has(id);
     const position = (id: string) => focusPositions?.[id] ?? document.view.positions[id] ?? { x: 0, y: 0 };
     return [
-      ...projection.concepts.map((item): AuthoringFlowNode => {
+      ...projection.points.map((item): AuthoringFlowNode => {
         const concept = conceptById.get(item.id)!;
         return {
           id: concept.id,
           type: 'concept',
           position: position(concept.id),
           data: {
-            label: concept.label,
-            definition: concept.definition,
+            label: concept.data.label,
+            definition: concept.data.definition,
             dimmed: dimmed(concept.id),
             depth: item.depth,
             replacements: item.controls.map((control) => ({ ...control, onToggle: toggleReplacement })),
@@ -251,19 +252,19 @@ function AuthoringCanvas() {
           },
         };
       }),
-      ...projection.derivations.map((derivation): AuthoringFlowNode => ({
+      ...projection.hyperedges.map((derivation): AuthoringFlowNode => ({
         id: derivation.id,
         type: 'derivation',
         position: position(derivation.id),
         data: {
           weight: derivation.weight,
-          premiseCount: derivation.premises.length,
+          premiseCount: derivation.tails.length,
           dimmed: dimmed(derivation.id),
           onDelete: deleteItem,
         },
       })),
     ];
-  }, [activeIds, deleteItem, document.graph.concepts, document.view.positions, focusPositions, focusedId, projection, toggleReplacement]);
+  }, [activeIds, deleteItem, document.graph.points, document.view.positions, focusPositions, focusedId, projection, toggleReplacement]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<AuthoringFlowNode>([]);
 
@@ -284,7 +285,7 @@ function AuthoringCanvas() {
       setStatus('已取消替换');
       return;
     }
-    const conceptIds = new Set(document.graph.concepts.map((concept) => concept.id));
+    const conceptIds = new Set(document.graph.points.map((concept) => concept.id));
     const points = selectedNodeIds.filter((id) => conceptIds.has(id));
     if (!points.length) {
       setStatus('请先选择概念点');
@@ -292,7 +293,7 @@ function AuthoringCanvas() {
     }
     setReplacementDraft(points);
     setStatus('请选择已有概念作为替换点');
-  }, [document.graph.concepts, replacementDraft, selectedNodeIds]);
+  }, [document.graph.points, replacementDraft, selectedNodeIds]);
 
   useEffect(() => {
     if (!focusedId) return;
@@ -304,9 +305,9 @@ function AuthoringCanvas() {
 
   const edges = useMemo<ProjectedEdge[]>(() => {
     const result: ProjectedEdge[] = [];
-    for (const derivation of projection.derivations) {
+    for (const derivation of projection.hyperedges) {
       const derivationActive = !focusedId || activeIds.has(derivation.id);
-      for (const premise of derivation.premises) {
+      for (const premise of derivation.tails) {
         result.push({
           id: `premise:${derivation.id}:${premise}`,
           source: premise,
@@ -321,9 +322,9 @@ function AuthoringCanvas() {
         });
       }
       result.push({
-        id: `conclusion:${derivation.id}`,
+        id: `head:${derivation.id}`,
         source: derivation.id,
-        target: derivation.conclusion,
+        target: derivation.head,
         sourceHandle: 'conclusion-out',
         targetHandle: 'concept-in',
         type: 'default',
@@ -334,7 +335,7 @@ function AuthoringCanvas() {
       });
     }
     return result;
-  }, [activeIds, focusedId, projection.derivations]);
+  }, [activeIds, focusedId, projection.hyperedges]);
 
   const persistNodePosition = useCallback((node: AuthoringFlowNode) => {
     if (focusedId && activeIds.has(node.id)) {
@@ -355,24 +356,27 @@ function AuthoringCanvas() {
   }, [activeIds, commit, document, focusedId]);
 
   const addConcept = useCallback((position?: Position) => {
-    const id = uniqueId('c', document.graph.concepts.map((concept) => concept.id));
+    const id = uniqueId('c', document.graph.points.map((concept) => concept.id));
     const nextPosition = position ?? screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     commit((current) => ({
       ...current,
-      graph: { ...current.graph, concepts: [...current.graph.concepts, { id, label: '新概念', definition: '' }] },
+      graph: {
+        ...current.graph,
+        points: [...current.graph.points, { id, data: { label: '新概念', definition: '' } }],
+      },
       view: { ...current.view, positions: { ...current.view.positions, [id]: nextPosition } },
     }));
     setFocusLayouts({});
     setFocusedId(null);
     setSelectedId(id);
-  }, [commit, document.graph.concepts, screenToFlowPosition]);
+  }, [commit, document.graph.points, screenToFlowPosition]);
 
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return;
-    const sourceConcept = document.graph.concepts.some((item) => item.id === connection.source);
-    const targetConcept = document.graph.concepts.some((item) => item.id === connection.target);
-    const sourceDerivation = document.graph.derivations.some((item) => item.id === connection.source);
-    const targetDerivation = document.graph.derivations.some((item) => item.id === connection.target);
+    const sourceConcept = document.graph.points.some((item) => item.id === connection.source);
+    const targetConcept = document.graph.points.some((item) => item.id === connection.target);
+    const sourceDerivation = document.graph.hyperedges.some((item) => item.id === connection.source);
+    const targetDerivation = document.graph.hyperedges.some((item) => item.id === connection.target);
 
     if ((sourceConcept && (targetConcept || targetDerivation)) || (sourceDerivation && targetConcept)) {
       setFocusLayouts({});
@@ -380,20 +384,19 @@ function AuthoringCanvas() {
     }
 
     if (sourceConcept && targetConcept) {
-      const id = uniqueId('h', document.graph.derivations.map((item) => item.id));
+      const id = uniqueId('h', document.graph.hyperedges.map((item) => item.id));
       const sourcePosition = document.view.positions[connection.source] ?? { x: 0, y: 0 };
       const targetPosition = document.view.positions[connection.target] ?? { x: sourcePosition.x + 240, y: sourcePosition.y };
       commit((current) => ({
         ...current,
         graph: {
           ...current.graph,
-          derivations: [...current.graph.derivations, {
+          hyperedges: [...current.graph.hyperedges, {
             id,
-            premises: [connection.source!],
-            conclusion: connection.target!,
-            introduction: '',
-            reasoning: '',
             weight: 1,
+            tails: [connection.source!],
+            head: connection.target!,
+            data: { introduction: '', reasoning: '' },
           }],
         },
         view: {
@@ -412,9 +415,9 @@ function AuthoringCanvas() {
         ...current,
         graph: {
           ...current.graph,
-          derivations: current.graph.derivations.map((item) =>
-            item.id === connection.target && !item.premises.includes(connection.source!)
-              ? { ...item, premises: [...item.premises, connection.source!] }
+          hyperedges: current.graph.hyperedges.map((item) =>
+            item.id === connection.target && !item.tails.includes(connection.source!)
+              ? { ...item, tails: [...item.tails, connection.source!] }
               : item,
           ),
         },
@@ -427,8 +430,8 @@ function AuthoringCanvas() {
         ...current,
         graph: {
           ...current.graph,
-          derivations: current.graph.derivations.map((item) =>
-            item.id === connection.source ? { ...item, conclusion: connection.target! } : item,
+          hyperedges: current.graph.hyperedges.map((item) =>
+            item.id === connection.source ? { ...item, head: connection.target! } : item,
           ),
         },
       }));
@@ -438,17 +441,29 @@ function AuthoringCanvas() {
     setStatus('只能连接“概念 → 概念 / 推导”或“推导 → 概念”');
   }, [commit, document]);
 
-  const updateConcept = useCallback((id: string, patch: Partial<Concept>) => {
+  const updatePointData = useCallback((id: string, patch: Partial<Point['data']>) => {
     commit((current) => ({
       ...current,
-      graph: { ...current.graph, concepts: current.graph.concepts.map((item) => item.id === id ? { ...item, ...patch, id } : item) },
+      graph: {
+        ...current.graph,
+        points: current.graph.points.map((item) =>
+          item.id === id ? { ...item, data: { ...item.data, ...patch } } : item,
+        ),
+      },
     }));
   }, [commit]);
 
-  const updateDerivation = useCallback((id: string, patch: Partial<Derivation>) => {
+  const updateHyperedge = useCallback((id: string, patch: HyperedgePatch) => {
     commit((current) => ({
       ...current,
-      graph: { ...current.graph, derivations: current.graph.derivations.map((item) => item.id === id ? { ...item, ...patch, id } : item) },
+      graph: {
+        ...current.graph,
+        hyperedges: current.graph.hyperedges.map((item) =>
+          item.id === id
+            ? { ...item, ...patch, data: { ...item.data, ...patch.data } }
+            : item,
+        ),
+      },
     }));
   }, [commit]);
 
@@ -462,7 +477,9 @@ function AuthoringCanvas() {
 
   const findConcept = useCallback(() => {
     const query = search.trim().toLocaleLowerCase();
-    const concept = document.graph.concepts.find((item) => item.id.toLocaleLowerCase() === query || item.label.toLocaleLowerCase().includes(query));
+    const concept = document.graph.points.find((item) =>
+      item.id.toLocaleLowerCase() === query || item.data.label.toLocaleLowerCase().includes(query),
+    );
     if (!concept) {
       setStatus('没有匹配的概念');
       return;
@@ -524,7 +541,7 @@ function AuthoringCanvas() {
 
   const selectNode = useCallback((id: string) => {
     if (replacementDraft) {
-      if (!document.graph.concepts.some((concept) => concept.id === id)) {
+      if (!document.graph.points.some((concept) => concept.id === id)) {
         setStatus('替换点必须是概念');
         return;
       }
@@ -564,12 +581,15 @@ function AuthoringCanvas() {
     setFocusedId((current) => current ? null : selectedId);
   }, [selectedId]);
 
-  const selectedConcept = document.graph.concepts.find((item) => item.id === selectedId);
-  const selectedDerivation = document.graph.derivations.find((item) => item.id === selectedId);
+  const selectedConcept = document.graph.points.find((item) => item.id === selectedId);
+  const selectedDerivation = document.graph.hyperedges.find((item) => item.id === selectedId);
   const selectedReplacements = selectedConcept
     ? document.view.replacements.filter((item) => item.replaceWith === selectedConcept.id || item.points.includes(selectedConcept.id))
     : [];
-  const labelById = useMemo(() => new Map(document.graph.concepts.map((item) => [item.id, item.label])), [document.graph.concepts]);
+  const labelById = useMemo(
+    () => new Map(document.graph.points.map((item) => [item.id, item.data.label])),
+    [document.graph.points],
+  );
 
   return (
     <main className="app-shell">
@@ -680,8 +700,8 @@ function AuthoringCanvas() {
                 <div><span className="eyebrow">概念</span><strong>{selectedConcept.id}</strong></div>
                 <button type="button" title="删除概念" onClick={() => deleteItem(selectedConcept.id)}><Trash2 size={16} /></button>
               </div>
-              <label>名称<input value={selectedConcept.label} onChange={(event) => updateConcept(selectedConcept.id, { label: event.target.value })} /></label>
-              <label className="grow-field">客观定义<textarea value={selectedConcept.definition} onChange={(event) => updateConcept(selectedConcept.id, { definition: event.target.value })} /></label>
+              <label>名称<input value={selectedConcept.data.label} onChange={(event) => updatePointData(selectedConcept.id, { label: event.target.value })} /></label>
+              <label className="grow-field">客观定义<textarea value={selectedConcept.data.definition} onChange={(event) => updatePointData(selectedConcept.id, { definition: event.target.value })} /></label>
               {selectedReplacements.map((replacement) => (
                 <div className="replacement-definition" key={replacement.replaceWith}>
                   <div className="replacement-expression">
@@ -705,8 +725,8 @@ function AuthoringCanvas() {
                 </div>
               ))}
               <div className="relation-summary">
-                <span>作为前提 {document.graph.derivations.filter((item) => item.premises.includes(selectedConcept.id)).length}</span>
-                <span>作为结论 {document.graph.derivations.filter((item) => item.conclusion === selectedConcept.id).length}</span>
+                <span>作为前提 {document.graph.hyperedges.filter((item) => item.tails.includes(selectedConcept.id)).length}</span>
+                <span>作为结论 {document.graph.hyperedges.filter((item) => item.head === selectedConcept.id).length}</span>
               </div>
             </>
           ) : selectedDerivation ? (
@@ -718,25 +738,25 @@ function AuthoringCanvas() {
               <div className="endpoint-block">
                 <span className="field-title">前提集合</span>
                 <div className="chips">
-                  {selectedDerivation.premises.length === 0 && <span className="empty-tail">空集 ∅</span>}
-                  {selectedDerivation.premises.map((id) => (
-                    <span className="chip" key={id}>{labelById.get(id) ?? id}<button type="button" title="移除此前提" onClick={() => updateDerivation(selectedDerivation.id, { premises: selectedDerivation.premises.filter((item) => item !== id) })}><X size={12} /></button></span>
+                  {selectedDerivation.tails.length === 0 && <span className="empty-tail">空集 ∅</span>}
+                  {selectedDerivation.tails.map((id) => (
+                    <span className="chip" key={id}>{labelById.get(id) ?? id}<button type="button" title="移除此前提" onClick={() => updateHyperedge(selectedDerivation.id, { tails: selectedDerivation.tails.filter((item) => item !== id) })}><X size={12} /></button></span>
                   ))}
                 </div>
                 <span className="field-title">结论</span>
-                <span className="conclusion-label">{labelById.get(selectedDerivation.conclusion) ?? selectedDerivation.conclusion}</span>
+                <span className="conclusion-label">{labelById.get(selectedDerivation.head) ?? selectedDerivation.head}</span>
               </div>
-              <label>问题引入<textarea value={selectedDerivation.introduction} onChange={(event) => updateDerivation(selectedDerivation.id, { introduction: event.target.value })} /></label>
-              <label className="grow-field">推导过程<textarea value={selectedDerivation.reasoning} onChange={(event) => updateDerivation(selectedDerivation.id, { reasoning: event.target.value })} /></label>
-              <label className="weight-field">成本权重<input type="number" min="0" step="1" value={selectedDerivation.weight} onChange={(event) => updateDerivation(selectedDerivation.id, { weight: Math.max(0, Math.trunc(Number(event.target.value) || 0)) })} /></label>
+              <label>问题引入<textarea value={selectedDerivation.data.introduction} onChange={(event) => updateHyperedge(selectedDerivation.id, { data: { introduction: event.target.value } })} /></label>
+              <label className="grow-field">推导过程<textarea value={selectedDerivation.data.reasoning} onChange={(event) => updateHyperedge(selectedDerivation.id, { data: { reasoning: event.target.value } })} /></label>
+              <label className="weight-field">成本权重<input type="number" min="0" step="1" value={selectedDerivation.weight} onChange={(event) => updateHyperedge(selectedDerivation.id, { weight: Math.max(0, Math.trunc(Number(event.target.value) || 0)) })} /></label>
             </>
           ) : (
             <>
               <div className="inspector-heading"><div><span className="eyebrow">文档</span><strong>{document.schema}</strong></div></div>
               <label>说明<textarea value={document.document.description} onChange={(event) => commit((current) => ({ ...current, document: { ...current.document, description: event.target.value } }))} /></label>
               <div className="document-stats">
-                <div><strong>{document.graph.concepts.length}</strong><span>概念</span></div>
-                <div><strong>{document.graph.derivations.length}</strong><span>推导</span></div>
+                <div><strong>{document.graph.points.length}</strong><span>概念</span></div>
+                <div><strong>{document.graph.hyperedges.length}</strong><span>推导</span></div>
                 <div><strong>{document.view.replacements.length}</strong><span>替换关系</span></div>
               </div>
               <div className="schema-note"><code>T(h) → y</code></div>

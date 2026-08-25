@@ -28,25 +28,25 @@ export function layoutDocument(
     marginy: compact ? 20 : 40,
   });
 
-  document.graph.concepts
-    .filter((concept) => included(concept.id))
-    .forEach((concept) => graph.setNode(concept.id, { width: CONCEPT_WIDTH, height: CONCEPT_HEIGHT }));
-  document.graph.derivations
-    .filter((derivation) => included(derivation.id))
-    .forEach((derivation) => {
-      graph.setNode(derivation.id, { width: DERIVATION_SIZE, height: DERIVATION_SIZE });
-      derivation.premises.filter(included).forEach((premise) => graph.setEdge(premise, derivation.id));
-      if (included(derivation.conclusion)) graph.setEdge(derivation.id, derivation.conclusion);
+  document.graph.points
+    .filter((point) => included(point.id))
+    .forEach((point) => graph.setNode(point.id, { width: CONCEPT_WIDTH, height: CONCEPT_HEIGHT }));
+  document.graph.hyperedges
+    .filter((hyperedge) => included(hyperedge.id))
+    .forEach((hyperedge) => {
+      graph.setNode(hyperedge.id, { width: DERIVATION_SIZE, height: DERIVATION_SIZE });
+      hyperedge.tails.filter(included).forEach((tail) => graph.setEdge(tail, hyperedge.id));
+      if (included(hyperedge.head)) graph.setEdge(hyperedge.id, hyperedge.head);
     });
   dagre.layout(graph);
 
-  const derivationIds = new Set(document.graph.derivations.map((item) => item.id));
+  const hyperedgeIds = new Set(document.graph.hyperedges.map((item) => item.id));
   const positions: Record<string, Position> = {};
   graph.nodes().forEach((id) => {
     const node = graph.node(id);
-    const isDerivation = derivationIds.has(id);
-    const width = isDerivation ? DERIVATION_SIZE : CONCEPT_WIDTH;
-    const height = isDerivation ? DERIVATION_SIZE : CONCEPT_HEIGHT;
+    const isHyperedge = hyperedgeIds.has(id);
+    const width = isHyperedge ? DERIVATION_SIZE : CONCEPT_WIDTH;
+    const height = isHyperedge ? DERIVATION_SIZE : CONCEPT_HEIGHT;
     positions[id] = { x: node.x - width / 2, y: node.y - height / 2 };
   });
   return positions;

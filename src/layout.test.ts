@@ -6,7 +6,7 @@ describe('view layouts', () => {
   it('lays out every semantic node in the source graph', () => {
     const positions = layoutDocument(sampleDocument);
     expect(Object.keys(positions)).toHaveLength(
-      sampleDocument.graph.concepts.length + sampleDocument.graph.derivations.length,
+      sampleDocument.graph.points.length + sampleDocument.graph.hyperedges.length,
     );
     expect(Object.values(positions).every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y))).toBe(true);
   });

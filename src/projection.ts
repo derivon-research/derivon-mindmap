@@ -1,4 +1,4 @@
-import type { AuthoringDocument, Derivation, ViewReplacement } from './domain';
+import type { AuthoringDocument, Hyperedge, ViewReplacement } from './domain';
 
 export type ReplacementControl = {
   replaceWith: string;
@@ -6,15 +6,15 @@ export type ReplacementControl = {
   label: string;
 };
 
-export type ProjectedConcept = {
+export type ProjectedPoint = {
   id: string;
   depth: number;
   controls: ReplacementControl[];
 };
 
 export type GraphProjection = {
-  concepts: ProjectedConcept[];
-  derivations: Derivation[];
+  points: ProjectedPoint[];
+  hyperedges: Hyperedge[];
   visibleIds: Set<string>;
 };
 
@@ -25,7 +25,7 @@ export function projectDocument(document: AuthoringDocument): GraphProjection {
     replacement.points.forEach((id) => ownerByPoint.set(id, replacement));
   });
 
-  const concepts: ProjectedConcept[] = [];
+  const points: ProjectedPoint[] = [];
   const visited = new Set<string>();
   const visit = (id: string, depth: number) => {
     if (visited.has(id)) return;
@@ -52,23 +52,23 @@ export function projectDocument(document: AuthoringDocument): GraphProjection {
         label: `→ ${owner.replaceWith}`,
       });
     }
-    concepts.push({ id, depth, controls });
+    points.push({ id, depth, controls });
   };
 
-  document.graph.concepts
-    .filter((concept) => !ownerByPoint.has(concept.id))
-    .forEach((concept) => visit(concept.id, 0));
+  document.graph.points
+    .filter((point) => !ownerByPoint.has(point.id))
+    .forEach((point) => visit(point.id, 0));
 
-  const conceptOrder = new Map(document.graph.concepts.map((concept, index) => [concept.id, index]));
-  concepts.sort((left, right) => conceptOrder.get(left.id)! - conceptOrder.get(right.id)!);
-  const visibleConceptIds = new Set(concepts.map((concept) => concept.id));
-  const derivations = document.graph.derivations.filter((derivation) =>
-    visibleConceptIds.has(derivation.conclusion)
-    && derivation.premises.every((premise) => visibleConceptIds.has(premise)),
+  const pointOrder = new Map(document.graph.points.map((point, index) => [point.id, index]));
+  points.sort((left, right) => pointOrder.get(left.id)! - pointOrder.get(right.id)!);
+  const visiblePointIds = new Set(points.map((point) => point.id));
+  const hyperedges = document.graph.hyperedges.filter((hyperedge) =>
+    visiblePointIds.has(hyperedge.head)
+    && hyperedge.tails.every((tail) => visiblePointIds.has(tail)),
   );
   return {
-    concepts,
-    derivations,
-    visibleIds: new Set([...visibleConceptIds, ...derivations.map((item) => item.id)]),
+    points,
+    hyperedges,
+    visibleIds: new Set([...visiblePointIds, ...hyperedges.map((item) => item.id)]),
   };
 }
