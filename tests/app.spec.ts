@@ -671,6 +671,14 @@ test('creates a new empty project with the folder-plus action', async ({ page })
     const directoryHandle = (prefix: string, name: string): FileSystemDirectoryHandle => ({
       kind: 'directory',
       name,
+      async queryPermission() {
+        localStorage.setItem('derivon.test.permission-queried', 'true');
+        return 'prompt';
+      },
+      async requestPermission() {
+        localStorage.setItem('derivon.test.permission-requested', 'true');
+        return 'granted';
+      },
       async getDirectoryHandle(child: string, options?: { create?: boolean }) {
         const childPath = [prefix, child].filter(Boolean).join('/');
         if (!directories.has(childPath)) {
@@ -708,6 +716,10 @@ test('creates a new empty project with the folder-plus action', async ({ page })
   await expect(page.locator('.react-flow__node')).toHaveCount(0);
   await expect(page.getByLabel('文档标题')).toHaveValue('未命名项目');
   await expect(page.locator('.workspace-directory-name')).toHaveText('empty-project/');
+  expect(await page.evaluate(() => ({
+    queried: localStorage.getItem('derivon.test.permission-queried'),
+    requested: localStorage.getItem('derivon.test.permission-requested'),
+  }))).toEqual({ queried: 'true', requested: 'true' });
   await expect.poll(() => page.evaluate(() => {
     const files = (window as unknown as { __newWorkspaceFiles: Map<string, string> }).__newWorkspaceFiles;
     const manifest = JSON.parse(files.get('.derivon/workspace.json') ?? '{}');

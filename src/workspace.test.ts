@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { validateDocument } from './domain';
 import { WORKSPACE_AGENT_FILES } from './agentSkill';
 import { sampleDocument, sampleWorkspace } from './sample';
 import {
   attachWorkspaceAgentFiles,
   createDocumentDirectory,
+  ensureWorkspaceDirectoryPermission,
   migrateLegacyDocument,
   parseWorkspaceSnapshot,
   readWorkspaceDirectorySnapshot,
@@ -141,6 +142,26 @@ describe('authoring workspace', () => {
     const bundle = JSON.parse(directory.read('.derivon/agent/bundle.json')!);
     expect(bundle.protectedFiles).toContain(managedPath);
     expect(bundle.files).not.toHaveProperty(managedPath);
+  });
+
+  it('requests explicit read-write permission for a selected directory', async () => {
+    const queryPermission = vi.fn(async () => 'prompt' as PermissionState);
+    const requestPermission = vi.fn(async () => 'granted' as PermissionState);
+    const handle = { queryPermission, requestPermission } as unknown as FileSystemDirectoryHandle;
+
+    await ensureWorkspaceDirectoryPermission(handle);
+
+    expect(queryPermission).toHaveBeenCalledWith({ mode: 'readwrite' });
+    expect(requestPermission).toHaveBeenCalledWith({ mode: 'readwrite' });
+  });
+
+  it('rejects a selected directory without read-write permission', async () => {
+    const handle = {
+      queryPermission: vi.fn(async () => 'prompt' as PermissionState),
+      requestPermission: vi.fn(async () => 'denied' as PermissionState),
+    } as unknown as FileSystemDirectoryHandle;
+
+    await expect(ensureWorkspaceDirectoryPermission(handle)).rejects.toThrow('未取得项目文件夹的读写权限');
   });
 
   it('writes the current project to a new directory and refuses workspace overwrite', async () => {

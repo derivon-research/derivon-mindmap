@@ -260,7 +260,7 @@ export async function attachWorkspaceAgentFiles(root: FileSystemDirectoryHandle)
   const nextFiles: Record<string, string> = {};
   const protectedFiles = new Set(stored.manifest?.protectedFiles ?? []);
 
-  await Promise.all(Object.entries(WORKSPACE_AGENT_FILES).map(async ([path, content]) => {
+  for (const [path, content] of Object.entries(WORKSPACE_AGENT_FILES)) {
     const desiredDigest = await contentDigest(content);
     try {
       const existing = await readTextFile(root, path);
@@ -285,7 +285,7 @@ export async function attachWorkspaceAgentFiles(root: FileSystemDirectoryHandle)
       nextFiles[path] = desiredDigest;
       protectedFiles.delete(path);
     }
-  }));
+  }
 
   const manifest: AgentBundleManifest = {
     schema: WORKSPACE_AGENT_BUNDLE_SCHEMA,
@@ -325,11 +325,11 @@ export async function readWorkspaceDirectory(root: FileSystemDirectoryHandle): P
 
 export async function writeWorkspaceDirectory(root: FileSystemDirectoryHandle, workspace: AuthoringWorkspace): Promise<void> {
   validateWorkspace(workspace);
-  await Promise.all([
-    writeTextFile(root, WORKSPACE_MANIFEST, `${JSON.stringify(workspace.manifest, null, 2)}\n`),
-    ...Object.entries(workspace.files).map(([path, content]) => writeTextFile(root, path, content)),
-    attachWorkspaceAgentFiles(root),
-  ]);
+  await writeTextFile(root, WORKSPACE_MANIFEST, `${JSON.stringify(workspace.manifest, null, 2)}\n`);
+  for (const [path, content] of Object.entries(workspace.files)) {
+    await writeTextFile(root, path, content);
+  }
+  await attachWorkspaceAgentFiles(root);
 }
 
 export function supportsWorkspaceDirectory(): boolean {
@@ -343,6 +343,18 @@ function requireWorkspaceDirectoryPicker(): NonNullable<Window['showDirectoryPic
   const picker = window.showDirectoryPicker;
   if (!picker) throw new Error('当前浏览器不支持工作区目录，请使用 Chromium 系浏览器');
   return picker;
+}
+
+export async function ensureWorkspaceDirectoryPermission(handle: FileSystemDirectoryHandle): Promise<void> {
+  const descriptor: FileSystemHandlePermissionDescriptor = { mode: 'readwrite' };
+  if (!handle.queryPermission || !handle.requestPermission) return;
+  try {
+    if (await handle.queryPermission(descriptor) === 'granted') return;
+    if (await handle.requestPermission(descriptor) === 'granted') return;
+  } catch (error) {
+    throw new Error('无法取得项目文件夹的读写权限，请重新选择文件夹并允许读写', { cause: error });
+  }
+  throw new Error('未取得项目文件夹的读写权限，请重新选择文件夹并允许读写');
 }
 
 export async function writeWorkspaceToNewDirectory(
@@ -362,6 +374,7 @@ export async function writeWorkspaceToNewDirectory(
 export async function saveWorkspaceAsDirectory(current: AuthoringWorkspace): Promise<FileSystemDirectoryHandle> {
   const picker = requireWorkspaceDirectoryPicker();
   const handle = await picker({ mode: 'readwrite' });
+  await ensureWorkspaceDirectoryPermission(handle);
   await writeWorkspaceToNewDirectory(handle, current);
   return handle;
 }
@@ -374,6 +387,7 @@ export async function chooseWorkspaceDirectory(current: AuthoringWorkspace): Pro
 }> {
   const picker = requireWorkspaceDirectoryPicker();
   const handle = await picker({ mode: 'readwrite' });
+  await ensureWorkspaceDirectoryPermission(handle);
   try {
     const snapshot = await readWorkspaceDirectorySnapshot(handle);
     await attachWorkspaceAgentFiles(handle);
