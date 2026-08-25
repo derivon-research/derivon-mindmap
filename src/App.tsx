@@ -22,6 +22,7 @@ import {
   FileText,
   FileUp,
   FolderOpen,
+  FolderPlus,
   Github,
   LayoutGrid,
   Plus,
@@ -56,6 +57,7 @@ import {
   documentSourcePath,
   importManifest,
   loadLocalWorkspace,
+  saveWorkspaceAsDirectory,
   storeDocumentFiles,
   writeWorkspaceDirectory,
   type AuthoringWorkspace,
@@ -761,6 +763,17 @@ function AuthoringCanvas() {
     }
   }, [clearTransientView, commit, document, files, fitView]);
 
+  const saveWorkspaceAs = useCallback(async () => {
+    try {
+      const handle = await saveWorkspaceAsDirectory({ manifest: document, files });
+      setWorkspaceDirectory(handle);
+      setStatus(`已另存到新工作区 ${handle.name}`);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法另存工作区');
+    }
+  }, [document, files]);
+
   const importFile = useCallback(async (file: File) => {
     try {
       const importedWorkspace = importManifest(await file.text(), files);
@@ -952,6 +965,7 @@ function AuthoringCanvas() {
               </button>
               <span className="toolbar-divider" />
               <button type="button" title="连接工作区文件夹" onClick={() => void connectWorkspace()}><FolderOpen size={17} /></button>
+              <button type="button" title="另存到新文件夹" onClick={() => void saveWorkspaceAs()}><FolderPlus size={17} /></button>
               <button type="button" title="编辑工作区 JSON" onClick={openJsonEditor}><Braces size={17} /></button>
               <button type="button" title="导入旧版 JSON" onClick={() => fileInput.current?.click()}><FileUp size={17} /></button>
             </>

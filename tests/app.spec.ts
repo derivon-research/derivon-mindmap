@@ -520,6 +520,19 @@ test('confirms derivation deletion and allows it to be undone', async ({ page })
   await expect(derivation).toBeVisible();
 });
 
+test('offers saving the current project to a new folder', async ({ page }) => {
+  await page.evaluate(() => {
+    window.showDirectoryPicker = async () => {
+      localStorage.setItem('derivon.test.save-as-picker', 'called');
+      throw new DOMException('Cancelled', 'AbortError');
+    };
+  });
+
+  await page.getByRole('button', { name: '另存到新文件夹' }).click();
+
+  expect(await page.evaluate(() => localStorage.getItem('derivon.test.save-as-picker'))).toBe('called');
+});
+
 test('links to the GitHub repository beside search', async ({ page }) => {
   const repositoryLink = page.getByRole('link', { name: '查看 GitHub 仓库' });
   await expect(repositoryLink).toHaveAttribute('href', 'https://github.com/derivon-research/mindmap-demo');

@@ -23,7 +23,18 @@ Derivon 使用普通文件夹作为工作区：
 
 ```text
 my-workspace/
+├── .agents/skills/derivon-workspace/SKILL.md
+├── .claude/skills/derivon-workspace/SKILL.md
+├── .github/skills/derivon-workspace/SKILL.md
 ├── .derivon/
+│   ├── agent/
+│   │   ├── bundle.json
+│   │   ├── references/
+│   │   │   ├── README.md
+│   │   │   ├── model.md
+│   │   │   ├── derivon-paper.md
+│   │   │   └── learning-route-hypergraph.md
+│   │   └── validate-workspace.mjs
 │   └── workspace.json
 └── docs/
     ├── concept-a/
@@ -44,6 +55,40 @@ Markdown 正文可以直接嵌入 HTML 块。样式、表单、脚本和交互�
 - 目录还不是工作区时写入当前浏览器工作区；
 - 连接后，manifest 和对象目录会自动回写；
 - File System Access API 当前需要 Chromium 系浏览器；其他浏览器仍可使用浏览器本地工作区。
+
+连接目录时还会自动附加 `derivon-workspace` Agent Skill。相同的 Skill 会写入
+`.agents/skills/`、`.claude/skills/` 与 `.github/skills/`，供 Codex、Cursor、
+Claude Code、GitHub Copilot 等支持 `SKILL.md` 的 Coding Agent 自动发现。应用会在
+连接、另存和后续自动保存时同步最新参考集；`.derivon/agent/bundle.json` 记录上次
+生成内容的 SHA-256。只有仍与上次生成版本一致的文件会自动升级，用户修改过的文件
+会进入 `protectedFiles` 并保持原样，没有托管记录的用户自建 Skill 也不会被覆盖。
+Skill 指导 Agent 联动编辑 manifest 与对象文档、编写 KaTeX 公式
+和 HTML、正确处理超边的 AND/OR 语义，并审阅推导是否使用了前提中未提供的概念。
+
+`.derivon/agent/references/` 会随 Skill 一起附加当前临时模型文档：`model.md` 明确
+核心数学对象与 authoring manifest 的映射，`derivon-paper.md` 是当前 paper 工作草案
+快照，`learning-route-hypergraph.md` 是
+[《学习效率的矛盾分析与学习路线的数学建模》](https://v3n0.top/post/2026/learning-route-hypergraph/)
+正文快照。Agent 在首次调整图结构或对 Point、Hyperedge、Closure、Derivation、
+AND/OR、空尾、环、成本与折叠等定义不确定时，必须主动读取这些材料，不能退回普通
+有向图直觉。`references/README.md` 记录了临时来源优先级，以及正式文档发布后需要
+同步迁移 Skill、模型指南、材料快照、README、schema 描述和测试的检查表。
+
+工作区同时附带零依赖校验工具：
+
+```bash
+node .derivon/agent/validate-workspace.mjs .
+node .derivon/agent/validate-workspace.mjs . --inventory
+node .derivon/agent/validate-workspace.mjs . --review h-1
+```
+
+校验工具检查 ID、文档所有权、关系引用、权重、位置及必需文件；`--review` 会列出
+审阅一条推导时必须一起阅读的前提、推导和结论文档。
+
+右上角“连接工作区文件夹”用于打开已有工作区或在非工作区目录中创建；相邻的
+“另存到新文件夹”会把当前浏览器/已连接项目完整写入所选新目录，并把后续自动保存
+切换到该目录。为避免数据覆盖，所选目录如果已经包含 `.derivon/workspace.json` 会
+被拒绝，必须另选或新建文件夹；目录中的其他文件和用户 Skill 不会被删除或覆盖。
 
 从网页新建概念或推导时，应用默认创建 Markdown 文档及其 HTML 入口，例如 `docs/concept-c-1/document.md` 和 `docs/concept-c-1/index.html`。目录名发生冲突时会自动增加序号。
 

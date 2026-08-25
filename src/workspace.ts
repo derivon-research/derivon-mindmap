@@ -4,6 +4,7 @@ import {
   derivationDocumentTemplate,
   markdownToHtml,
 } from './documentContent';
+import { WORKSPACE_AGENT_FILES, WORKSPACE_AGENT_REFERENCE_SET } from './agentSkill';
 
 export const WORKSPACE_MANIFEST = '.derivon/workspace.json';
 export const LOCAL_WORKSPACE_KEY = 'derivon.authoring.workspace/v0.2.0';
@@ -183,6 +184,104 @@ async function writeTextFile(root: FileSystemDirectoryHandle, path: string, cont
   await writable.close();
 }
 
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'NotFoundError';
+}
+
+const MANAGED_AGENT_FILE_MARKER = 'managed-by: derivon-mindmap-demo';
+const WORKSPACE_AGENT_BUNDLE_MANIFEST = '.derivon/agent/bundle.json';
+const WORKSPACE_AGENT_BUNDLE_SCHEMA = 'derivon.agent-bundle/v0.1.0';
+
+type AgentBundleManifest = {
+  schema: typeof WORKSPACE_AGENT_BUNDLE_SCHEMA;
+  referenceSet: string;
+  files: Record<string, string>;
+  protectedFiles: string[];
+};
+
+type StoredAgentBundle = {
+  exists: boolean;
+  text: string | null;
+  manifest: AgentBundleManifest | null;
+};
+
+async function contentDigest(content: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function parseAgentBundleManifest(text: string): AgentBundleManifest | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    if (
+      !isRecord(value)
+      || value.schema !== WORKSPACE_AGENT_BUNDLE_SCHEMA
+      || typeof value.referenceSet !== 'string'
+      || !isRecord(value.files)
+      || !Array.isArray(value.protectedFiles)
+    ) return null;
+    const files = Object.fromEntries(Object.entries(value.files).filter((entry): entry is [string, string] =>
+      typeof entry[1] === 'string',
+    ));
+    const protectedFiles = value.protectedFiles.filter((path): path is string => typeof path === 'string');
+    return { schema: WORKSPACE_AGENT_BUNDLE_SCHEMA, referenceSet: value.referenceSet, files, protectedFiles };
+  } catch {
+    return null;
+  }
+}
+
+async function readStoredAgentBundle(root: FileSystemDirectoryHandle): Promise<StoredAgentBundle> {
+  try {
+    const text = await readTextFile(root, WORKSPACE_AGENT_BUNDLE_MANIFEST);
+    return { exists: true, text, manifest: parseAgentBundleManifest(text) };
+  } catch (error) {
+    if (!isNotFoundError(error)) throw error;
+    return { exists: false, text: null, manifest: null };
+  }
+}
+
+export async function attachWorkspaceAgentFiles(root: FileSystemDirectoryHandle): Promise<void> {
+  const stored = await readStoredAgentBundle(root);
+  const nextFiles: Record<string, string> = {};
+  const protectedFiles = new Set(stored.manifest?.protectedFiles ?? []);
+
+  await Promise.all(Object.entries(WORKSPACE_AGENT_FILES).map(async ([path, content]) => {
+    const desiredDigest = await contentDigest(content);
+    try {
+      const existing = await readTextFile(root, path);
+      const existingDigest = await contentDigest(existing);
+      const previousDigest = stored.manifest?.files[path];
+      const isUnmodifiedManagedFile = previousDigest !== undefined && previousDigest === existingDigest;
+      const isLegacyManagedFile = !stored.exists && existing.includes(MANAGED_AGENT_FILE_MARKER);
+
+      if (existing === content) {
+        nextFiles[path] = desiredDigest;
+        protectedFiles.delete(path);
+      } else if (isUnmodifiedManagedFile || isLegacyManagedFile) {
+        await writeTextFile(root, path, content);
+        nextFiles[path] = desiredDigest;
+        protectedFiles.delete(path);
+      } else {
+        protectedFiles.add(path);
+      }
+    } catch (error) {
+      if (!isNotFoundError(error)) throw error;
+      await writeTextFile(root, path, content);
+      nextFiles[path] = desiredDigest;
+      protectedFiles.delete(path);
+    }
+  }));
+
+  const manifest: AgentBundleManifest = {
+    schema: WORKSPACE_AGENT_BUNDLE_SCHEMA,
+    referenceSet: WORKSPACE_AGENT_REFERENCE_SET,
+    files: nextFiles,
+    protectedFiles: [...protectedFiles].sort(),
+  };
+  const text = `${JSON.stringify(manifest, null, 2)}\n`;
+  if (stored.text !== text) await writeTextFile(root, WORKSPACE_AGENT_BUNDLE_MANIFEST, text);
+}
+
 export async function readWorkspaceDirectory(root: FileSystemDirectoryHandle): Promise<AuthoringWorkspace> {
   const manifest = parseDocument(await readTextFile(root, WORKSPACE_MANIFEST));
   const files: Record<string, string> = {};
@@ -190,7 +289,7 @@ export async function readWorkspaceDirectory(root: FileSystemDirectoryHandle): P
     try {
       files[path] = await readTextFile(root, path);
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'NotFoundError') {
+      if (isNotFoundError(error)) {
         throw new Error(`工作区缺少文档：${path}`, { cause: error });
       }
       throw error;
@@ -204,11 +303,34 @@ export async function writeWorkspaceDirectory(root: FileSystemDirectoryHandle, w
   await Promise.all([
     writeTextFile(root, WORKSPACE_MANIFEST, `${JSON.stringify(workspace.manifest, null, 2)}\n`),
     ...Object.entries(workspace.files).map(([path, content]) => writeTextFile(root, path, content)),
+    attachWorkspaceAgentFiles(root),
   ]);
 }
 
 export function supportsWorkspaceDirectory(): boolean {
   return typeof window.showDirectoryPicker === 'function';
+}
+
+export async function writeWorkspaceToNewDirectory(
+  root: FileSystemDirectoryHandle,
+  workspace: AuthoringWorkspace,
+): Promise<void> {
+  try {
+    await readTextFile(root, WORKSPACE_MANIFEST);
+  } catch (error) {
+    if (!isNotFoundError(error)) throw error;
+    await writeWorkspaceDirectory(root, workspace);
+    return;
+  }
+  throw new Error('所选文件夹已经是 Derivon 工作区，请选择新的文件夹');
+}
+
+export async function saveWorkspaceAsDirectory(current: AuthoringWorkspace): Promise<FileSystemDirectoryHandle> {
+  const picker = window.showDirectoryPicker;
+  if (!picker) throw new Error('当前浏览器不支持工作区目录，请使用 Chromium 系浏览器');
+  const handle = await picker({ mode: 'readwrite' });
+  await writeWorkspaceToNewDirectory(handle, current);
+  return handle;
 }
 
 export async function chooseWorkspaceDirectory(current: AuthoringWorkspace): Promise<{
@@ -220,7 +342,9 @@ export async function chooseWorkspaceDirectory(current: AuthoringWorkspace): Pro
   if (!picker) throw new Error('当前浏览器不支持工作区目录，请使用 Chromium 系浏览器');
   const handle = await picker({ mode: 'readwrite' });
   try {
-    return { handle, workspace: await readWorkspaceDirectory(handle), created: false };
+    const workspace = await readWorkspaceDirectory(handle);
+    await attachWorkspaceAgentFiles(handle);
+    return { handle, workspace, created: false };
   } catch (error) {
     if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error;
     await writeWorkspaceDirectory(handle, current);
