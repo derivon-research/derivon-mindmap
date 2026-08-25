@@ -27,19 +27,19 @@ describe('authoring document', () => {
     expect(JSON.stringify(parsed)).not.toContain('sourceHandle');
   });
 
-  it('accepts non-negative weights with at most two decimal places', () => {
+  it('accepts non-negative weights with at most one decimal place', () => {
     const valid = structuredClone(sampleDocument);
-    valid.graph.hyperedges[0].weight = 2.35;
+    valid.graph.hyperedges[0].weight = 2.3;
     expect(validateDocument(valid)).toEqual([]);
-    expect(normalizeWeight(2.345)).toBe(2.35);
-    expect(normalizeWeight(1.005)).toBe(1.01);
-    expect(formatWeight(2.5)).toBe('2.50');
+    expect(normalizeWeight(2.35)).toBe(2.4);
+    expect(normalizeWeight(1.05)).toBe(1.1);
+    expect(formatWeight(2.5)).toBe('2.5');
 
     const invalid = structuredClone(sampleDocument);
-    invalid.graph.hyperedges[0].weight = 2.345;
+    invalid.graph.hyperedges[0].weight = 2.35;
     expect(validateDocument(invalid)).toContainEqual({
       path: 'graph.hyperedges[0].weight',
-      message: '必须是非负且最多保留两位小数的有限数值',
+      message: '必须是非负且最多保留一位小数的有限数值',
     });
   });
 

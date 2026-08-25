@@ -1,5 +1,5 @@
 export const DOCUMENT_SCHEMA = 'derivon.authoring/v0.2.0' as const;
-export const WEIGHT_DECIMAL_PLACES = 2;
+export const WEIGHT_DECIMAL_PLACES = 1;
 const WEIGHT_SCALE = 10 ** WEIGHT_DECIMAL_PLACES;
 
 export function normalizeWeight(value: number): number {
@@ -158,7 +158,7 @@ function validateCurrentDocument(value: unknown): DocumentIssue[] {
       });
     }
     if (typeof hyperedge.head !== 'string' || !pointIds.has(hyperedge.head)) issues.push({ path: `${path}.head`, message: '头部必须引用已有点' });
-    if (!isValidWeight(hyperedge.weight)) issues.push({ path: `${path}.weight`, message: '必须是非负且最多保留两位小数的有限数值' });
+    if (!isValidWeight(hyperedge.weight)) issues.push({ path: `${path}.weight`, message: '必须是非负且最多保留一位小数的有限数值' });
     if (!isRecord(hyperedge.data)) issues.push({ path: `${path}.data`, message: '必须是对象' });
     else validateDocumentReference(hyperedge.data, `${path}.data`, `超边 ${String(hyperedge.id)}`);
   });
