@@ -1,12 +1,18 @@
-export const DOCUMENT_SCHEMA = 'derivon.authoring/v0.1.0' as const;
+export const DOCUMENT_SCHEMA = 'derivon.authoring/v0.2.0' as const;
 
 export type Position = { x: number; y: number };
 
+export type DocumentFormat = 'markdown' | 'html';
+
+export type DocumentReference = {
+  document: string;
+  format: DocumentFormat;
+};
+
 export type Point = {
   id: string;
-  data: {
+  data: DocumentReference & {
     label: string;
-    definition: string;
   };
 };
 
@@ -15,10 +21,7 @@ export type Hyperedge = {
   weight: number;
   tails: string[];
   head: string;
-  data: {
-    introduction: string;
-    reasoning: string;
-  };
+  data: DocumentReference;
 };
 
 export type ViewReplacement = {
@@ -60,6 +63,14 @@ function reportUnknownKeys(
   });
 }
 
+export function isDocumentDirectory(value: unknown): value is string {
+  if (typeof value !== 'string' || value.startsWith('/') || value.endsWith('/') || value.includes('\\') || /\.(md|html)$/i.test(value)) return false;
+  const parts = value.split('/');
+  return parts.length > 1
+    && parts[0] !== '.derivon'
+    && parts.every((part) => part.length > 0 && part !== '.' && part !== '..');
+}
+
 function validateCurrentDocument(value: unknown): DocumentIssue[] {
   const issues: DocumentIssue[] = [];
   if (!isRecord(value)) return [{ path: '$', message: '文档必须是 JSON 对象' }];
@@ -79,6 +90,20 @@ function validateCurrentDocument(value: unknown): DocumentIssue[] {
   if (!Array.isArray(hyperedges)) return [...issues, { path: 'graph.hyperedges', message: '必须是数组' }];
 
   const pointIds = new Set<string>();
+  const documentOwner = new Map<string, string>();
+  const validateDocumentReference = (data: Record<string, unknown>, path: string, owner: string) => {
+    if (!isDocumentDirectory(data.document)) {
+      issues.push({ path: `${path}.document`, message: '必须是工作区内的文档目录相对路径' });
+      return;
+    }
+    if (data.format !== 'markdown' && data.format !== 'html') {
+      issues.push({ path: `${path}.format`, message: '必须为 markdown 或 html' });
+    }
+    const existingOwner = documentOwner.get(data.document);
+    if (existingOwner) issues.push({ path: `${path}.document`, message: `${data.document} 已由 ${existingOwner} 拥有` });
+    else documentOwner.set(data.document, owner);
+  };
+
   points.forEach((point, index) => {
     const path = `graph.points[${index}]`;
     if (!isRecord(point)) {
@@ -92,7 +117,7 @@ function validateCurrentDocument(value: unknown): DocumentIssue[] {
     if (!isRecord(point.data)) issues.push({ path: `${path}.data`, message: '必须是对象' });
     else {
       if (typeof point.data.label !== 'string') issues.push({ path: `${path}.data.label`, message: '必须是字符串' });
-      if (typeof point.data.definition !== 'string') issues.push({ path: `${path}.data.definition`, message: '必须是字符串' });
+      validateDocumentReference(point.data, `${path}.data`, `点 ${String(point.id)}`);
     }
   });
 
@@ -118,10 +143,7 @@ function validateCurrentDocument(value: unknown): DocumentIssue[] {
     if (typeof hyperedge.head !== 'string' || !pointIds.has(hyperedge.head)) issues.push({ path: `${path}.head`, message: '头部必须引用已有点' });
     if (typeof hyperedge.weight !== 'number' || !Number.isSafeInteger(hyperedge.weight) || hyperedge.weight < 0) issues.push({ path: `${path}.weight`, message: '必须是非负安全整数' });
     if (!isRecord(hyperedge.data)) issues.push({ path: `${path}.data`, message: '必须是对象' });
-    else {
-      if (typeof hyperedge.data.introduction !== 'string') issues.push({ path: `${path}.data.introduction`, message: '必须是字符串' });
-      if (typeof hyperedge.data.reasoning !== 'string') issues.push({ path: `${path}.data.reasoning`, message: '必须是字符串' });
-    }
+    else validateDocumentReference(hyperedge.data, `${path}.data`, `超边 ${String(hyperedge.id)}`);
   });
 
   if (!isRecord(value.view) || !isRecord(value.view.positions)) {
@@ -154,28 +176,19 @@ function validateCurrentDocument(value: unknown): DocumentIssue[] {
       issues.push({ path: `${path}.replaceWith`, message: '替换点必须引用已有点' });
     } else if (replacementTargets.has(replacement.replaceWith)) {
       issues.push({ path: `${path}.replaceWith`, message: '一个点只能作为一条替换关系的结果' });
-    } else {
-      replacementTargets.add(replacement.replaceWith);
-    }
+    } else replacementTargets.add(replacement.replaceWith);
     if (!Array.isArray(replacement.points) || replacement.points.length === 0) {
       issues.push({ path: `${path}.points`, message: '点集至少需要一个点' });
     } else {
       if (new Set(replacement.points).size !== replacement.points.length) issues.push({ path: `${path}.points`, message: '点集不能包含重复 ID' });
       replacement.points.forEach((id) => {
-        if (typeof id !== 'string' || !pointIds.has(id)) {
-          issues.push({ path: `${path}.points`, message: `引用了未知点 ${String(id)}` });
-        } else if (id === replacement.replaceWith) {
-          issues.push({ path: `${path}.points`, message: '替换点不能同时位于点集中' });
-        } else if (ownerByPoint.has(id)) {
-          issues.push({ path: `${path}.points`, message: `${id} 已属于 ${ownerByPoint.get(id)} 的替换点集` });
-        } else if (typeof replacement.replaceWith === 'string') {
-          ownerByPoint.set(id, replacement.replaceWith);
-        }
+        if (typeof id !== 'string' || !pointIds.has(id)) issues.push({ path: `${path}.points`, message: `引用了未知点 ${String(id)}` });
+        else if (id === replacement.replaceWith) issues.push({ path: `${path}.points`, message: '替换点不能同时位于点集中' });
+        else if (ownerByPoint.has(id)) issues.push({ path: `${path}.points`, message: `${id} 已属于 ${ownerByPoint.get(id)} 的替换点集` });
+        else if (typeof replacement.replaceWith === 'string') ownerByPoint.set(id, replacement.replaceWith);
       });
     }
-    if (replacement.show !== 'points' && replacement.show !== 'replacement') {
-      issues.push({ path: `${path}.show`, message: '必须为 points 或 replacement' });
-    }
+    if (replacement.show !== 'points' && replacement.show !== 'replacement') issues.push({ path: `${path}.show`, message: '必须为 points 或 replacement' });
   });
 
   for (const target of replacementTargets) {
@@ -202,10 +215,6 @@ export function parseDocument(text: string): AuthoringDocument {
   const issues = validateCurrentDocument(value);
   if (issues.length) throw new Error(issues.slice(0, 4).map((issue) => `${issue.path}: ${issue.message}`).join('\n'));
   return value as AuthoringDocument;
-}
-
-export function touchDocument(document: AuthoringDocument): AuthoringDocument {
-  return { ...document, document: { ...document.document, updatedAt: new Date().toISOString() } };
 }
 
 export function uniqueId(prefix: 'c' | 'h', existing: Iterable<string>): string {

@@ -37,36 +37,79 @@ test('authors source concepts and derivations without persisting React Flow obje
   const parallelGroup = page.locator('.react-flow__node-derivation[data-id="h-b"]');
   await expect(parallelGroup.getByRole('button', { name: '该推导路径有 3 种方式实现' })).toBeVisible();
   await expect(parallelGroup.locator('.derivation-weight')).toHaveText('1');
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0') ?? '{}'));
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0') ?? '{"manifest":{}}').manifest);
   expect(saved.graph.points).toHaveLength(6);
-  expect(saved.graph.points.at(-1)).toEqual({ id: 'c-1', data: { label: 'AA', definition: '' } });
+  expect(saved.graph.points.at(-1)).toEqual({ id: 'c-1', data: { label: 'AA', document: 'docs/concept-c-1', format: 'html' } });
   expect(saved.graph.hyperedges).toHaveLength(9);
   expect(saved.graph.hyperedges.at(-1)).toEqual({
     id: 'h-1',
     weight: 1,
     tails: ['A'],
     head: 'B',
-    data: { introduction: '', reasoning: '' },
+    data: { document: 'docs/derivation-h-1', format: 'html' },
   });
+  const files = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files);
+  expect(files['docs/concept-c-1/index.html']).toContain('<h1>新概念</h1>');
+  expect(files['docs/derivation-h-1/index.html']).toContain('<h1>推导 h-1</h1>');
   expect(saved.graph).not.toHaveProperty('concepts');
   expect(saved.graph).not.toHaveProperty('derivations');
   expect(errors).toEqual([]);
+});
+
+test('edits an interactive HTML document and can convert it to Markdown', async ({ page }) => {
+  await page.getByTitle('新建概念').click();
+  await page.getByRole('button', { name: '编辑文档' }).click();
+
+  const htmlBody = page.getByLabel('HTML 正文');
+  await expect(htmlBody).toContainText('<!doctype html>');
+  await htmlBody.fill(`<!doctype html>
+<html lang="zh-CN">
+<body>
+  <button id="counter">增加</button>
+  <output id="value">0</output>
+  <script>
+    document.querySelector('#counter').addEventListener('click', () => {
+      const output = document.querySelector('#value');
+      output.value = String(Number(output.value) + 1);
+    });
+  </script>
+</body>
+</html>`);
+
+  const preview = page.frameLocator('.html-preview');
+  await preview.getByRole('button', { name: '增加' }).click();
+  await expect(preview.locator('#value')).toHaveText('1');
+  await page.screenshot({ path: '/tmp/derivon-html-editor.png', fullPage: true });
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files['docs/concept-c-1/index.html'])).toContain("querySelector('#counter')");
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Markdown', exact: true }).click();
+  const markdownBody = page.getByLabel('Markdown 正文');
+  await expect(markdownBody).toContainText('增加');
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!));
+  expect(stored.manifest.graph.points.at(-1).data).toEqual({
+    label: '新概念',
+    document: 'docs/concept-c-1',
+    format: 'markdown',
+  });
+  expect(stored.files['docs/concept-c-1/document.md']).toContain('增加');
+  expect(stored.files['docs/concept-c-1/index.html']).not.toContain('<script>');
 });
 
 test('keeps a concept rendered during drag and persists only on drag stop', async ({ page }) => {
   const node = page.locator('.react-flow__node[data-id="A"]');
   const beforeBox = await node.boundingBox();
   if (!beforeBox) throw new Error('A is not visible');
-  const beforePosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A);
+  const beforePosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions.A);
 
   await page.mouse.move(beforeBox.x + beforeBox.width / 2, beforeBox.y + beforeBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(beforeBox.x + beforeBox.width / 2 + 70, beforeBox.y + beforeBox.height / 2 + 35, { steps: 8 });
   await expect(node).toBeVisible();
-  const duringPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A);
+  const duringPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions.A);
   expect(duringPosition).toEqual(beforePosition);
   await page.mouse.up();
-  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A)).not.toEqual(beforePosition);
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions.A)).not.toEqual(beforePosition);
 });
 
 test('persists every selected node after a multi-node drag', async ({ page }) => {
@@ -77,7 +120,7 @@ test('persists every selected node after a multi-node drag', async ({ page }) =>
   await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
 
   const before = await page.evaluate(() => {
-    const positions = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions;
+    const positions = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions;
     return { A: positions.A, B: positions.B };
   });
   const box = await nodeA.boundingBox();
@@ -88,9 +131,9 @@ test('persists every selected node after a multi-node drag', async ({ page }) =>
   await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2 + 35, { steps: 8 });
   await page.mouse.up();
 
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.B)).not.toEqual(before.B);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions.B)).not.toEqual(before.B);
   const after = await page.evaluate(() => {
-    const positions = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions;
+    const positions = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions;
     return { A: positions.A, B: positions.B };
   });
   expect(after.A.x - before.A.x).toBeCloseTo(after.B.x - before.B.x, 5);
@@ -111,14 +154,14 @@ test('opens the editable local layout only on the second click', async ({ page }
   await expect(page.locator('.concept-node.is-dimmed')).toHaveCount(1);
   await expect(page.locator('.react-flow__node[data-id="D"] .concept-node')).toHaveClass(/is-dimmed/);
 
-  const overviewPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A);
+  const overviewPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions.A);
   const box = await node.boundingBox();
   if (!box) throw new Error('focused A is not visible');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + 55, box.y + box.height / 2 + 25, { steps: 6 });
   await page.mouse.up();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A)).toEqual(overviewPosition);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions.A)).toEqual(overviewPosition);
 });
 
 test('toggles selection with Shift without opening the local view', async ({ page }) => {
@@ -172,23 +215,37 @@ test('stacks parallel derivations and lets each implementation be inspected', as
   await page.getByLabel('成本权重').fill('3');
   await page.getByLabel('查看推导方式').selectOption('h-b-alt');
   await expect(page.locator('.inspector-heading strong')).toHaveText('h-b-alt');
-  await expect(page.getByLabel('推导过程')).toHaveValue('使用另一套推导过程从 A 得到 B。');
   await expect(groupNode.locator('.derivation-weight')).toHaveText('8');
+
+  await page.getByRole('button', { name: '编辑文档' }).click();
+  const markdownBody = page.getByLabel('Markdown 正文');
+  await expect(markdownBody).toContainText('使用另一套推导过程从 A 得到 B。');
+  await markdownBody.fill('# 备选推导\n\n使用 **Markdown** 记录。');
+  await expect(page.locator('.markdown-preview')).toContainText('使用 Markdown 记录。');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files['docs/derivation-h-b-alt/document.md'])).toContain('使用 **Markdown** 记录。');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files['docs/derivation-h-b-alt/index.html'])).toContain('<strong>Markdown</strong>');
+  const editor = await page.locator('.document-editor-main').boundingBox();
+  const workspace = await page.locator('.document-workspace').boundingBox();
+  expect(editor).not.toBeNull();
+  expect(workspace).not.toBeNull();
+  expect(editor!.width / workspace!.width).toBeGreaterThan(0.76);
+  await page.screenshot({ path: '/tmp/derivon-markdown-editor.png', fullPage: true });
+  await page.getByTitle('返回画布').first().click();
 
   await pathCount.click();
   await expect(page.locator('.inspector-heading strong')).toHaveText('h-b');
   await expect(groupNode.locator('.derivation-weight')).toHaveText('3');
 
-  const beforePosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions['h-b']);
+  const beforePosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions['h-b']);
   const box = await groupNode.boundingBox();
   if (!box) throw new Error('parallel derivation group is not visible');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + 45, box.y + box.height / 2 + 24, { steps: 6 });
   await page.mouse.up();
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions['h-b-alt'])).not.toEqual(beforePosition);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions['h-b-alt'])).not.toEqual(beforePosition);
   const groupPositions = await page.evaluate(() => {
-    const positions = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions;
+    const positions = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions;
     return { primary: positions['h-b'], alternative: positions['h-b-alt'] };
   });
   expect(groupPositions.alternative).toEqual(groupPositions.primary);
@@ -239,7 +296,7 @@ test('switches between the detailed A B path and X inside the shared C D graph',
   await page.waitForTimeout(450);
   await page.screenshot({ path: '/tmp/derivon-replacement-view.png', fullPage: true });
 
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!));
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest);
   expect(saved.graph.points.map((concept: { id: string }) => concept.id)).toEqual(['A', 'B', 'C', 'D', 'X']);
   expect(saved.graph.hyperedges).toHaveLength(8);
   expect(saved.view.replacements[0]).toEqual({
@@ -265,7 +322,7 @@ test('defines replace with by selecting a point set and an existing target', asy
 
   await expect(page.locator('.react-flow__node[data-id="X"]')).toHaveCount(0);
   await expect(page.locator('.react-flow__node-concept')).toHaveCount(4);
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!));
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest);
   expect(saved.view.replacements).toEqual([{
     points: ['A', 'B'],
     replaceWith: 'X',
@@ -295,7 +352,7 @@ test('confirms cascading concept deletion and supports undo and redo', async ({ 
   await dialog.getByRole('button', { name: '删除', exact: true }).click();
   await expect(conceptA).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => {
-    const saved = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!);
+    const saved = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest;
     return { points: saved.graph.points.length, hyperedges: saved.graph.hyperedges.length };
   })).toEqual({ points: 4, hyperedges: 5 });
 
@@ -303,7 +360,7 @@ test('confirms cascading concept deletion and supports undo and redo', async ({ 
   await undo.click();
   await expect(conceptA).toBeVisible();
   await expect.poll(() => page.evaluate(() => {
-    const saved = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!);
+    const saved = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest;
     return { points: saved.graph.points.length, hyperedges: saved.graph.hyperedges.length };
   })).toEqual({ points: 5, hyperedges: 8 });
 
@@ -311,7 +368,7 @@ test('confirms cascading concept deletion and supports undo and redo', async ({ 
   await redo.click();
   await expect(conceptA).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => {
-    const saved = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!);
+    const saved = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest;
     return { points: saved.graph.points.length, hyperedges: saved.graph.hyperedges.length };
   })).toEqual({ points: 4, hyperedges: 5 });
 });
@@ -327,7 +384,7 @@ test('confirms derivation deletion and allows it to be undone', async ({ page })
   await dialog.getByRole('button', { name: '删除', exact: true }).click();
   await expect(derivation).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => {
-    const saved = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!);
+    const saved = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest;
     return saved.graph.hyperedges.map((item: { id: string }) => item.id);
   })).not.toContain('h-a');
 
@@ -354,4 +411,16 @@ test('keeps the canvas and inspector separated on a narrow viewport', async ({ p
   expect(canvas!.y + canvas!.height).toBeLessThanOrEqual(inspector!.y + 1);
   expect(toolbar!.x + toolbar!.width).toBeLessThanOrEqual(390);
   await page.screenshot({ path: '/tmp/derivon-mobile.png', fullPage: true });
+
+  await page.locator('.react-flow__node[data-id="A"]').click();
+  await page.getByRole('button', { name: '编辑文档' }).click();
+  const documentWorkspace = await page.locator('.document-workspace').boundingBox();
+  const documentEditor = await page.locator('.document-editor-main').boundingBox();
+  const markdownToolbar = await page.locator('.markdown-toolbar').boundingBox();
+  expect(documentWorkspace).not.toBeNull();
+  expect(documentEditor).not.toBeNull();
+  expect(markdownToolbar).not.toBeNull();
+  expect(documentEditor!.height / documentWorkspace!.height).toBeGreaterThan(0.74);
+  expect(markdownToolbar!.x + markdownToolbar!.width).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: '/tmp/derivon-markdown-mobile.png', fullPage: true });
 });

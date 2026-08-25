@@ -15,11 +15,13 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import {
+  ArrowLeft,
   Braces,
   Eye,
   EyeOff,
-  FileDown,
+  FileText,
   FileUp,
+  FolderOpen,
   Github,
   LayoutGrid,
   Plus,
@@ -33,16 +35,32 @@ import {
 } from 'lucide-react';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
-import type { AuthoringDocument, Hyperedge, Point, Position, ViewReplacement } from './domain';
-import { parseDocument, uniqueId } from './domain';
+import type { AuthoringDocument, DocumentFormat, Hyperedge, Point, Position, ViewReplacement } from './domain';
+import { uniqueId } from './domain';
 import { ConceptNode, DerivationNode, type AuthoringFlowNode } from './GraphNodes';
 import { activeHyperedge, groupHyperedges, hyperedgeGroupKey, type HyperedgeGroup } from './hyperedgeGroups';
 import { layoutDocument, layoutNeighborhood } from './layout';
+import { DocumentEditor } from './DocumentEditor';
+import { convertDocumentContent } from './documentContent';
 import { projectDocument } from './projection';
 import { replacementFromSelection } from './replacements';
-import { sampleDocument } from './sample';
-
-const STORAGE_KEY = 'derivon.authoring.demo/v0.1.0';
+import { sampleWorkspace } from './sample';
+import {
+  LOCAL_WORKSPACE_KEY,
+  WORKSPACE_MANIFEST,
+  chooseWorkspaceDirectory,
+  conceptTemplate,
+  createDocumentDirectory,
+  derivationTemplate,
+  documentEntryPath,
+  documentSourcePath,
+  importManifest,
+  loadLocalWorkspace,
+  storeDocumentFiles,
+  writeWorkspaceDirectory,
+  type AuthoringWorkspace,
+  type WorkspaceDirectory,
+} from './workspace';
 const nodeTypes = { concept: ConceptNode, derivation: DerivationNode };
 
 type ProjectedEdgeData = {
@@ -108,16 +126,12 @@ function historyReducer(state: DocumentHistory, action: HistoryAction): Document
   };
 }
 
-function initialDocument(): AuthoringDocument {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return parseDocument(saved);
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
+function initialWorkspace(): AuthoringWorkspace {
+  const workspace = loadLocalWorkspace(sampleWorkspace);
+  if (!Object.keys(workspace.manifest.view.positions).length) {
+    workspace.manifest.view.positions = layoutDocument(workspace.manifest);
   }
-  const document = structuredClone(sampleDocument);
-  if (!Object.keys(document.view.positions).length) document.view.positions = layoutDocument(document);
-  return document;
+  return workspace;
 }
 
 function neighborhood(document: AuthoringDocument, selectedId: string | null): Set<string> {
@@ -177,18 +191,18 @@ function firstVisiblePoint(document: AuthoringDocument, id: string): string {
   return id;
 }
 
-function filenameFor(title: string): string {
-  const safe = title.trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').slice(0, 60);
-  return `${safe || 'derivon-graph'}.derivon.json`;
-}
-
 function AuthoringCanvas() {
-  const [history, dispatchHistory] = useReducer(historyReducer, undefined, () => ({
+  const initial = useRef<AuthoringWorkspace | null>(null);
+  if (!initial.current) initial.current = initialWorkspace();
+  const [history, dispatchHistory] = useReducer(historyReducer, initial.current.manifest, (manifest) => ({
     past: [],
-    present: initialDocument(),
+    present: manifest,
     future: [],
   }));
   const document = history.present;
+  const [files, setFiles] = useState<Record<string, string>>(initial.current.files);
+  const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectory | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [focusLayouts, setFocusLayouts] = useState<Record<string, Record<string, Position>>>({});
@@ -205,8 +219,17 @@ function AuthoringCanvas() {
   const { fitView, screenToFlowPosition } = useReactFlow<AuthoringFlowNode, ProjectedEdge>();
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(document));
-  }, [document]);
+    localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify({ manifest: document, files }));
+  }, [document, files]);
+
+  useEffect(() => {
+    if (!workspaceDirectory) return;
+    const timeout = window.setTimeout(() => {
+      void writeWorkspaceDirectory(workspaceDirectory, { manifest: document, files })
+        .catch((error: unknown) => setStatus(error instanceof Error ? error.message : '工作区保存失败'));
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [document, files, workspaceDirectory]);
 
   useEffect(() => {
     if (!status) return;
@@ -426,7 +449,6 @@ function AuthoringCanvas() {
           position: position(concept.id),
           data: {
             label: concept.data.label,
-            definition: concept.data.definition,
             dimmed: dimmed(concept.id),
             depth: item.depth,
             replacements: item.controls.map((control) => ({ ...control, onToggle: toggleReplacement })),
@@ -562,19 +584,26 @@ function AuthoringCanvas() {
 
   const addConcept = useCallback((position?: Position) => {
     const id = uniqueId('c', document.graph.points.map((concept) => concept.id));
+    const directory = createDocumentDirectory('concept', id, [
+      ...document.graph.points.map((item) => item.data.document),
+      ...document.graph.hyperedges.map((item) => item.data.document),
+    ]);
+    const format: DocumentFormat = 'html';
+    const source = conceptTemplate('新概念', format);
     const nextPosition = position ?? screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    setFiles((current) => storeDocumentFiles(current, directory, format, source, '新概念'));
     commit((current) => ({
       ...current,
       graph: {
         ...current.graph,
-        points: [...current.graph.points, { id, data: { label: '新概念', definition: '' } }],
+        points: [...current.graph.points, { id, data: { label: '新概念', document: directory, format } }],
       },
       view: { ...current.view, positions: { ...current.view.positions, [id]: nextPosition } },
     }));
     setFocusLayouts({});
     setFocusedId(null);
     setSelectedId(id);
-  }, [commit, document.graph.points, screenToFlowPosition]);
+  }, [commit, document.graph.hyperedges, document.graph.points, screenToFlowPosition]);
 
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return;
@@ -592,13 +621,20 @@ function AuthoringCanvas() {
 
     if (sourceConcept && targetConcept) {
       const id = uniqueId('h', document.graph.hyperedges.map((item) => item.id));
+      const directory = createDocumentDirectory('derivation', id, [
+        ...document.graph.points.map((item) => item.data.document),
+        ...document.graph.hyperedges.map((item) => item.data.document),
+      ]);
+      const format: DocumentFormat = 'html';
+      const source = derivationTemplate(id, format);
       const nextHyperedge: Hyperedge = {
         id,
         weight: 1,
         tails: [connection.source],
         head: connection.target,
-        data: { introduction: '', reasoning: '' },
+        data: { document: directory, format },
       };
+      setFiles((current) => storeDocumentFiles(current, directory, format, source, `推导 ${id}`));
       const sourcePosition = document.view.positions[connection.source] ?? { x: 0, y: 0 };
       const targetPosition = document.view.positions[connection.target] ?? { x: sourcePosition.x + 240, y: sourcePosition.y };
       const matchingGroup = derivationGroups.find((group) => group.key === hyperedgeGroupKey(nextHyperedge));
@@ -707,32 +743,40 @@ function AuthoringCanvas() {
     window.setTimeout(() => void fitView({ nodes: [{ id: concept.id }], padding: 2, duration: 300, maxZoom: 1.4 }), 30);
   }, [commit, document, fitView, search]);
 
-  const download = useCallback(() => {
-    const blob = new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = window.document.createElement('a');
-    anchor.href = url;
-    anchor.download = filenameFor(document.document.title);
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setStatus('JSON 已下载');
-  }, [document]);
+  const connectWorkspace = useCallback(async () => {
+    try {
+      const result = await chooseWorkspaceDirectory({ manifest: document, files });
+      const imported = result.workspace.manifest;
+      const positions = Object.keys(imported.view.positions).length ? imported.view.positions : layoutDocument(imported);
+      setFiles(result.workspace.files);
+      commit(() => ({ ...imported, view: { ...imported.view, positions } }));
+      setWorkspaceDirectory(result.handle);
+      setEditingId(null);
+      clearTransientView();
+      setStatus(result.created ? `已在 ${result.handle.name} 创建工作区` : `已打开工作区 ${result.handle.name}`);
+      window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法打开工作区');
+    }
+  }, [clearTransientView, commit, document, files, fitView]);
 
   const importFile = useCallback(async (file: File) => {
     try {
-      const imported = parseDocument(await file.text());
+      const importedWorkspace = importManifest(await file.text(), files);
+      const imported = importedWorkspace.manifest;
       const positions = Object.keys(imported.view.positions).length ? imported.view.positions : layoutDocument(imported);
+      setFiles(importedWorkspace.files);
+      setWorkspaceDirectory(null);
       commit(() => ({ ...imported, view: { ...imported.view, positions } }));
-      setFocusLayouts({});
-      setFocusedId(null);
-      setSelectedId(null);
-      setReplacementDraft(null);
-      setStatus('文档已打开');
+      setEditingId(null);
+      clearTransientView();
+      setStatus('JSON 已迁移到本地工作区');
       window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法打开文档');
+      setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法导入 JSON');
     }
-  }, [commit, fitView]);
+  }, [clearTransientView, commit, files, fitView]);
 
   const openJsonEditor = useCallback(() => {
     setJsonText(JSON.stringify(document, null, 2));
@@ -741,7 +785,7 @@ function AuthoringCanvas() {
 
   const applyJson = useCallback(() => {
     try {
-      const parsed = parseDocument(jsonText);
+      const parsed = importManifest(jsonText, files).manifest;
       const positions = Object.keys(parsed.view.positions).length ? parsed.view.positions : layoutDocument(parsed);
       commit(() => ({ ...parsed, view: { ...parsed.view, positions } }));
       setFocusLayouts({});
@@ -753,7 +797,7 @@ function AuthoringCanvas() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message.split('\n')[0] : 'JSON 无效');
     }
-  }, [commit, jsonText]);
+  }, [commit, files, jsonText]);
 
   const selectNode = useCallback((id: string, shiftKey: boolean) => {
     const displayedDerivation = displayedDerivationByNodeId.get(id);
@@ -813,6 +857,45 @@ function AuthoringCanvas() {
     () => new Map(document.graph.points.map((item) => [item.id, item.data.label])),
     [document.graph.points],
   );
+  const editingConcept = document.graph.points.find((item) => item.id === editingId);
+  const editingDerivation = document.graph.hyperedges.find((item) => item.id === editingId);
+  const editingReference = editingConcept?.data ?? editingDerivation?.data;
+  const editingSourcePath = editingReference ? documentSourcePath(editingReference) : null;
+  const editingEntryPath = editingReference ? documentEntryPath(editingReference.document) : null;
+  const editingLabel = editingConcept?.data.label ?? (editingDerivation ? `推导 ${editingDerivation.id}` : '');
+  const updateDocumentSource = useCallback((reference: { document: string; format: DocumentFormat }, content: string, title: string) => {
+    setFiles((current) => storeDocumentFiles(current, reference.document, reference.format, content, title));
+    commit((current) => current);
+  }, [commit]);
+
+  const changeDocumentFormat = useCallback((format: DocumentFormat) => {
+    if (!editingReference || editingReference.format === format || !editingSourcePath || !editingId) return;
+    if (editingReference.format === 'html' && format === 'markdown'
+      && !window.confirm('转换为 Markdown 会移除脚本、样式和其他交互内容。继续转换？')) return;
+    const converted = convertDocumentContent(
+      files[editingSourcePath] ?? '',
+      editingReference.format,
+      format,
+      editingLabel,
+    );
+    setFiles((current) => storeDocumentFiles(current, editingReference.document, format, converted, editingLabel));
+    commit((current) => ({
+      ...current,
+      graph: {
+        points: current.graph.points.map((item) => item.id === editingId
+          ? { ...item, data: { ...item.data, format } }
+          : item),
+        hyperedges: current.graph.hyperedges.map((item) => item.id === editingId
+          ? { ...item, data: { ...item.data, format } }
+          : item),
+      },
+    }));
+    setStatus(format === 'html' ? '已转换为 HTML' : '已转换为 Markdown');
+  }, [commit, editingId, editingLabel, editingReference, editingSourcePath, files]);
+
+  useEffect(() => {
+    if (editingId && !editingConcept && !editingDerivation) setEditingId(null);
+  }, [editingConcept, editingDerivation, editingId]);
 
   return (
     <main className="app-shell">
@@ -826,7 +909,7 @@ function AuthoringCanvas() {
             onChange={(event) => commit((current) => ({ ...current, document: { ...current.document, title: event.target.value } }))}
           />
         </div>
-        <div className="search-cluster">
+        <div className={`search-cluster ${editingId ? 'is-hidden' : ''}`}>
           <div className="search-box">
             <Search size={15} />
             <input value={search} aria-label="搜索概念" placeholder="搜索概念" onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && findConcept()} />
@@ -843,30 +926,36 @@ function AuthoringCanvas() {
           </a>
         </div>
         <div className="toolbar" aria-label="文档工具栏">
-          <button type="button" title="新建概念" onClick={() => addConcept()}><Plus size={18} /></button>
-          <button
-            type="button"
-            className={replacementDraft ? 'is-active' : ''}
-            title={replacementDraft ? '取消替换' : 'Replace with'}
-            disabled={!replacementDraft && selectedNodeIds.length === 0}
-            onClick={beginReplacement}
-          >
-            {replacementDraft ? <X size={17} /> : <Replace size={17} />}
-          </button>
-          <button type="button" title="自动布局" onClick={applyLayout}><LayoutGrid size={17} /></button>
-          <button
-            type="button"
-            className={focusedId ? 'is-active' : ''}
-            title={focusedId ? '关闭局部视图' : '开启局部视图'}
-            disabled={!selectedId || !!replacementDraft}
-            onClick={toggleFocusedView}
-          >
-            {focusedId ? <Eye size={17} /> : <EyeOff size={17} />}
-          </button>
-          <span className="toolbar-divider" />
-          <button type="button" title="编辑原始 JSON" onClick={openJsonEditor}><Braces size={17} /></button>
-          <button type="button" title="打开 JSON 文件" onClick={() => fileInput.current?.click()}><FileUp size={17} /></button>
-          <button type="button" title="下载 JSON 文件" onClick={download}><FileDown size={17} /></button>
+          {editingId ? (
+            <button type="button" title="返回画布" onClick={() => setEditingId(null)}><ArrowLeft size={18} /></button>
+          ) : (
+            <>
+              <button type="button" title="新建概念" onClick={() => addConcept()}><Plus size={18} /></button>
+              <button
+                type="button"
+                className={replacementDraft ? 'is-active' : ''}
+                title={replacementDraft ? '取消替换' : 'Replace with'}
+                disabled={!replacementDraft && selectedNodeIds.length === 0}
+                onClick={beginReplacement}
+              >
+                {replacementDraft ? <X size={17} /> : <Replace size={17} />}
+              </button>
+              <button type="button" title="自动布局" onClick={applyLayout}><LayoutGrid size={17} /></button>
+              <button
+                type="button"
+                className={focusedId ? 'is-active' : ''}
+                title={focusedId ? '关闭局部视图' : '开启局部视图'}
+                disabled={!selectedId || !!replacementDraft}
+                onClick={toggleFocusedView}
+              >
+                {focusedId ? <Eye size={17} /> : <EyeOff size={17} />}
+              </button>
+              <span className="toolbar-divider" />
+              <button type="button" title="连接工作区文件夹" onClick={() => void connectWorkspace()}><FolderOpen size={17} /></button>
+              <button type="button" title="编辑工作区 JSON" onClick={openJsonEditor}><Braces size={17} /></button>
+              <button type="button" title="导入旧版 JSON" onClick={() => fileInput.current?.click()}><FileUp size={17} /></button>
+            </>
+          )}
           <input ref={fileInput} hidden type="file" accept=".json,.derivon.json,application/json" onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) void importFile(file);
@@ -875,6 +964,57 @@ function AuthoringCanvas() {
         </div>
       </header>
 
+      {editingId && editingReference && editingSourcePath && editingEntryPath ? (
+        <section className="document-workspace">
+          <div className="document-editor-main">
+            <DocumentEditor
+              label={editingLabel}
+              format={editingReference.format}
+              value={files[editingSourcePath] ?? ''}
+              onChange={(content) => updateDocumentSource(editingReference, content, editingLabel)}
+            />
+          </div>
+          <aside className="editor-context">
+            <div className="inspector-heading">
+              <div>
+                <span className="eyebrow">{editingConcept ? '概念文档' : '推导文档'}</span>
+                <strong>{editingId}</strong>
+              </div>
+              <button type="button" title="返回画布" onClick={() => setEditingId(null)}><ArrowLeft size={17} /></button>
+            </div>
+            {editingConcept && (
+              <label>名称<input value={editingConcept.data.label} onChange={(event) => updatePointData(editingConcept.id, { label: event.target.value })} /></label>
+            )}
+            {editingDerivation && (
+              <>
+                <div className="endpoint-block">
+                  <span className="field-title">前提集合</span>
+                  <div className="chips">
+                    {editingDerivation.tails.length === 0 && <span className="empty-tail">空集 ∅</span>}
+                    {editingDerivation.tails.map((id) => <span className="chip is-static" key={id}>{labelById.get(id) ?? id}</span>)}
+                  </div>
+                  <span className="field-title">结论</span>
+                  <span className="conclusion-label">{labelById.get(editingDerivation.head) ?? editingDerivation.head}</span>
+                </div>
+                <label className="weight-field">成本权重<input type="number" min="0" step="1" value={editingDerivation.weight} onChange={(event) => updateHyperedge(editingDerivation.id, { weight: Math.max(0, Math.trunc(Number(event.target.value) || 0)) })} /></label>
+              </>
+            )}
+            <div className="document-format" role="group" aria-label="文档编辑格式">
+              <button type="button" className={editingReference.format === 'markdown' ? 'is-active' : ''} onClick={() => changeDocumentFormat('markdown')}>Markdown</button>
+              <button type="button" className={editingReference.format === 'html' ? 'is-active' : ''} onClick={() => changeDocumentFormat('html')}>HTML</button>
+            </div>
+            <div className="workspace-file">
+              <span className="field-title">文档目录</span>
+              <code>{editingReference.document}/</code>
+              <span className="field-title">访问入口</span>
+              <code>{editingEntryPath}</code>
+              {editingReference.format === 'markdown' && <code>{editingSourcePath}</code>}
+              <span>{workspaceDirectory ? workspaceDirectory.name : '浏览器本地工作区'}</span>
+              {status && <span className="editor-save-status" role="status">{status}</span>}
+            </div>
+          </aside>
+        </section>
+      ) : (
       <section className="workspace">
         <div className={`canvas-wrap ${replacementDraft ? 'is-replacing' : ''}`}>
           <ReactFlow<AuthoringFlowNode, ProjectedEdge>
@@ -886,6 +1026,7 @@ function AuthoringCanvas() {
             onConnect={onConnect}
             onNodeDragStop={(_, node, draggedNodes) => persistNodePositions(draggedNodes.length ? draggedNodes : [node])}
             onNodeClick={(event, node) => selectNode(node.id, event.shiftKey)}
+            onNodeDoubleClick={(_, node) => setEditingId(displayedDerivationByNodeId.get(node.id)?.id ?? node.id)}
             onPaneClick={() => {
               setFocusedId(null);
               setSelectedId(null);
@@ -944,7 +1085,11 @@ function AuthoringCanvas() {
                 <button type="button" title="删除概念" onClick={() => requestDelete(selectedConcept.id)}><Trash2 size={16} /></button>
               </div>
               <label>名称<input value={selectedConcept.data.label} onChange={(event) => updatePointData(selectedConcept.id, { label: event.target.value })} /></label>
-              <label className="grow-field">客观定义<textarea value={selectedConcept.data.definition} onChange={(event) => updatePointData(selectedConcept.id, { definition: event.target.value })} /></label>
+              <button className="open-document-button" type="button" onClick={() => setEditingId(selectedConcept.id)}>
+                <FileText size={16} />
+                <span>编辑文档</span>
+              </button>
+              <code className="document-path">{selectedConcept.data.document}/index.html</code>
               {selectedReplacements.map((replacement) => (
                 <div className="replacement-definition" key={replacement.replaceWith}>
                   <div className="replacement-expression">
@@ -1005,8 +1150,11 @@ function AuthoringCanvas() {
                 <span className="field-title">结论</span>
                 <span className="conclusion-label">{labelById.get(selectedDerivation.head) ?? selectedDerivation.head}</span>
               </div>
-              <label>问题引入<textarea value={selectedDerivation.data.introduction} onChange={(event) => updateHyperedge(selectedDerivation.id, { data: { introduction: event.target.value } })} /></label>
-              <label className="grow-field">推导过程<textarea value={selectedDerivation.data.reasoning} onChange={(event) => updateHyperedge(selectedDerivation.id, { data: { reasoning: event.target.value } })} /></label>
+              <button className="open-document-button" type="button" onClick={() => setEditingId(selectedDerivation.id)}>
+                <FileText size={16} />
+                <span>编辑文档</span>
+              </button>
+              <code className="document-path">{selectedDerivation.data.document}/index.html</code>
               <label className="weight-field">成本权重<input type="number" min="0" step="1" value={selectedDerivation.weight} onChange={(event) => updateHyperedge(selectedDerivation.id, { weight: Math.max(0, Math.trunc(Number(event.target.value) || 0)) })} /></label>
             </>
           ) : (
@@ -1023,6 +1171,7 @@ function AuthoringCanvas() {
           )}
         </aside>
       </section>
+      )}
 
       {deleteCandidate && (
         <div className="modal-backdrop delete-confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setDeleteCandidate(null)}>
@@ -1049,7 +1198,7 @@ function AuthoringCanvas() {
       {jsonOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setJsonOpen(false)}>
           <section className="json-modal" role="dialog" aria-modal="true" aria-label="原始 JSON 编辑器">
-            <header><div><span className="eyebrow">协议文档</span><strong>{document.schema}</strong></div><button type="button" title="关闭" onClick={() => setJsonOpen(false)}><X size={18} /></button></header>
+            <header><div><span className="eyebrow">{WORKSPACE_MANIFEST}</span><strong>{document.schema}</strong></div><button type="button" title="关闭" onClick={() => setJsonOpen(false)}><X size={18} /></button></header>
             <textarea spellCheck={false} value={jsonText} onChange={(event) => setJsonText(event.target.value)} />
             <footer><button type="button" className="text-button" onClick={() => {
               try {

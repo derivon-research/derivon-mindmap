@@ -8,7 +8,9 @@ describe('authoring document', () => {
     expect(parsed.schema).toBe(DOCUMENT_SCHEMA);
     expect(parsed.graph.points.map((point) => point.id)).toEqual(['A', 'B', 'C', 'D', 'X']);
     expect(Object.keys(parsed.graph.points[0])).toEqual(['id', 'data']);
+    expect(parsed.graph.points[0].data).toEqual({ label: 'A', document: 'docs/concept-a', format: 'markdown' });
     expect(Object.keys(parsed.graph.hyperedges[0])).toEqual(['id', 'weight', 'tails', 'head', 'data']);
+    expect(parsed.graph.hyperedges[0].data).toEqual({ document: 'docs/derivation-h-c', format: 'markdown' });
     expect(parsed.graph.hyperedges).toHaveLength(8);
     expect(parsed.view.replacements).toEqual([{
       points: ['A', 'B'],
@@ -38,6 +40,21 @@ describe('authoring document', () => {
     expect(issues).toContainEqual({
       path: 'graph.hyperedges[0].introduction',
       message: '不允许出现在数学模型外层，请移入 data',
+    });
+  });
+
+  it('rejects protected document directories and invalid formats', () => {
+    const invalid = structuredClone(sampleDocument) as unknown as Record<string, any>;
+    invalid.graph.points[0].data.document = '.derivon/concept-a';
+    invalid.graph.points[1].data.format = 'text';
+    const issues = validateDocument(invalid);
+    expect(issues).toContainEqual({
+      path: 'graph.points[0].data.document',
+      message: '必须是工作区内的文档目录相对路径',
+    });
+    expect(issues).toContainEqual({
+      path: 'graph.points[1].data.format',
+      message: '必须为 markdown 或 html',
     });
   });
 

@@ -5,7 +5,6 @@ import type { ViewReplacement } from './domain';
 
 export type ConceptNodeData = {
   label: string;
-  definition: string;
   dimmed: boolean;
   depth: number;
   replacements: Array<{

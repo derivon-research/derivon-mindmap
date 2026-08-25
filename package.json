@@ -13,13 +13,18 @@
     "@dagrejs/dagre": "^2.0.4",
     "@xyflow/react": "^12.10.0",
     "lucide-react": "^0.468.0",
+    "marked": "^16.4.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "turndown": "^7.2.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/react": "^19.0.3",
     "@types/react-dom": "^19.0.2",
+    "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "~5.7.2",
     "vite": "^6.0.5",

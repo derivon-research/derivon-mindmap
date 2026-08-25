@@ -1,0 +1,229 @@
+import { DOCUMENT_SCHEMA, parseDocument, type AuthoringDocument, type DocumentFormat, type DocumentReference } from './domain';
+import {
+  conceptDocumentTemplate,
+  derivationDocumentTemplate,
+  markdownToHtml,
+} from './documentContent';
+
+export const WORKSPACE_MANIFEST = '.derivon/workspace.json';
+export const LOCAL_WORKSPACE_KEY = 'derivon.authoring.workspace/v0.2.0';
+const LEGACY_SCHEMA = 'derivon.authoring/v0.1.0';
+const LEGACY_STORAGE_KEY = 'derivon.authoring.demo/v0.1.0';
+
+export type AuthoringWorkspace = {
+  manifest: AuthoringDocument;
+  files: Record<string, string>;
+};
+
+export type WorkspaceDirectory = FileSystemDirectoryHandle;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function documentReferences(manifest: AuthoringDocument): DocumentReference[] {
+  return [
+    ...manifest.graph.points.map((point) => point.data),
+    ...manifest.graph.hyperedges.map((hyperedge) => hyperedge.data),
+  ];
+}
+
+export function documentEntryPath(directory: string): string {
+  return `${directory}/index.html`;
+}
+
+export function documentSourcePath(reference: DocumentReference): string {
+  return reference.format === 'markdown'
+    ? `${reference.document}/document.md`
+    : documentEntryPath(reference.document);
+}
+
+export function referencedDocumentFiles(manifest: AuthoringDocument): string[] {
+  return documentReferences(manifest).flatMap((reference) => reference.format === 'markdown'
+    ? [documentEntryPath(reference.document), documentSourcePath(reference)]
+    : [documentEntryPath(reference.document)]);
+}
+
+export function validateWorkspace(workspace: AuthoringWorkspace): void {
+  const missing = referencedDocumentFiles(workspace.manifest).filter((path) => typeof workspace.files[path] !== 'string');
+  if (missing.length) throw new Error(`工作区缺少文档：${missing.slice(0, 3).join('、')}`);
+}
+
+export function parseWorkspaceSnapshot(text: string): AuthoringWorkspace {
+  const value: unknown = JSON.parse(text);
+  if (!isRecord(value) || !isRecord(value.files)) throw new Error('工作区快照无效');
+  const manifest = parseDocument(JSON.stringify(value.manifest));
+  const files = Object.fromEntries(Object.entries(value.files).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+  const workspace = { manifest, files };
+  validateWorkspace(workspace);
+  return workspace;
+}
+
+function safeSegment(value: string): string {
+  return value.trim().toLocaleLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'document';
+}
+
+export function createDocumentDirectory(kind: 'concept' | 'derivation', id: string, used: Iterable<string>): string {
+  const existing = new Set(used);
+  const base = `docs/${kind}-${safeSegment(id)}`;
+  let candidate = base;
+  let index = 2;
+  while (existing.has(candidate)) {
+    candidate = `${base}-${index}`;
+    index += 1;
+  }
+  return candidate;
+}
+
+export function storeDocumentFiles(
+  current: Record<string, string>,
+  directory: string,
+  format: DocumentFormat,
+  source: string,
+  title: string,
+): Record<string, string> {
+  return {
+    ...current,
+    [documentEntryPath(directory)]: format === 'html' ? source : markdownToHtml(source, title),
+    ...(format === 'markdown' ? { [`${directory}/document.md`]: source } : {}),
+  };
+}
+
+export function conceptTemplate(label: string, format: DocumentFormat = 'html'): string {
+  return conceptDocumentTemplate(label, format);
+}
+
+export function derivationTemplate(id: string, format: DocumentFormat = 'html'): string {
+  return derivationDocumentTemplate(id, format);
+}
+
+export function migrateLegacyDocument(text: string): AuthoringWorkspace {
+  const value: unknown = JSON.parse(text);
+  if (!isRecord(value) || value.schema !== LEGACY_SCHEMA || !isRecord(value.graph)) throw new Error('不是可迁移的 Derivon v0.1 文档');
+  if (!Array.isArray(value.graph.points) || !Array.isArray(value.graph.hyperedges)) throw new Error('旧文档缺少图数据');
+
+  let files: Record<string, string> = {};
+  const directories = new Set<string>();
+  const points = value.graph.points.map((raw, index) => {
+    if (!isRecord(raw) || typeof raw.id !== 'string' || !isRecord(raw.data) || typeof raw.data.label !== 'string') throw new Error(`旧文档的点 ${index} 无效`);
+    const directory = createDocumentDirectory('concept', raw.id, directories);
+    directories.add(directory);
+    const definition = typeof raw.data.definition === 'string' ? raw.data.definition.trim() : '';
+    const source = `# ${raw.data.label || raw.id}\n\n${definition}\n`;
+    files = storeDocumentFiles(files, directory, 'markdown', source, raw.data.label || raw.id);
+    return { id: raw.id, data: { label: raw.data.label, document: directory, format: 'markdown' as const } };
+  });
+  const hyperedges = value.graph.hyperedges.map((raw, index) => {
+    if (!isRecord(raw) || typeof raw.id !== 'string' || !isRecord(raw.data)) throw new Error(`旧文档的超边 ${index} 无效`);
+    const directory = createDocumentDirectory('derivation', raw.id, directories);
+    directories.add(directory);
+    const introduction = typeof raw.data.introduction === 'string' ? raw.data.introduction.trim() : '';
+    const reasoning = typeof raw.data.reasoning === 'string' ? raw.data.reasoning.trim() : '';
+    const source = `# 推导 ${raw.id}\n\n## 问题引入\n\n${introduction}\n\n## 推导过程\n\n${reasoning}\n`;
+    files = storeDocumentFiles(files, directory, 'markdown', source, `推导 ${raw.id}`);
+    return {
+      id: raw.id,
+      weight: raw.weight,
+      tails: raw.tails,
+      head: raw.head,
+      data: { document: directory, format: 'markdown' as const },
+    };
+  });
+  const migrated = {
+    ...value,
+    schema: DOCUMENT_SCHEMA,
+    graph: { points, hyperedges },
+  };
+  const manifest = parseDocument(JSON.stringify(migrated));
+  return { manifest, files };
+}
+
+export function importManifest(text: string, currentFiles: Record<string, string>): AuthoringWorkspace {
+  const parsed: unknown = JSON.parse(text);
+  if (isRecord(parsed) && parsed.schema === LEGACY_SCHEMA) return migrateLegacyDocument(text);
+  const manifest = parseDocument(text);
+  const workspace = { manifest, files: currentFiles };
+  validateWorkspace(workspace);
+  return workspace;
+}
+
+export function loadLocalWorkspace(fallback: AuthoringWorkspace): AuthoringWorkspace {
+  try {
+    const saved = localStorage.getItem(LOCAL_WORKSPACE_KEY);
+    if (saved) return parseWorkspaceSnapshot(saved);
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy) return migrateLegacyDocument(legacy);
+  } catch {
+    localStorage.removeItem(LOCAL_WORKSPACE_KEY);
+  }
+  return structuredClone(fallback);
+}
+
+async function getDirectory(root: FileSystemDirectoryHandle, parts: string[], create: boolean): Promise<FileSystemDirectoryHandle> {
+  let current = root;
+  for (const part of parts) current = await current.getDirectoryHandle(part, { create });
+  return current;
+}
+
+async function readTextFile(root: FileSystemDirectoryHandle, path: string): Promise<string> {
+  const parts = path.split('/');
+  const filename = parts.pop()!;
+  const directory = await getDirectory(root, parts, false);
+  const handle = await directory.getFileHandle(filename);
+  return (await handle.getFile()).text();
+}
+
+async function writeTextFile(root: FileSystemDirectoryHandle, path: string, content: string): Promise<void> {
+  const parts = path.split('/');
+  const filename = parts.pop()!;
+  const directory = await getDirectory(root, parts, true);
+  const handle = await directory.getFileHandle(filename, { create: true });
+  const writable = await handle.createWritable();
+  await writable.write(content);
+  await writable.close();
+}
+
+export async function readWorkspaceDirectory(root: FileSystemDirectoryHandle): Promise<AuthoringWorkspace> {
+  const manifest = parseDocument(await readTextFile(root, WORKSPACE_MANIFEST));
+  const files: Record<string, string> = {};
+  await Promise.all(referencedDocumentFiles(manifest).map(async (path) => {
+    try {
+      files[path] = await readTextFile(root, path);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'NotFoundError') {
+        throw new Error(`工作区缺少文档：${path}`, { cause: error });
+      }
+      throw error;
+    }
+  }));
+  return { manifest, files };
+}
+
+export async function writeWorkspaceDirectory(root: FileSystemDirectoryHandle, workspace: AuthoringWorkspace): Promise<void> {
+  validateWorkspace(workspace);
+  await Promise.all([
+    writeTextFile(root, WORKSPACE_MANIFEST, `${JSON.stringify(workspace.manifest, null, 2)}\n`),
+    ...Object.entries(workspace.files).map(([path, content]) => writeTextFile(root, path, content)),
+  ]);
+}
+
+export function supportsWorkspaceDirectory(): boolean {
+  return typeof window.showDirectoryPicker === 'function';
+}
+
+export async function chooseWorkspaceDirectory(current: AuthoringWorkspace): Promise<{
+  handle: FileSystemDirectoryHandle;
+  workspace: AuthoringWorkspace;
+  created: boolean;
+}> {
+  const picker = window.showDirectoryPicker;
+  if (!picker) throw new Error('当前浏览器不支持工作区目录，请使用 Chromium 系浏览器');
+  const handle = await picker({ mode: 'readwrite' });
+  try {
+    return { handle, workspace: await readWorkspaceDirectory(handle), created: false };
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error;
+    await writeWorkspaceDirectory(handle, current);
+    return { handle, workspace: current, created: true };
+  }
+}

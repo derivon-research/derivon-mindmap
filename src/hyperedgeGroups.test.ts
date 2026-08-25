@@ -3,7 +3,7 @@ import type { Hyperedge } from './domain';
 import { activeHyperedge, groupHyperedges, hyperedgeGroupKey } from './hyperedgeGroups';
 
 function hyperedge(id: string, weight: number, tails: string[], head = 'B'): Hyperedge {
-  return { id, weight, tails, head, data: { introduction: '', reasoning: id } };
+  return { id, weight, tails, head, data: { document: `docs/${id}`, format: 'html' } };
 }
 
 describe('parallel hyperedge groups', () => {

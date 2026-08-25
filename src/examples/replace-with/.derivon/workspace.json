@@ -1,0 +1,51 @@
+{
+  "schema": "derivon.authoring/v0.2.0",
+  "document": {
+    "title": "A + B → X",
+    "description": "C、D 位于替换关系之外；点集视图使用 A、B，替换视图使用 X。",
+    "updatedAt": "2026-08-24T21:00:00.000Z"
+  },
+  "graph": {
+    "points": [
+      { "id": "A", "data": { "label": "A", "document": "docs/concept-a", "format": "markdown" } },
+      { "id": "B", "data": { "label": "B", "document": "docs/concept-b", "format": "markdown" } },
+      { "id": "C", "data": { "label": "C", "document": "docs/concept-c", "format": "markdown" } },
+      { "id": "D", "data": { "label": "D", "document": "docs/concept-d", "format": "markdown" } },
+      { "id": "X", "data": { "label": "X", "document": "docs/concept-x", "format": "markdown" } }
+    ],
+    "hyperedges": [
+      { "id": "h-c", "weight": 1, "tails": [], "head": "C", "data": { "document": "docs/derivation-h-c", "format": "markdown" } },
+      { "id": "h-a", "weight": 2, "tails": ["C"], "head": "A", "data": { "document": "docs/derivation-h-a", "format": "markdown" } },
+      { "id": "h-b", "weight": 3, "tails": ["A"], "head": "B", "data": { "document": "docs/derivation-h-b", "format": "markdown" } },
+      { "id": "h-b-alt", "weight": 8, "tails": ["A"], "head": "B", "data": { "document": "docs/derivation-h-b-alt", "format": "markdown" } },
+      { "id": "h-d-points", "weight": 4, "tails": ["B", "C"], "head": "D", "data": { "document": "docs/derivation-h-d-points", "format": "markdown" } },
+      { "id": "h-x", "weight": 5, "tails": ["C"], "head": "X", "data": { "document": "docs/derivation-h-x", "format": "markdown" } },
+      { "id": "h-d-x", "weight": 6, "tails": ["X", "C"], "head": "D", "data": { "document": "docs/derivation-h-d-x", "format": "markdown" } },
+      { "id": "h-d-direct", "weight": 9, "tails": ["C"], "head": "D", "data": { "document": "docs/derivation-h-d-direct", "format": "markdown" } }
+    ]
+  },
+  "view": {
+    "positions": {
+      "h-c": { "x": -80, "y": 263 },
+      "C": { "x": 30, "y": 258 },
+      "h-a": { "x": 250, "y": 83 },
+      "A": { "x": 360, "y": 78 },
+      "h-b": { "x": 570, "y": 83 },
+      "h-b-alt": { "x": 570, "y": 83 },
+      "B": { "x": 680, "y": 78 },
+      "h-d-points": { "x": 890, "y": 123 },
+      "h-x": { "x": 470, "y": 443 },
+      "X": { "x": 680, "y": 438 },
+      "h-d-x": { "x": 890, "y": 398 },
+      "h-d-direct": { "x": 570, "y": 263 },
+      "D": { "x": 1080, "y": 258 }
+    },
+    "replacements": [
+      {
+        "points": ["A", "B"],
+        "replaceWith": "X",
+        "show": "points"
+      }
+    ]
+  }
+}
