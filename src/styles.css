@@ -72,6 +72,7 @@ button { color: inherit; }
 .canvas-wrap .react-flow { background: #f7f7f5; }
 .react-flow__edge-path { transition: opacity 140ms ease, stroke-width 140ms ease; }
 .react-flow__node { transition: opacity 140ms ease; }
+.react-flow__nodesselection-rect { border: 0; background: transparent; }
 .react-flow__controls { border: 1px solid #d3d6d1; box-shadow: none; border-radius: 0; overflow: hidden; }
 .react-flow__controls-button { border-bottom-color: #d3d6d1; background: #fbfbfa; }
 .react-flow__controls-button:hover { background: #eef0ed; }

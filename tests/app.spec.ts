@@ -131,6 +131,32 @@ test('toggles selection with Shift without opening the local view', async ({ pag
   await expect(page.locator('.concept-node.is-dimmed')).toHaveCount(0);
 });
 
+test('keeps only node highlights after a Shift marquee selection', async ({ page }) => {
+  const boxes = await page.locator('.react-flow__node').evaluateAll((elements) => elements.map((element) => {
+    const box = element.getBoundingClientRect();
+    return { left: box.left, top: box.top, right: box.right, bottom: box.bottom };
+  }));
+  const bounds = boxes.reduce((result, box) => ({
+    left: Math.min(result.left, box.left),
+    top: Math.min(result.top, box.top),
+    right: Math.max(result.right, box.right),
+    bottom: Math.max(result.bottom, box.bottom),
+  }));
+
+  await page.keyboard.down('Shift');
+  await page.mouse.move(bounds.left - 12, bounds.top - 12);
+  await page.mouse.down();
+  await page.mouse.move(bounds.right + 12, bounds.bottom + 12, { steps: 12 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(boxes.length);
+  await expect(page.locator('.react-flow__selection')).toHaveCount(0);
+  const persistentSelection = page.locator('.react-flow__nodesselection-rect');
+  await expect(persistentSelection).toHaveCSS('border-top-width', '0px');
+  await expect(persistentSelection).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+});
+
 test('switches between the detailed A B path and X inside the shared C D graph', async ({ page }) => {
   const pointA = page.locator('.react-flow__node-concept[data-id="A"]');
   await expect(pointA.locator('.replacement-tag')).toContainText('X');
