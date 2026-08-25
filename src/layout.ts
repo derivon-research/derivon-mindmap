@@ -1,5 +1,6 @@
 import dagre from '@dagrejs/dagre';
 import type { AuthoringDocument, Position } from './domain';
+import { groupHyperedges } from './hyperedgeGroups';
 
 const CONCEPT_WIDTH = 136;
 const CONCEPT_HEIGHT = 64;
@@ -31,23 +32,31 @@ export function layoutDocument(
   document.graph.points
     .filter((point) => included(point.id))
     .forEach((point) => graph.setNode(point.id, { width: CONCEPT_WIDTH, height: CONCEPT_HEIGHT }));
-  document.graph.hyperedges
-    .filter((hyperedge) => included(hyperedge.id))
-    .forEach((hyperedge) => {
-      graph.setNode(hyperedge.id, { width: DERIVATION_SIZE, height: DERIVATION_SIZE });
-      hyperedge.tails.filter(included).forEach((tail) => graph.setEdge(tail, hyperedge.id));
-      if (included(hyperedge.head)) graph.setEdge(hyperedge.id, hyperedge.head);
-    });
+  const includedGroups = groupHyperedges(document.graph.hyperedges)
+    .map((group) => ({ ...group, members: group.members.filter((member) => included(member.id)) }))
+    .filter((group) => group.members.length > 0)
+    .map((group) => ({
+      ...group,
+      layoutId: group.members.some((member) => member.id === group.nodeId) ? group.nodeId : group.members[0].id,
+    }));
+  includedGroups.forEach((group) => {
+    const hyperedge = group.members[0];
+    graph.setNode(group.layoutId, { width: DERIVATION_SIZE, height: DERIVATION_SIZE });
+    hyperedge.tails.filter(included).forEach((tail) => graph.setEdge(tail, group.layoutId));
+    if (included(hyperedge.head)) graph.setEdge(group.layoutId, hyperedge.head);
+  });
   dagre.layout(graph);
 
-  const hyperedgeIds = new Set(document.graph.hyperedges.map((item) => item.id));
+  const groupByLayoutId = new Map(includedGroups.map((group) => [group.layoutId, group]));
   const positions: Record<string, Position> = {};
   graph.nodes().forEach((id) => {
     const node = graph.node(id);
-    const isHyperedge = hyperedgeIds.has(id);
-    const width = isHyperedge ? DERIVATION_SIZE : CONCEPT_WIDTH;
-    const height = isHyperedge ? DERIVATION_SIZE : CONCEPT_HEIGHT;
-    positions[id] = { x: node.x - width / 2, y: node.y - height / 2 };
+    const group = groupByLayoutId.get(id);
+    const width = group ? DERIVATION_SIZE : CONCEPT_WIDTH;
+    const height = group ? DERIVATION_SIZE : CONCEPT_HEIGHT;
+    const position = { x: node.x - width / 2, y: node.y - height / 2 };
+    if (group) group.members.forEach((member) => { positions[member.id] = position; });
+    else positions[id] = position;
   });
   return positions;
 }

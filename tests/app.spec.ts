@@ -33,10 +33,14 @@ test('authors source concepts and derivations without persisting React Flow obje
   await expect(page.locator('.react-flow__node[data-id="c-1"]')).toContainText('AA');
 
   await connect(page, 'A', 'B');
+  await expect(page.locator('.react-flow__node-derivation')).toHaveCount(5);
+  const parallelGroup = page.locator('.react-flow__node-derivation[data-id="h-b"]');
+  await expect(parallelGroup.getByRole('button', { name: '该推导路径有 3 种方式实现' })).toBeVisible();
+  await expect(parallelGroup.locator('.derivation-weight')).toHaveText('1');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0') ?? '{}'));
   expect(saved.graph.points).toHaveLength(6);
   expect(saved.graph.points.at(-1)).toEqual({ id: 'c-1', data: { label: 'AA', definition: '' } });
-  expect(saved.graph.hyperedges).toHaveLength(8);
+  expect(saved.graph.hyperedges).toHaveLength(9);
   expect(saved.graph.hyperedges.at(-1)).toEqual({
     id: 'h-1',
     weight: 1,
@@ -152,6 +156,44 @@ test('shows a pointer and lift shadow when selectable graph objects are hovered'
   }
 });
 
+test('stacks parallel derivations and lets each implementation be inspected', async ({ page }) => {
+  const groupNode = page.locator('.react-flow__node-derivation[data-id="h-b"]');
+  await expect(groupNode).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id="h-b-alt"]')).toHaveCount(0);
+  await expect(groupNode.locator('.derivation-diamond.is-stack-layer')).toHaveCount(1);
+  await expect(groupNode.locator('.derivation-weight')).toHaveText('3');
+  const pathCount = groupNode.getByRole('button', { name: '该推导路径有 2 种方式实现' });
+  await expect(pathCount).toBeVisible();
+
+  await groupNode.click();
+  await expect(page.getByText('该推导路径有 2 种方式实现', { exact: true })).toBeVisible();
+  await page.getByLabel('成本权重').fill('9');
+  await expect(groupNode.locator('.derivation-weight')).toHaveText('9');
+  await page.getByLabel('成本权重').fill('3');
+  await page.getByLabel('查看推导方式').selectOption('h-b-alt');
+  await expect(page.locator('.inspector-heading strong')).toHaveText('h-b-alt');
+  await expect(page.getByLabel('推导过程')).toHaveValue('使用另一套推导过程从 A 得到 B。');
+  await expect(groupNode.locator('.derivation-weight')).toHaveText('8');
+
+  await pathCount.click();
+  await expect(page.locator('.inspector-heading strong')).toHaveText('h-b');
+  await expect(groupNode.locator('.derivation-weight')).toHaveText('3');
+
+  const beforePosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions['h-b']);
+  const box = await groupNode.boundingBox();
+  if (!box) throw new Error('parallel derivation group is not visible');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 45, box.y + box.height / 2 + 24, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions['h-b-alt'])).not.toEqual(beforePosition);
+  const groupPositions = await page.evaluate(() => {
+    const positions = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions;
+    return { primary: positions['h-b'], alternative: positions['h-b-alt'] };
+  });
+  expect(groupPositions.alternative).toEqual(groupPositions.primary);
+});
+
 test('keeps only node highlights after a Shift marquee selection', async ({ page }) => {
   const boxes = await page.locator('.react-flow__node').evaluateAll((elements) => elements.map((element) => {
     const box = element.getBoundingClientRect();
@@ -199,7 +241,7 @@ test('switches between the detailed A B path and X inside the shared C D graph',
 
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!));
   expect(saved.graph.points.map((concept: { id: string }) => concept.id)).toEqual(['A', 'B', 'C', 'D', 'X']);
-  expect(saved.graph.hyperedges).toHaveLength(7);
+  expect(saved.graph.hyperedges).toHaveLength(8);
   expect(saved.view.replacements[0]).toEqual({
     points: ['A', 'B'],
     replaceWith: 'X',
@@ -229,6 +271,75 @@ test('defines replace with by selecting a point set and an existing target', asy
     replaceWith: 'X',
     show: 'points',
   }]);
+});
+
+test('confirms cascading concept deletion and supports undo and redo', async ({ page }) => {
+  const conceptA = page.locator('.react-flow__node-concept[data-id="A"]');
+  const undo = page.getByRole('button', { name: '撤回' });
+  const redo = page.getByRole('button', { name: '重做' });
+  await expect(undo).toBeDisabled();
+  await expect(redo).toBeDisabled();
+
+  await conceptA.click();
+  await page.locator('.inspector').getByTitle('删除概念').click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('删除概念');
+  await expect(dialog).toContainText('将删除 A 概念以及相关的 3 个推导。');
+
+  await dialog.getByRole('button', { name: '取消' }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(conceptA).toBeVisible();
+
+  await page.locator('.inspector').getByTitle('删除概念').click();
+  await dialog.getByRole('button', { name: '删除', exact: true }).click();
+  await expect(conceptA).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!);
+    return { points: saved.graph.points.length, hyperedges: saved.graph.hyperedges.length };
+  })).toEqual({ points: 4, hyperedges: 5 });
+
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect(conceptA).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!);
+    return { points: saved.graph.points.length, hyperedges: saved.graph.hyperedges.length };
+  })).toEqual({ points: 5, hyperedges: 8 });
+
+  await expect(redo).toBeEnabled();
+  await redo.click();
+  await expect(conceptA).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!);
+    return { points: saved.graph.points.length, hyperedges: saved.graph.hyperedges.length };
+  })).toEqual({ points: 4, hyperedges: 5 });
+});
+
+test('confirms derivation deletion and allows it to be undone', async ({ page }) => {
+  const derivation = page.locator('.react-flow__node-derivation[data-id="h-a"]');
+  await derivation.click();
+  await page.locator('.inspector').getByTitle('删除推导').click();
+
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText('删除推导');
+  await expect(dialog).toContainText('将删除 h-a 推导。');
+  await dialog.getByRole('button', { name: '删除', exact: true }).click();
+  await expect(derivation).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!);
+    return saved.graph.hyperedges.map((item: { id: string }) => item.id);
+  })).not.toContain('h-a');
+
+  await page.getByRole('button', { name: '撤回' }).click();
+  await expect(derivation).toBeVisible();
+});
+
+test('links to the GitHub repository beside search', async ({ page }) => {
+  const repositoryLink = page.getByRole('link', { name: '查看 GitHub 仓库' });
+  await expect(repositoryLink).toHaveAttribute('href', 'https://github.com/derivon-research/mindmap-demo');
+  await expect(repositoryLink).toHaveAttribute('target', '_blank');
+  await expect(repositoryLink).toHaveAttribute('rel', 'noreferrer');
 });
 
 test('keeps the canvas and inspector separated on a narrow viewport', async ({ page }) => {

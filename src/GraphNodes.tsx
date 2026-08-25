@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Layers3, Trash2 } from 'lucide-react';
 import { Handle, NodeToolbar, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { ViewReplacement } from './domain';
 
@@ -18,9 +18,12 @@ export type ConceptNodeData = {
 };
 
 export type DerivationNodeData = {
+  activeId: string;
   weight: number;
   premiseCount: number;
   dimmed: boolean;
+  alternatives: Array<{ id: string; weight: number }>;
+  onSelect: (id: string) => void;
   onDelete: (id: string) => void;
 };
 
@@ -63,17 +66,38 @@ export const ConceptNode = memo(function ConceptNode({ id, data, selected }: Nod
   );
 });
 
-export const DerivationNode = memo(function DerivationNode({ id, data, selected }: NodeProps<DerivationFlowNode>) {
+export const DerivationNode = memo(function DerivationNode({ data, selected }: NodeProps<DerivationFlowNode>) {
+  const activeIndex = data.alternatives.findIndex((alternative) => alternative.id === data.activeId);
+  const stackDepth = Math.min(2, data.alternatives.length - 1);
+  const message = `该推导路径有 ${data.alternatives.length} 种方式实现`;
   return (
     <div className={`derivation-node ${data.dimmed ? 'is-dimmed' : ''}`}>
       <NodeToolbar isVisible={selected} position={Position.Top} align="end">
-        <button className="node-action nodrag" type="button" title="删除推导" onClick={() => data.onDelete(id)}>
+        <button className="node-action nodrag" type="button" title="删除推导" onClick={() => data.onDelete(data.activeId)}>
           <Trash2 size={14} />
         </button>
       </NodeToolbar>
-      <div className="derivation-diamond" />
+      {Array.from({ length: stackDepth }, (_, index) => stackDepth - index).map((layer) => (
+        <div className={`derivation-diamond is-stack-layer stack-layer-${layer}`} key={layer} />
+      ))}
+      <div className="derivation-diamond is-active" />
       <span className="derivation-weight">{data.weight}</span>
       <span className="derivation-count">{data.premiseCount}</span>
+      {data.alternatives.length > 1 && (
+        <button
+          className="derivation-path-count nodrag"
+          type="button"
+          aria-label={message}
+          title={`${message}；点击查看下一种`}
+          onClick={(event) => {
+            event.stopPropagation();
+            data.onSelect(data.alternatives[(activeIndex + 1) % data.alternatives.length].id);
+          }}
+        >
+          <Layers3 size={11} />
+          <span>{data.alternatives.length}</span>
+        </button>
+      )}
       <Handle type="target" id="premise-in" position={Position.Left} title="追加前提" />
       <Handle type="source" id="conclusion-out" position={Position.Right} title="设置结论" />
     </div>

@@ -9,7 +9,7 @@ describe('authoring document', () => {
     expect(parsed.graph.points.map((point) => point.id)).toEqual(['A', 'B', 'C', 'D', 'X']);
     expect(Object.keys(parsed.graph.points[0])).toEqual(['id', 'data']);
     expect(Object.keys(parsed.graph.hyperedges[0])).toEqual(['id', 'weight', 'tails', 'head', 'data']);
-    expect(parsed.graph.hyperedges).toHaveLength(7);
+    expect(parsed.graph.hyperedges).toHaveLength(8);
     expect(parsed.view.replacements).toEqual([{
       points: ['A', 'B'],
       replaceWith: 'X',

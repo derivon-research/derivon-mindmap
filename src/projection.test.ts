@@ -10,6 +10,7 @@ describe('replace with projection', () => {
       'h-c',
       'h-a',
       'h-b',
+      'h-b-alt',
       'h-d-points',
       'h-d-direct',
     ]);

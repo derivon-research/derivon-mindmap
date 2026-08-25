@@ -16,7 +16,8 @@
     "hyperedges": [
       { "id": "h-c", "weight": 1, "tails": [], "head": "C", "data": { "introduction": "", "reasoning": "" } },
       { "id": "h-a", "weight": 2, "tails": ["C"], "head": "A", "data": { "introduction": "", "reasoning": "" } },
-      { "id": "h-b", "weight": 3, "tails": ["A", "C"], "head": "B", "data": { "introduction": "", "reasoning": "" } },
+      { "id": "h-b", "weight": 3, "tails": ["A"], "head": "B", "data": { "introduction": "直接路径", "reasoning": "从 A 直接得到 B。" } },
+      { "id": "h-b-alt", "weight": 8, "tails": ["A"], "head": "B", "data": { "introduction": "备选路径", "reasoning": "使用另一套推导过程从 A 得到 B。" } },
       { "id": "h-d-points", "weight": 4, "tails": ["B", "C"], "head": "D", "data": { "introduction": "", "reasoning": "" } },
       { "id": "h-x", "weight": 5, "tails": ["C"], "head": "X", "data": { "introduction": "", "reasoning": "" } },
       { "id": "h-d-x", "weight": 6, "tails": ["X", "C"], "head": "D", "data": { "introduction": "", "reasoning": "" } },
@@ -30,6 +31,7 @@
       "h-a": { "x": 250, "y": 83 },
       "A": { "x": 360, "y": 78 },
       "h-b": { "x": 570, "y": 83 },
+      "h-b-alt": { "x": 570, "y": 83 },
       "B": { "x": 680, "y": 78 },
       "h-d-points": { "x": 890, "y": 123 },
       "h-x": { "x": 470, "y": 443 },

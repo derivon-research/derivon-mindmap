@@ -11,6 +11,11 @@ describe('view layouts', () => {
     expect(Object.values(positions).every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y))).toBe(true);
   });
 
+  it('places parallel derivations at one shared group position', () => {
+    const positions = layoutDocument(sampleDocument);
+    expect(positions['h-b-alt']).toEqual(positions['h-b']);
+  });
+
   it('anchors a compact neighborhood at the node position from the overview', () => {
     const document = structuredClone(sampleDocument);
     document.view.positions = layoutDocument(document);
