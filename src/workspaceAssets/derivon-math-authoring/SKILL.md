@@ -3,7 +3,7 @@ name: derivon-math-authoring
 description: Write or revise beginner-facing mathematics concept and derivation documents in a Derivon workspace. Use when mathematical lessons need intuition, motivation, worked reasoning, examples, misconceptions, or interactive HTML visualizations. Use derivon-workspace separately for graph storage and validation.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-26-math-authoring
+  reference-set: provisional-2026-08-26-skill-scripts
 ---
 
 # Derivon Math Authoring
@@ -115,6 +115,22 @@ Before finishing, read the page once as a novice and once as a reviewer:
 - source terminology and notation remain accurate;
 - interactive states, narrow widths, and the published `index.html` all work;
 - the conclusion tells the reader what new question they can now approach.
+
+After publishing, use the bundled audit instead of writing another page-check
+script:
+
+```sh
+node .agents/skills/derivon-math-authoring/scripts/audit-math-pages.mjs . <object-id>
+node .agents/skills/derivon-math-authoring/scripts/audit-math-pages.mjs \
+  --base-url http://127.0.0.1:8090/ --runtime <project-with-playwright> \
+  . <object-id>
+```
+
+The first form performs dependency-free static checks. The browser form also
+tests a 390px viewport for page and formula overflow, embedded vertical scrolling,
+KaTeX failures, literal delimiters, and console errors. Start a local static
+server first and use the browser form for changed interactive HTML. Browser
+launching may require the environment's normal approval.
 
 Depth is determined by the conceptual gap, not a word quota. Expand genuine
 reasoning and intuition; remove repetition, ceremonial headings, and prose that

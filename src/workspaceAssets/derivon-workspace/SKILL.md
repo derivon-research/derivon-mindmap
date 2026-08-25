@@ -3,7 +3,7 @@ name: derivon-workspace
 description: Operate and validate a Derivon knowledge-graph workspace. Use for .derivon/workspace.json, object document storage, HTML publication, hyperedge relations, prerequisites, conclusions, weights, graph consistency, and workspace validation. Do not use this skill to choose a subject-specific teaching voice or lesson design.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-26-math-authoring
+  reference-set: provisional-2026-08-26-skill-scripts
 ---
 
 # Derivon Workspace
@@ -96,6 +96,21 @@ For `format: markdown`, `document.md` is the source of truth and `index.html` is
 the directly viewable publication. Keep both synchronized in the same change.
 For legacy `format: html`, edit only `index.html` unless deliberately migrating
 the object to Markdown.
+
+Use the bundled deterministic renderer instead of recreating a one-off Markdown
+conversion script:
+
+```sh
+node .agents/skills/derivon-workspace/scripts/render-documents.mjs . <object-id>
+node .agents/skills/derivon-workspace/scripts/render-documents.mjs --write . <object-id>
+```
+
+The first command only reports drift; the second updates `index.html`. The
+renderer needs `marked` and `marked-katex-extension`. It looks in the current
+project by default; pass `--runtime <project>` when those packages live in a
+different project. Run it without an object selector to check or publish every
+Markdown object. If the runtime is unavailable, follow the unsynchronized-
+publication rule below rather than improvising a partial Markdown parser.
 
 Markdown documents support GFM, raw HTML blocks, and KaTeX formulas:
 

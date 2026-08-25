@@ -86,6 +86,8 @@ Claude Code、GitHub Copilot 等支持 `SKILL.md` 的 Coding Agent 自动发现�
 语义和工作区校验；`derivon-math-authoring` 独立负责把数学概念与推导写成面向初学者的
 教材内容，包括动机、直觉、完整推理、教材案例和交互可视化。分离后，Derivon 的文件与
 图模型不会把某一学科的写作方式强加给其他学科，后续可按同样方式增加其他领域 Skill。
+两个 Skill 还会分发各自的 `scripts/`：工作区 Skill 提供确定性的 Markdown 发布与漂移
+检查，数学 Skill 提供静态及 Playwright 窄屏审计，避免 Agent 每次重新编写一次性脚本。
 
 `.derivon/agent/references/` 会随 Skill 一起附加当前临时模型文档：`model.md` 明确
 核心数学对象与 authoring manifest 的映射，`derivon-paper.md` 是当前 paper 工作草案

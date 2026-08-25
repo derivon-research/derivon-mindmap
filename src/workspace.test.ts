@@ -74,14 +74,20 @@ function memoryDirectory(initial: Record<string, string> = {}): {
 }
 
 describe('authoring workspace', () => {
-  it('bundles one Derivon skill for common coding-agent discovery paths', () => {
+  it('bundles Derivon skills and their scripts for common coding-agent discovery paths', () => {
     const paths = Object.keys(WORKSPACE_AGENT_FILES);
     expect(paths).toContain('.agents/skills/derivon-workspace/SKILL.md');
+    expect(paths).toContain('.agents/skills/derivon-workspace/scripts/render-documents.mjs');
     expect(paths).toContain('.claude/skills/derivon-workspace/SKILL.md');
+    expect(paths).toContain('.claude/skills/derivon-workspace/scripts/render-documents.mjs');
     expect(paths).toContain('.github/skills/derivon-workspace/SKILL.md');
+    expect(paths).toContain('.github/skills/derivon-workspace/scripts/render-documents.mjs');
     expect(paths).toContain('.agents/skills/derivon-math-authoring/SKILL.md');
+    expect(paths).toContain('.agents/skills/derivon-math-authoring/scripts/audit-math-pages.mjs');
     expect(paths).toContain('.claude/skills/derivon-math-authoring/SKILL.md');
+    expect(paths).toContain('.claude/skills/derivon-math-authoring/scripts/audit-math-pages.mjs');
     expect(paths).toContain('.github/skills/derivon-math-authoring/SKILL.md');
+    expect(paths).toContain('.github/skills/derivon-math-authoring/scripts/audit-math-pages.mjs');
     expect(paths).toContain('.derivon/agent/references/README.md');
     expect(paths).toContain('.derivon/agent/references/model.md');
     expect(paths).toContain('.derivon/agent/references/derivon-paper.md');
@@ -103,6 +109,14 @@ describe('authoring workspace', () => {
     expect(mathSkills[0]).toContain('excellent introductory');
     expect(mathSkills[0]).toContain('Before a formula, explain the plan');
     expect(mathSkills[0]).toContain('Interactive mathematical HTML');
+    const renderScripts = paths.filter((path) => path.endsWith('/scripts/render-documents.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
+    expect(new Set(renderScripts).size).toBe(1);
+    expect(renderScripts[0]).toContain('marked-katex-extension');
+    expect(renderScripts[0]).toContain("argv.includes('--write')");
+    const auditScripts = paths.filter((path) => path.endsWith('/scripts/audit-math-pages.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
+    expect(new Set(auditScripts).size).toBe(1);
+    expect(auditScripts[0]).toContain('formulaOverflow');
+    expect(auditScripts[0]).toContain('componentScroll');
     expect(WORKSPACE_AGENT_FILES['.derivon/agent/references/README.md']).toContain('Migration when official documentation ships');
     const model = WORKSPACE_AGENT_FILES['.derivon/agent/references/model.md'];
     expect(model).toContain('Empty tail is not the start set');
