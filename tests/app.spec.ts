@@ -65,6 +65,34 @@ test('keeps a concept rendered during drag and persists only on drag stop', asyn
   await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A)).not.toEqual(beforePosition);
 });
 
+test('persists every selected node after a multi-node drag', async ({ page }) => {
+  const nodeA = page.locator('.react-flow__node[data-id="A"]');
+  const nodeB = page.locator('.react-flow__node[data-id="B"]');
+  await nodeA.click({ modifiers: ['Shift'] });
+  await nodeB.click({ modifiers: ['Shift'] });
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
+
+  const before = await page.evaluate(() => {
+    const positions = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions;
+    return { A: positions.A, B: positions.B };
+  });
+  const box = await nodeA.boundingBox();
+  if (!box) throw new Error('A is not visible');
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2 + 35, { steps: 8 });
+  await page.mouse.up();
+
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.B)).not.toEqual(before.B);
+  const after = await page.evaluate(() => {
+    const positions = JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions;
+    return { A: positions.A, B: positions.B };
+  });
+  expect(after.A.x - before.A.x).toBeCloseTo(after.B.x - before.B.x, 5);
+  expect(after.A.y - before.A.y).toBeCloseTo(after.B.y - before.B.y, 5);
+});
+
 test('opens the editable local layout only on the second click', async ({ page }) => {
   const node = page.locator('.react-flow__node[data-id="A"]');
   const neighbor = page.locator('.react-flow__node[data-id="B"]');
@@ -87,6 +115,20 @@ test('opens the editable local layout only on the second click', async ({ page }
   await page.mouse.move(box.x + box.width / 2 + 55, box.y + box.height / 2 + 25, { steps: 6 });
   await page.mouse.up();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v0.1.0')!).view.positions.A)).toEqual(overviewPosition);
+});
+
+test('toggles selection with Shift without opening the local view', async ({ page }) => {
+  const node = page.locator('.react-flow__node[data-id="A"]');
+  const neighbor = page.locator('.react-flow__node[data-id="B"]');
+  const neighborOverviewTransform = await neighbor.evaluate((element) => (element as HTMLElement).style.transform);
+
+  await node.click({ modifiers: ['Shift'] });
+  await expect(node).toHaveClass(/selected/);
+
+  await node.click({ modifiers: ['Shift'] });
+  await expect(node).not.toHaveClass(/selected/);
+  await expect.poll(() => neighbor.evaluate((element) => (element as HTMLElement).style.transform)).toBe(neighborOverviewTransform);
+  await expect(page.locator('.concept-node.is-dimmed')).toHaveCount(0);
 });
 
 test('switches between the detailed A B path and X inside the shared C D graph', async ({ page }) => {

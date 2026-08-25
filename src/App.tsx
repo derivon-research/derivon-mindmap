@@ -337,22 +337,32 @@ function AuthoringCanvas() {
     return result;
   }, [activeIds, focusedId, projection.hyperedges]);
 
-  const persistNodePosition = useCallback((node: AuthoringFlowNode) => {
-    if (focusedId && activeIds.has(node.id)) {
+  const persistNodePositions = useCallback((draggedNodes: AuthoringFlowNode[]) => {
+    const localNodes = focusedId ? draggedNodes.filter((node) => activeIds.has(node.id)) : [];
+    const overviewNodes = focusedId ? draggedNodes.filter((node) => !activeIds.has(node.id)) : draggedNodes;
+
+    if (localNodes.length && focusedId) {
       setFocusLayouts((current) => ({
         ...current,
         [focusedId]: {
           ...(current[focusedId] ?? layoutNeighborhood(document, activeIds, focusedId)),
-          [node.id]: node.position,
+          ...Object.fromEntries(localNodes.map((node) => [node.id, node.position])),
         },
       }));
       setStatus('局部视图布局已更新');
-      return;
     }
-    commit((current) => ({
-      ...current,
-      view: { ...current.view, positions: { ...current.view.positions, [node.id]: node.position } },
-    }));
+    if (overviewNodes.length) {
+      commit((current) => ({
+        ...current,
+        view: {
+          ...current.view,
+          positions: {
+            ...current.view.positions,
+            ...Object.fromEntries(overviewNodes.map((node) => [node.id, node.position])),
+          },
+        },
+      }));
+    }
   }, [activeIds, commit, document, focusedId]);
 
   const addConcept = useCallback((position?: Position) => {
@@ -539,7 +549,7 @@ function AuthoringCanvas() {
     }
   }, [jsonText]);
 
-  const selectNode = useCallback((id: string) => {
+  const selectNode = useCallback((id: string, shiftKey: boolean) => {
     if (replacementDraft) {
       if (!document.graph.points.some((concept) => concept.id === id)) {
         setStatus('替换点必须是概念');
@@ -563,7 +573,7 @@ function AuthoringCanvas() {
       setStatus(`已定义 ${candidate.replacement.points.join(' + ')} → ${id}`);
       return;
     }
-    if (selectedId === id) {
+    if (selectedId === id && !shiftKey) {
       setFocusedId(id);
       return;
     }
@@ -649,8 +659,8 @@ function AuthoringCanvas() {
             onNodesChange={onNodesChange}
             onSelectionChange={handleSelectionChange}
             onConnect={onConnect}
-            onNodeDragStop={(_, node) => persistNodePosition(node)}
-            onNodeClick={(_, node) => selectNode(node.id)}
+            onNodeDragStop={(_, node, draggedNodes) => persistNodePositions(draggedNodes.length ? draggedNodes : [node])}
+            onNodeClick={(event, node) => selectNode(node.id, event.shiftKey)}
             onPaneClick={() => {
               setFocusedId(null);
               setSelectedId(null);
