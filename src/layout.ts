@@ -2,7 +2,7 @@ import dagre from '@dagrejs/dagre';
 import type { AuthoringDocument, Position } from './domain';
 
 const CONCEPT_WIDTH = 136;
-const CONCEPT_HEIGHT = 58;
+const CONCEPT_HEIGHT = 64;
 const DERIVATION_SIZE = 54;
 
 type LayoutOptions = {

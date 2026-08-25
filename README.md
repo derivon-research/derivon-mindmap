@@ -1,6 +1,8 @@
 # Mindmap Demo
 
-面向知识作者的加权有向 B-超图录入实验。前端使用 React Flow；Demo 不依赖现有 Rust crate，JSON 可在未来作为 Rust 协议层的输入边界。
+Derivon 加权有向 B-超图的前端录入实验。React Flow 只负责画布交互；领域文档、`replace with` 规则和可见性投影分别位于 `src/domain.ts`、`src/replacements.ts` 与 `src/projection.ts`。
+
+示例只包含五个概念点 A、B、C、D、X。源图中五个点始终同时存在，替换关系是 `{A,B} → X`；C、D 位于关系之外，因此 X 在替换视图中仍然只是完整图的一部分。
 
 ## 运行
 
@@ -9,7 +11,7 @@ npm install
 npm run dev
 ```
 
-默认地址为 Vite 输出的本地地址。生产构建与测试：
+构建与测试：
 
 ```bash
 npm run build
@@ -17,71 +19,152 @@ npm test
 npm run test:e2e
 ```
 
-## 录入方式
+## 图编辑
 
-- 工具栏 `+` 新建概念；选中概念或推导后在右侧检查器编辑载荷。
-- 从一个概念拖到另一个概念，创建单前提推导。
-- 从概念拖到已有菱形推导节点，向前提集合追加概念。
-- 从菱形推导节点拖到概念，修改单一结论。
-- 菱形中的主数字是成本，右下数字是前提数量；空前提推导合法。
-- 第一次点击概念或推导只会选中节点并打开检查器；再次点击同一个节点，才会为其一跳超边邻域创建紧凑的临时布局并适配视口。
-- 在局部视图中第一次点击其他节点只会改变选中项并保留当前视图；再次点击该节点才切换到它自己的局部视图。点击空白处返回未选中的总览。
-- 局部邻域使用紧凑布局和完整透明度；进入视图的节点固定在其总览坐标，只把所需邻域节点移动到它周围。邻域外节点与边保留在总览坐标中并以低透明度显示，不会完全消失。
-- 局部布局和总览布局都可继续拖动。局部拖动只修改该临时视图，关闭局部视图后总览坐标保持不变。
-- 工具栏的布局按钮重排总览并退出局部视图；MiniMap、缩放用于浏览大型图。
-- 拖动中的高频位置由 React Flow 管理，只有松开指针时才写回 `view.positions`，避免每帧重建领域文档。
-- 文件按钮用于导入、导出 JSON；浏览器同时自动保存到 localStorage。
+- 工具栏 `+` 新建概念；右侧检查器编辑概念定义和推导载荷。
+- 从概念拖到概念会创建单前提推导。
+- 从概念拖到已有推导会追加前提；从推导拖到概念会修改结论。
+- 推导是带稳定 ID 的 indexed family。结构相同的平行推导不会自动合并。
+- 空前提合法；`weight` 是应用层提供的非负安全整数。
+- 第一次点击节点选中它；再次点击同一节点进入一跳邻域的临时布局。
+- 总览位置写入 `view.positions`；局部布局只存在于当前浏览器会话。
 
-## 文档格式
+## Replace With
+
+建立替换关系：
+
+1. 用框选或按住 `Shift` 选择一个或多个概念点，例如 A、B。
+2. 点击工具栏的 `Replace with` 图标。
+3. 点击已经存在的概念点 X。
+
+该操作不会创建父概念、模块节点、容器、端口、超边或权重。它只在 `view.replacements` 中增加一条视图关系：
+
+```text
+A + B → X
+```
+
+关系建立后，可通过节点底部标签或检查器中的分段控制切换显示侧。
+
+本示例显示点集时：
+
+- 显示 A、B、C、D；
+- 隐藏 X；
+- 使用 `C → A → B → D` 的详细路径；
+- 保留共同的 `C → D` 备选推导。
+
+显示替换点时：
+
+- 隐藏 A、B；
+- 显示 C、D 和原有的同一个 X；
+- 使用 `C → X → D` 的替换路径；
+- 仍保留共同的 `C → D` 备选推导。
+
+如果用户没有为 X 创建推导，X 也可以合法地保持悬空。切换不会改写任何超边；前端不会把原来连接 A、B 的边自动重定向到 X。
+
+解除替换关系也不会删除任何概念或推导。
+
+## 投影语义
+
+设源图为 `G = (P, H)`，替换关系为：
+
+```text
+R = ({A, B}, X)
+```
+
+点集视图使用：
+
+```text
+P_points = P \ {X}
+```
+
+替换点视图使用：
+
+```text
+P_replacement = P \ {A, B}
+```
+
+其中上面的 `\` 表示集合差。当前投影的超边是可见点诱导出的子图：
+
+```text
+H_view = { h ∈ H | T(h) ∪ {head(h)} ⊆ P_view }
+```
+
+因此 `replace with` 不承诺两侧具有相同可达性或最低成本。两侧是用户维护的不同粒度表达，不是 Rust 证明等价的商图。
+
+替换关系可以逐层组合。例如 `{A,B} → C` 与 `{C,D} → X` 可以同时存在。每一层仍然只是可见性选择，不产生额外图对象。
+
+## JSON Schema
 
 ```json
 {
-  "schema": "derivon.authoring/v1",
+  "schema": "derivon.authoring/v3",
   "document": {
-    "title": "示例",
-    "description": "作者侧文档",
-    "updatedAt": "2026-08-24T00:00:00.000Z"
+    "title": "A + B → X",
+    "description": "视图替换示例",
+    "updatedAt": "2026-08-24T20:00:00.000Z"
   },
   "graph": {
     "concepts": [
-      { "id": "a", "label": "A", "definition": "不依赖具体推导的客观定义" },
-      { "id": "b", "label": "B", "definition": "另一个概念" },
-      { "id": "c", "label": "C", "definition": "结论概念" }
+      { "id": "A", "label": "A", "definition": "点 A。" },
+      { "id": "B", "label": "B", "definition": "点 B。" },
+      { "id": "C", "label": "C", "definition": "点 C。" },
+      { "id": "D", "label": "D", "definition": "点 D。" },
+      { "id": "X", "label": "X", "definition": "现有替换点。" }
     ],
     "derivations": [
       {
         "id": "h-1",
-        "premises": ["a", "b"],
-        "conclusion": "c",
-        "introduction": "问题引入",
-        "reasoning": "推导过程",
+        "premises": ["A", "B"],
+        "conclusion": "C",
+        "introduction": "",
+        "reasoning": "",
         "weight": 1
       }
     ]
   },
   "view": {
     "positions": {
-      "a": { "x": 0, "y": 0 },
-      "b": { "x": 0, "y": 100 },
-      "c": { "x": 400, "y": 50 },
-      "h-1": { "x": 220, "y": 50 }
-    }
+      "A": { "x": 0, "y": 0 },
+      "B": { "x": 0, "y": 100 },
+      "h-1": { "x": 220, "y": 50 },
+      "C": { "x": 400, "y": 50 },
+      "D": { "x": 400, "y": 160 },
+      "X": { "x": 650, "y": 80 }
+    },
+    "replacements": [
+      {
+        "points": ["A", "B"],
+        "replaceWith": "X",
+        "show": "points"
+      }
+    ]
   }
 }
 ```
 
-设计约束：
+`show` 只接受：
 
-- `graph` 是语义真相，`view.positions` 只保存作者的总览布局。
-- 按概念创建的紧凑局部布局属于临时 UI 视图，不改变 `graph`，也不会覆盖总览布局。
-- React Flow 普通边是从 `premises -> derivation -> conclusion` 即时展开的视图，不持久化。
-- 概念 ID 与推导 ID 在文档内全局唯一，适合直接映射为 React Flow 节点 ID。
-- 推导是带稳定身份的 indexed family；即使前提、结论和权重相同，也不会自动合并。
-- `premises` 按集合校验，不允许重复；空数组表示无条件入口。
-- `weight` 使用非负安全整数，避免浮点排序和累加的不确定性。单位由应用层决定。
+- `points`：显示点集一侧；
+- `replacement`：显示替换点一侧。
 
-## React Flow 实现依据
+v1 的 `view.modules` 和 v2 的顶层 `modules` 会在导入时迁移成 v3 的 `view.replacements`。
 
-- 节点交互状态采用官方 [`useNodesState`](https://reactflow.dev/api-reference/hooks/use-nodes-state) 模式。
-- 总览和局部排布沿用官方 [Dagre layout example](https://reactflow.dev/examples/layout/dagre) 的静态布局方式：只在用户请求或进入局部视图时计算一次，之后节点仍可自由拖动。
-- 拖动结束后的持久化时机参考官方 [Node Collisions example](https://reactflow.dev/examples/layout/node-collisions) 对 `onNodeDragStop` 的使用。
+## 分层边界
+
+`graph` 是提交给 Derivon 核心的语义数据，包含概念点和原始超边。
+
+`view` 是前端作者视图：
+
+- `positions` 保存源图节点位置；
+- `replacements` 保存显示哪一侧；
+- React Flow 节点、普通投影边、选择状态和局部布局都不持久化。
+
+前端只做保证投影确定性的廉价检查：
+
+- 点集非空；
+- 所有 ID 存在；
+- 替换点不在自己的点集中；
+- 一个点不直接属于两个替换点集；
+- 替换关系不形成循环。
+
+Rust 核心不读取 `view.replacements`，也不为替换生成超边或权重。应用需要求解当前视图时，应先在前端或应用协议层生成当前可见点的诱导子图，再把普通的 `graph` 数据交给 Rust。Rust 继续只消费应用层给定的点、超边和权重。

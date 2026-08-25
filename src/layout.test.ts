@@ -3,7 +3,7 @@ import { layoutDocument, layoutNeighborhood } from './layout';
 import { sampleDocument } from './sample';
 
 describe('view layouts', () => {
-  it('lays out every semantic node in the overview', () => {
+  it('lays out every semantic node in the source graph', () => {
     const positions = layoutDocument(sampleDocument);
     expect(Object.keys(positions)).toHaveLength(
       sampleDocument.graph.concepts.length + sampleDocument.graph.derivations.length,
@@ -14,11 +14,11 @@ describe('view layouts', () => {
   it('anchors a compact neighborhood at the node position from the overview', () => {
     const document = structuredClone(sampleDocument);
     document.view.positions = layoutDocument(document);
-    const ids = new Set(['a', 'h-3', 'c']);
-    const positions = layoutNeighborhood(document, ids, 'a');
+    const ids = new Set(['A', 'h-b', 'B']);
+    const positions = layoutNeighborhood(document, ids, 'A');
     expect(new Set(Object.keys(positions))).toEqual(ids);
-    expect(positions.a).toEqual(document.view.positions.a);
-    expect(positions.a.x).toBeLessThan(positions['h-3'].x);
-    expect(positions['h-3'].x).toBeLessThan(positions.c.x);
+    expect(positions.A).toEqual(document.view.positions.A);
+    expect(positions.A.x).toBeLessThan(positions['h-b'].x);
+    expect(positions['h-b'].x).toBeLessThan(positions.B.x);
   });
 });

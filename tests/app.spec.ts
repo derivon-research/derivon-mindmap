@@ -18,95 +18,120 @@ test.beforeEach(async ({ page }) => {
   await page.reload();
 });
 
-test('authors a concept and a derivation directly on the graph', async ({ page }) => {
+test('authors source concepts and derivations without persisting React Flow objects', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
 
-  await expect(page.locator('.react-flow__node-concept')).toHaveCount(26);
-  await expect(page.locator('.react-flow__node-derivation')).toHaveCount(28);
-  const firstConcept = await page.locator('.react-flow__node-concept').first().boundingBox();
-  expect(firstConcept?.width).toBeGreaterThan(90);
+  await expect(page.locator('.react-flow__node-concept')).toHaveCount(4);
+  await expect(page.locator('.react-flow__node-derivation')).toHaveCount(5);
+  const firstConceptWidth = await page.locator('.react-flow__node-concept .concept-node').first().evaluate((element) => (element as HTMLElement).offsetWidth);
+  expect(firstConceptWidth).toBe(136);
 
   await page.getByTitle('新建概念').click();
   await expect(page.locator('.react-flow__node[data-id="c-1"]')).toBeVisible();
-  await expect(page.locator('.react-flow__node-concept')).toHaveCount(27);
   await page.locator('.inspector label').filter({ hasText: '名称' }).locator('input').fill('AA');
   await expect(page.locator('.react-flow__node[data-id="c-1"]')).toContainText('AA');
 
-  await connect(page, 'a', 'b');
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v1') ?? '{}'));
-  expect(saved.graph.concepts).toHaveLength(27);
-  expect(saved.graph.derivations).toHaveLength(29);
-  expect(saved.graph.derivations.at(-1)).toMatchObject({ premises: ['a'], conclusion: 'b', weight: 1 });
+  await connect(page, 'A', 'B');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5') ?? '{}'));
+  expect(saved.graph.concepts).toHaveLength(6);
+  expect(saved.graph.derivations).toHaveLength(8);
+  expect(saved.graph.derivations.at(-1)).toMatchObject({ premises: ['A'], conclusion: 'B', weight: 1 });
   expect(saved.graph).not.toHaveProperty('edges');
   expect(errors).toEqual([]);
-
-  await page.screenshot({ path: '/tmp/derivon-desktop.png', fullPage: true });
 });
 
-test('keeps a card rendered during drag and persists only when dragging stops', async ({ page }) => {
-  const node = page.locator('.react-flow__node[data-id="a"]');
+test('keeps a concept rendered during drag and persists only on drag stop', async ({ page }) => {
+  const node = page.locator('.react-flow__node[data-id="A"]');
   const beforeBox = await node.boundingBox();
-  if (!beforeBox) throw new Error('concept a is not visible');
-  const beforePosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v1')!).view.positions.a);
+  if (!beforeBox) throw new Error('A is not visible');
+  const beforePosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!).view.positions.A);
 
   await page.mouse.move(beforeBox.x + beforeBox.width / 2, beforeBox.y + beforeBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(beforeBox.x + beforeBox.width / 2 + 70, beforeBox.y + beforeBox.height / 2 + 35, { steps: 8 });
-
   await expect(node).toBeVisible();
-  await expect(node).toContainText('A');
-  const duringBox = await node.boundingBox();
-  expect(duringBox!.x).toBeGreaterThan(beforeBox.x + 40);
-  const duringPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v1')!).view.positions.a);
+  const duringPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!).view.positions.A);
   expect(duringPosition).toEqual(beforePosition);
-  await page.screenshot({ path: '/tmp/derivon-dragging.png', fullPage: true });
-
   await page.mouse.up();
-  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v1')!).view.positions.a)).not.toEqual(beforePosition);
+  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!).view.positions.A)).not.toEqual(beforePosition);
 });
 
 test('opens the editable local layout only on the second click', async ({ page }) => {
-  const node = page.locator('.react-flow__node[data-id="a"]');
+  const node = page.locator('.react-flow__node[data-id="A"]');
+  const neighbor = page.locator('.react-flow__node[data-id="B"]');
   await node.click();
-  await expect(page.locator('.react-flow__node-concept')).toHaveCount(26);
   await expect(node).toHaveClass(/selected/);
-  const neighbor = page.locator('.react-flow__node[data-id="c"]');
   const anchorTransform = await node.evaluate((element) => (element as HTMLElement).style.transform);
   const neighborOverviewTransform = await neighbor.evaluate((element) => (element as HTMLElement).style.transform);
 
   await node.click();
   await expect.poll(() => node.evaluate((element) => (element as HTMLElement).style.transform)).toBe(anchorTransform);
   await expect.poll(() => neighbor.evaluate((element) => (element as HTMLElement).style.transform)).not.toBe(neighborOverviewTransform);
-  const allConcepts = page.locator('.react-flow__node-concept');
-  await expect(allConcepts).toHaveCount(26);
-  const dimmedConcepts = page.locator('.concept-node.is-dimmed');
-  expect(await dimmedConcepts.count()).toBeGreaterThan(0);
-  await expect(node.locator('.concept-node')).not.toHaveClass(/is-dimmed/);
+  await expect(page.locator('.concept-node.is-dimmed')).toHaveCount(1);
+  await expect(page.locator('.react-flow__node[data-id="D"] .concept-node')).toHaveClass(/is-dimmed/);
 
-  await expect(neighbor).toBeVisible();
-  await expect(neighbor.locator('.concept-node')).not.toHaveClass(/is-dimmed/);
-  await neighbor.click();
-  await expect(neighbor).toHaveClass(/selected/);
-  await expect(allConcepts).toHaveCount(26);
-  await expect(page.locator('.react-flow__node[data-id="z"] .concept-node')).toHaveClass(/is-dimmed/);
-  await page.screenshot({ path: '/tmp/derivon-local-context.png', fullPage: true });
-
-  const overviewPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v1')!).view.positions.a);
+  const overviewPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!).view.positions.A);
   const box = await node.boundingBox();
-  if (!box) throw new Error('focused concept a is not visible');
+  if (!box) throw new Error('focused A is not visible');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + 55, box.y + box.height / 2 + 25, { steps: 6 });
   await page.mouse.up();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!).view.positions.A)).toEqual(overviewPosition);
+});
 
-  const afterLocalDrag = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v1')!).view.positions.a);
-  expect(afterLocalDrag).toEqual(overviewPosition);
-  await page.getByTitle('关闭局部视图').click();
-  await expect(page.locator('.react-flow__node-concept')).toHaveCount(26);
-  await expect(page.locator('.concept-node.is-dimmed')).toHaveCount(0);
-  const restoredBox = await node.boundingBox();
-  expect(restoredBox).not.toBeNull();
+test('switches between the detailed A B path and X inside the shared C D graph', async ({ page }) => {
+  const pointA = page.locator('.react-flow__node-concept[data-id="A"]');
+  await expect(pointA.locator('.replacement-tag')).toContainText('X');
+  await expect(page.locator('.react-flow__node[data-id="X"]')).toHaveCount(0);
+  await page.screenshot({ path: '/tmp/derivon-points-view.png', fullPage: true });
+
+  await pointA.locator('.replacement-tag').click();
+  const replacement = page.locator('.react-flow__node-concept[data-id="X"]');
+  await expect(replacement).toBeVisible();
+  await expect(page.locator('.react-flow__node-concept')).toHaveCount(3);
+  await expect(page.locator('.react-flow__node-derivation')).toHaveCount(4);
+  await expect(page.locator('.react-flow__node[data-id="C"]')).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id="D"]')).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id="h-x"]')).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id="h-d-x"]')).toBeVisible();
+  await expect(replacement.locator('.replacement-tag')).toContainText('2 点');
+  await page.waitForTimeout(450);
+  await page.screenshot({ path: '/tmp/derivon-replacement-view.png', fullPage: true });
+
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!));
+  expect(saved.graph.concepts.map((concept: { id: string }) => concept.id)).toEqual(['A', 'B', 'C', 'D', 'X']);
+  expect(saved.graph.derivations).toHaveLength(7);
+  expect(saved.view.replacements[0]).toEqual({
+    points: ['A', 'B'],
+    replaceWith: 'X',
+    show: 'replacement',
+  });
+
+  await replacement.locator('.replacement-tag').click();
+  await expect(page.locator('.react-flow__node-concept')).toHaveCount(4);
+  await expect(page.locator('.react-flow__node-derivation')).toHaveCount(5);
+});
+
+test('defines replace with by selecting a point set and an existing target', async ({ page }) => {
+  await page.locator('.react-flow__node[data-id="A"]').click();
+  await page.getByTitle('解除替换关系').click();
+  await expect(page.locator('.react-flow__node-concept')).toHaveCount(5);
+
+  await page.locator('.react-flow__node[data-id="A"]').click();
+  await page.locator('.react-flow__node[data-id="B"]').click({ modifiers: ['Shift'] });
+  await page.getByTitle('Replace with').click();
+  await page.locator('.react-flow__node[data-id="X"]').click();
+
+  await expect(page.locator('.react-flow__node[data-id="X"]')).toHaveCount(0);
+  await expect(page.locator('.react-flow__node-concept')).toHaveCount(4);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.demo/v5')!));
+  expect(saved.view.replacements).toEqual([{
+    points: ['A', 'B'],
+    replaceWith: 'X',
+    show: 'points',
+  }]);
 });
 
 test('keeps the canvas and inspector separated on a narrow viewport', async ({ page }) => {

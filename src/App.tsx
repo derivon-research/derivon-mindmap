@@ -10,6 +10,7 @@ import {
   ReactFlowProvider,
   type Connection,
   type Edge,
+  type OnSelectionChangeParams,
   useNodesState,
   useReactFlow,
 } from '@xyflow/react';
@@ -21,19 +22,23 @@ import {
   FileUp,
   LayoutGrid,
   Plus,
+  Replace,
   Search,
   Trash2,
+  Unlink,
   X,
 } from 'lucide-react';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
-import type { AuthoringDocument, Concept, Derivation, Position } from './domain';
+import type { AuthoringDocument, Concept, Derivation, Position, ViewReplacement } from './domain';
 import { parseDocument, touchDocument, uniqueId } from './domain';
 import { ConceptNode, DerivationNode, type AuthoringFlowNode } from './GraphNodes';
 import { layoutDocument, layoutNeighborhood } from './layout';
+import { projectDocument } from './projection';
+import { replacementFromSelection } from './replacements';
 import { sampleDocument } from './sample';
 
-const STORAGE_KEY = 'derivon.authoring.demo/v1';
+const STORAGE_KEY = 'derivon.authoring.demo/v5';
 const nodeTypes = { concept: ConceptNode, derivation: DerivationNode };
 
 type ProjectedEdgeData = {
@@ -52,7 +57,7 @@ function initialDocument(): AuthoringDocument {
     localStorage.removeItem(STORAGE_KEY);
   }
   const document = structuredClone(sampleDocument);
-  document.view.positions = layoutDocument(document);
+  if (!Object.keys(document.view.positions).length) document.view.positions = layoutDocument(document);
   return document;
 }
 
@@ -69,6 +74,43 @@ function neighborhood(document: AuthoringDocument, selectedId: string | null): S
   return ids;
 }
 
+function revealConcept(document: AuthoringDocument, conceptId: string): AuthoringDocument {
+  const ownerByPoint = new Map<string, string>();
+  document.view.replacements.forEach((replacement) => {
+    replacement.points.forEach((id) => ownerByPoint.set(id, replacement.replaceWith));
+  });
+  const showByTarget = new Map<string, ViewReplacement['show']>();
+  if (document.view.replacements.some((item) => item.replaceWith === conceptId)) {
+    showByTarget.set(conceptId, 'replacement');
+  }
+  const visited = new Set<string>();
+  let cursor = conceptId;
+  while (ownerByPoint.has(cursor) && !visited.has(cursor)) {
+    visited.add(cursor);
+    const owner = ownerByPoint.get(cursor)!;
+    showByTarget.set(owner, 'points');
+    cursor = owner;
+  }
+  return {
+    ...document,
+    view: {
+      ...document.view,
+      replacements: document.view.replacements.map((replacement) => ({
+        ...replacement,
+        show: showByTarget.get(replacement.replaceWith) ?? replacement.show,
+      })),
+    },
+  };
+}
+
+function firstVisiblePoint(document: AuthoringDocument, id: string): string {
+  const replacement = document.view.replacements.find((item) => item.replaceWith === id);
+  if (replacement?.show === 'points' && replacement.points.length) {
+    return firstVisiblePoint(document, replacement.points[0]);
+  }
+  return id;
+}
+
 function filenameFor(title: string): string {
   const safe = title.trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').slice(0, 60);
   return `${safe || 'derivon-graph'}.derivon.json`;
@@ -83,6 +125,8 @@ function AuthoringCanvas() {
   const [status, setStatus] = useState('已自动保存');
   const [jsonOpen, setJsonOpen] = useState(false);
   const [jsonText, setJsonText] = useState('');
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [replacementDraft, setReplacementDraft] = useState<string[] | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const { fitView, screenToFlowPosition } = useReactFlow<AuthoringFlowNode, ProjectedEdge>();
 
@@ -92,7 +136,7 @@ function AuthoringCanvas() {
 
   useEffect(() => {
     if (!status) return;
-    const timeout = window.setTimeout(() => setStatus(''), 2200);
+    const timeout = window.setTimeout(() => setStatus(''), 2400);
     return () => window.clearTimeout(timeout);
   }, [status]);
 
@@ -104,29 +148,81 @@ function AuthoringCanvas() {
   const deleteItem = useCallback((id: string) => {
     commit((current) => {
       const isConcept = current.graph.concepts.some((concept) => concept.id === id);
-      const derivationIds = new Set(
+      const removedDerivations = new Set(
         isConcept
           ? current.graph.derivations.filter((item) => item.conclusion === id || item.premises.includes(id)).map((item) => item.id)
           : [id],
       );
       const positions = { ...current.view.positions };
       delete positions[id];
-      derivationIds.forEach((derivationId) => delete positions[derivationId]);
+      removedDerivations.forEach((derivationId) => delete positions[derivationId]);
       return {
         ...current,
         graph: {
           concepts: isConcept ? current.graph.concepts.filter((concept) => concept.id !== id) : current.graph.concepts,
-          derivations: current.graph.derivations.filter((item) => !derivationIds.has(item.id)),
+          derivations: current.graph.derivations.filter((item) => !removedDerivations.has(item.id)),
         },
-        view: { positions },
+        view: {
+          positions,
+          replacements: current.view.replacements.filter((replacement) =>
+            replacement.replaceWith !== id && !replacement.points.includes(id),
+          ),
+        },
       };
     });
     setFocusLayouts({});
     setFocusedId(null);
+    setReplacementDraft(null);
+    setSelectedNodeIds((current) => current.filter((item) => item !== id));
     setSelectedId((current) => (current === id ? null : current));
   }, [commit]);
 
-  const activeIds = useMemo(() => neighborhood(document, focusedId), [document, focusedId]);
+  const toggleReplacement = useCallback((replaceWith: string, show: ViewReplacement['show']) => {
+    const replacement = document.view.replacements.find((item) => item.replaceWith === replaceWith);
+    if (!replacement) return;
+    const nextDocument: AuthoringDocument = {
+      ...document,
+      view: {
+        ...document.view,
+        replacements: document.view.replacements.map((item) =>
+          item.replaceWith === replaceWith ? { ...item, show } : item,
+        ),
+      },
+    };
+    commit(() => nextDocument);
+    setSelectedId(show === 'replacement'
+      ? replaceWith
+      : firstVisiblePoint(nextDocument, replacement.points[0]));
+    setSelectedNodeIds([]);
+    setFocusedId(null);
+    setFocusLayouts({});
+    setStatus(show === 'replacement' ? `已替换为 ${replaceWith}` : '已显示原点集');
+    const visibleIds = projectDocument(nextDocument).visibleIds;
+    window.setTimeout(() => void fitView({
+      nodes: [...visibleIds].map((id) => ({ id })),
+      padding: 0.18,
+      duration: 260,
+      maxZoom: 1.1,
+    }), 100);
+  }, [commit, document, fitView]);
+
+  const removeReplacement = useCallback((replaceWith: string) => {
+    commit((current) => ({
+      ...current,
+      view: {
+        ...current.view,
+        replacements: current.view.replacements.filter((replacement) => replacement.replaceWith !== replaceWith),
+      },
+    }));
+    setSelectedId(null);
+    setStatus('替换关系已解除，所有点与推导保持不变');
+  }, [commit]);
+
+  const projection = useMemo(() => projectDocument(document), [document]);
+  const activeIds = useMemo(() => {
+    const candidates = neighborhood(document, focusedId);
+    return new Set([...candidates].filter((id) => projection.visibleIds.has(id)));
+  }, [document, focusedId, projection.visibleIds]);
   const focusPositions = useMemo(
     () => focusedId
       ? focusLayouts[focusedId] ?? layoutNeighborhood(document, activeIds, focusedId)
@@ -135,27 +231,40 @@ function AuthoringCanvas() {
   );
 
   const projectedNodes = useMemo<AuthoringFlowNode[]>(() => {
+    const conceptById = new Map(document.graph.concepts.map((concept) => [concept.id, concept]));
     const dimmed = (id: string) => !!focusedId && !activeIds.has(id);
     const position = (id: string) => focusPositions?.[id] ?? document.view.positions[id] ?? { x: 0, y: 0 };
     return [
-      ...document.graph.concepts.map((concept): AuthoringFlowNode => ({
-        id: concept.id,
-        type: 'concept',
-        position: position(concept.id),
-        selected: selectedId === concept.id,
-        data: { label: concept.label, definition: concept.definition, dimmed: dimmed(concept.id), onDelete: deleteItem },
-      })),
-      ...document.graph.derivations.map((derivation): AuthoringFlowNode => ({
+      ...projection.concepts.map((item): AuthoringFlowNode => {
+        const concept = conceptById.get(item.id)!;
+        return {
+          id: concept.id,
+          type: 'concept',
+          position: position(concept.id),
+          data: {
+            label: concept.label,
+            definition: concept.definition,
+            dimmed: dimmed(concept.id),
+            depth: item.depth,
+            replacements: item.controls.map((control) => ({ ...control, onToggle: toggleReplacement })),
+            onDelete: deleteItem,
+          },
+        };
+      }),
+      ...projection.derivations.map((derivation): AuthoringFlowNode => ({
         id: derivation.id,
         type: 'derivation',
         position: position(derivation.id),
-        selected: selectedId === derivation.id,
-        data: { weight: derivation.weight, premiseCount: derivation.premises.length, dimmed: dimmed(derivation.id), onDelete: deleteItem },
+        data: {
+          weight: derivation.weight,
+          premiseCount: derivation.premises.length,
+          dimmed: dimmed(derivation.id),
+          onDelete: deleteItem,
+        },
       })),
     ];
-  }, [activeIds, deleteItem, document, focusPositions, focusedId, selectedId]);
+  }, [activeIds, deleteItem, document.graph.concepts, document.view.positions, focusPositions, focusedId, projection, toggleReplacement]);
 
-  // React Flow owns high-frequency drag state; the document is updated only on drag stop.
   const [nodes, setNodes, onNodesChange] = useNodesState<AuthoringFlowNode>([]);
 
   useEffect(() => {
@@ -163,10 +272,27 @@ function AuthoringCanvas() {
       const previous = new Map(current.map((node) => [node.id, node]));
       return projectedNodes.map((node) => ({
         ...node,
+        selected: previous.get(node.id)?.selected ?? false,
         measured: previous.get(node.id)?.measured,
       }));
     });
   }, [projectedNodes, setNodes]);
+
+  const beginReplacement = useCallback(() => {
+    if (replacementDraft) {
+      setReplacementDraft(null);
+      setStatus('已取消替换');
+      return;
+    }
+    const conceptIds = new Set(document.graph.concepts.map((concept) => concept.id));
+    const points = selectedNodeIds.filter((id) => conceptIds.has(id));
+    if (!points.length) {
+      setStatus('请先选择概念点');
+      return;
+    }
+    setReplacementDraft(points);
+    setStatus('请选择已有概念作为替换点');
+  }, [document.graph.concepts, replacementDraft, selectedNodeIds]);
 
   useEffect(() => {
     if (!focusedId) return;
@@ -178,7 +304,7 @@ function AuthoringCanvas() {
 
   const edges = useMemo<ProjectedEdge[]>(() => {
     const result: ProjectedEdge[] = [];
-    for (const derivation of document.graph.derivations) {
+    for (const derivation of projection.derivations) {
       const derivationActive = !focusedId || activeIds.has(derivation.id);
       for (const premise of derivation.premises) {
         result.push({
@@ -187,7 +313,7 @@ function AuthoringCanvas() {
           target: derivation.id,
           sourceHandle: 'concept-out',
           targetHandle: 'premise-in',
-          type: 'bezier',
+          type: 'default',
           deletable: false,
           data: { kind: 'premise', derivationId: derivation.id, premiseId: premise },
           style: { stroke: '#2f7087', strokeWidth: derivationActive ? 1.8 : 1.1, opacity: derivationActive ? 0.9 : 0.08 },
@@ -200,7 +326,7 @@ function AuthoringCanvas() {
         target: derivation.conclusion,
         sourceHandle: 'conclusion-out',
         targetHandle: 'concept-in',
-        type: 'bezier',
+        type: 'default',
         deletable: false,
         data: { kind: 'conclusion', derivationId: derivation.id },
         style: { stroke: '#a44f3f', strokeWidth: derivationActive ? 2 : 1.2, opacity: derivationActive ? 0.92 : 0.08 },
@@ -208,15 +334,15 @@ function AuthoringCanvas() {
       });
     }
     return result;
-  }, [activeIds, document.graph.derivations, focusedId]);
+  }, [activeIds, focusedId, projection.derivations]);
 
-  const persistNodePosition = useCallback((id: string, position: Position) => {
-    if (focusedId && activeIds.has(id)) {
+  const persistNodePosition = useCallback((node: AuthoringFlowNode) => {
+    if (focusedId && activeIds.has(node.id)) {
       setFocusLayouts((current) => ({
         ...current,
         [focusedId]: {
           ...(current[focusedId] ?? layoutNeighborhood(document, activeIds, focusedId)),
-          [id]: position,
+          [node.id]: node.position,
         },
       }));
       setStatus('局部视图布局已更新');
@@ -224,7 +350,7 @@ function AuthoringCanvas() {
     }
     commit((current) => ({
       ...current,
-      view: { positions: { ...current.view.positions, [id]: position } },
+      view: { ...current.view, positions: { ...current.view.positions, [node.id]: node.position } },
     }));
   }, [activeIds, commit, document, focusedId]);
 
@@ -234,7 +360,7 @@ function AuthoringCanvas() {
     commit((current) => ({
       ...current,
       graph: { ...current.graph, concepts: [...current.graph.concepts, { id, label: '新概念', definition: '' }] },
-      view: { positions: { ...current.view.positions, [id]: nextPosition } },
+      view: { ...current.view, positions: { ...current.view.positions, [id]: nextPosition } },
     }));
     setFocusLayouts({});
     setFocusedId(null);
@@ -271,6 +397,7 @@ function AuthoringCanvas() {
           }],
         },
         view: {
+          ...current.view,
           positions: {
             ...current.view.positions,
             [id]: { x: (sourcePosition.x + targetPosition.x) / 2 + 44, y: (sourcePosition.y + targetPosition.y) / 2 },
@@ -329,7 +456,7 @@ function AuthoringCanvas() {
     const positions = layoutDocument(document);
     setFocusedId(null);
     setFocusLayouts({});
-    commit((current) => ({ ...current, view: { positions } }));
+    commit((current) => ({ ...current, view: { ...current.view, positions } }));
     window.setTimeout(() => void fitView({ padding: 0.12, duration: 350 }), 40);
   }, [commit, document, fitView]);
 
@@ -340,10 +467,12 @@ function AuthoringCanvas() {
       setStatus('没有匹配的概念');
       return;
     }
+    const revealed = revealConcept(document, concept.id);
+    setDocument(revealed);
     setFocusedId(null);
     setSelectedId(concept.id);
-    void fitView({ nodes: [{ id: concept.id }], padding: 2, duration: 300, maxZoom: 1.4 });
-  }, [document.graph.concepts, fitView, search]);
+    window.setTimeout(() => void fitView({ nodes: [{ id: concept.id }], padding: 2, duration: 300, maxZoom: 1.4 }), 30);
+  }, [document, fitView, search]);
 
   const download = useCallback(() => {
     const blob = new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' });
@@ -359,13 +488,14 @@ function AuthoringCanvas() {
   const importFile = useCallback(async (file: File) => {
     try {
       const imported = parseDocument(await file.text());
-      const positions = Object.keys(imported.view?.positions ?? {}).length ? imported.view.positions : layoutDocument(imported);
-      setDocument({ ...imported, view: { positions } });
+      const positions = Object.keys(imported.view.positions).length ? imported.view.positions : layoutDocument(imported);
+      setDocument({ ...imported, view: { ...imported.view, positions } });
       setFocusLayouts({});
       setFocusedId(null);
       setSelectedId(null);
+      setReplacementDraft(null);
       setStatus('文档已打开');
-      window.setTimeout(() => fitView({ padding: 0.12, duration: 300 }), 20);
+      window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
     } catch (error) {
       setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法打开文档');
     }
@@ -379,11 +509,12 @@ function AuthoringCanvas() {
   const applyJson = useCallback(() => {
     try {
       const parsed = parseDocument(jsonText);
-      const positions = Object.keys(parsed.view?.positions ?? {}).length ? parsed.view.positions : layoutDocument(parsed);
-      setDocument({ ...parsed, view: { positions } });
+      const positions = Object.keys(parsed.view.positions).length ? parsed.view.positions : layoutDocument(parsed);
+      setDocument({ ...parsed, view: { ...parsed.view, positions } });
       setFocusLayouts({});
       setFocusedId(null);
       setSelectedId(null);
+      setReplacementDraft(null);
       setJsonOpen(false);
       setStatus('JSON 已应用');
     } catch (error) {
@@ -392,13 +523,42 @@ function AuthoringCanvas() {
   }, [jsonText]);
 
   const selectNode = useCallback((id: string) => {
+    if (replacementDraft) {
+      if (!document.graph.concepts.some((concept) => concept.id === id)) {
+        setStatus('替换点必须是概念');
+        return;
+      }
+      const candidate = replacementFromSelection(document, replacementDraft, id);
+      if (!candidate.replacement) {
+        setStatus(candidate.analysis.issues[0]?.message ?? '无法建立替换关系');
+        return;
+      }
+      commit((current) => ({
+        ...current,
+        view: {
+          ...current.view,
+          replacements: [...current.view.replacements, candidate.replacement!],
+        },
+      }));
+      setReplacementDraft(null);
+      setSelectedNodeIds([]);
+      setSelectedId(candidate.replacement.points[0]);
+      setStatus(`已定义 ${candidate.replacement.points.join(' + ')} → ${id}`);
+      return;
+    }
     if (selectedId === id) {
       setFocusedId(id);
       return;
     }
-    // Selecting another node inside a local view must not discard that view.
     setSelectedId(id);
-  }, [selectedId]);
+  }, [commit, document, replacementDraft, selectedId]);
+
+  const handleSelectionChange = useCallback((selection: OnSelectionChangeParams<AuthoringFlowNode, ProjectedEdge>) => {
+    const ids = selection.nodes.map((node) => node.id).sort();
+    setSelectedNodeIds((current) =>
+      current.length === ids.length && current.every((id, index) => id === ids[index]) ? current : ids,
+    );
+  }, []);
 
   const toggleFocusedView = useCallback(() => {
     setFocusedId((current) => current ? null : selectedId);
@@ -406,6 +566,9 @@ function AuthoringCanvas() {
 
   const selectedConcept = document.graph.concepts.find((item) => item.id === selectedId);
   const selectedDerivation = document.graph.derivations.find((item) => item.id === selectedId);
+  const selectedReplacements = selectedConcept
+    ? document.view.replacements.filter((item) => item.replaceWith === selectedConcept.id || item.points.includes(selectedConcept.id))
+    : [];
   const labelById = useMemo(() => new Map(document.graph.concepts.map((item) => [item.id, item.label])), [document.graph.concepts]);
 
   return (
@@ -426,12 +589,21 @@ function AuthoringCanvas() {
         </div>
         <div className="toolbar" aria-label="文档工具栏">
           <button type="button" title="新建概念" onClick={() => addConcept()}><Plus size={18} /></button>
+          <button
+            type="button"
+            className={replacementDraft ? 'is-active' : ''}
+            title={replacementDraft ? '取消替换' : 'Replace with'}
+            disabled={!replacementDraft && selectedNodeIds.length === 0}
+            onClick={beginReplacement}
+          >
+            {replacementDraft ? <X size={17} /> : <Replace size={17} />}
+          </button>
           <button type="button" title="自动布局" onClick={applyLayout}><LayoutGrid size={17} /></button>
           <button
             type="button"
             className={focusedId ? 'is-active' : ''}
             title={focusedId ? '关闭局部视图' : '开启局部视图'}
-            disabled={!selectedId}
+            disabled={!selectedId || !!replacementDraft}
             onClick={toggleFocusedView}
           >
             {focusedId ? <Eye size={17} /> : <EyeOff size={17} />}
@@ -449,26 +621,34 @@ function AuthoringCanvas() {
       </header>
 
       <section className="workspace">
-        <div className="canvas-wrap">
+        <div className={`canvas-wrap ${replacementDraft ? 'is-replacing' : ''}`}>
           <ReactFlow<AuthoringFlowNode, ProjectedEdge>
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
+            onSelectionChange={handleSelectionChange}
             onConnect={onConnect}
-            onNodeDragStop={(_, node) => persistNodePosition(node.id, node.position)}
+            onNodeDragStop={(_, node) => persistNodePosition(node)}
             onNodeClick={(_, node) => selectNode(node.id)}
             onPaneClick={() => {
               setFocusedId(null);
               setSelectedId(null);
+              setSelectedNodeIds([]);
+              if (replacementDraft) {
+                setReplacementDraft(null);
+                setStatus('已取消替换');
+              }
             }}
             onNodesDelete={(deleted) => deleted.forEach((node) => deleteItem(node.id))}
-            defaultViewport={{ x: 28, y: 90, zoom: 0.72 }}
+            fitView
+            fitViewOptions={{ padding: 0.12, maxZoom: 1.1 }}
             minZoom={0.08}
             maxZoom={2}
+            multiSelectionKeyCode="Shift"
             connectionLineStyle={{ stroke: '#4f5961', strokeWidth: 1.5 }}
             connectionLineType={ConnectionLineType.Bezier}
-            defaultEdgeOptions={{ type: 'bezier' }}
+            defaultEdgeOptions={{ type: 'default' }}
             elevateEdgesOnSelect={false}
             proOptions={{ hideAttribution: true }}
           >
@@ -485,6 +665,7 @@ function AuthoringCanvas() {
           </ReactFlow>
           <div className="legend" aria-label="图例">
             <span><i className="legend-concept" />概念</span>
+            <span><i className="legend-replacement" />可替换</span>
             <span><i className="legend-derivation" />推导</span>
             <span><i className="legend-premise" />前提</span>
             <span><i className="legend-conclusion" />结论</span>
@@ -501,6 +682,28 @@ function AuthoringCanvas() {
               </div>
               <label>名称<input value={selectedConcept.label} onChange={(event) => updateConcept(selectedConcept.id, { label: event.target.value })} /></label>
               <label className="grow-field">客观定义<textarea value={selectedConcept.definition} onChange={(event) => updateConcept(selectedConcept.id, { definition: event.target.value })} /></label>
+              {selectedReplacements.map((replacement) => (
+                <div className="replacement-definition" key={replacement.replaceWith}>
+                  <div className="replacement-expression">
+                    <span>{replacement.points.join(' + ')}</span>
+                    <strong>→</strong>
+                    <span>{replacement.replaceWith}</span>
+                  </div>
+                  <div className="replacement-segment" role="group" aria-label={`${replacement.replaceWith} 显示方式`}>
+                    <button
+                      type="button"
+                      className={replacement.show === 'points' ? 'is-active' : ''}
+                      onClick={() => toggleReplacement(replacement.replaceWith, 'points')}
+                    >点集</button>
+                    <button
+                      type="button"
+                      className={replacement.show === 'replacement' ? 'is-active' : ''}
+                      onClick={() => toggleReplacement(replacement.replaceWith, 'replacement')}
+                    >{replacement.replaceWith}</button>
+                    <button className="replacement-unlink" type="button" title="解除替换关系" onClick={() => removeReplacement(replacement.replaceWith)}><Unlink size={13} /></button>
+                  </div>
+                </div>
+              ))}
               <div className="relation-summary">
                 <span>作为前提 {document.graph.derivations.filter((item) => item.premises.includes(selectedConcept.id)).length}</span>
                 <span>作为结论 {document.graph.derivations.filter((item) => item.conclusion === selectedConcept.id).length}</span>
@@ -534,7 +737,7 @@ function AuthoringCanvas() {
               <div className="document-stats">
                 <div><strong>{document.graph.concepts.length}</strong><span>概念</span></div>
                 <div><strong>{document.graph.derivations.length}</strong><span>推导</span></div>
-                <div><strong>{document.graph.derivations.reduce((sum, item) => sum + item.premises.length + 1, 0)}</strong><span>投影线</span></div>
+                <div><strong>{document.view.replacements.length}</strong><span>替换关系</span></div>
               </div>
               <div className="schema-note"><code>T(h) → y</code></div>
             </>
@@ -553,7 +756,7 @@ function AuthoringCanvas() {
               } catch {
                 setStatus('JSON 语法无效');
               }
-            }}>格式化</button><button type="button" className="primary-button" onClick={applyJson}>校验并应用</button></footer>
+            }}>格式化</button><button type="button" className="primary-button" onClick={applyJson}>检查并应用</button></footer>
           </section>
         </div>
       )}

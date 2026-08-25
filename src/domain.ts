@@ -1,4 +1,6 @@
-export const DOCUMENT_SCHEMA = 'derivon.authoring/v1' as const;
+export const DOCUMENT_SCHEMA = 'derivon.authoring/v3' as const;
+const LEGACY_SCHEMA_V1 = 'derivon.authoring/v1';
+const LEGACY_SCHEMA_V2 = 'derivon.authoring/v2';
 
 export type Position = { x: number; y: number };
 
@@ -17,6 +19,12 @@ export type Derivation = {
   weight: number;
 };
 
+export type ViewReplacement = {
+  points: string[];
+  replaceWith: string;
+  show: 'points' | 'replacement';
+};
+
 export type AuthoringDocument = {
   schema: typeof DOCUMENT_SCHEMA;
   document: {
@@ -30,6 +38,7 @@ export type AuthoringDocument = {
   };
   view: {
     positions: Record<string, Position>;
+    replacements: ViewReplacement[];
   };
 };
 
@@ -38,7 +47,47 @@ export type DocumentIssue = { path: string; message: string };
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export function validateDocument(value: unknown): DocumentIssue[] {
+function migrateDocument(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.view)) return value;
+
+  if (value.schema === LEGACY_SCHEMA_V2) {
+    const modules = Array.isArray(value.modules) ? value.modules : [];
+    const expanded = new Set(Array.isArray(value.view.expanded) ? value.view.expanded : []);
+    const replacements = modules.filter(isRecord).map((module) => ({
+      points: Array.isArray(module.concepts) ? module.concepts : [],
+      replaceWith: module.parent,
+      show: expanded.has(module.parent) ? 'points' : 'replacement',
+    }));
+    const { expanded: _expanded, ...legacyView } = value.view;
+    const { modules: _modules, ...legacyDocument } = value;
+    return {
+      ...legacyDocument,
+      schema: DOCUMENT_SCHEMA,
+      view: { ...legacyView, replacements },
+    };
+  }
+
+  if (value.schema === LEGACY_SCHEMA_V1) {
+    const modules = Array.isArray(value.view.modules) ? value.view.modules : [];
+    const replacements = modules.filter(isRecord).map((module) => ({
+      points: Array.isArray(module.conceptIds)
+        ? module.conceptIds.filter((id) => id !== module.root)
+        : [],
+      replaceWith: module.root,
+      show: module.collapsed === true ? 'replacement' : 'points',
+    }));
+    const { modules: _modules, ...legacyView } = value.view;
+    return {
+      ...value,
+      schema: DOCUMENT_SCHEMA,
+      view: { ...legacyView, replacements },
+    };
+  }
+
+  return value;
+}
+
+function validateCurrentDocument(value: unknown): DocumentIssue[] {
   const issues: DocumentIssue[] = [];
   if (!isRecord(value)) return [{ path: '$', message: '文档必须是 JSON 对象' }];
   if (value.schema !== DOCUMENT_SCHEMA) issues.push({ path: 'schema', message: `必须为 ${DOCUMENT_SCHEMA}` });
@@ -95,21 +144,80 @@ export function validateDocument(value: unknown): DocumentIssue[] {
 
   if (!isRecord(value.view) || !isRecord(value.view.positions)) {
     issues.push({ path: 'view.positions', message: '必须是位置映射对象' });
-  } else {
-    const nodeIds = new Set([...conceptIds, ...derivationIds]);
-    for (const [id, position] of Object.entries(value.view.positions)) {
-      if (!nodeIds.has(id)) issues.push({ path: `view.positions.${id}`, message: '位置引用了未知节点' });
-      if (!isRecord(position) || typeof position.x !== 'number' || !Number.isFinite(position.x) || typeof position.y !== 'number' || !Number.isFinite(position.y)) {
-        issues.push({ path: `view.positions.${id}`, message: '位置必须包含有限数值 x 和 y' });
+    return issues;
+  }
+
+  const nodeIds = new Set([...conceptIds, ...derivationIds]);
+  for (const [id, position] of Object.entries(value.view.positions)) {
+    if (!nodeIds.has(id)) issues.push({ path: `view.positions.${id}`, message: '位置引用了未知节点' });
+    if (!isRecord(position) || typeof position.x !== 'number' || !Number.isFinite(position.x) || typeof position.y !== 'number' || !Number.isFinite(position.y)) {
+      issues.push({ path: `view.positions.${id}`, message: '位置必须包含有限数值 x 和 y' });
+    }
+  }
+
+  if (!Array.isArray(value.view.replacements)) {
+    issues.push({ path: 'view.replacements', message: '必须是数组' });
+    return issues;
+  }
+
+  const replacementTargets = new Set<string>();
+  const ownerByPoint = new Map<string, string>();
+  value.view.replacements.forEach((replacement, index) => {
+    const path = `view.replacements[${index}]`;
+    if (!isRecord(replacement)) {
+      issues.push({ path, message: '必须是对象' });
+      return;
+    }
+    if (typeof replacement.replaceWith !== 'string' || !conceptIds.has(replacement.replaceWith)) {
+      issues.push({ path: `${path}.replaceWith`, message: '替换点必须引用已有概念' });
+    } else if (replacementTargets.has(replacement.replaceWith)) {
+      issues.push({ path: `${path}.replaceWith`, message: '一个概念只能作为一条替换关系的结果' });
+    } else {
+      replacementTargets.add(replacement.replaceWith);
+    }
+    if (!Array.isArray(replacement.points) || replacement.points.length === 0) {
+      issues.push({ path: `${path}.points`, message: '点集至少需要一个概念' });
+    } else {
+      if (new Set(replacement.points).size !== replacement.points.length) issues.push({ path: `${path}.points`, message: '点集不能包含重复 ID' });
+      replacement.points.forEach((id) => {
+        if (typeof id !== 'string' || !conceptIds.has(id)) {
+          issues.push({ path: `${path}.points`, message: `引用了未知概念 ${String(id)}` });
+        } else if (id === replacement.replaceWith) {
+          issues.push({ path: `${path}.points`, message: '替换点不能同时位于点集中' });
+        } else if (ownerByPoint.has(id)) {
+          issues.push({ path: `${path}.points`, message: `${id} 已属于 ${ownerByPoint.get(id)} 的替换点集` });
+        } else if (typeof replacement.replaceWith === 'string') {
+          ownerByPoint.set(id, replacement.replaceWith);
+        }
+      });
+    }
+    if (replacement.show !== 'points' && replacement.show !== 'replacement') {
+      issues.push({ path: `${path}.show`, message: '必须为 points 或 replacement' });
+    }
+  });
+
+  for (const target of replacementTargets) {
+    let cursor: string | undefined = target;
+    const visited = new Set<string>();
+    while (cursor && ownerByPoint.has(cursor)) {
+      if (visited.has(cursor)) {
+        issues.push({ path: 'view.replacements', message: `替换关系在 ${cursor} 处形成循环` });
+        break;
       }
+      visited.add(cursor);
+      cursor = ownerByPoint.get(cursor);
     }
   }
   return issues;
 }
 
+export function validateDocument(value: unknown): DocumentIssue[] {
+  return validateCurrentDocument(migrateDocument(value));
+}
+
 export function parseDocument(text: string): AuthoringDocument {
-  const value: unknown = JSON.parse(text);
-  const issues = validateDocument(value);
+  const value = migrateDocument(JSON.parse(text));
+  const issues = validateCurrentDocument(value);
   if (issues.length) throw new Error(issues.slice(0, 4).map((issue) => `${issue.path}: ${issue.message}`).join('\n'));
   return value as AuthoringDocument;
 }
