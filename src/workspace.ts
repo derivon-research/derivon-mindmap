@@ -89,11 +89,11 @@ export function storeDocumentFiles(
   };
 }
 
-export function conceptTemplate(label: string, format: DocumentFormat = 'html'): string {
+export function conceptTemplate(label: string, format: DocumentFormat = 'markdown'): string {
   return conceptDocumentTemplate(label, format);
 }
 
-export function derivationTemplate(id: string, format: DocumentFormat = 'html'): string {
+export function derivationTemplate(id: string, format: DocumentFormat = 'markdown'): string {
   return derivationDocumentTemplate(id, format);
 }
 

@@ -1,6 +1,11 @@
-import { marked } from 'marked';
-import TurndownService from 'turndown';
+import { Marked } from 'marked';
+import markedKatex from 'marked-katex-extension';
 import type { DocumentFormat } from './domain';
+
+const markdownRenderer = new Marked(
+  { gfm: true },
+  markedKatex({ throwOnError: false, strict: false }),
+);
 
 const DEFAULT_STYLE = `
 :root { color: #202422; background: #fff; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -12,6 +17,7 @@ blockquote { margin-left: 0; padding-left: 14px; border-left: 3px solid #799084;
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 7px 9px; border: 1px solid #d5d8d3; text-align: left; }
 img { max-width: 100%; }
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
 button, input, select, textarea { font: inherit; }
 `.trim();
 
@@ -26,6 +32,7 @@ export function htmlDocument(body: string, title: string): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(title)}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.0/dist/katex.min.css" crossorigin="anonymous">
   <style>
 ${DEFAULT_STYLE.split('\n').map((line) => `    ${line}`).join('\n')}
   </style>
@@ -38,20 +45,18 @@ ${body}
 }
 
 export function markdownToHtml(markdown: string, title: string): string {
-  const body = marked.parse(markdown, { async: false, gfm: true }) as string;
+  const body = markdownRenderer.parse(markdown, { async: false }) as string;
   return htmlDocument(body.trim(), title);
 }
 
 export function htmlToMarkdown(html: string): string {
   const parsed = new DOMParser().parseFromString(html, 'text/html');
-  parsed.querySelectorAll('script, style, template, noscript').forEach((element) => element.remove());
-  const turndown = new TurndownService({
-    bulletListMarker: '-',
-    codeBlockStyle: 'fenced',
-    emDelimiter: '*',
-    strongDelimiter: '**',
-  });
-  return `${turndown.turndown(parsed.body.innerHTML).trim()}\n`;
+  const headAssets = [...parsed.head.querySelectorAll('style, script')]
+    .map((element) => element.outerHTML)
+    .join('\n');
+  const body = parsed.body.innerHTML.trim();
+  const source = [headAssets, body].filter(Boolean).join('\n');
+  return `<div data-derivon-imported-html>\n${source}\n</div>\n`;
 }
 
 export function convertDocumentContent(

@@ -588,7 +588,7 @@ function AuthoringCanvas() {
       ...document.graph.points.map((item) => item.data.document),
       ...document.graph.hyperedges.map((item) => item.data.document),
     ]);
-    const format: DocumentFormat = 'html';
+    const format: DocumentFormat = 'markdown';
     const source = conceptTemplate('新概念', format);
     const nextPosition = position ?? screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     setFiles((current) => storeDocumentFiles(current, directory, format, source, '新概念'));
@@ -625,7 +625,7 @@ function AuthoringCanvas() {
         ...document.graph.points.map((item) => item.data.document),
         ...document.graph.hyperedges.map((item) => item.data.document),
       ]);
-      const format: DocumentFormat = 'html';
+      const format: DocumentFormat = 'markdown';
       const source = derivationTemplate(id, format);
       const nextHyperedge: Hyperedge = {
         id,
@@ -868,10 +868,9 @@ function AuthoringCanvas() {
     commit((current) => current);
   }, [commit]);
 
-  const changeDocumentFormat = useCallback((format: DocumentFormat) => {
-    if (!editingReference || editingReference.format === format || !editingSourcePath || !editingId) return;
-    if (editingReference.format === 'html' && format === 'markdown'
-      && !window.confirm('转换为 Markdown 会移除脚本、样式和其他交互内容。继续转换？')) return;
+  const migrateHtmlDocument = useCallback(() => {
+    if (!editingReference || editingReference.format !== 'html' || !editingSourcePath || !editingId) return;
+    const format: DocumentFormat = 'markdown';
     const converted = convertDocumentContent(
       files[editingSourcePath] ?? '',
       editingReference.format,
@@ -890,12 +889,13 @@ function AuthoringCanvas() {
           : item),
       },
     }));
-    setStatus(format === 'html' ? '已转换为 HTML' : '已转换为 Markdown');
+    setStatus('旧版 HTML 已迁移到 Markdown');
   }, [commit, editingId, editingLabel, editingReference, editingSourcePath, files]);
 
   useEffect(() => {
     if (editingId && !editingConcept && !editingDerivation) setEditingId(null);
-  }, [editingConcept, editingDerivation, editingId]);
+    else migrateHtmlDocument();
+  }, [editingConcept, editingDerivation, editingId, migrateHtmlDocument]);
 
   return (
     <main className="app-shell">
@@ -969,7 +969,6 @@ function AuthoringCanvas() {
           <div className="document-editor-main">
             <DocumentEditor
               label={editingLabel}
-              format={editingReference.format}
               value={files[editingSourcePath] ?? ''}
               onChange={(content) => updateDocumentSource(editingReference, content, editingLabel)}
             />
@@ -999,16 +998,12 @@ function AuthoringCanvas() {
                 <label className="weight-field">成本权重<input type="number" min="0" step="1" value={editingDerivation.weight} onChange={(event) => updateHyperedge(editingDerivation.id, { weight: Math.max(0, Math.trunc(Number(event.target.value) || 0)) })} /></label>
               </>
             )}
-            <div className="document-format" role="group" aria-label="文档编辑格式">
-              <button type="button" className={editingReference.format === 'markdown' ? 'is-active' : ''} onClick={() => changeDocumentFormat('markdown')}>Markdown</button>
-              <button type="button" className={editingReference.format === 'html' ? 'is-active' : ''} onClick={() => changeDocumentFormat('html')}>HTML</button>
-            </div>
             <div className="workspace-file">
               <span className="field-title">文档目录</span>
               <code>{editingReference.document}/</code>
               <span className="field-title">访问入口</span>
               <code>{editingEntryPath}</code>
-              {editingReference.format === 'markdown' && <code>{editingSourcePath}</code>}
+              <code>{editingSourcePath}</code>
               <span>{workspaceDirectory ? workspaceDirectory.name : '浏览器本地工作区'}</span>
               {status && <span className="editor-save-status" role="status">{status}</span>}
             </div>

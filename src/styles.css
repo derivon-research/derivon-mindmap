@@ -431,10 +431,6 @@ button { color: inherit; }
 .editor-context label { display: flex; flex-direction: column; gap: 7px; color: #5c645f; font-size: 11px; font-weight: 650; }
 .editor-context input { width: 100%; height: 34px; padding: 0 9px; border: 1px solid #d2d5d0; border-radius: 2px; outline: 0; background: #fff; color: #282d2a; font-size: 12px; font-weight: 400; }
 .editor-context input:focus { border-color: #68756e; }
-.document-format { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #cbd1cc; }
-.editor-context .document-format button { width: auto; height: 29px; border: 0; border-right: 1px solid #cbd1cc; background: #fff; color: #626b66; font-size: 10px; }
-.editor-context .document-format button:last-child { border-right: 0; }
-.editor-context .document-format button.is-active { background: #e7eee9; color: #285943; font-weight: 700; }
 .workspace-file { margin-top: auto; display: flex; flex-direction: column; gap: 7px; padding-top: 14px; border-top: 1px solid #dfe1dd; }
 .workspace-file code { padding: 8px; border: 1px solid #dfe1dd; background: #f5f6f3; color: #48514c; font-size: 9px; overflow-wrap: anywhere; }
 .workspace-file > span { color: #777e7a; font-size: 10px; }
@@ -442,30 +438,58 @@ button { color: inherit; }
 .chip.is-static { padding-right: 8px; }
 
 .markdown-editor { width: 100%; height: 100%; min-height: 0; display: grid; grid-template-rows: 43px minmax(0, 1fr); border: 1px solid #cfd2cd; background: #fff; }
-.markdown-toolbar { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 7px; border-bottom: 1px solid #d9dbd7; background: #fbfbfa; }
-.markdown-actions, .editor-mode { min-width: 0; display: flex; align-items: center; gap: 2px; }
-.markdown-toolbar button { width: 29px; height: 29px; display: inline-grid; place-items: center; border: 1px solid transparent; background: transparent; color: #535c57; cursor: pointer; }
-.markdown-toolbar button:hover { border-color: #d2d5d0; background: #eff1ee; color: #26332c; }
-.editor-mode { flex: 0 0 auto; padding-left: 7px; border-left: 1px solid #d9dbd7; }
-.editor-mode button.is-active { border-color: #aebbb3; background: #e8ede9; color: #285641; }
-.markdown-body { min-width: 0; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; }
-.markdown-editor.mode-write .markdown-body, .markdown-editor.mode-preview .markdown-body { grid-template-columns: 1fr; }
-.markdown-body > textarea { width: 100%; min-width: 0; height: 100%; resize: none; padding: 30px max(28px, calc((100% - 760px) / 2)); border: 0; border-right: 1px solid #dfe1dd; outline: 0; background: #fdfdfc; color: #242a27; font: 14px/1.75 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2; }
-.markdown-preview { min-width: 0; height: 100%; overflow: auto; padding: 25px max(28px, calc((100% - 760px) / 2)); color: #282e2b; font-size: 14px; line-height: 1.75; }
-.html-preview { width: 100%; min-width: 0; height: 100%; border: 0; background: #fff; }
-.markdown-preview > :first-child { margin-top: 0; }
-.markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { line-height: 1.3; letter-spacing: 0; color: #202623; }
-.markdown-preview h1 { padding-bottom: 10px; border-bottom: 1px solid #dfe1dd; font-size: 26px; }
-.markdown-preview h2 { margin-top: 28px; font-size: 20px; }
-.markdown-preview h3 { margin-top: 23px; font-size: 16px; }
-.markdown-preview code { padding: 2px 4px; background: #eef0ed; font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; }
-.markdown-preview pre { overflow: auto; padding: 13px; border: 1px solid #d9dcd7; background: #f4f5f2; }
-.markdown-preview pre code { padding: 0; background: transparent; }
-.markdown-preview blockquote { margin-left: 0; padding-left: 14px; border-left: 3px solid #799084; color: #5d6761; }
-.markdown-preview table { width: 100%; border-collapse: collapse; }
-.markdown-preview th, .markdown-preview td { padding: 7px 9px; border: 1px solid #d5d8d3; text-align: left; }
-.markdown-preview a { color: #27647a; }
-.markdown-preview img { max-width: 100%; }
+.markdown-editor.has-formula-editor { grid-template-rows: 43px 43px minmax(0, 1fr); }
+.markdown-toolbar { min-width: 0; display: flex; align-items: center; gap: 7px; padding: 0 7px; border-bottom: 1px solid #d9dbd7; background: #fbfbfa; }
+.markdown-actions { min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.markdown-actions::-webkit-scrollbar { display: none; }
+.markdown-actions select { width: 84px; height: 29px; flex: 0 0 auto; padding: 0 22px 0 7px; border: 1px solid transparent; outline: 0; background: transparent; color: #535c57; font-size: 11px; }
+.markdown-actions select:hover, .markdown-actions select:focus { border-color: #d2d5d0; background: #fff; }
+.markdown-toolbar button { width: 29px; height: 29px; flex: 0 0 auto; display: inline-grid; place-items: center; border: 1px solid transparent; background: transparent; color: #535c57; cursor: pointer; }
+.markdown-toolbar button:hover:not(:disabled), .markdown-toolbar button.is-active { border-color: #bdc8c0; background: #e8ede9; color: #285641; }
+.markdown-toolbar button:disabled { opacity: 0.35; cursor: default; }
+.toolbar-separator { width: 1px; height: 19px; flex: 0 0 auto; margin: 0 3px; background: #d9dbd7; }
+.editor-history { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding-left: 7px; border-left: 1px solid #d9dbd7; }
+.formula-source-editor { min-width: 0; display: grid; grid-template-columns: auto auto minmax(80px, 1fr) auto 29px 29px; align-items: center; gap: 6px; padding: 5px 8px; border-bottom: 1px solid #d9dbd7; background: #f2f6f3; }
+.formula-source-editor .formula-kind { padding: 3px 6px; border: 1px solid #87a697; background: #fff; color: #315d48; font-size: 9px; font-weight: 800; }
+.formula-source-editor code { color: #285641; font: 700 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.formula-source-editor input { width: 100%; height: 29px; min-width: 0; padding: 0 8px; border: 1px solid #bfc9c2; outline: 0; background: #fff; color: #222925; font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.formula-source-editor input:focus { border-color: #577765; box-shadow: 0 0 0 2px rgba(66, 105, 84, 0.12); }
+.formula-source-editor button { width: 29px; height: 29px; display: inline-grid; place-items: center; border: 1px solid transparent; background: transparent; color: #59645e; cursor: pointer; }
+.formula-source-editor button:hover { border-color: #bdc8c0; background: #fff; color: #285641; }
+.tiptap-editor-body { min-width: 0; min-height: 0; overflow: auto; background: #fdfdfc; }
+.tiptap-editor-body > div { min-height: 100%; }
+.tiptap-content { width: min(100%, 860px); min-height: 100%; margin: 0 auto; padding: 34px 42px 80px; outline: 0; color: #282e2b; font-size: 14px; line-height: 1.75; }
+.tiptap-content > :first-child { margin-top: 0; }
+.tiptap-content p { margin: 0.75em 0; }
+.tiptap-content h1, .tiptap-content h2, .tiptap-content h3 { line-height: 1.3; letter-spacing: 0; color: #202623; }
+.tiptap-content h1 { margin: 0 0 0.85em; padding-bottom: 10px; border-bottom: 1px solid #dfe1dd; font-size: 26px; }
+.tiptap-content h2 { margin: 1.4em 0 0.55em; font-size: 20px; }
+.tiptap-content h3 { margin: 1.25em 0 0.45em; font-size: 16px; }
+.tiptap-content code { padding: 2px 4px; background: #eef0ed; font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; }
+.tiptap-content pre { overflow: auto; padding: 13px; border: 1px solid #d9dcd7; background: #f4f5f2; }
+.tiptap-content pre code { padding: 0; background: transparent; }
+.tiptap-content blockquote { margin-left: 0; padding-left: 14px; border-left: 3px solid #799084; color: #5d6761; }
+.tiptap-content ul, .tiptap-content ol { padding-left: 24px; }
+.tiptap-content table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.tiptap-content th, .tiptap-content td { min-width: 70px; padding: 7px 9px; border: 1px solid #cfd4cf; text-align: left; vertical-align: top; }
+.tiptap-content th { background: #f0f2ef; font-weight: 700; }
+.tiptap-content .selectedCell::after { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: rgba(71, 106, 88, 0.12); content: ''; }
+.tiptap-content a { color: #27647a; text-decoration: underline; }
+.tiptap-content hr { margin: 28px 0; border: 0; border-top: 1px solid #cfd4cf; }
+.tiptap-content .ProseMirror-selectednode { outline: 2px solid #71907f; outline-offset: 2px; }
+.tiptap-mathematics-render { border: 1px solid transparent; cursor: pointer; }
+.tiptap-mathematics-render[data-type="inline-math"] { display: inline-block; margin: 0 2px; padding: 0 3px; vertical-align: baseline; }
+.tiptap-mathematics-render[data-type="block-math"] { margin: 18px 0; overflow-x: auto; padding: 18px 20px; border-color: #d8ddd8; background: #f7f9f6; text-align: center; }
+.tiptap-mathematics-render--editable:hover { border-color: #8ca597; background: #f0f5f1; }
+.tiptap-mathematics-render.inline-math-error, .tiptap-mathematics-render.block-math-error { color: #9b4035; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.raw-html-block { margin: 20px 0; overflow: hidden; border: 1px solid #cbd2cd; background: #fff; }
+.raw-html-block > header { height: 37px; display: flex; align-items: center; justify-content: space-between; padding: 0 5px 0 11px; border-bottom: 1px solid #d9ded9; background: #f4f6f3; }
+.raw-html-block > header > span { display: flex; align-items: center; gap: 7px; color: #45544c; font-size: 10px; font-weight: 750; }
+.raw-html-block > header > div { display: flex; gap: 1px; }
+.raw-html-block button { width: 27px; height: 27px; display: inline-grid; place-items: center; border: 1px solid transparent; background: transparent; color: #59645e; cursor: pointer; }
+.raw-html-block button:hover, .raw-html-block button.is-active { border-color: #c5cec8; background: #e4ebe6; color: #285641; }
+.raw-html-block textarea { width: 100%; min-height: 220px; display: block; resize: vertical; padding: 15px; border: 0; outline: 0; background: #202522; color: #edf2ee; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2; }
+.raw-html-block iframe { width: 100%; height: 220px; display: block; border: 0; background: #fff; }
 
 @media (max-width: 900px) {
   .topbar { grid-template-columns: minmax(170px, 1fr) auto; gap: 8px; }
@@ -473,7 +497,6 @@ button { color: inherit; }
   .toolbar { min-width: 310px; }
   .workspace { grid-template-columns: minmax(0, 1fr) 280px; }
   .document-workspace { grid-template-columns: minmax(0, 3fr) minmax(210px, 1fr); }
-  .markdown-actions button:nth-child(n+7) { display: none; }
 }
 
 @media (max-width: 680px) {
@@ -491,10 +514,11 @@ button { color: inherit; }
   .editor-context .endpoint-block, .editor-context .weight-field { display: none; }
   .workspace-file { margin-top: 0; }
   .markdown-editor { grid-template-rows: 39px minmax(0, 1fr); }
-  .markdown-actions button:nth-child(n+5) { display: none; }
-  .markdown-body { grid-template-columns: 1fr; }
-  .markdown-editor.mode-split .markdown-preview, .markdown-editor.mode-split .html-preview { display: none; }
-  .markdown-body > textarea, .markdown-preview { padding: 18px 16px; }
+  .markdown-editor.has-formula-editor { grid-template-rows: 39px 41px minmax(0, 1fr); }
+  .formula-source-editor { grid-template-columns: auto auto minmax(60px, 1fr) auto 27px 27px; gap: 4px; padding: 4px 5px; }
+  .formula-source-editor button { width: 27px; height: 27px; }
+  .tiptap-content { padding: 22px 16px 60px; }
+  .raw-html-block textarea, .raw-html-block iframe { min-height: 180px; height: 180px; }
   .canvas-wrap { border-right: 0; border-bottom: 1px solid #d9dbd7; }
   .inspector { padding: 13px; gap: 11px; }
   .inspector-heading { padding-bottom: 9px; }

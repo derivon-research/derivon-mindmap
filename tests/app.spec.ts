@@ -39,61 +39,186 @@ test('authors source concepts and derivations without persisting React Flow obje
   await expect(parallelGroup.locator('.derivation-weight')).toHaveText('1');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0') ?? '{"manifest":{}}').manifest);
   expect(saved.graph.points).toHaveLength(6);
-  expect(saved.graph.points.at(-1)).toEqual({ id: 'c-1', data: { label: 'AA', document: 'docs/concept-c-1', format: 'html' } });
+  expect(saved.graph.points.at(-1)).toEqual({ id: 'c-1', data: { label: 'AA', document: 'docs/concept-c-1', format: 'markdown' } });
   expect(saved.graph.hyperedges).toHaveLength(9);
   expect(saved.graph.hyperedges.at(-1)).toEqual({
     id: 'h-1',
     weight: 1,
     tails: ['A'],
     head: 'B',
-    data: { document: 'docs/derivation-h-1', format: 'html' },
+    data: { document: 'docs/derivation-h-1', format: 'markdown' },
   });
   const files = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files);
+  expect(files['docs/concept-c-1/document.md']).toContain('# 新概念');
   expect(files['docs/concept-c-1/index.html']).toContain('<h1>新概念</h1>');
+  expect(files['docs/derivation-h-1/document.md']).toContain('# 推导 h-1');
   expect(files['docs/derivation-h-1/index.html']).toContain('<h1>推导 h-1</h1>');
   expect(saved.graph).not.toHaveProperty('concepts');
   expect(saved.graph).not.toHaveProperty('derivations');
   expect(errors).toEqual([]);
 });
 
-test('edits an interactive HTML document and can convert it to Markdown', async ({ page }) => {
+test('authors Markdown in place with shortcuts and interactive HTML blocks', async ({ page }) => {
   await page.getByTitle('新建概念').click();
   await page.getByRole('button', { name: '编辑文档' }).click();
 
-  const htmlBody = page.getByLabel('HTML 正文');
-  await expect(htmlBody).toContainText('<!doctype html>');
-  await htmlBody.fill(`<!doctype html>
-<html lang="zh-CN">
-<body>
-  <button id="counter">增加</button>
-  <output id="value">0</output>
-  <script>
-    document.querySelector('#counter').addEventListener('click', () => {
-      const output = document.querySelector('#value');
-      output.value = String(Number(output.value) + 1);
-    });
-  </script>
-</body>
-</html>`);
-
-  const preview = page.frameLocator('.html-preview');
-  await preview.getByRole('button', { name: '增加' }).click();
-  await expect(preview.locator('#value')).toHaveText('1');
-  await page.screenshot({ path: '/tmp/derivon-html-editor.png', fullPage: true });
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files['docs/concept-c-1/index.html'])).toContain("querySelector('#counter')");
-
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Markdown', exact: true }).click();
   const markdownBody = page.getByLabel('Markdown 正文');
-  await expect(markdownBody).toContainText('增加');
+  const primaryModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await markdownBody.click();
+  await page.keyboard.press(`${primaryModifier}+a`);
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('# ');
+  await page.keyboard.type('Tiptap document');
+  await expect(markdownBody.locator('h1')).toHaveText('Tiptap document');
+  await page.keyboard.press(`${primaryModifier}+a`);
+  await page.keyboard.press(`${primaryModifier}+b`);
+  await expect(markdownBody.locator('h1 strong')).toHaveText('Tiptap document');
+
+  await markdownBody.locator('h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: '插入 HTML 交互示例' }).click();
+  const preview = page.frameLocator('.raw-html-block iframe');
+  await expect(preview.getByText('HTML 交互示例', { exact: true })).toBeVisible();
+  await expect(preview.getByText('这里的 HTML、CSS 和 JavaScript 都可以自由改写。')).toBeVisible();
+  await preview.getByLabel('变化强度').fill('82');
+  await expect(preview.locator('#demo-output')).toHaveText('82');
+  await page.screenshot({ path: '/tmp/derivon-html-example.png', fullPage: true });
+
+  await page.getByRole('button', { name: '编辑 HTML 元素' }).click();
+  const htmlSource = page.getByLabel('HTML 元素源码');
+  await htmlSource.fill('<button id="counter" type="button" onclick="this.textContent = Number(this.textContent) + 1">0</button>');
+  await page.getByRole('button', { name: '预览 HTML 元素' }).click();
+  await preview.locator('#counter').click();
+  await expect(preview.locator('#counter')).toHaveText('1');
+  await page.screenshot({ path: '/tmp/derivon-tiptap-editor.png', fullPage: true });
+
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!));
   expect(stored.manifest.graph.points.at(-1).data).toEqual({
     label: '新概念',
     document: 'docs/concept-c-1',
     format: 'markdown',
   });
-  expect(stored.files['docs/concept-c-1/document.md']).toContain('增加');
-  expect(stored.files['docs/concept-c-1/index.html']).not.toContain('<script>');
+  expect(stored.files['docs/concept-c-1/document.md']).toContain('# **Tiptap document**');
+  expect(stored.files['docs/concept-c-1/document.md']).toContain('<button id="counter"');
+  expect(stored.files['docs/concept-c-1/index.html']).toContain('<button id="counter"');
+});
+
+test('renders and edits inline and block KaTeX syntax', async ({ page }) => {
+  await page.evaluate(() => {
+    const key = 'derivon.authoring.workspace/v0.2.0';
+    const workspace = JSON.parse(localStorage.getItem(key)!);
+    workspace.files['docs/concept-a/document.md'] = `# Formula document
+
+Inline formula: $E = mc^2$.
+
+$$
+\\int_0^1 x^2 \\, dx
+$$`;
+    localStorage.setItem(key, JSON.stringify(workspace));
+  });
+  await page.reload();
+
+  await page.locator('.react-flow__node[data-id="A"]').click();
+  await page.getByRole('button', { name: '编辑文档' }).click();
+  const inlineMath = page.locator('.tiptap-mathematics-render[data-type="inline-math"]');
+  const blockMath = page.locator('.tiptap-mathematics-render[data-type="block-math"]');
+  await expect(inlineMath.locator('.katex')).toBeVisible();
+  await expect(blockMath.locator('.katex-display')).toBeVisible();
+  await expect(inlineMath).toHaveAttribute('data-latex', 'E = mc^2');
+  await expect(blockMath).toHaveAttribute('data-latex', '\\int_0^1 x^2 \\, dx');
+  await page.screenshot({ path: '/tmp/derivon-katex-editor.png', fullPage: true });
+
+  await inlineMath.click();
+  const formulaSource = page.getByLabel('行内公式源码');
+  await expect(formulaSource).toHaveValue('E = mc^2');
+  await page.screenshot({ path: '/tmp/derivon-formula-source-editor.png', fullPage: true });
+  await formulaSource.fill('a^2 + b^2 = c^2');
+  await page.getByRole('button', { name: '关闭公式编辑' }).click();
+  await expect(inlineMath).toHaveAttribute('data-latex', 'a^2 + b^2 = c^2');
+  await expect.poll(() => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files;
+    return {
+      markdown: files['docs/concept-a/document.md'],
+      html: files['docs/concept-a/index.html'],
+    };
+  })).toEqual({
+    markdown: expect.stringContaining('$a^2 + b^2 = c^2$'),
+    html: expect.stringContaining('class="katex"'),
+  });
+});
+
+test('turns typed single and double dollar syntax into live formulas', async ({ page }) => {
+  await page.getByTitle('新建概念').click();
+  await page.getByRole('button', { name: '编辑文档' }).click();
+  const markdownBody = page.getByLabel('Markdown 正文');
+  const primaryModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await markdownBody.click();
+  await page.keyboard.press(`${primaryModifier}+a`);
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('Energy: $E = mc^2$');
+  const inlineMath = page.locator('.tiptap-mathematics-render[data-type="inline-math"]');
+  await expect(inlineMath).toHaveAttribute('data-latex', 'E = mc^2');
+
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('$$\\sum_{i=1}^n i$$');
+  const blockMath = page.locator('.tiptap-mathematics-render[data-type="block-math"]');
+  await expect(blockMath).toHaveAttribute('data-latex', '\\sum_{i=1}^n i');
+  await expect.poll(() => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files;
+    return files['docs/concept-c-1/document.md'];
+  })).toContain('Energy: $E = mc^2$');
+  await expect.poll(() => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files;
+    return files['docs/concept-c-1/document.md'];
+  })).toContain('$$\n\\sum_{i=1}^n i\n$$');
+});
+
+test('migrates legacy HTML documents without losing interactive content', async ({ page }) => {
+  await page.evaluate(() => {
+    const key = 'derivon.authoring.workspace/v0.2.0';
+    const workspace = JSON.parse(localStorage.getItem(key)!);
+    const point = workspace.manifest.graph.points.find((item: { id: string }) => item.id === 'A');
+    point.data.format = 'html';
+    workspace.files['docs/concept-a/index.html'] = `<!doctype html>
+<html lang="zh-CN">
+<body>
+  <button id="legacy-counter">0</button>
+  <script>
+    document.querySelector('#legacy-counter').addEventListener('click', (event) => {
+      event.currentTarget.textContent = String(Number(event.currentTarget.textContent) + 1);
+    });
+  </script>
+</body>
+</html>`;
+    delete workspace.files['docs/concept-a/document.md'];
+    localStorage.setItem(key, JSON.stringify(workspace));
+  });
+  await page.reload();
+
+  await page.locator('.react-flow__node[data-id="A"]').click();
+  await page.getByRole('button', { name: '编辑文档' }).click();
+  await expect(page.getByRole('status')).toHaveText('旧版 HTML 已迁移到 Markdown');
+  let preview = page.frameLocator('.raw-html-block iframe');
+  await preview.locator('#legacy-counter').click();
+  await expect(preview.locator('#legacy-counter')).toHaveText('1');
+  await expect.poll(() => page.evaluate(() => {
+    const workspace = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!);
+    return {
+      format: workspace.manifest.graph.points.find((item: { id: string }) => item.id === 'A').data.format,
+      markdown: workspace.files['docs/concept-a/document.md'],
+    };
+  })).toEqual({
+    format: 'markdown',
+    markdown: expect.stringContaining("querySelector('#legacy-counter')"),
+  });
+
+  await page.reload();
+  await page.locator('.react-flow__node[data-id="A"]').click();
+  await page.getByRole('button', { name: '编辑文档' }).click();
+  preview = page.frameLocator('.raw-html-block iframe');
+  await preview.locator('#legacy-counter').click();
+  await expect(preview.locator('#legacy-counter')).toHaveText('1');
 });
 
 test('keeps a concept rendered during drag and persists only on drag stop', async ({ page }) => {
@@ -220,10 +345,13 @@ test('stacks parallel derivations and lets each implementation be inspected', as
   await page.getByRole('button', { name: '编辑文档' }).click();
   const markdownBody = page.getByLabel('Markdown 正文');
   await expect(markdownBody).toContainText('使用另一套推导过程从 A 得到 B。');
-  await markdownBody.fill('# 备选推导\n\n使用 **Markdown** 记录。');
-  await expect(page.locator('.markdown-preview')).toContainText('使用 Markdown 记录。');
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files['docs/derivation-h-b-alt/document.md'])).toContain('使用 **Markdown** 记录。');
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files['docs/derivation-h-b-alt/index.html'])).toContain('<strong>Markdown</strong>');
+  await markdownBody.click();
+  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+a`);
+  await page.keyboard.type('# ');
+  await page.keyboard.type('Alternative derivation');
+  await expect(markdownBody.locator('h1')).toHaveText('Alternative derivation');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files['docs/derivation-h-b-alt/document.md'])).toContain('# Alternative derivation');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files['docs/derivation-h-b-alt/index.html'])).toContain('<h1>Alternative derivation</h1>');
   const editor = await page.locator('.document-editor-main').boundingBox();
   const workspace = await page.locator('.document-workspace').boundingBox();
   expect(editor).not.toBeNull();
