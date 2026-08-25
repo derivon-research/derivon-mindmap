@@ -13,9 +13,61 @@ async function connect(page: import('@playwright/test').Page, source: string, ta
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?example=replace-with');
   await page.evaluate(() => localStorage.clear());
   await page.reload();
+});
+
+test('opens a blank workspace with a target-bound guided tour', async ({ page }) => {
+  await page.evaluate(() => localStorage.clear());
+  await page.goto('/');
+
+  await expect(page.locator('.react-flow__node')).toHaveCount(0);
+  await expect(page.getByLabel('操作引导：新建项目文件夹')).toBeVisible();
+  await expect(page.getByLabel('操作引导：新建项目文件夹')).toContainText('1 / 37');
+  const saveWorkspace = page.getByTitle('另存到新文件夹');
+  await expect(saveWorkspace).toHaveAttribute('data-tour-feature', 'save-workspace');
+  const targetBox = await saveWorkspace.boundingBox();
+  const highlightBox = await page.locator('.tour-highlight').boundingBox();
+  expect(targetBox).not.toBeNull();
+  expect(highlightBox).not.toBeNull();
+  expect(highlightBox!.x).toBeLessThan(targetBox!.x);
+  expect(highlightBox!.x + highlightBox!.width).toBeGreaterThan(targetBox!.x + targetBox!.width);
+  await page.screenshot({ path: '/tmp/derivon-onboarding-desktop.png', fullPage: true });
+
+  await page.getByRole('button', { name: '跳过引导' }).click();
+  await expect(page.getByLabel('操作引导：新建项目文件夹')).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('.react-flow__node')).toHaveCount(0);
+  await expect(page.getByLabel('操作引导：新建项目文件夹')).toHaveCount(0);
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await expect(page.getByLabel('操作引导：新建项目文件夹')).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByLabel('操作引导：新建项目文件夹')).toBeVisible();
+  await page.screenshot({ path: '/tmp/derivon-onboarding-mobile.png', fullPage: true });
+});
+
+test('advances guide steps from the bound feature actions', async ({ page }) => {
+  await page.evaluate(() => localStorage.clear());
+  await page.goto('/');
+
+  await page.getByRole('button', { name: '下一步' }).click();
+  await expect(page.getByLabel('操作引导：命名示例项目')).toBeVisible();
+  await page.getByLabel('文档标题').fill('A + B → X');
+  await page.getByLabel('文档标题').press('Enter');
+  await expect(page.getByLabel('操作引导：补充项目说明')).toBeVisible();
+
+  const description = page.locator('.inspector textarea');
+  await description.fill('引导创建的最小示例');
+  await description.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Enter`);
+  await expect(page.getByLabel('操作引导：新建第一个概念')).toBeVisible();
+
+  await page.getByTitle('新建概念').click();
+  await expect(page.getByLabel('操作引导：命名概念 A')).toBeVisible();
+  const name = page.locator('.inspector label').filter({ hasText: '名称' }).locator('input');
+  await name.fill('A');
+  await name.press('Enter');
+  await expect(page.getByLabel('操作引导：打开概念文档')).toBeVisible();
 });
 
 test('authors source concepts and derivations without persisting React Flow objects', async ({ page }) => {

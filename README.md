@@ -17,6 +17,14 @@ npm test
 npm run test:e2e
 ```
 
+## 初始页面与操作引导
+
+首次打开应用时使用空白工作区，不再自动载入仓库中的示例图。页面会自动启动操作引导；退出或完成后，可通过右上角问号按钮重新开始。引导从新建项目文件夹开始，带用户实际创建 A、B、X 概念和推导，并覆盖对象文档、Markdown 快捷键、KaTeX、表格、HTML、平行推导、多前提、Replace with、局部视图、搜索、拖动、删除、撤回/重做、缩放、JSON 校验与 Agent Skill。
+
+引导步骤位于 `src/onboarding.tsx`。步骤只引用统一的功能标识，各控件通过 `data-tour-feature` 注册目标，并在真实操作成功后发送对应完成事件。蒙版和浮窗每次从目标元素的 DOM 边界计算位置，不保存控件坐标；修改控件时应同步使用 `TOUR_FEATURES` 和 `notifyTourAction`，让功能、目标和步骤推进保持同一绑定。
+
+仓库中的完整 Replace with 示例仍可通过 `?example=replace-with` 显式打开；如果浏览器已有本地工作区，本地内容始终优先，不会被示例覆盖。
+
 ## 工作区
 
 Derivon 使用普通文件夹作为工作区：

@@ -26,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import 'katex/dist/katex.min.css';
 import { prepareMarkdownForEditor } from './editorMarkdown';
 import { RawHtmlBlock } from './RawHtmlBlock';
+import { TOUR_FEATURES, notifyTourAction, tourTarget } from './onboarding';
 
 type DocumentEditorProps = {
   value: string;
@@ -154,11 +155,18 @@ function EditorToolbar({ editor }: { editor: Editor }) {
       return;
     }
     const href = window.prompt('链接地址', 'https://');
-    if (href && href !== 'https://') editor.chain().focus().setLink({ href }).run();
+    if (href && href !== 'https://') {
+      editor.chain().focus().setLink({ href }).run();
+      notifyTourAction('document-formatted');
+    }
+  };
+  const format = (command: () => void) => {
+    command();
+    notifyTourAction('document-formatted');
   };
 
   return (
-    <header className="markdown-toolbar">
+    <header className="markdown-toolbar" {...tourTarget(TOUR_FEATURES.documentFormat)}>
       <div className="markdown-actions" role="toolbar" aria-label="Markdown 格式">
         <select
           aria-label="段落样式"
@@ -168,6 +176,7 @@ function EditorToolbar({ editor }: { editor: Editor }) {
             const level = Number(event.target.value);
             if (level === 0) editor.chain().focus().setParagraph().run();
             else editor.chain().focus().toggleHeading({ level: level as 1 | 2 | 3 }).run();
+            notifyTourAction('document-formatted');
           }}
         >
           <option value="0">正文</option>
@@ -176,34 +185,38 @@ function EditorToolbar({ editor }: { editor: Editor }) {
           <option value="3">标题 3</option>
         </select>
         <span className="toolbar-separator" />
-        <button type="button" className={state.bold ? 'is-active' : ''} title="粗体 (Command / Ctrl + B)" aria-label="粗体" onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={16} /></button>
-        <button type="button" className={state.italic ? 'is-active' : ''} title="斜体 (Command / Ctrl + I)" aria-label="斜体" onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={16} /></button>
-        <button type="button" className={state.strike ? 'is-active' : ''} title="删除线" aria-label="删除线" onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={16} /></button>
-        <button type="button" className={state.code ? 'is-active' : ''} title="行内代码" aria-label="行内代码" onClick={() => editor.chain().focus().toggleCode().run()}><Code2 size={16} /></button>
+        <button type="button" className={state.bold ? 'is-active' : ''} title="粗体 (Command / Ctrl + B)" aria-label="粗体" onClick={() => format(() => editor.chain().focus().toggleBold().run())}><Bold size={16} /></button>
+        <button type="button" className={state.italic ? 'is-active' : ''} title="斜体 (Command / Ctrl + I)" aria-label="斜体" onClick={() => format(() => editor.chain().focus().toggleItalic().run())}><Italic size={16} /></button>
+        <button type="button" className={state.strike ? 'is-active' : ''} title="删除线" aria-label="删除线" onClick={() => format(() => editor.chain().focus().toggleStrike().run())}><Strikethrough size={16} /></button>
+        <button type="button" className={state.code ? 'is-active' : ''} title="行内代码" aria-label="行内代码" onClick={() => format(() => editor.chain().focus().toggleCode().run())}><Code2 size={16} /></button>
         <button type="button" title="链接" aria-label="链接" onClick={editLink}><Link size={16} /></button>
         <span className="toolbar-separator" />
-        <button type="button" className={state.blockquote ? 'is-active' : ''} title="引用" aria-label="引用" onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={16} /></button>
-        <button type="button" className={state.bulletList ? 'is-active' : ''} title="无序列表" aria-label="无序列表" onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={16} /></button>
-        <button type="button" className={state.orderedList ? 'is-active' : ''} title="有序列表" aria-label="有序列表" onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={16} /></button>
-        <button type="button" title="分隔线" aria-label="分隔线" onClick={() => editor.chain().focus().setHorizontalRule().run()}><Minus size={16} /></button>
-        <button type="button" title="插入表格" aria-label="插入表格" onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}><Table size={16} /></button>
-        <button type="button" title="插入行内公式 ($...$)" aria-label="插入行内公式" onClick={() => editor.chain().focus().insertInlineMath({ latex: 'E = mc^2' }).run()}><Sigma size={16} /></button>
-        <button type="button" title="插入块级公式 ($$...$$)" aria-label="插入块级公式" onClick={() => editor.chain().focus().insertBlockMath({ latex: '\\int_0^1 x^2 \\, dx' }).run()}><SquareFunction size={16} /></button>
+        <button type="button" className={state.blockquote ? 'is-active' : ''} title="引用" aria-label="引用" onClick={() => format(() => editor.chain().focus().toggleBlockquote().run())}><Quote size={16} /></button>
+        <button type="button" className={state.bulletList ? 'is-active' : ''} title="无序列表" aria-label="无序列表" onClick={() => format(() => editor.chain().focus().toggleBulletList().run())}><List size={16} /></button>
+        <button type="button" className={state.orderedList ? 'is-active' : ''} title="有序列表" aria-label="有序列表" onClick={() => format(() => editor.chain().focus().toggleOrderedList().run())}><ListOrdered size={16} /></button>
+        <button type="button" title="分隔线" aria-label="分隔线" onClick={() => format(() => editor.chain().focus().setHorizontalRule().run())}><Minus size={16} /></button>
+        <button type="button" title="插入表格" aria-label="插入表格" {...tourTarget(TOUR_FEATURES.insertTable)} onClick={() => { editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); notifyTourAction('table-inserted'); }}><Table size={16} /></button>
+        <button type="button" title="插入行内公式 ($...$)" aria-label="插入行内公式" {...tourTarget(TOUR_FEATURES.insertFormula)} onClick={() => { editor.chain().focus().insertInlineMath({ latex: 'E = mc^2' }).run(); notifyTourAction('formula-inserted'); }}><Sigma size={16} /></button>
+        <button type="button" title="插入块级公式 ($$...$$)" aria-label="插入块级公式" {...tourTarget(TOUR_FEATURES.insertFormula)} onClick={() => { editor.chain().focus().insertBlockMath({ latex: '\\int_0^1 x^2 \\, dx' }).run(); notifyTourAction('formula-inserted'); }}><SquareFunction size={16} /></button>
         <button
           type="button"
           title="插入 HTML 交互示例"
           aria-label="插入 HTML 交互示例"
-          onClick={() => editor.chain().focus().insertContent([
-            { type: 'rawHtml', attrs: { source: HTML_WIDGET_TEMPLATE } },
-            { type: 'paragraph' },
-          ]).run()}
+          {...tourTarget(TOUR_FEATURES.insertHtml)}
+          onClick={() => {
+            editor.chain().focus().insertContent([
+              { type: 'rawHtml', attrs: { source: HTML_WIDGET_TEMPLATE } },
+              { type: 'paragraph' },
+            ]).run();
+            notifyTourAction('html-inserted');
+          }}
         >
           <Code2 size={16} />
         </button>
       </div>
-      <div className="editor-history" role="group" aria-label="编辑历史">
-        <button type="button" disabled={!state.canUndo} title="撤回" aria-label="编辑器撤回" onClick={() => editor.chain().focus().undo().run()}><Undo2 size={16} /></button>
-        <button type="button" disabled={!state.canRedo} title="重做" aria-label="编辑器重做" onClick={() => editor.chain().focus().redo().run()}><Redo2 size={16} /></button>
+      <div className="editor-history" role="group" aria-label="编辑历史" {...tourTarget(TOUR_FEATURES.editorHistory)}>
+        <button type="button" disabled={!state.canUndo} title="撤回" aria-label="编辑器撤回" onClick={() => { editor.chain().focus().undo().run(); notifyTourAction('editor-history-used'); }}><Undo2 size={16} /></button>
+        <button type="button" disabled={!state.canRedo} title="重做" aria-label="编辑器重做" onClick={() => { editor.chain().focus().redo().run(); notifyTourAction('editor-history-used'); }}><Redo2 size={16} /></button>
       </div>
     </header>
   );
@@ -271,6 +284,7 @@ export function DocumentEditor({ value, onChange, label }: DocumentEditorProps) 
       attributes: {
         class: 'tiptap-content',
         'aria-label': 'Markdown 正文',
+        'data-tour-feature': TOUR_FEATURES.documentBody.id,
       },
     },
     onUpdate: ({ editor: current }) => {

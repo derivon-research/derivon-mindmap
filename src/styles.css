@@ -491,6 +491,44 @@ button { color: inherit; }
 .raw-html-block textarea { width: 100%; min-height: 220px; display: block; resize: vertical; padding: 15px; border: 0; outline: 0; background: #202522; color: #edf2ee; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2; }
 .raw-html-block iframe { width: 100%; height: 220px; display: block; border: 0; background: #fff; }
 
+.guided-tour { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
+.tour-mask { position: fixed; z-index: 200; background: rgba(29, 34, 31, 0.58); pointer-events: none; }
+.tour-mask-full { inset: 0; }
+.tour-highlight {
+  position: fixed;
+  z-index: 201;
+  border: 2px solid #f2c94c;
+  box-shadow: 0 0 0 3px rgba(242, 201, 76, 0.22), 0 8px 24px rgba(19, 24, 21, 0.18);
+  pointer-events: none;
+  transition: left 140ms ease, top 140ms ease, width 140ms ease, height 140ms ease;
+}
+.tour-popover {
+  position: fixed;
+  z-index: 202;
+  width: min(350px, calc(100vw - 24px));
+  max-height: min(520px, calc(100vh - 24px));
+  overflow: auto;
+  padding: 0;
+  border: 1px solid #747d77;
+  border-radius: 6px;
+  background: #fff;
+  color: #242a27;
+  box-shadow: 0 16px 38px rgba(18, 23, 20, 0.24);
+  pointer-events: auto;
+}
+.tour-popover > header { height: 37px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px 0 13px; border-bottom: 1px solid #e0e2de; }
+.tour-popover > header span { color: #6e7671; font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.tour-popover > header button { width: 27px; height: 27px; display: inline-grid; place-items: center; border: 1px solid transparent; background: transparent; color: #5c6560; cursor: pointer; }
+.tour-popover > header button:hover { border-color: #d5d9d5; background: #f1f3f0; }
+.tour-popover > strong { display: block; padding: 15px 16px 0; font-size: 15px; line-height: 1.4; }
+.tour-popover > p { margin: 8px 0 0; padding: 0 16px; color: #505955; font-size: 12px; line-height: 1.7; }
+.tour-popover > kbd { display: inline-block; margin: 11px 16px 0; padding: 5px 7px; border: 1px solid #cbd0cb; border-bottom-width: 2px; border-radius: 3px; background: #f5f6f4; color: #3e4943; font: 10px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.tour-popover > footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 16px; padding: 11px 12px; border-top: 1px solid #e0e2de; background: #fafbf9; }
+.tour-popover > footer button { min-width: 82px; height: 31px; padding: 0 11px; border: 1px solid #c4c9c4; background: #fff; color: #4d5651; cursor: pointer; font-size: 11px; font-weight: 650; }
+.tour-popover > footer button:hover { border-color: #929a94; }
+.tour-popover > footer .tour-next { border-color: #355c49; background: #355c49; color: #fff; }
+.tour-popover > footer .tour-next:hover { border-color: #294b3b; background: #294b3b; }
+
 @media (max-width: 900px) {
   .topbar { grid-template-columns: minmax(170px, 1fr) auto; gap: 8px; }
   .search-cluster { display: none; }
@@ -531,4 +569,8 @@ button { color: inherit; }
   .react-flow__minimap { width: 100px !important; height: 70px !important; }
   .modal-backdrop { padding: 8px; }
   .json-modal { height: 96vh; }
+  .tour-popover { max-height: min(440px, calc(100vh - 16px)); }
+  .tour-popover > strong { padding: 12px 13px 0; font-size: 14px; }
+  .tour-popover > p { padding: 0 13px; font-size: 11px; }
+  .tour-popover > kbd { margin-left: 13px; }
 }

@@ -1,4 +1,4 @@
-import type { AuthoringDocument } from './domain';
+import { DOCUMENT_SCHEMA, type AuthoringDocument } from './domain';
 import type { AuthoringWorkspace } from './workspace';
 import example from './examples/replace-with/.derivon/workspace.json';
 
@@ -16,3 +16,19 @@ export const sampleWorkspace: AuthoringWorkspace = {
     content,
   ])),
 };
+
+export function createEmptyWorkspace(): AuthoringWorkspace {
+  return {
+    manifest: {
+      schema: DOCUMENT_SCHEMA,
+      document: {
+        title: '未命名项目',
+        description: '',
+        updatedAt: new Date().toISOString(),
+      },
+      graph: { points: [], hyperedges: [] },
+      view: { positions: {}, replacements: [] },
+    },
+    files: {},
+  };
+}

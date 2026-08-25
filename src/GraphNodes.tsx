@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { ChevronDown, ChevronRight, Layers3, Trash2 } from 'lucide-react';
 import { Handle, NodeToolbar, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { ViewReplacement } from './domain';
+import { TOUR_FEATURES, tourTarget } from './onboarding';
 
 export type ConceptNodeData = {
   label: string;
@@ -47,6 +48,7 @@ export const ConceptNode = memo(function ConceptNode({ id, data, selected }: Nod
             <button
               className="replacement-tag nodrag"
               type="button"
+              {...tourTarget(TOUR_FEATURES.replacementToggle)}
               key={`${replacement.replaceWith}:${replacement.show}`}
               title={replacement.show === 'points' ? `显示 ${replacement.label}` : `替换为 ${replacement.replaceWith}`}
               onClick={(event) => {
@@ -86,6 +88,7 @@ export const DerivationNode = memo(function DerivationNode({ data, selected }: N
         <button
           className="derivation-path-count nodrag"
           type="button"
+          {...tourTarget(TOUR_FEATURES.derivationAlternatives)}
           aria-label={message}
           title={`${message}；点击查看下一种`}
           onClick={(event) => {
