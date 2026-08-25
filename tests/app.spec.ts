@@ -25,9 +25,9 @@ test('opens a blank workspace with a target-bound guided tour', async ({ page })
   await expect(page.locator('.react-flow__node')).toHaveCount(0);
   await expect(page.getByLabel('操作引导：新建项目文件夹')).toBeVisible();
   await expect(page.getByLabel('操作引导：新建项目文件夹')).toContainText('1 / 37');
-  const saveWorkspace = page.getByTitle('另存到新文件夹');
-  await expect(saveWorkspace).toHaveAttribute('data-tour-feature', 'save-workspace');
-  const targetBox = await saveWorkspace.boundingBox();
+  const newWorkspace = page.getByTitle('在新文件夹创建空项目');
+  await expect(newWorkspace).toHaveAttribute('data-tour-feature', 'new-workspace');
+  const targetBox = await newWorkspace.boundingBox();
   const highlightBox = await page.locator('.tour-highlight').boundingBox();
   expect(targetBox).not.toBeNull();
   expect(highlightBox).not.toBeNull();
@@ -570,6 +570,149 @@ test('confirms derivation deletion and allows it to be undone', async ({ page })
 
   await page.getByRole('button', { name: '撤回' }).click();
   await expect(derivation).toBeVisible();
+});
+
+test('detects workspace changes outside the WebUI and resolves both choices', async ({ page }) => {
+  await expect(page.locator('.workspace-directory-name')).toHaveText('未打开项目文件夹');
+
+  await page.evaluate(() => {
+    const local = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!);
+    const files = new Map<string, string>([
+      ['.derivon/workspace.json', `${JSON.stringify(local.manifest, null, 2)}\n`],
+      ...Object.entries(local.files) as [string, string][],
+    ]);
+    const directories = new Set<string>(['']);
+    for (const path of files.keys()) {
+      const parts = path.split('/');
+      parts.pop();
+      while (parts.length) {
+        directories.add(parts.join('/'));
+        parts.pop();
+      }
+    }
+    const directoryHandle = (prefix: string, name: string): FileSystemDirectoryHandle => ({
+      kind: 'directory',
+      name,
+      async getDirectoryHandle(child: string, options?: { create?: boolean }) {
+        const childPath = [prefix, child].filter(Boolean).join('/');
+        if (!directories.has(childPath)) {
+          if (!options?.create) throw new DOMException(`Missing directory ${childPath}`, 'NotFoundError');
+          directories.add(childPath);
+        }
+        return directoryHandle(childPath, child);
+      },
+      async getFileHandle(filename: string, options?: { create?: boolean }) {
+        const path = [prefix, filename].filter(Boolean).join('/');
+        if (!files.has(path) && !options?.create) throw new DOMException(`Missing file ${path}`, 'NotFoundError');
+        return {
+          kind: 'file',
+          name: filename,
+          async getFile() { return new File([files.get(path) ?? ''], filename); },
+          async createWritable() {
+            let content = '';
+            return {
+              async write(data: string | BufferSource | Blob) {
+                if (typeof data !== 'string') throw new TypeError('Expected text content');
+                content = data;
+              },
+              async close() { files.set(path, content); },
+            } as FileSystemWritableFileStream;
+          },
+        } as FileSystemFileHandle;
+      },
+    });
+    (window as unknown as { __workspaceFiles: Map<string, string> }).__workspaceFiles = files;
+    window.showDirectoryPicker = async () => directoryHandle('', 'agent-project');
+  });
+
+  await page.getByTitle('连接工作区文件夹').click();
+  await expect(page.locator('.inspector-heading')).toContainText('Graph');
+  await expect(page.locator('.workspace-directory-name')).toHaveText('agent-project/');
+
+  await page.evaluate(() => {
+    const files = (window as unknown as { __workspaceFiles: Map<string, string> }).__workspaceFiles;
+    const manifest = JSON.parse(files.get('.derivon/workspace.json')!);
+    manifest.document.description = 'Agent 写入的说明';
+    files.set('.derivon/workspace.json', `${JSON.stringify(manifest, null, 2)}\n`);
+  });
+
+  const conflict = page.getByRole('alertdialog');
+  await expect(conflict).toBeVisible({ timeout: 5000 });
+  await conflict.getByRole('button', { name: '采用文件夹更改' }).click();
+  await expect(page.locator('.inspector textarea')).toHaveValue('Agent 写入的说明');
+
+  await page.locator('.inspector textarea').fill('WebUI 写入的说明');
+  await expect.poll(() => page.evaluate(() => {
+    const files = (window as unknown as { __workspaceFiles: Map<string, string> }).__workspaceFiles;
+    return JSON.parse(files.get('.derivon/workspace.json')!).document.description;
+  })).toBe('WebUI 写入的说明');
+
+  await page.evaluate(() => {
+    const files = (window as unknown as { __workspaceFiles: Map<string, string> }).__workspaceFiles;
+    const manifest = JSON.parse(files.get('.derivon/workspace.json')!);
+    manifest.document.description = 'Agent 的第二次写入';
+    files.set('.derivon/workspace.json', `${JSON.stringify(manifest, null, 2)}\n`);
+  });
+
+  await expect(conflict).toBeVisible({ timeout: 5000 });
+  await conflict.getByRole('button', { name: '忽视文件夹更改，保留 WebUI 版本' }).click();
+  await expect(conflict).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => {
+    const files = (window as unknown as { __workspaceFiles: Map<string, string> }).__workspaceFiles;
+    return JSON.parse(files.get('.derivon/workspace.json')!).document.description;
+  })).toBe('WebUI 写入的说明');
+});
+
+test('creates a new empty project with the folder-plus action', async ({ page }) => {
+  await expect(page.locator('.react-flow__node')).not.toHaveCount(0);
+  await page.evaluate(() => {
+    const files = new Map<string, string>();
+    const directories = new Set<string>(['']);
+    const directoryHandle = (prefix: string, name: string): FileSystemDirectoryHandle => ({
+      kind: 'directory',
+      name,
+      async getDirectoryHandle(child: string, options?: { create?: boolean }) {
+        const childPath = [prefix, child].filter(Boolean).join('/');
+        if (!directories.has(childPath)) {
+          if (!options?.create) throw new DOMException(`Missing directory ${childPath}`, 'NotFoundError');
+          directories.add(childPath);
+        }
+        return directoryHandle(childPath, child);
+      },
+      async getFileHandle(filename: string, options?: { create?: boolean }) {
+        const path = [prefix, filename].filter(Boolean).join('/');
+        if (!files.has(path) && !options?.create) throw new DOMException(`Missing file ${path}`, 'NotFoundError');
+        return {
+          kind: 'file',
+          name: filename,
+          async getFile() { return new File([files.get(path) ?? ''], filename); },
+          async createWritable() {
+            let content = '';
+            return {
+              async write(data: string | BufferSource | Blob) {
+                if (typeof data !== 'string') throw new TypeError('Expected text content');
+                content = data;
+              },
+              async close() { files.set(path, content); },
+            } as FileSystemWritableFileStream;
+          },
+        } as FileSystemFileHandle;
+      },
+    });
+    (window as unknown as { __newWorkspaceFiles: Map<string, string> }).__newWorkspaceFiles = files;
+    window.showDirectoryPicker = async () => directoryHandle('', 'empty-project');
+  });
+
+  await page.getByTitle('在新文件夹创建空项目').click();
+
+  await expect(page.locator('.react-flow__node')).toHaveCount(0);
+  await expect(page.getByLabel('文档标题')).toHaveValue('未命名项目');
+  await expect(page.locator('.workspace-directory-name')).toHaveText('empty-project/');
+  await expect.poll(() => page.evaluate(() => {
+    const files = (window as unknown as { __newWorkspaceFiles: Map<string, string> }).__newWorkspaceFiles;
+    const manifest = JSON.parse(files.get('.derivon/workspace.json') ?? '{}');
+    return { points: manifest.graph?.points?.length, hyperedges: manifest.graph?.hyperedges?.length };
+  })).toEqual({ points: 0, hyperedges: 0 });
 });
 
 test('offers saving the current project to a new folder', async ({ page }) => {

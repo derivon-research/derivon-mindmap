@@ -18,6 +18,11 @@ export type AuthoringWorkspace = {
 
 export type WorkspaceDirectory = FileSystemDirectoryHandle;
 
+export type WorkspaceDirectorySnapshot = {
+  workspace: AuthoringWorkspace;
+  revision: string;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -210,6 +215,16 @@ async function contentDigest(content: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+export async function workspaceRevision(workspace: AuthoringWorkspace): Promise<string> {
+  const files = referencedDocumentFiles(workspace.manifest)
+    .sort()
+    .map((path) => [path, workspace.files[path]] as const);
+  return contentDigest(JSON.stringify([
+    [WORKSPACE_MANIFEST, `${JSON.stringify(workspace.manifest, null, 2)}\n`],
+    ...files,
+  ]));
+}
+
 function parseAgentBundleManifest(text: string): AgentBundleManifest | null {
   try {
     const value: unknown = JSON.parse(text);
@@ -282,8 +297,9 @@ export async function attachWorkspaceAgentFiles(root: FileSystemDirectoryHandle)
   if (stored.text !== text) await writeTextFile(root, WORKSPACE_AGENT_BUNDLE_MANIFEST, text);
 }
 
-export async function readWorkspaceDirectory(root: FileSystemDirectoryHandle): Promise<AuthoringWorkspace> {
-  const manifest = parseDocument(await readTextFile(root, WORKSPACE_MANIFEST));
+export async function readWorkspaceDirectorySnapshot(root: FileSystemDirectoryHandle): Promise<WorkspaceDirectorySnapshot> {
+  const manifestText = await readTextFile(root, WORKSPACE_MANIFEST);
+  const manifest = parseDocument(manifestText);
   const files: Record<string, string> = {};
   await Promise.all(referencedDocumentFiles(manifest).map(async (path) => {
     try {
@@ -295,7 +311,16 @@ export async function readWorkspaceDirectory(root: FileSystemDirectoryHandle): P
       throw error;
     }
   }));
-  return { manifest, files };
+  const workspace = { manifest, files };
+  const revision = await contentDigest(JSON.stringify([
+    [WORKSPACE_MANIFEST, manifestText],
+    ...Object.entries(files).sort(([left], [right]) => left.localeCompare(right)),
+  ]));
+  return { workspace, revision };
+}
+
+export async function readWorkspaceDirectory(root: FileSystemDirectoryHandle): Promise<AuthoringWorkspace> {
+  return (await readWorkspaceDirectorySnapshot(root)).workspace;
 }
 
 export async function writeWorkspaceDirectory(root: FileSystemDirectoryHandle, workspace: AuthoringWorkspace): Promise<void> {
@@ -308,7 +333,16 @@ export async function writeWorkspaceDirectory(root: FileSystemDirectoryHandle, w
 }
 
 export function supportsWorkspaceDirectory(): boolean {
-  return typeof window.showDirectoryPicker === 'function';
+  return window.isSecureContext && typeof window.showDirectoryPicker === 'function';
+}
+
+function requireWorkspaceDirectoryPicker(): NonNullable<Window['showDirectoryPicker']> {
+  if (!window.isSecureContext) {
+    throw new Error('工作区目录需要 HTTPS 安全连接，请使用 https://mindmap.derivon.net/');
+  }
+  const picker = window.showDirectoryPicker;
+  if (!picker) throw new Error('当前浏览器不支持工作区目录，请使用 Chromium 系浏览器');
+  return picker;
 }
 
 export async function writeWorkspaceToNewDirectory(
@@ -326,8 +360,7 @@ export async function writeWorkspaceToNewDirectory(
 }
 
 export async function saveWorkspaceAsDirectory(current: AuthoringWorkspace): Promise<FileSystemDirectoryHandle> {
-  const picker = window.showDirectoryPicker;
-  if (!picker) throw new Error('当前浏览器不支持工作区目录，请使用 Chromium 系浏览器');
+  const picker = requireWorkspaceDirectoryPicker();
   const handle = await picker({ mode: 'readwrite' });
   await writeWorkspaceToNewDirectory(handle, current);
   return handle;
@@ -336,18 +369,18 @@ export async function saveWorkspaceAsDirectory(current: AuthoringWorkspace): Pro
 export async function chooseWorkspaceDirectory(current: AuthoringWorkspace): Promise<{
   handle: FileSystemDirectoryHandle;
   workspace: AuthoringWorkspace;
+  revision: string;
   created: boolean;
 }> {
-  const picker = window.showDirectoryPicker;
-  if (!picker) throw new Error('当前浏览器不支持工作区目录，请使用 Chromium 系浏览器');
+  const picker = requireWorkspaceDirectoryPicker();
   const handle = await picker({ mode: 'readwrite' });
   try {
-    const workspace = await readWorkspaceDirectory(handle);
+    const snapshot = await readWorkspaceDirectorySnapshot(handle);
     await attachWorkspaceAgentFiles(handle);
-    return { handle, workspace, created: false };
+    return { handle, workspace: snapshot.workspace, revision: snapshot.revision, created: false };
   } catch (error) {
     if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error;
     await writeWorkspaceDirectory(handle, current);
-    return { handle, workspace: current, created: true };
+    return { handle, workspace: current, revision: await workspaceRevision(current), created: true };
   }
 }

@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f7f7f5" />
+    <script>
+      if (window.location.protocol === 'http:' && window.location.hostname === 'mindmap.derivon.net') {
+        window.location.replace(`https://${window.location.host}${window.location.pathname}${window.location.search}${window.location.hash}`);
+      }
+    </script>
     <title>Derivon Author</title>
   </head>
   <body>

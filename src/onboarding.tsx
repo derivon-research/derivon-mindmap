@@ -5,7 +5,7 @@ import { X } from 'lucide-react';
 export const ONBOARDING_STORAGE_KEY = 'derivon.onboarding/v1';
 
 export const TOUR_FEATURES = {
-  saveWorkspace: { id: 'save-workspace', label: '另存到新文件夹' },
+  newWorkspace: { id: 'new-workspace', label: '在新文件夹创建空项目' },
   projectTitle: { id: 'project-title', label: '项目标题' },
   projectDescription: { id: 'project-description', label: '项目说明' },
   addConcept: { id: 'add-concept', label: '新建概念' },
@@ -88,7 +88,7 @@ type TourStep = {
 export const ONBOARDING_STEPS: readonly TourStep[] = [
   {
     id: 'workspace',
-    feature: TOUR_FEATURES.saveWorkspace,
+    feature: TOUR_FEATURES.newWorkspace,
     title: '新建项目文件夹',
     description: '点击高亮按钮，选择或创建一个空文件夹。项目、对象文档和 derivon-workspace Skill 会写入该目录，并在后续编辑时自动保存。请使用 Chromium 系浏览器。',
     advanceOn: 'workspace-created',

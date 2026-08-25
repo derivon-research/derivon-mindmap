@@ -62,7 +62,11 @@ Markdown 正文可以直接嵌入 HTML 块。样式、表单、脚本和交互�
 - 目录已有 `.derivon/workspace.json` 时打开该工作区；
 - 目录还不是工作区时写入当前浏览器工作区；
 - 连接后，manifest 和对象目录会自动回写；
-- File System Access API 当前需要 Chromium 系浏览器；其他浏览器仍可使用浏览器本地工作区。
+- 自动保存会在写入前检查磁盘版本，并定时检测 Agent、编辑器或其他程序的外部修改；
+- 发现外部修改后会暂停写盘，由用户选择采用文件夹版本，或忽视该版本并保留 WebUI 修改；
+- File System Access API 需要 Chromium 系浏览器和 HTTPS 安全上下文；线上请使用 `https://mindmap.derivon.net/`，其他浏览器仍可使用浏览器本地工作区。
+
+浏览器基于隐私限制只提供授权目录的名称，不提供系统绝对路径。未选中点或推导时，右侧 `Graph` 总览会显示当前打开的项目文件夹；尚未连接目录时显示“未打开项目文件夹”。
 
 连接目录时还会自动附加 `derivon-workspace` Agent Skill。相同的 Skill 会写入
 `.agents/skills/`、`.claude/skills/` 与 `.github/skills/`，供 Codex、Cursor、
@@ -93,7 +97,8 @@ node .derivon/agent/validate-workspace.mjs . --review h-1
 校验工具检查 ID、文档所有权、关系引用、权重、位置及必需文件；`--review` 会列出
 审阅一条推导时必须一起阅读的前提、推导和结论文档。
 
-右上角“连接工作区文件夹”用于打开已有工作区或在非工作区目录中创建；相邻的
+右上角“连接工作区文件夹”用于打开已有工作区或在非工作区目录中创建。文件夹加号
+“在新文件夹创建空项目”会新建空白 Graph、写入所选目录并切换到该项目；软盘
 “另存到新文件夹”会把当前浏览器/已连接项目完整写入所选新目录，并把后续自动保存
 切换到该目录。为避免数据覆盖，所选目录如果已经包含 `.derivon/workspace.json` 会
 被拒绝，必须另选或新建文件夹；目录中的其他文件和用户 Skill 不会被删除或覆盖。

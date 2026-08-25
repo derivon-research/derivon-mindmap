@@ -30,6 +30,7 @@ import {
   Replace,
   RotateCcw,
   RotateCw,
+  Save,
   Search,
   Trash2,
   Unlink,
@@ -65,11 +66,14 @@ import {
   documentSourcePath,
   importManifest,
   loadLocalWorkspace,
+  readWorkspaceDirectorySnapshot,
   saveWorkspaceAsDirectory,
   storeDocumentFiles,
+  workspaceRevision,
   writeWorkspaceDirectory,
   type AuthoringWorkspace,
   type WorkspaceDirectory,
+  type WorkspaceDirectorySnapshot,
 } from './workspace';
 const nodeTypes = { concept: ConceptNode, derivation: DerivationNode };
 
@@ -88,8 +92,12 @@ type DocumentHistory = {
 };
 type HistoryAction =
   | { type: 'commit'; updater: (current: AuthoringDocument) => AuthoringDocument; updatedAt: string }
+  | { type: 'replace'; document: AuthoringDocument }
   | { type: 'undo' }
   | { type: 'redo' };
+type ExternalWorkspaceChange = {
+  snapshot: WorkspaceDirectorySnapshot;
+};
 type DeleteCandidate =
   | {
       kind: 'concept';
@@ -106,6 +114,9 @@ type DeleteCandidate =
 const HISTORY_LIMIT = 100;
 
 function historyReducer(state: DocumentHistory, action: HistoryAction): DocumentHistory {
+  if (action.type === 'replace') {
+    return { past: [], present: action.document, future: [] };
+  }
   if (action.type === 'undo') {
     const previous = state.past.at(-1);
     if (!previous) return state;
@@ -216,6 +227,12 @@ function AuthoringCanvas() {
   const document = history.present;
   const [files, setFiles] = useState<Record<string, string>>(initial.current.files);
   const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectory | null>(null);
+  const [externalWorkspaceChange, setExternalWorkspaceChange] = useState<ExternalWorkspaceChange | null>(null);
+  const [resolvingExternalChange, setResolvingExternalChange] = useState(false);
+  const workspaceDirectoryRef = useRef<WorkspaceDirectory | null>(null);
+  const workspaceRevisionRef = useRef<string | null>(null);
+  const externalWorkspaceChangeRef = useRef<ExternalWorkspaceChange | null>(null);
+  const directoryOperationRef = useRef<Promise<void>>(Promise.resolve());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -240,14 +257,49 @@ function AuthoringCanvas() {
     localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify({ manifest: document, files }));
   }, [document, files]);
 
+  const enqueueDirectoryOperation = useCallback((operation: () => Promise<void>): Promise<void> => {
+    const next = directoryOperationRef.current.then(operation, operation);
+    directoryOperationRef.current = next.catch(() => undefined);
+    return next;
+  }, []);
+
+  const reportExternalWorkspaceChange = useCallback((snapshot: WorkspaceDirectorySnapshot) => {
+    if (externalWorkspaceChangeRef.current) return;
+    const change = { snapshot };
+    externalWorkspaceChangeRef.current = change;
+    setExternalWorkspaceChange(change);
+    setStatus('检测到项目文件夹已在 WebUI 外部更改');
+  }, []);
+
   useEffect(() => {
-    if (!workspaceDirectory) return;
+    if (!workspaceDirectory || externalWorkspaceChange) return;
+    const workspace = { manifest: document, files };
     const timeout = window.setTimeout(() => {
-      void writeWorkspaceDirectory(workspaceDirectory, { manifest: document, files })
-        .catch((error: unknown) => setStatus(error instanceof Error ? error.message : '工作区保存失败'));
+      void enqueueDirectoryOperation(async () => {
+        if (workspaceDirectoryRef.current !== workspaceDirectory || externalWorkspaceChangeRef.current) return;
+        const disk = await readWorkspaceDirectorySnapshot(workspaceDirectory);
+        if (workspaceRevisionRef.current !== disk.revision) {
+          reportExternalWorkspaceChange(disk);
+          return;
+        }
+        await writeWorkspaceDirectory(workspaceDirectory, workspace);
+        workspaceRevisionRef.current = await workspaceRevision(workspace);
+      }).catch((error: unknown) => setStatus(error instanceof Error ? error.message : '工作区保存失败'));
     }, 250);
     return () => window.clearTimeout(timeout);
-  }, [document, files, workspaceDirectory]);
+  }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, reportExternalWorkspaceChange, workspaceDirectory]);
+
+  useEffect(() => {
+    if (!workspaceDirectory || externalWorkspaceChange) return;
+    const interval = window.setInterval(() => {
+      void enqueueDirectoryOperation(async () => {
+        if (workspaceDirectoryRef.current !== workspaceDirectory || externalWorkspaceChangeRef.current) return;
+        const disk = await readWorkspaceDirectorySnapshot(workspaceDirectory);
+        if (workspaceRevisionRef.current !== disk.revision) reportExternalWorkspaceChange(disk);
+      }).catch((error: unknown) => setStatus(error instanceof Error ? error.message : '无法检查项目文件夹更改'));
+    }, 1500);
+    return () => window.clearInterval(interval);
+  }, [enqueueDirectoryOperation, externalWorkspaceChange, reportExternalWorkspaceChange, workspaceDirectory]);
 
   useEffect(() => {
     if (!status) return;
@@ -783,8 +835,12 @@ function AuthoringCanvas() {
       const result = await chooseWorkspaceDirectory({ manifest: document, files });
       const imported = result.workspace.manifest;
       const positions = Object.keys(imported.view.positions).length ? imported.view.positions : layoutDocument(imported);
+      workspaceDirectoryRef.current = result.handle;
+      workspaceRevisionRef.current = result.revision;
+      externalWorkspaceChangeRef.current = null;
+      setExternalWorkspaceChange(null);
       setFiles(result.workspace.files);
-      commit(() => ({ ...imported, view: { ...imported.view, positions } }));
+      dispatchHistory({ type: 'replace', document: { ...imported, view: { ...imported.view, positions } } });
       setWorkspaceDirectory(result.handle);
       setEditingId(null);
       clearTransientView();
@@ -794,14 +850,40 @@ function AuthoringCanvas() {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法打开工作区');
     }
-  }, [clearTransientView, commit, document, files, fitView]);
+  }, [clearTransientView, document, files, fitView]);
+
+  const createWorkspaceInNewDirectory = useCallback(async () => {
+    try {
+      const workspace = createEmptyWorkspace();
+      const handle = await saveWorkspaceAsDirectory(workspace);
+      workspaceDirectoryRef.current = handle;
+      workspaceRevisionRef.current = await workspaceRevision(workspace);
+      externalWorkspaceChangeRef.current = null;
+      setExternalWorkspaceChange(null);
+      setFiles(workspace.files);
+      dispatchHistory({ type: 'replace', document: workspace.manifest });
+      setWorkspaceDirectory(handle);
+      setEditingId(null);
+      clearTransientView();
+      setStatus(`已在 ${handle.name} 创建空项目`);
+      notifyTourAction('workspace-created');
+      window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法创建空项目');
+    }
+  }, [clearTransientView, fitView]);
 
   const saveWorkspaceAs = useCallback(async () => {
     try {
-      const handle = await saveWorkspaceAsDirectory({ manifest: document, files });
+      const workspace = { manifest: document, files };
+      const handle = await saveWorkspaceAsDirectory(workspace);
+      workspaceDirectoryRef.current = handle;
+      workspaceRevisionRef.current = await workspaceRevision(workspace);
+      externalWorkspaceChangeRef.current = null;
+      setExternalWorkspaceChange(null);
       setWorkspaceDirectory(handle);
       setStatus(`已另存到新工作区 ${handle.name}`);
-      notifyTourAction('workspace-created');
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法另存工作区');
@@ -813,6 +895,10 @@ function AuthoringCanvas() {
       const importedWorkspace = importManifest(await file.text(), files);
       const imported = importedWorkspace.manifest;
       const positions = Object.keys(imported.view.positions).length ? imported.view.positions : layoutDocument(imported);
+      workspaceDirectoryRef.current = null;
+      workspaceRevisionRef.current = null;
+      externalWorkspaceChangeRef.current = null;
+      setExternalWorkspaceChange(null);
       setFiles(importedWorkspace.files);
       setWorkspaceDirectory(null);
       commit(() => ({ ...imported, view: { ...imported.view, positions } }));
@@ -847,6 +933,36 @@ function AuthoringCanvas() {
       setStatus(error instanceof Error ? error.message.split('\n')[0] : 'JSON 无效');
     }
   }, [commit, files, jsonText]);
+
+  const adoptExternalWorkspaceChange = useCallback(() => {
+    if (!externalWorkspaceChange) return;
+    const imported = externalWorkspaceChange.snapshot.workspace.manifest;
+    const positions = Object.keys(imported.view.positions).length ? imported.view.positions : layoutDocument(imported);
+    workspaceRevisionRef.current = externalWorkspaceChange.snapshot.revision;
+    externalWorkspaceChangeRef.current = null;
+    setFiles(externalWorkspaceChange.snapshot.workspace.files);
+    dispatchHistory({ type: 'replace', document: { ...imported, view: { ...imported.view, positions } } });
+    setExternalWorkspaceChange(null);
+    setEditingId(null);
+    clearTransientView();
+    setStatus('已采用项目文件夹中的更改');
+    window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
+  }, [clearTransientView, externalWorkspaceChange, fitView]);
+
+  const keepWebUiWorkspaceChange = useCallback(() => {
+    if (!externalWorkspaceChange || !workspaceDirectory || resolvingExternalChange) return;
+    const workspace = { manifest: document, files };
+    setResolvingExternalChange(true);
+    void enqueueDirectoryOperation(async () => {
+      if (workspaceDirectoryRef.current !== workspaceDirectory) return;
+      await writeWorkspaceDirectory(workspaceDirectory, workspace);
+      workspaceRevisionRef.current = await workspaceRevision(workspace);
+      externalWorkspaceChangeRef.current = null;
+      setExternalWorkspaceChange(null);
+      setStatus('已保留 WebUI 更改并覆盖项目文件夹');
+    }).catch((error: unknown) => setStatus(error instanceof Error ? error.message : '工作区保存失败'))
+      .finally(() => setResolvingExternalChange(false));
+  }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, resolvingExternalChange, workspaceDirectory]);
 
   const selectNode = useCallback((id: string, shiftKey: boolean) => {
     const displayedDerivation = displayedDerivationByNodeId.get(id);
@@ -1023,7 +1139,8 @@ function AuthoringCanvas() {
               </button>
               <span className="toolbar-divider" />
               <button type="button" title="连接工作区文件夹" {...tourTarget(TOUR_FEATURES.openWorkspace)} onClick={() => void connectWorkspace()}><FolderOpen size={17} /></button>
-              <button type="button" title="另存到新文件夹" {...tourTarget(TOUR_FEATURES.saveWorkspace)} onClick={() => void saveWorkspaceAs()}><FolderPlus size={17} /></button>
+              <button type="button" title="在新文件夹创建空项目" {...tourTarget(TOUR_FEATURES.newWorkspace)} onClick={() => void createWorkspaceInNewDirectory()}><FolderPlus size={17} /></button>
+              <button type="button" title="另存到新文件夹" onClick={() => void saveWorkspaceAs()}><Save size={17} /></button>
               <button type="button" title="编辑工作区 JSON" {...tourTarget(TOUR_FEATURES.workspaceJson)} onClick={openJsonEditor}><Braces size={17} /></button>
               <button type="button" title="导入旧版 JSON" onClick={() => fileInput.current?.click()}><FileUp size={17} /></button>
               <button type="button" title="操作引导" aria-label="操作引导" {...tourTarget(TOUR_FEATURES.help)} onClick={() => setTourOpen(true)}><CircleHelp size={17} /></button>
@@ -1077,7 +1194,7 @@ function AuthoringCanvas() {
               <span className="field-title">访问入口</span>
               <code>{editingEntryPath}</code>
               <code>{editingSourcePath}</code>
-              <span>{workspaceDirectory ? workspaceDirectory.name : '浏览器本地工作区'}</span>
+              <span>{workspaceDirectory ? `${workspaceDirectory.name}/` : '未打开项目文件夹'}</span>
               {status && <span className="editor-save-status" role="status">{status}</span>}
             </div>
           </aside>
@@ -1227,7 +1344,14 @@ function AuthoringCanvas() {
             </>
           ) : (
             <>
-              <div className="inspector-heading"><div><span className="eyebrow">文档</span><strong>{document.schema}</strong></div></div>
+              <div className="inspector-heading">
+                <div>
+                  <span className="eyebrow">Graph</span>
+                  <strong className="workspace-directory-name" title={workspaceDirectory ? `${workspaceDirectory.name}/` : '未打开项目文件夹'}>
+                    {workspaceDirectory ? `${workspaceDirectory.name}/` : '未打开项目文件夹'}
+                  </strong>
+                </div>
+              </div>
               <label>说明<textarea value={document.document.description} {...tourTarget(TOUR_FEATURES.projectDescription)} onChange={(event) => commit((current) => ({ ...current, document: { ...current.document, description: event.target.value } }))} onBlur={() => notifyTourAction('project-description-edited')} onKeyDown={(event) => (event.metaKey || event.ctrlKey) && event.key === 'Enter' && notifyTourAction('project-description-edited')} /></label>
               <div className="document-stats">
                 <div><strong>{document.graph.points.length}</strong><span>概念</span></div>
@@ -1239,6 +1363,26 @@ function AuthoringCanvas() {
           )}
         </aside>
       </section>
+      )}
+
+      {externalWorkspaceChange && workspaceDirectory && (
+        <div className="modal-backdrop workspace-conflict-backdrop" role="presentation">
+          <section className="workspace-conflict-modal" role="alertdialog" aria-modal="true" aria-labelledby="workspace-conflict-title" aria-describedby="workspace-conflict-description">
+            <header>
+              <div>
+                <span className="eyebrow">项目文件夹已更改</span>
+                <strong id="workspace-conflict-title">{workspaceDirectory.name}/</strong>
+              </div>
+            </header>
+            <p id="workspace-conflict-description">
+              WebUI 外部的程序修改了项目文件。自动保存已暂停，请选择要保留的版本。
+            </p>
+            <footer>
+              <button type="button" className="text-button" disabled={resolvingExternalChange} onClick={keepWebUiWorkspaceChange}>忽视文件夹更改，保留 WebUI 版本</button>
+              <button type="button" className="primary-button" disabled={resolvingExternalChange} onClick={adoptExternalWorkspaceChange}>采用文件夹更改</button>
+            </footer>
+          </section>
+        </div>
       )}
 
       {deleteCandidate && (

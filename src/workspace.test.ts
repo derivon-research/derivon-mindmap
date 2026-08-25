@@ -7,7 +7,9 @@ import {
   createDocumentDirectory,
   migrateLegacyDocument,
   parseWorkspaceSnapshot,
+  readWorkspaceDirectorySnapshot,
   validateWorkspace,
+  workspaceRevision,
   writeWorkspaceToNewDirectory,
 } from './workspace';
 
@@ -153,6 +155,20 @@ describe('authoring workspace', () => {
     expect(directory.read(customPath)).toBe('team instructions\n');
     expect(directory.read('.derivon/agent/bundle.json')).toContain('derivon.agent-bundle/v0.1.0');
     await expect(writeWorkspaceToNewDirectory(directory.handle, sampleWorkspace)).rejects.toThrow('已经是 Derivon 工作区');
+  });
+
+  it('fingerprints external changes to managed workspace files', async () => {
+    const directory = memoryDirectory();
+    await writeWorkspaceToNewDirectory(directory.handle, sampleWorkspace);
+
+    const initial = await readWorkspaceDirectorySnapshot(directory.handle);
+    expect(initial.revision).toBe(await workspaceRevision(sampleWorkspace));
+
+    directory.write('docs/concept-a/document.md', '# Changed outside the WebUI\n');
+    const changed = await readWorkspaceDirectorySnapshot(directory.handle);
+
+    expect(changed.revision).not.toBe(initial.revision);
+    expect(changed.workspace.files['docs/concept-a/document.md']).toBe('# Changed outside the WebUI\n');
   });
 
   it('rejects sharing one document directory between graph objects', () => {
