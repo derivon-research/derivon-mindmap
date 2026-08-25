@@ -131,6 +131,27 @@ test('toggles selection with Shift without opening the local view', async ({ pag
   await expect(page.locator('.concept-node.is-dimmed')).toHaveCount(0);
 });
 
+test('shows a pointer and lift shadow when selectable graph objects are hovered', async ({ page }) => {
+  const cases = [
+    {
+      node: page.locator('.react-flow__node-concept[data-id="A"]'),
+      shadow: page.locator('.react-flow__node-concept[data-id="A"] .concept-node'),
+    },
+    {
+      node: page.locator('.react-flow__node-derivation').first(),
+      shadow: page.locator('.react-flow__node-derivation .derivation-diamond').first(),
+    },
+  ];
+
+  for (const item of cases) {
+    const restingShadow = await item.shadow.evaluate((element) => getComputedStyle(element).boxShadow);
+    await item.node.hover();
+    await expect(item.node).toHaveCSS('cursor', 'pointer');
+    await expect(item.node).toHaveCSS('translate', '0px -2px');
+    await expect.poll(() => item.shadow.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe(restingShadow);
+  }
+});
+
 test('keeps only node highlights after a Shift marquee selection', async ({ page }) => {
   const boxes = await page.locator('.react-flow__node').evaluateAll((elements) => elements.map((element) => {
     const box = element.getBoundingClientRect();

@@ -71,7 +71,10 @@ button { color: inherit; }
 .canvas-wrap { position: relative; min-width: 0; min-height: 0; border-right: 1px solid #d9dbd7; }
 .canvas-wrap .react-flow { background: #f7f7f5; }
 .react-flow__edge-path { transition: opacity 140ms ease, stroke-width 140ms ease; }
-.react-flow__node { transition: opacity 140ms ease; }
+.react-flow__node { transition: opacity 140ms ease, translate 140ms ease; }
+.react-flow__node-concept.selectable, .react-flow__node-derivation.selectable { cursor: pointer; }
+.react-flow__node-concept.selectable:not(.dragging):hover, .react-flow__node-derivation.selectable:not(.dragging):hover { translate: 0 -2px; }
+.react-flow__node-concept.dragging, .react-flow__node-derivation.dragging { cursor: grabbing; }
 .react-flow__nodesselection-rect { border: 0; background: transparent; }
 .react-flow__controls { border: 1px solid #d3d6d1; box-shadow: none; border-radius: 0; overflow: hidden; }
 .react-flow__controls-button { border-bottom-color: #d3d6d1; background: #fbfbfa; }
@@ -92,8 +95,15 @@ button { color: inherit; }
   color: #252a27;
   box-shadow: 0 1px 1px rgba(25, 31, 28, 0.04);
   text-align: center;
+  transition: box-shadow 140ms ease;
 }
 .react-flow__node-concept.selected .concept-node { border-color: #1f5c48; box-shadow: 0 0 0 2px rgba(31, 92, 72, 0.13); }
+.react-flow__node-concept.selectable:not(.dragging):hover .concept-node {
+  box-shadow: 0 5px 12px rgba(30, 38, 34, 0.14);
+}
+.react-flow__node-concept.selectable.selected:not(.dragging):hover .concept-node {
+  box-shadow: 0 0 0 2px rgba(31, 92, 72, 0.13), 0 5px 12px rgba(30, 38, 34, 0.14);
+}
 .concept-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 650; line-height: 17px; }
 .concept-meta { min-width: 0; height: 17px; display: flex; align-items: center; justify-content: center; gap: 5px; }
 .concept-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; line-height: 12px; color: #858c88; }
@@ -128,8 +138,13 @@ button { color: inherit; }
   border: 1px solid #8d5147;
   background: #fff9f7;
   transform: rotate(45deg);
+  transition: box-shadow 140ms ease;
 }
 .react-flow__node-derivation.selected .derivation-diamond { border-color: #873c30; box-shadow: 0 0 0 2px rgba(135, 60, 48, 0.13); }
+.react-flow__node-derivation.selectable:not(.dragging):hover .derivation-diamond { box-shadow: 0 5px 12px rgba(70, 37, 31, 0.16); }
+.react-flow__node-derivation.selectable.selected:not(.dragging):hover .derivation-diamond {
+  box-shadow: 0 0 0 2px rgba(135, 60, 48, 0.13), 0 5px 12px rgba(70, 37, 31, 0.16);
+}
 .derivation-weight { position: relative; z-index: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 700; color: #78392f; }
 .derivation-count {
   position: absolute;
