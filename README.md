@@ -76,14 +76,16 @@ Markdown 正文可以直接嵌入 HTML 块。样式、表单、脚本和交互�
 
 浏览器基于隐私限制只提供授权目录的名称，不提供系统绝对路径。未选中点或推导时，右侧 `Graph` 总览会显示当前打开的项目文件夹；尚未连接目录时显示“未打开项目文件夹”。
 
-连接目录时还会自动附加 `derivon-workspace` Agent Skill。相同的 Skill 会写入
+连接目录时还会自动附加 `derivon-workspace` 和 `derivon-math-authoring` Agent Skills。相同的 Skill 会写入
 `.agents/skills/`、`.claude/skills/` 与 `.github/skills/`，供 Codex、Cursor、
 Claude Code、GitHub Copilot 等支持 `SKILL.md` 的 Coding Agent 自动发现。应用会在
 连接、另存和后续自动保存时同步最新参考集；`.derivon/agent/bundle.json` 记录上次
 生成内容的 SHA-256。只有仍与上次生成版本一致的文件会自动升级，用户修改过的文件
 会进入 `protectedFiles` 并保持原样，没有托管记录的用户自建 Skill 也不会被覆盖。
-Skill 指导 Agent 联动编辑 manifest 与对象文档、编写 KaTeX 公式
-和 HTML、正确处理超边的 AND/OR 语义，并审阅推导是否使用了前提中未提供的概念。
+`derivon-workspace` 只指导 Agent 操作 manifest、对象文档、发布 HTML、超边 AND/OR
+语义和工作区校验；`derivon-math-authoring` 独立负责把数学概念与推导写成面向初学者的
+教材内容，包括动机、直觉、完整推理、教材案例和交互可视化。分离后，Derivon 的文件与
+图模型不会把某一学科的写作方式强加给其他学科，后续可按同样方式增加其他领域 Skill。
 
 `.derivon/agent/references/` 会随 Skill 一起附加当前临时模型文档：`model.md` 明确
 核心数学对象与 authoring manifest 的映射，`derivon-paper.md` 是当前 paper 工作草案

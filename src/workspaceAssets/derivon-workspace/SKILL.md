@@ -1,9 +1,9 @@
 ---
 name: derivon-workspace
-description: Edit and review a Derivon knowledge-graph workspace. Use when working with .derivon/workspace.json, concept or derivation documents, formulas, embedded HTML, hyperedge relations, prerequisites, conclusions, weights, graph consistency, or derivation quality.
+description: Operate and validate a Derivon knowledge-graph workspace. Use for .derivon/workspace.json, object document storage, HTML publication, hyperedge relations, prerequisites, conclusions, weights, graph consistency, and workspace validation. Do not use this skill to choose a subject-specific teaching voice or lesson design.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-26-rich-html
+  reference-set: provisional-2026-08-26-math-authoring
 ---
 
 # Derivon Workspace
@@ -50,8 +50,8 @@ ask the user which semantics they intend.
 5. Read the documents of every object affected by the request. For one
    hyperedge, inspect all premise documents, the hyperedge document, and the
    conclusion document together.
-6. Preserve the existing language, notation, depth, and HTML style unless the
-   user asks to change them.
+6. Preserve unrelated document content exactly. When the task concerns teaching
+   quality or subject exposition, also use an installed subject-authoring Skill.
 
 Use these discovery commands when useful:
 
@@ -107,31 +107,16 @@ $$
 $$
 ```
 
-- Check delimiters, braces, environments, symbol definitions, domains, units,
-  and equation references. Keep notation consistent with premise documents.
-- Prefer semantic HTML and accessible labels. Use the expressive range of
-  native HTML, CSS, and JavaScript when it materially improves understanding:
-  interactive state, responsive layouts, SVG diagrams, Canvas simulations,
-  animation, direct manipulation, and progressive disclosure are all supported.
-  Do not default to a static callout merely because the document will be
-  published as HTML.
-- Make an embedded component self-contained by default, but treat this as a
-  reliability preference rather than a ban on external resources. A published
-  `index.html`, including one hosted by GitHub Pages, may load HTTPS scripts,
-  styles, fonts, images, and data when their servers permit it. Use an external
-  dependency only when it provides meaningful capability, pin its version, and
-  provide a readable fallback for offline, blocked, CORS-restricted, or
-  Content-Security-Policy-restricted environments.
-- The editor preview runs in a sandboxed iframe with scripts, forms, modals, and
-  popups enabled, but with an opaque origin. It automatically grows with its
-  document content. Do not add a page-level fixed height or vertical scrollbar
-  to compensate for the editor. Components must not assume access to the
-  Derivon application, parent DOM, local files, cookies, storage, or same-origin
-  APIs. The generated `index.html` itself is not wrapped in this editor sandbox.
-- Keep the component responsive at narrow widths and let normal document flow
-  determine its height. Use bounded internal scrolling only for surfaces where
-  scrolling is intrinsic to the interaction, such as a large data table or code
-  viewport, not for the embedded component as a whole.
+- Raw HTML supports inline CSS and JavaScript. The editor preview is an
+  automatically sized sandboxed iframe with scripts, forms, modals, and popups,
+  but an opaque origin. Embedded code cannot assume access to the parent DOM,
+  workspace APIs, local files, cookies, storage, or same-origin APIs. Published
+  `index.html` files are not wrapped in this editor sandbox.
+- HTTPS external resources may work in a published page when their servers and
+  browser policies permit them. In the editor's opaque-origin preview, requests
+  can additionally be affected by CORS or Content Security Policy. These are
+  runtime facts; another authoring Skill should decide whether a dependency is
+  pedagogically justified and what fallback it needs.
 - Preserve raw HTML exactly when unrelated prose is edited. Do not escape it
   into a code block or silently remove scripts, styles, forms, or interaction.
 - In `index.html`, keep a complete HTML document, render headings/lists/tables,
@@ -141,11 +126,10 @@ $$
   construct faithfully, edit the source, report the unsynchronized publication
   explicitly, and ask the user to open and save that document in Derivon.
 
-When writing a concept document, aim for a definition, assumptions or domain,
-notation, key properties, and a small example when those sections add value.
-When writing a derivation document, state the goal, identify how each premise is
-used, show the reasoning steps, and state the conclusion without importing
-hidden assumptions.
+This Skill governs document ownership, synchronization, and runtime boundaries.
+It deliberately does not prescribe lesson structure, prose depth, examples, or
+visual design. For beginner-facing mathematics, use `derivon-math-authoring`
+alongside this Skill when it is installed.
 
 ## Edit graph relations
 
