@@ -266,9 +266,10 @@ checks can be wrong.
 
 ## 7. Cost semantics
 
-The persisted weight is a non-negative safe integer in the authoring schema and
-belongs to an entire hyperedge. The core consumes weight; the application layer
-must decide how to estimate and calibrate it.
+The persisted weight is a non-negative finite number with at most two decimal
+places in the authoring schema and belongs to an entire hyperedge. A core using
+integer cost units can treat one unit as one hundredth; the application layer
+must decide how to estimate and calibrate the value.
 
 There are three different route costs in the current paper:
 

@@ -38,8 +38,17 @@ import {
 } from 'lucide-react';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
-import type { AuthoringDocument, DocumentFormat, Hyperedge, Point, Position, ViewReplacement } from './domain';
-import { uniqueId } from './domain';
+import {
+  formatWeight,
+  normalizeWeight,
+  uniqueId,
+  type AuthoringDocument,
+  type DocumentFormat,
+  type Hyperedge,
+  type Point,
+  type Position,
+  type ViewReplacement,
+} from './domain';
 import { ConceptNode, DerivationNode, type AuthoringFlowNode } from './GraphNodes';
 import { activeHyperedge, groupHyperedges, hyperedgeGroupKey, type HyperedgeGroup } from './hyperedgeGroups';
 import { layoutDocument, layoutNeighborhood } from './layout';
@@ -1185,7 +1194,7 @@ function AuthoringCanvas() {
                   <span className="field-title">结论</span>
                   <span className="conclusion-label">{labelById.get(editingDerivation.head) ?? editingDerivation.head}</span>
                 </div>
-                <label className="weight-field">成本权重<input type="number" min="0" step="1" value={editingDerivation.weight} {...tourTarget(TOUR_FEATURES.derivationWeight)} onChange={(event) => updateHyperedge(editingDerivation.id, { weight: Math.max(0, Math.trunc(Number(event.target.value) || 0)) })} onBlur={confirmDerivationWeight} onKeyDown={(event) => event.key === 'Enter' && confirmDerivationWeight()} /></label>
+                <label className="weight-field">成本权重<input type="number" min="0" step="0.01" value={formatWeight(editingDerivation.weight)} {...tourTarget(TOUR_FEATURES.derivationWeight)} onChange={(event) => updateHyperedge(editingDerivation.id, { weight: normalizeWeight(Number(event.target.value)) })} onBlur={confirmDerivationWeight} onKeyDown={(event) => event.key === 'Enter' && confirmDerivationWeight()} /></label>
               </>
             )}
             <div className="workspace-file">
@@ -1318,7 +1327,7 @@ function AuthoringCanvas() {
                   >
                     {selectedDerivationGroup.members.map((member, index) => (
                       <option value={member.id} key={member.id}>
-                        {index + 1}/{selectedDerivationGroup.members.length} · 成本 {member.weight} · {member.id}
+                        {index + 1}/{selectedDerivationGroup.members.length} · 成本 {formatWeight(member.weight)} · {member.id}
                       </option>
                     ))}
                   </select>
@@ -1340,7 +1349,7 @@ function AuthoringCanvas() {
                 <span>编辑文档</span>
               </button>
               <code className="document-path">{selectedDerivation.data.document}/index.html</code>
-              <label className="weight-field">成本权重<input type="number" min="0" step="1" value={selectedDerivation.weight} {...tourTarget(TOUR_FEATURES.derivationWeight)} onChange={(event) => updateHyperedge(selectedDerivation.id, { weight: Math.max(0, Math.trunc(Number(event.target.value) || 0)) })} onBlur={confirmDerivationWeight} onKeyDown={(event) => event.key === 'Enter' && confirmDerivationWeight()} /></label>
+              <label className="weight-field">成本权重<input type="number" min="0" step="0.01" value={formatWeight(selectedDerivation.weight)} {...tourTarget(TOUR_FEATURES.derivationWeight)} onChange={(event) => updateHyperedge(selectedDerivation.id, { weight: normalizeWeight(Number(event.target.value)) })} onBlur={confirmDerivationWeight} onKeyDown={(event) => event.key === 'Enter' && confirmDerivationWeight()} /></label>
             </>
           ) : (
             <>

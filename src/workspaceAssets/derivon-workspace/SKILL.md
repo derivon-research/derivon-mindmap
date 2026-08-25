@@ -79,8 +79,8 @@ The manifest schema is `derivon.authoring/v0.2.0`.
 - An empty `tails` array is a valid unconditional step. It is graph-wide and
   costs its weight; it is not the same as a point already belonging to a
   query-specific start set.
-- `weight` is a non-negative safe integer attached to the whole hyperedge. Do
-  not distribute it among premise connections.
+- `weight` is a non-negative finite number with at most two decimal places,
+  attached to the whole hyperedge. Do not distribute it among premise connections.
 - `view.positions` is presentation state. Preserve it unless layout is part of
   the request. Every stored coordinate must be finite.
 - `view.replacements` controls visual abstraction only. It does not prove

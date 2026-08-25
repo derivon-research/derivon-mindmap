@@ -1,4 +1,21 @@
 export const DOCUMENT_SCHEMA = 'derivon.authoring/v0.2.0' as const;
+export const WEIGHT_DECIMAL_PLACES = 2;
+const WEIGHT_SCALE = 10 ** WEIGHT_DECIMAL_PLACES;
+
+export function normalizeWeight(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round((Math.max(0, value) + Number.EPSILON) * WEIGHT_SCALE) / WEIGHT_SCALE;
+}
+
+export function formatWeight(value: number): string {
+  return value.toFixed(WEIGHT_DECIMAL_PLACES);
+}
+
+export function isValidWeight(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return false;
+  const scaled = Math.round(value * WEIGHT_SCALE);
+  return Number.isSafeInteger(scaled) && Math.abs(value - scaled / WEIGHT_SCALE) < 1e-10;
+}
 
 export type Position = { x: number; y: number };
 
@@ -141,7 +158,7 @@ function validateCurrentDocument(value: unknown): DocumentIssue[] {
       });
     }
     if (typeof hyperedge.head !== 'string' || !pointIds.has(hyperedge.head)) issues.push({ path: `${path}.head`, message: '头部必须引用已有点' });
-    if (typeof hyperedge.weight !== 'number' || !Number.isSafeInteger(hyperedge.weight) || hyperedge.weight < 0) issues.push({ path: `${path}.weight`, message: '必须是非负安全整数' });
+    if (!isValidWeight(hyperedge.weight)) issues.push({ path: `${path}.weight`, message: '必须是非负且最多保留两位小数的有限数值' });
     if (!isRecord(hyperedge.data)) issues.push({ path: `${path}.data`, message: '必须是对象' });
     else validateDocumentReference(hyperedge.data, `${path}.data`, `超边 ${String(hyperedge.id)}`);
   });

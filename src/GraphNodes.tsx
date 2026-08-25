@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { ChevronDown, ChevronRight, Layers3, Trash2 } from 'lucide-react';
 import { Handle, NodeToolbar, Position, type Node, type NodeProps } from '@xyflow/react';
-import type { ViewReplacement } from './domain';
+import { formatWeight, type ViewReplacement } from './domain';
 import { TOUR_FEATURES, tourTarget } from './onboarding';
 
 export type ConceptNodeData = {
@@ -82,7 +82,7 @@ export const DerivationNode = memo(function DerivationNode({ data, selected }: N
         <div className={`derivation-diamond is-stack-layer stack-layer-${layer}`} key={layer} />
       ))}
       <div className="derivation-diamond is-active" />
-      <span className="derivation-weight">{data.weight}</span>
+      <span className="derivation-weight">{formatWeight(data.weight)}</span>
       <span className="derivation-count">{data.premiseCount}</span>
       {data.alternatives.length > 1 && (
         <button

@@ -96,7 +96,14 @@ for (const [index, edge] of hyperedges.entries()) {
   reportUnknownKeys(edge, new Set(['id', 'weight', 'tails', 'head', 'data']), location);
   if (objectIds.has(edge.id)) report(`${location}.id`, `duplicate object ID ${edge.id}`);
   objectIds.add(edge.id);
-  if (!Number.isSafeInteger(edge.weight) || edge.weight < 0) report(`${location}.weight`, 'expected non-negative safe integer');
+  const scaledWeight = Math.round(edge.weight * 100);
+  if (
+    typeof edge.weight !== 'number'
+    || !Number.isFinite(edge.weight)
+    || edge.weight < 0
+    || !Number.isSafeInteger(scaledWeight)
+    || Math.abs(edge.weight - scaledWeight / 100) >= 1e-10
+  ) report(`${location}.weight`, 'expected a non-negative finite number with at most two decimal places');
   if (!Array.isArray(edge.tails)) report(`${location}.tails`, 'expected array');
   else {
     if (new Set(edge.tails).size !== edge.tails.length) report(`${location}.tails`, 'contains duplicate point IDs');

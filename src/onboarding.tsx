@@ -247,7 +247,7 @@ export const ONBOARDING_STEPS: readonly TourStep[] = [
     id: 'weight',
     feature: TOUR_FEATURES.derivationWeight,
     title: '设置推导成本',
-    description: '修改当前推导的非负整数成本，然后按 Enter。较低成本的平行实现会优先显示。',
+    description: '修改当前推导的非负成本，可保留两位小数，然后按 Enter。较低成本的平行实现会优先显示。',
     shortcut: 'Enter 确认',
     advanceOn: 'derivation-weight-edited',
   },

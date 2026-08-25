@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DOCUMENT_SCHEMA, parseDocument, uniqueId, validateDocument } from './domain';
+import {
+  DOCUMENT_SCHEMA,
+  formatWeight,
+  normalizeWeight,
+  parseDocument,
+  uniqueId,
+  validateDocument,
+} from './domain';
 import { sampleDocument } from './sample';
 
 describe('authoring document', () => {
@@ -18,6 +25,22 @@ describe('authoring document', () => {
       show: 'points',
     }]);
     expect(JSON.stringify(parsed)).not.toContain('sourceHandle');
+  });
+
+  it('accepts non-negative weights with at most two decimal places', () => {
+    const valid = structuredClone(sampleDocument);
+    valid.graph.hyperedges[0].weight = 2.35;
+    expect(validateDocument(valid)).toEqual([]);
+    expect(normalizeWeight(2.345)).toBe(2.35);
+    expect(normalizeWeight(1.005)).toBe(1.01);
+    expect(formatWeight(2.5)).toBe('2.50');
+
+    const invalid = structuredClone(sampleDocument);
+    invalid.graph.hyperedges[0].weight = 2.345;
+    expect(validateDocument(invalid)).toContainEqual({
+      path: 'graph.hyperedges[0].weight',
+      message: '必须是非负且最多保留两位小数的有限数值',
+    });
   });
 
   it('rejects dangling references and duplicate tails', () => {

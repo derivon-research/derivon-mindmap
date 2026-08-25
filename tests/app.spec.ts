@@ -88,7 +88,7 @@ test('authors source concepts and derivations without persisting React Flow obje
   await expect(page.locator('.react-flow__node-derivation')).toHaveCount(5);
   const parallelGroup = page.locator('.react-flow__node-derivation[data-id="h-b"]');
   await expect(parallelGroup.getByRole('button', { name: '该推导路径有 3 种方式实现' })).toBeVisible();
-  await expect(parallelGroup.locator('.derivation-weight')).toHaveText('1');
+  await expect(parallelGroup.locator('.derivation-weight')).toHaveText('1.00');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0') ?? '{"manifest":{}}').manifest);
   expect(saved.graph.points).toHaveLength(6);
   expect(saved.graph.points.at(-1)).toEqual({ id: 'c-1', data: { label: 'AA', document: 'docs/concept-c-1', format: 'markdown' } });
@@ -381,18 +381,23 @@ test('stacks parallel derivations and lets each implementation be inspected', as
   await expect(groupNode).toBeVisible();
   await expect(page.locator('.react-flow__node[data-id="h-b-alt"]')).toHaveCount(0);
   await expect(groupNode.locator('.derivation-diamond.is-stack-layer')).toHaveCount(1);
-  await expect(groupNode.locator('.derivation-weight')).toHaveText('3');
+  await expect(groupNode.locator('.derivation-weight')).toHaveText('3.00');
   const pathCount = groupNode.getByRole('button', { name: '该推导路径有 2 种方式实现' });
   await expect(pathCount).toBeVisible();
 
   await groupNode.click();
   await expect(page.getByText('该推导路径有 2 种方式实现', { exact: true })).toBeVisible();
-  await page.getByLabel('成本权重').fill('9');
-  await expect(groupNode.locator('.derivation-weight')).toHaveText('9');
+  await page.getByLabel('成本权重').fill('9.257');
+  await expect(page.getByLabel('成本权重')).toHaveValue('9.26');
+  await expect(groupNode.locator('.derivation-weight')).toHaveText('9.26');
+  await expect.poll(() => page.evaluate(() => {
+    const manifest = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest;
+    return manifest.graph.hyperedges.find((edge: { id: string }) => edge.id === 'h-b').weight;
+  })).toBe(9.26);
   await page.getByLabel('成本权重').fill('3');
   await page.getByLabel('查看推导方式').selectOption('h-b-alt');
   await expect(page.locator('.inspector-heading strong')).toHaveText('h-b-alt');
-  await expect(groupNode.locator('.derivation-weight')).toHaveText('8');
+  await expect(groupNode.locator('.derivation-weight')).toHaveText('8.00');
 
   await page.getByRole('button', { name: '编辑文档' }).click();
   const markdownBody = page.getByLabel('Markdown 正文');
@@ -414,7 +419,7 @@ test('stacks parallel derivations and lets each implementation be inspected', as
 
   await pathCount.click();
   await expect(page.locator('.inspector-heading strong')).toHaveText('h-b');
-  await expect(groupNode.locator('.derivation-weight')).toHaveText('3');
+  await expect(groupNode.locator('.derivation-weight')).toHaveText('3.00');
 
   const beforePosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions['h-b']);
   const box = await groupNode.boundingBox();
