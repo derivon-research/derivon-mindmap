@@ -2,6 +2,14 @@
 
 Derivon 加权有向 B-超图的前端录入实验。React Flow 负责画布交互；领域协议、工作区读写、对象文档编辑、`replace with` 规则和可见性投影分别位于 `src/domain.ts`、`src/workspace.ts`、`src/DocumentEditor.tsx`、`src/replacements.ts` 与 `src/projection.ts`。
 
+## 交流与反馈
+
+欢迎加入 Derivon Research Q 群，交流使用体验并反馈知识整理模型中不符合直觉的部分。点击二维码可以查看原图。
+
+<a href="https://v3n0.top/post/2026/learning-route-hypergraph/DerivonResearch-QGroup.jpg">
+  <img src="https://v3n0.top/post/2026/learning-route-hypergraph/DerivonResearch-QGroup.jpg" alt="Derivon Research Q 群二维码" width="320" />
+</a>
+
 ## 运行
 
 ```bash
