@@ -27,6 +27,7 @@ import {
   FolderPlus,
   Github,
   LayoutGrid,
+  Milestone,
   Plus,
   Replace,
   RotateCcw,
@@ -57,6 +58,16 @@ import { DocumentEditor } from './DocumentEditor';
 import { convertDocumentContent } from './documentContent';
 import { projectDocument } from './projection';
 import { replacementFromSelection } from './replacements';
+import { RoutePanel } from './RoutePanel';
+import {
+  createRouteSelection,
+  invalidateRoute,
+  routeHighlightIds,
+  setRouteTarget,
+  solveWorkspaceRoute,
+  toggleRouteStart,
+  type RouteSelection,
+} from './route';
 import { createEmptyWorkspace, sampleWorkspace } from './sample';
 import {
   GuidedTour,
@@ -297,6 +308,10 @@ function AuthoringCanvas() {
   const [replacementDraft, setReplacementDraft] = useState<string[] | null>(null);
   const [activeDerivationByGroup, setActiveDerivationByGroup] = useState<Record<string, string>>({});
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
+  const [routeMode, setRouteMode] = useState(false);
+  const [routeSelection, setRouteSelection] = useState<RouteSelection>(createRouteSelection);
+  const [routeSolving, setRouteSolving] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(() => {
     const hasSavedWorkspace = !!localStorage.getItem(LOCAL_WORKSPACE_KEY);
     return !isExampleMode() && !hasSavedWorkspace && localStorage.getItem(ONBOARDING_STORAGE_KEY) !== 'complete';
@@ -378,6 +393,18 @@ function AuthoringCanvas() {
     dispatchHistory({ type: 'commit', updater, updatedAt: new Date().toISOString() });
     setStatus('已自动保存');
   }, []);
+
+  useEffect(() => {
+    const pointIds = new Set(document.graph.points.map((point) => point.id));
+    setRouteSelection((current) => ({
+      ...invalidateRoute(current),
+      startPointIds: current.startPointIds.filter((id) => pointIds.has(id)),
+      targetPointId: current.targetPointId && pointIds.has(current.targetPointId)
+        ? current.targetPointId
+        : null,
+    }));
+    setRouteError(null);
+  }, [document]);
 
   const clearTransientView = useCallback(() => {
     setFocusLayouts({});
@@ -556,6 +583,8 @@ function AuthoringCanvas() {
     ])),
     [activeDerivationByGroup, visibleDerivationGroups],
   );
+  const routeIds = useMemo(() => routeHighlightIds(routeSelection.result), [routeSelection.result]);
+  const routeEdgeIds = useMemo(() => new Set(routeSelection.result?.hyperedgeIds ?? []), [routeSelection.result]);
   const activeIds = useMemo(() => {
     const candidates = neighborhood(document, focusedId);
     return new Set([...candidates].filter((id) => projection.visibleIds.has(id)));
@@ -580,7 +609,9 @@ function AuthoringCanvas() {
 
   const projectedNodes = useMemo<AuthoringFlowNode[]>(() => {
     const conceptById = new Map(document.graph.points.map((concept) => [concept.id, concept]));
-    const dimmed = (id: string) => !!focusedId && !activeIds.has(id);
+    const dimmed = (id: string) => routeSelection.result
+      ? !routeIds.has(id)
+      : !!focusedId && !activeIds.has(id);
     const position = (id: string) => focusPositions?.[id] ?? document.view.positions[id] ?? { x: 0, y: 0 };
     return [
       ...projection.points.map((item): AuthoringFlowNode => {
@@ -588,6 +619,11 @@ function AuthoringCanvas() {
         return {
           id: concept.id,
           type: 'concept',
+          className: routeSelection.targetPointId === concept.id
+            ? 'is-route-target'
+            : routeSelection.startPointIds.includes(concept.id)
+              ? 'is-route-start'
+              : routeSelection.result && routeIds.has(concept.id) ? 'is-route-member' : undefined,
           position: position(concept.id),
           data: {
             label: concept.data.label,
@@ -603,12 +639,15 @@ function AuthoringCanvas() {
         return {
           id: group.nodeId,
           type: 'derivation',
+          className: group.members.some((member) => routeEdgeIds.has(member.id)) ? 'is-route-member' : undefined,
           position: position(group.nodeId),
           data: {
             activeId: derivation.id,
             weight: derivation.weight,
             premiseCount: derivation.tails.length,
-            dimmed: dimmed(group.nodeId),
+            dimmed: routeSelection.result
+              ? !group.members.some((member) => routeEdgeIds.has(member.id))
+              : dimmed(group.nodeId),
             alternatives: group.members.map((member) => ({ id: member.id, weight: member.weight })),
             onSelect: (id) => selectDerivation(group, id),
             onDelete: requestDelete,
@@ -616,7 +655,7 @@ function AuthoringCanvas() {
         };
       }),
     ];
-  }, [activeDerivationByGroup, activeIds, document.graph.points, document.view.positions, focusPositions, focusedId, projection.points, requestDelete, selectDerivation, toggleReplacement, visibleDerivationGroups]);
+  }, [activeDerivationByGroup, activeIds, document.graph.points, document.view.positions, focusPositions, focusedId, projection.points, requestDelete, routeEdgeIds, routeIds, routeSelection.result, routeSelection.startPointIds, routeSelection.targetPointId, selectDerivation, toggleReplacement, visibleDerivationGroups]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<AuthoringFlowNode>([]);
 
@@ -660,7 +699,9 @@ function AuthoringCanvas() {
     const result: ProjectedEdge[] = [];
     for (const group of visibleDerivationGroups) {
       const derivation = activeHyperedge(group, activeDerivationByGroup[group.key]);
-      const derivationActive = !focusedId || activeIds.has(group.nodeId);
+      const derivationActive = routeSelection.result
+        ? routeEdgeIds.has(derivation.id)
+        : !focusedId || activeIds.has(group.nodeId);
       for (const premise of derivation.tails) {
         result.push({
           id: `premise:${group.nodeId}:${premise}`,
@@ -689,7 +730,7 @@ function AuthoringCanvas() {
       });
     }
     return result;
-  }, [activeDerivationByGroup, activeIds, focusedId, visibleDerivationGroups]);
+  }, [activeDerivationByGroup, activeIds, focusedId, routeEdgeIds, routeSelection.result, visibleDerivationGroups]);
 
   const persistNodePositions = useCallback((draggedNodes: AuthoringFlowNode[]) => {
     const movedPositions = draggedNodes.flatMap((node) => {
@@ -1037,12 +1078,61 @@ function AuthoringCanvas() {
       .finally(() => setResolvingExternalChange(false));
   }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, reportWorkspaceError, resolvingExternalChange, workspaceDirectory]);
 
+  const toggleRouteMode = useCallback(() => {
+    setRouteMode((current) => !current);
+    setRouteError(null);
+    setFocusedId(null);
+    setSelectedId(null);
+  }, []);
+
+  const toggleStartPoint = useCallback((pointId: string) => {
+    setRouteSelection((current) => toggleRouteStart(current, pointId));
+    setRouteError(null);
+  }, []);
+
+  const changeRouteTarget = useCallback((pointId: string | null) => {
+    setRouteSelection((current) => setRouteTarget(current, pointId));
+    setRouteError(null);
+  }, []);
+
+  const clearRoute = useCallback(() => {
+    setRouteSelection(createRouteSelection());
+    setRouteError(null);
+    setActiveDerivationByGroup({});
+  }, []);
+
+  const runRouteSolve = useCallback(() => {
+    setRouteSolving(true);
+    setRouteError(null);
+    void solveWorkspaceRoute(document, routeSelection).then((result) => {
+      setRouteSelection((current) => ({ ...current, result }));
+      if (result.reachable) {
+        const active = Object.fromEntries(result.hyperedgeIds.flatMap((id) => {
+          const group = groupByMemberId.get(id);
+          return group ? [[group.key, id]] : [];
+        }));
+        setActiveDerivationByGroup((current) => ({ ...current, ...active }));
+        setStatus(result.provenOptimal ? '已找到并证明最优路线' : '已找到当前最佳路线');
+      } else {
+        setStatus('目标当前不可达');
+      }
+    }).catch((error: unknown) => {
+      setRouteError(error instanceof Error ? error.message : String(error));
+    }).finally(() => setRouteSolving(false));
+  }, [document, groupByMemberId, routeSelection]);
+
   const selectNode = useCallback((id: string, shiftKey: boolean) => {
     const displayedDerivation = displayedDerivationByNodeId.get(id);
     const semanticId = displayedDerivation?.id ?? id;
     const derivationGroup = visibleGroupByNodeId.get(id);
     if (displayedDerivation && derivationGroup) {
       setActiveDerivationByGroup((current) => ({ ...current, [derivationGroup.key]: displayedDerivation.id }));
+    }
+    if (routeMode) {
+      if (document.graph.points.some((concept) => concept.id === semanticId)) {
+        toggleStartPoint(semanticId);
+      }
+      return;
     }
     if (replacementDraft) {
       if (!document.graph.points.some((concept) => concept.id === semanticId)) {
@@ -1074,7 +1164,7 @@ function AuthoringCanvas() {
       return;
     }
     setSelectedId(semanticId);
-  }, [commit, displayedDerivationByNodeId, document, replacementDraft, selectedId, visibleGroupByNodeId]);
+  }, [commit, displayedDerivationByNodeId, document, replacementDraft, routeMode, selectedId, toggleStartPoint, visibleGroupByNodeId]);
 
   const handleSelectionChange = useCallback((selection: OnSelectionChangeParams<AuthoringFlowNode, ProjectedEdge>) => {
     const ids = selection.nodes.map((node) => node.id).sort();
@@ -1243,6 +1333,15 @@ function AuthoringCanvas() {
               >
                 {focusedId ? <Eye size={17} /> : <EyeOff size={17} />}
               </button>
+              <button
+                type="button"
+                className={routeMode ? 'is-active' : ''}
+                title={routeMode ? '关闭路线模式' : '打开路线模式'}
+                aria-label={routeMode ? '关闭路线模式' : '打开路线模式'}
+                onClick={toggleRouteMode}
+              >
+                <Milestone size={17} />
+              </button>
               <span className="toolbar-divider" />
               <button type="button" title="连接工作区文件夹" {...tourTarget(TOUR_FEATURES.openWorkspace)} onClick={() => void connectWorkspace()}><FolderOpen size={17} /></button>
               <button type="button" title="在新文件夹创建空项目" {...tourTarget(TOUR_FEATURES.newWorkspace)} onClick={() => void createWorkspaceInNewDirectory()}><FolderPlus size={17} /></button>
@@ -1368,7 +1467,19 @@ function AuthoringCanvas() {
           {status && <div className="status-toast" role="status">{status}</div>}
         </div>
 
-        <aside className="inspector">
+        {routeMode ? (
+          <RoutePanel
+            document={document}
+            selection={routeSelection}
+            solving={routeSolving}
+            error={routeError}
+            onToggleStart={toggleStartPoint}
+            onTargetChange={changeRouteTarget}
+            onSolve={runRouteSolve}
+            onClear={clearRoute}
+            onClose={() => setRouteMode(false)}
+          />
+        ) : <aside className="inspector">
           {selectedConcept ? (
             <>
               <div className="inspector-heading">
@@ -1467,7 +1578,7 @@ function AuthoringCanvas() {
               <div className="schema-note"><code>T(h) → y</code></div>
             </>
           )}
-        </aside>
+        </aside>}
       </section>
       )}
 

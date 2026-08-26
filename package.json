@@ -5,12 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "build": "tsc -b && vite build",
     "test": "vitest run src",
     "test:e2e": "playwright test"
   },
   "dependencies": {
     "@dagrejs/dagre": "^2.0.4",
+    "@tauri-apps/api": "^2.11.1",
     "@tiptap/extension-mathematics": "^3.30.3",
     "@tiptap/extension-table": "^3.30.3",
     "@tiptap/markdown": "^3.30.3",
@@ -27,6 +31,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^19.0.3",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
