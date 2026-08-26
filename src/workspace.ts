@@ -144,12 +144,16 @@ export function migrateLegacyDocument(text: string): AuthoringWorkspace {
   return { manifest, files };
 }
 
-export function importManifest(text: string, currentFiles: Record<string, string>): AuthoringWorkspace {
+export function importManifest(
+  text: string,
+  currentFiles: Record<string, string>,
+  { allowMissingFiles = false }: { allowMissingFiles?: boolean } = {},
+): AuthoringWorkspace {
   const parsed: unknown = JSON.parse(text);
   if (isRecord(parsed) && parsed.schema === LEGACY_SCHEMA) return migrateLegacyDocument(text);
   const manifest = parseDocument(text);
   const workspace = { manifest, files: currentFiles };
-  validateWorkspace(workspace);
+  if (!allowMissingFiles) validateWorkspace(workspace);
   return workspace;
 }
 
@@ -171,12 +175,37 @@ async function getDirectory(root: FileSystemDirectoryHandle, parts: string[], cr
   return current;
 }
 
-async function readTextFile(root: FileSystemDirectoryHandle, path: string): Promise<string> {
+async function readFile(root: FileSystemDirectoryHandle, path: string): Promise<File> {
   const parts = path.split('/');
   const filename = parts.pop()!;
   const directory = await getDirectory(root, parts, false);
   const handle = await directory.getFileHandle(filename);
-  return (await handle.getFile()).text();
+  return handle.getFile();
+}
+
+async function readTextFile(root: FileSystemDirectoryHandle, path: string): Promise<string> {
+  return (await readFile(root, path)).text();
+}
+
+export async function readWorkspaceDocumentSource(
+  root: FileSystemDirectoryHandle,
+  reference: DocumentReference,
+): Promise<string> {
+  return readTextFile(root, documentSourcePath(reference));
+}
+
+export async function validateWorkspaceDirectoryFiles(
+  root: FileSystemDirectoryHandle,
+  manifest: AuthoringDocument,
+): Promise<void> {
+  await Promise.all(referencedDocumentFiles(manifest).map(async (path) => {
+    try {
+      await readFile(root, path);
+    } catch (error) {
+      if (isNotFoundError(error)) throw new Error(`工作区缺少文档：${path}`, { cause: error });
+      throw error;
+    }
+  }));
 }
 
 async function writeTextFile(root: FileSystemDirectoryHandle, path: string, content: string): Promise<void> {
@@ -297,7 +326,10 @@ export async function attachWorkspaceAgentFiles(root: FileSystemDirectoryHandle)
   if (stored.text !== text) await writeTextFile(root, WORKSPACE_AGENT_BUNDLE_MANIFEST, text);
 }
 
-export async function readWorkspaceDirectorySnapshot(root: FileSystemDirectoryHandle): Promise<WorkspaceDirectorySnapshot> {
+export async function readWorkspaceDirectorySnapshot(
+  root: FileSystemDirectoryHandle,
+  { loadFiles = true }: { loadFiles?: boolean } = {},
+): Promise<WorkspaceDirectorySnapshot> {
   const manifestText = await readTextFile(root, WORKSPACE_MANIFEST);
   let manifest: AuthoringDocument;
   try {
@@ -305,10 +337,12 @@ export async function readWorkspaceDirectorySnapshot(root: FileSystemDirectoryHa
   } catch (error) {
     throw new Error(`${WORKSPACE_MANIFEST} 无效`, { cause: error });
   }
-  const files: Record<string, string> = {};
-  await Promise.all(referencedDocumentFiles(manifest).map(async (path) => {
+  const entries = await Promise.all(referencedDocumentFiles(manifest).sort().map(async (path) => {
     try {
-      files[path] = await readTextFile(root, path);
+      const file = await readFile(root, path);
+      return loadFiles
+        ? [path, await file.text()] as const
+        : [path, { size: file.size, lastModified: file.lastModified }] as const;
     } catch (error) {
       if (isNotFoundError(error)) {
         throw new Error(`工作区缺少文档：${path}`, { cause: error });
@@ -316,10 +350,11 @@ export async function readWorkspaceDirectorySnapshot(root: FileSystemDirectoryHa
       throw error;
     }
   }));
+  const files = loadFiles ? Object.fromEntries(entries as ReadonlyArray<readonly [string, string]>) : {};
   const workspace = { manifest, files };
   const revision = await contentDigest(JSON.stringify([
     [WORKSPACE_MANIFEST, manifestText],
-    ...Object.entries(files).sort(([left], [right]) => left.localeCompare(right)),
+    ...entries,
   ]));
   return { workspace, revision };
 }
@@ -328,12 +363,20 @@ export async function readWorkspaceDirectory(root: FileSystemDirectoryHandle): P
   return (await readWorkspaceDirectorySnapshot(root)).workspace;
 }
 
-export async function writeWorkspaceDirectory(root: FileSystemDirectoryHandle, workspace: AuthoringWorkspace): Promise<void> {
-  validateWorkspace(workspace);
-  await writeTextFile(root, WORKSPACE_MANIFEST, `${JSON.stringify(workspace.manifest, null, 2)}\n`);
-  for (const [path, content] of Object.entries(workspace.files)) {
+export async function writeWorkspaceDirectoryChanges(
+  root: FileSystemDirectoryHandle,
+  manifest: AuthoringDocument,
+  files: Record<string, string>,
+): Promise<void> {
+  await writeTextFile(root, WORKSPACE_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+  for (const [path, content] of Object.entries(files)) {
     await writeTextFile(root, path, content);
   }
+}
+
+export async function writeWorkspaceDirectory(root: FileSystemDirectoryHandle, workspace: AuthoringWorkspace): Promise<void> {
+  validateWorkspace(workspace);
+  await writeWorkspaceDirectoryChanges(root, workspace.manifest, workspace.files);
   await attachWorkspaceAgentFiles(root);
 }
 
@@ -376,11 +419,23 @@ export async function writeWorkspaceToNewDirectory(
   throw new Error('所选文件夹已经是 Derivon 工作区，请选择新的文件夹');
 }
 
-export async function saveWorkspaceAsDirectory(current: AuthoringWorkspace): Promise<FileSystemDirectoryHandle> {
+export async function saveWorkspaceAsDirectory(
+  current: AuthoringWorkspace,
+  source?: FileSystemDirectoryHandle,
+): Promise<FileSystemDirectoryHandle> {
   const picker = requireWorkspaceDirectoryPicker();
   const handle = await picker({ mode: 'readwrite' });
   await ensureWorkspaceDirectoryPermission(handle);
-  await writeWorkspaceToNewDirectory(handle, current);
+  const workspace = source
+    ? {
+        manifest: current.manifest,
+        files: {
+          ...(await readWorkspaceDirectorySnapshot(source)).workspace.files,
+          ...current.files,
+        },
+      }
+    : current;
+  await writeWorkspaceToNewDirectory(handle, workspace);
   return handle;
 }
 
@@ -394,12 +449,13 @@ export async function chooseWorkspaceDirectory(current: AuthoringWorkspace): Pro
   const handle = await picker({ mode: 'readwrite' });
   await ensureWorkspaceDirectoryPermission(handle);
   try {
-    const snapshot = await readWorkspaceDirectorySnapshot(handle);
+    const snapshot = await readWorkspaceDirectorySnapshot(handle, { loadFiles: false });
     await attachWorkspaceAgentFiles(handle);
     return { handle, workspace: snapshot.workspace, revision: snapshot.revision, created: false };
   } catch (error) {
     if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error;
     await writeWorkspaceDirectory(handle, current);
-    return { handle, workspace: current, revision: await workspaceRevision(current), created: true };
+    const snapshot = await readWorkspaceDirectorySnapshot(handle, { loadFiles: false });
+    return { handle, workspace: current, revision: snapshot.revision, created: true };
   }
 }

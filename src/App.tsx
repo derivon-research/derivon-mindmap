@@ -77,10 +77,11 @@ import {
   importManifest,
   loadLocalWorkspace,
   readWorkspaceDirectorySnapshot,
+  readWorkspaceDocumentSource,
   saveWorkspaceAsDirectory,
   storeDocumentFiles,
-  workspaceRevision,
-  writeWorkspaceDirectory,
+  validateWorkspaceDirectoryFiles,
+  writeWorkspaceDirectoryChanges,
   type AuthoringWorkspace,
   type WorkspaceDirectory,
   type WorkspaceDirectorySnapshot,
@@ -284,6 +285,7 @@ function AuthoringCanvas() {
   const externalWorkspaceChangeRef = useRef<ExternalWorkspaceChange | null>(null);
   const directoryOperationRef = useRef<Promise<void>>(Promise.resolve());
   const [editingId, setEditingId] = useState<string | null>(null);
+  const editingIdRef = useRef<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [focusLayouts, setFocusLayouts] = useState<Record<string, Record<string, Position>>>({});
@@ -309,8 +311,17 @@ function AuthoringCanvas() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify({ manifest: document, files }));
-  }, [document, files]);
+    if (workspaceDirectory) return;
+    try {
+      localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify({ manifest: document, files }));
+    } catch (error) {
+      reportWorkspaceError('缓存浏览器工作区', error);
+    }
+  }, [document, files, reportWorkspaceError, workspaceDirectory]);
+
+  useEffect(() => {
+    editingIdRef.current = editingId;
+  }, [editingId]);
 
   const enqueueDirectoryOperation = useCallback((operation: () => Promise<void>): Promise<void> => {
     const next = directoryOperationRef.current.then(operation, operation);
@@ -328,17 +339,18 @@ function AuthoringCanvas() {
 
   useEffect(() => {
     if (!workspaceDirectory || externalWorkspaceChange) return;
-    const workspace = { manifest: document, files };
     const timeout = window.setTimeout(() => {
       void enqueueDirectoryOperation(async () => {
         if (workspaceDirectoryRef.current !== workspaceDirectory || externalWorkspaceChangeRef.current) return;
-        const disk = await readWorkspaceDirectorySnapshot(workspaceDirectory);
+        const disk = await readWorkspaceDirectorySnapshot(workspaceDirectory, { loadFiles: false });
         if (workspaceRevisionRef.current !== disk.revision) {
           reportExternalWorkspaceChange(disk);
           return;
         }
-        await writeWorkspaceDirectory(workspaceDirectory, workspace);
-        workspaceRevisionRef.current = await workspaceRevision(workspace);
+        await writeWorkspaceDirectoryChanges(workspaceDirectory, document, files);
+        workspaceRevisionRef.current = (
+          await readWorkspaceDirectorySnapshot(workspaceDirectory, { loadFiles: false })
+        ).revision;
       }).catch((error: unknown) => reportWorkspaceError('自动保存项目文件夹', error));
     }, 250);
     return () => window.clearTimeout(timeout);
@@ -349,7 +361,7 @@ function AuthoringCanvas() {
     const interval = window.setInterval(() => {
       void enqueueDirectoryOperation(async () => {
         if (workspaceDirectoryRef.current !== workspaceDirectory || externalWorkspaceChangeRef.current) return;
-        const disk = await readWorkspaceDirectorySnapshot(workspaceDirectory);
+        const disk = await readWorkspaceDirectorySnapshot(workspaceDirectory, { loadFiles: false });
         if (workspaceRevisionRef.current !== disk.revision) reportExternalWorkspaceChange(disk);
       }).catch((error: unknown) => reportWorkspaceError('检查项目文件夹', error));
     }, 1500);
@@ -894,7 +906,7 @@ function AuthoringCanvas() {
       workspaceRevisionRef.current = result.revision;
       externalWorkspaceChangeRef.current = null;
       setExternalWorkspaceChange(null);
-      setFiles(result.workspace.files);
+      setFiles(result.created ? result.workspace.files : {});
       dispatchHistory({ type: 'replace', document: { ...imported, view: { ...imported.view, positions } } });
       setWorkspaceDirectory(result.handle);
       setEditingId(null);
@@ -912,7 +924,9 @@ function AuthoringCanvas() {
       const workspace = createEmptyWorkspace();
       const handle = await saveWorkspaceAsDirectory(workspace);
       workspaceDirectoryRef.current = handle;
-      workspaceRevisionRef.current = await workspaceRevision(workspace);
+      workspaceRevisionRef.current = (
+        await readWorkspaceDirectorySnapshot(handle, { loadFiles: false })
+      ).revision;
       externalWorkspaceChangeRef.current = null;
       setExternalWorkspaceChange(null);
       setFiles(workspace.files);
@@ -932,9 +946,11 @@ function AuthoringCanvas() {
   const saveWorkspaceAs = useCallback(async () => {
     try {
       const workspace = { manifest: document, files };
-      const handle = await saveWorkspaceAsDirectory(workspace);
+      const handle = await saveWorkspaceAsDirectory(workspace, workspaceDirectory ?? undefined);
       workspaceDirectoryRef.current = handle;
-      workspaceRevisionRef.current = await workspaceRevision(workspace);
+      workspaceRevisionRef.current = (
+        await readWorkspaceDirectorySnapshot(handle, { loadFiles: false })
+      ).revision;
       externalWorkspaceChangeRef.current = null;
       setExternalWorkspaceChange(null);
       setWorkspaceDirectory(handle);
@@ -943,7 +959,7 @@ function AuthoringCanvas() {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       reportWorkspaceError('另存项目文件夹', error);
     }
-  }, [document, files, reportWorkspaceError]);
+  }, [document, files, reportWorkspaceError, workspaceDirectory]);
 
   const importFile = useCallback(async (file: File) => {
     try {
@@ -972,9 +988,10 @@ function AuthoringCanvas() {
     notifyTourAction('json-opened');
   }, [document]);
 
-  const applyJson = useCallback(() => {
+  const applyJson = useCallback(async () => {
     try {
-      const parsed = importManifest(jsonText, files).manifest;
+      const parsed = importManifest(jsonText, files, { allowMissingFiles: !!workspaceDirectory }).manifest;
+      if (workspaceDirectory) await validateWorkspaceDirectoryFiles(workspaceDirectory, parsed);
       const positions = Object.keys(parsed.view.positions).length ? parsed.view.positions : layoutDocument(parsed);
       commit(() => ({ ...parsed, view: { ...parsed.view, positions } }));
       setFocusLayouts({});
@@ -987,7 +1004,7 @@ function AuthoringCanvas() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message.split('\n')[0] : 'JSON 无效');
     }
-  }, [commit, files, jsonText]);
+  }, [commit, files, jsonText, workspaceDirectory]);
 
   const adoptExternalWorkspaceChange = useCallback(() => {
     if (!externalWorkspaceChange) return;
@@ -995,7 +1012,7 @@ function AuthoringCanvas() {
     const positions = Object.keys(imported.view.positions).length ? imported.view.positions : layoutDocument(imported);
     workspaceRevisionRef.current = externalWorkspaceChange.snapshot.revision;
     externalWorkspaceChangeRef.current = null;
-    setFiles(externalWorkspaceChange.snapshot.workspace.files);
+    setFiles({});
     dispatchHistory({ type: 'replace', document: { ...imported, view: { ...imported.view, positions } } });
     setExternalWorkspaceChange(null);
     setEditingId(null);
@@ -1006,12 +1023,13 @@ function AuthoringCanvas() {
 
   const keepWebUiWorkspaceChange = useCallback(() => {
     if (!externalWorkspaceChange || !workspaceDirectory || resolvingExternalChange) return;
-    const workspace = { manifest: document, files };
     setResolvingExternalChange(true);
     void enqueueDirectoryOperation(async () => {
       if (workspaceDirectoryRef.current !== workspaceDirectory) return;
-      await writeWorkspaceDirectory(workspaceDirectory, workspace);
-      workspaceRevisionRef.current = await workspaceRevision(workspace);
+      await writeWorkspaceDirectoryChanges(workspaceDirectory, document, files);
+      workspaceRevisionRef.current = (
+        await readWorkspaceDirectorySnapshot(workspaceDirectory, { loadFiles: false })
+      ).revision;
       externalWorkspaceChangeRef.current = null;
       setExternalWorkspaceChange(null);
       setStatus('已保留 WebUI 更改并覆盖项目文件夹');
@@ -1071,14 +1089,47 @@ function AuthoringCanvas() {
   }, [selectedId]);
 
   const openDocument = useCallback((id: string) => {
-    setEditingId(id);
-    notifyTourAction('document-opened');
-  }, []);
+    const item = document.graph.points.find((point) => point.id === id)
+      ?? document.graph.hyperedges.find((hyperedge) => hyperedge.id === id);
+    if (!item) return;
+    const sourcePath = documentSourcePath(item.data);
+    if (!workspaceDirectory || typeof files[sourcePath] === 'string') {
+      setEditingId(id);
+      notifyTourAction('document-opened');
+      return;
+    }
+    setStatus(`正在读取 ${sourcePath}`);
+    void enqueueDirectoryOperation(async () => {
+      const source = await readWorkspaceDocumentSource(workspaceDirectory, item.data);
+      if (workspaceDirectoryRef.current !== workspaceDirectory) return;
+      setFiles((current) => ({ ...current, [sourcePath]: source }));
+      setEditingId(id);
+      setStatus('文档已加载');
+      notifyTourAction('document-opened');
+    }).catch((error: unknown) => reportWorkspaceError(`读取 ${sourcePath}`, error));
+  }, [document.graph.hyperedges, document.graph.points, enqueueDirectoryOperation, files, reportWorkspaceError, workspaceDirectory]);
 
   const returnToCanvas = useCallback(() => {
+    const id = editingId;
     setEditingId(null);
     notifyTourAction('canvas-returned');
-  }, []);
+    if (!id || !workspaceDirectory) return;
+    const item = document.graph.points.find((point) => point.id === id)
+      ?? document.graph.hyperedges.find((hyperedge) => hyperedge.id === id);
+    if (!item) return;
+    const paths = new Set([documentSourcePath(item.data), documentEntryPath(item.data.document)]);
+    window.setTimeout(() => {
+      if (editingIdRef.current === id || workspaceDirectoryRef.current !== workspaceDirectory) return;
+      void directoryOperationRef.current.finally(() => {
+        if (editingIdRef.current === id || workspaceDirectoryRef.current !== workspaceDirectory) return;
+        setFiles((current) => {
+          const next = { ...current };
+          paths.forEach((path) => delete next[path]);
+          return next;
+        });
+      });
+    }, 500);
+  }, [document.graph.hyperedges, document.graph.points, editingId, workspaceDirectory]);
 
   const confirmConceptName = useCallback(() => notifyTourAction('concept-renamed'), []);
   const confirmDerivationWeight = useCallback(() => notifyTourAction('derivation-weight-edited'), []);
@@ -1499,7 +1550,7 @@ function AuthoringCanvas() {
               } catch {
                 setStatus('JSON 语法无效');
               }
-            }}>格式化</button><button type="button" className="primary-button" onClick={applyJson}>检查并应用</button></footer>
+            }}>格式化</button><button type="button" className="primary-button" onClick={() => void applyJson()}>检查并应用</button></footer>
           </section>
         </div>
       )}

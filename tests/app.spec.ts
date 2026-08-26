@@ -682,7 +682,7 @@ test('detects workspace changes outside the WebUI and resolves both choices', as
         return {
           kind: 'file',
           name: filename,
-          async getFile() { return new File([files.get(path) ?? ''], filename); },
+          async getFile() { return new File([files.get(path) ?? ''], filename, { lastModified: 0 }); },
           async createWritable() {
             let content = '';
             return {
@@ -768,7 +768,7 @@ test('creates a new empty project with the folder-plus action', async ({ page })
         return {
           kind: 'file',
           name: filename,
-          async getFile() { return new File([files.get(path) ?? ''], filename); },
+          async getFile() { return new File([files.get(path) ?? ''], filename, { lastModified: 0 }); },
           async createWritable() {
             let content = '';
             return {

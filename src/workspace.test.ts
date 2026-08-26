@@ -9,6 +9,7 @@ import {
   migrateLegacyDocument,
   parseWorkspaceSnapshot,
   readWorkspaceDirectorySnapshot,
+  readWorkspaceDocumentSource,
   validateWorkspace,
   workspaceRevision,
   writeWorkspaceToNewDirectory,
@@ -17,9 +18,11 @@ import {
 function memoryDirectory(initial: Record<string, string> = {}): {
   handle: FileSystemDirectoryHandle;
   read(path: string): string | undefined;
+  reads(path: string): number;
   write(path: string, content: string): void;
 } {
   const files = new Map(Object.entries(initial));
+  const readCounts = new Map<string, number>();
   const directories = new Set<string>(['']);
   for (const filePath of files.keys()) {
     const parts = filePath.split('/');
@@ -48,7 +51,15 @@ function memoryDirectory(initial: Record<string, string> = {}): {
         kind: 'file',
         name: filename,
         async getFile() {
-          return { text: async () => files.get(filePath) ?? '' } as File;
+          const content = files.get(filePath) ?? '';
+          return {
+            size: content.length,
+            lastModified: 0,
+            text: async () => {
+              readCounts.set(filePath, (readCounts.get(filePath) ?? 0) + 1);
+              return content;
+            },
+          } as File;
         },
         async createWritable() {
           let content = '';
@@ -69,6 +80,7 @@ function memoryDirectory(initial: Record<string, string> = {}): {
   return {
     handle: directoryHandle('', 'workspace'),
     read: (path) => files.get(path),
+    reads: (path) => readCounts.get(path) ?? 0,
     write: (path, content) => files.set(path, content),
   };
 }
@@ -229,6 +241,26 @@ describe('authoring workspace', () => {
 
     expect(changed.revision).not.toBe(initial.revision);
     expect(changed.workspace.files['docs/concept-a/document.md']).toBe('# Changed outside the WebUI\n');
+  });
+
+  it('loads directory documents lazily and reads only the opened source', async () => {
+    const directory = memoryDirectory();
+    await writeWorkspaceToNewDirectory(directory.handle, sampleWorkspace);
+    const sourcePath = 'docs/concept-a/document.md';
+    const entryPath = 'docs/concept-a/index.html';
+
+    const snapshot = await readWorkspaceDirectorySnapshot(directory.handle, { loadFiles: false });
+
+    expect(snapshot.workspace.files).toEqual({});
+    expect(directory.reads('.derivon/workspace.json')).toBe(1);
+    expect(directory.reads(sourcePath)).toBe(0);
+    expect(directory.reads(entryPath)).toBe(0);
+
+    const source = await readWorkspaceDocumentSource(directory.handle, sampleDocument.graph.points[0].data);
+
+    expect(source).toBe(sampleWorkspace.files[sourcePath]);
+    expect(directory.reads(sourcePath)).toBe(1);
+    expect(directory.reads(entryPath)).toBe(0);
   });
 
   it('rejects sharing one document directory between graph objects', () => {
