@@ -3,7 +3,7 @@ name: derivon-math-authoring
 description: Write or revise beginner-facing mathematics concept and derivation documents in a Derivon workspace. Use when mathematical lessons need intuition, motivation, worked reasoning, examples, misconceptions, or interactive HTML visualizations. Use derivon-workspace separately for graph storage and validation.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-26-skill-scripts
+  reference-set: provisional-2026-08-26-batched-math-authoring
 ---
 
 # Derivon Math Authoring
@@ -16,6 +16,22 @@ reasonable, and how the formal statement connects to an example or picture.
 This Skill governs mathematical exposition. Use `derivon-workspace` for the
 manifest, document ownership, hyperedge semantics, source/publication sync, and
 validation commands. Do not duplicate or override those operational rules here.
+
+## Route large authoring work
+
+When the request spans more than a small handful of documents, crosses multiple
+chapters, or asks to complete a substantial region of the graph, read
+[`references/large-scale-authoring.md`](references/large-scale-authoring.md)
+before planning or writing. Follow its capability-gated SubAgent workflow when
+the current Agent platform provides delegation, parallel agents, or an
+equivalent feature. The workflow is vendor-neutral: detect the capability that
+actually exists rather than assuming a particular command or product.
+
+If no delegation capability is available, perform the same inventory, source
+packet, bounded drafting, independent review, and acceptance stages sequentially
+in small batches. Lack of SubAgents never lowers the teaching or validation bar.
+Do not interpret file coverage, generated prose, or successful rendering as
+evidence that the documents are complete.
 
 ## Establish the teaching situation
 

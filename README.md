@@ -40,6 +40,9 @@ Derivon 使用普通文件夹作为工作区：
 ```text
 my-workspace/
 ├── .agents/skills/derivon-workspace/SKILL.md
+├── .agents/skills/derivon-math-authoring/
+│   ├── SKILL.md
+│   └── references/large-scale-authoring.md
 ├── .claude/skills/derivon-workspace/SKILL.md
 ├── .github/skills/derivon-workspace/SKILL.md
 ├── .derivon/
@@ -88,6 +91,12 @@ Claude Code、GitHub Copilot 等支持 `SKILL.md` 的 Coding Agent 自动发现�
 图模型不会把某一学科的写作方式强加给其他学科，后续可按同样方式增加其他领域 Skill。
 两个 Skill 还会分发各自的 `scripts/`：工作区 Skill 提供确定性的 Markdown 发布与漂移
 检查，数学 Skill 提供静态及 Playwright 窄屏审计，避免 Agent 每次重新编写一次性脚本。
+当任务覆盖多个章节或大量文档时，数学 Skill 还会要求读取
+`references/large-scale-authoring.md`：先区分已验收案例、临时草稿与缺失页面，再按教学
+主题构造小批次。Agent 平台提供 SubAgent、委派或同类能力时，用它们分别完成受约束的
+资料整理、成稿和独立审校，由主 Agent 串行写入共享工作区；平台不提供该能力时，则按
+同样阶段顺序执行。能力差异只影响调度，不降低文档质量，也不允许用脚本或正文数据映射
+批量代写教材内容。
 
 `.derivon/agent/references/` 会随 Skill 一起附加当前临时模型文档：`model.md` 明确
 核心数学对象与 authoring manifest 的映射，`derivon-paper.md` 是当前 paper 工作草案

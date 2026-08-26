@@ -83,10 +83,13 @@ describe('authoring workspace', () => {
     expect(paths).toContain('.github/skills/derivon-workspace/SKILL.md');
     expect(paths).toContain('.github/skills/derivon-workspace/scripts/render-documents.mjs');
     expect(paths).toContain('.agents/skills/derivon-math-authoring/SKILL.md');
+    expect(paths).toContain('.agents/skills/derivon-math-authoring/references/large-scale-authoring.md');
     expect(paths).toContain('.agents/skills/derivon-math-authoring/scripts/audit-math-pages.mjs');
     expect(paths).toContain('.claude/skills/derivon-math-authoring/SKILL.md');
+    expect(paths).toContain('.claude/skills/derivon-math-authoring/references/large-scale-authoring.md');
     expect(paths).toContain('.claude/skills/derivon-math-authoring/scripts/audit-math-pages.mjs');
     expect(paths).toContain('.github/skills/derivon-math-authoring/SKILL.md');
+    expect(paths).toContain('.github/skills/derivon-math-authoring/references/large-scale-authoring.md');
     expect(paths).toContain('.github/skills/derivon-math-authoring/scripts/audit-math-pages.mjs');
     expect(paths).toContain('.derivon/agent/references/README.md');
     expect(paths).toContain('.derivon/agent/references/model.md');
@@ -109,6 +112,15 @@ describe('authoring workspace', () => {
     expect(mathSkills[0]).toContain('excellent introductory');
     expect(mathSkills[0]).toContain('Before a formula, explain the plan');
     expect(mathSkills[0]).toContain('Interactive mathematical HTML');
+    expect(mathSkills[0]).toContain('references/large-scale-authoring.md');
+    const largeScaleReferences = paths
+      .filter((path) => path.endsWith('/references/large-scale-authoring.md'))
+      .map((path) => WORKSPACE_AGENT_FILES[path]);
+    expect(new Set(largeScaleReferences).size).toBe(1);
+    expect(largeScaleReferences[0]).toContain('The protocol names roles and artifacts, not vendor APIs');
+    expect(largeScaleReferences[0]).toContain('When delegation is unavailable');
+    expect(largeScaleReferences[0]).toContain('Scripts may inventory, extract source material, render, compare, and audit');
+    expect(largeScaleReferences[0]).toContain('Do not blindly assign one Agent per document');
     const renderScripts = paths.filter((path) => path.endsWith('/scripts/render-documents.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
     expect(new Set(renderScripts).size).toBe(1);
     expect(renderScripts[0]).toContain('marked-katex-extension');
