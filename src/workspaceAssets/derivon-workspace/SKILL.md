@@ -3,7 +3,7 @@ name: derivon-workspace
 description: Operate and validate a Derivon workspace. Use for .derivon/workspace.json, object document storage, HTML publication, core point and hyperedge semantics, graph consistency, and workspace validation. Do not use this skill to choose learning-graph granularity, calibrate application weights, import a subject, or design reader-facing lessons.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-27-artifact-cleanup
+  reference-set: provisional-2026-08-27-concept-atomicity
 ---
 
 # Derivon Workspace

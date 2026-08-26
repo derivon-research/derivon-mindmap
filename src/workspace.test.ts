@@ -92,7 +92,7 @@ function memoryDirectory(initial: Record<string, string> = {}): {
 
 describe('authoring workspace', () => {
   it('bundles layered Derivon skills and reusable resources for common agent paths', () => {
-    expect(WORKSPACE_AGENT_REFERENCE_SET).toBe('provisional-2026-08-27-artifact-cleanup');
+    expect(WORKSPACE_AGENT_REFERENCE_SET).toBe('provisional-2026-08-27-concept-atomicity');
     const paths = Object.keys(WORKSPACE_AGENT_FILES);
     expect(paths).toContain('.agents/skills/derivon-workspace/SKILL.md');
     expect(paths).toContain('.agents/skills/derivon-workspace/scripts/render-documents.mjs');
@@ -139,10 +139,13 @@ describe('authoring workspace', () => {
     expect(learningSkills[0]).toContain('concept identity and scope');
     expect(learningSkills[0]).toContain('historical influence');
     expect(learningSkills[0]).toContain('weight-calibration.md');
+    expect(learningSkills[0]).toContain('Enforce concept atomicity');
+    expect(learningSkills[0]).toContain('mandatory review signal');
     const sourceImportReferences = paths.filter((path) => path.endsWith('/references/source-import.md')).map((path) => WORKSPACE_AGENT_FILES[path]);
     expect(new Set(sourceImportReferences).size).toBe(1);
     expect(sourceImportReferences[0]).toContain('This distinction is especially important in philosophy');
     expect(sourceImportReferences[0]).toContain('Produce minimal object documents');
+    expect(sourceImportReferences[0]).toContain('record an atomicity decision before integration');
     const weightReferences = paths.filter((path) => path.endsWith('/references/weight-calibration.md')).map((path) => WORKSPACE_AGENT_FILES[path]);
     expect(new Set(weightReferences).size).toBe(1);
     expect(weightReferences[0]).toContain('marginal cognitive effort');

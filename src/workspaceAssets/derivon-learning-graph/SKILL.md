@@ -3,7 +3,7 @@ name: derivon-learning-graph
 description: Model, import, merge, weight, and audit Derivon learning graphs from books, courses, syllabi, or existing notes. Use for concept identity and granularity, hyperedge boundaries, prerequisite structure, alternative routes, source provenance, and learning-cost calibration. Do not use for polished lesson documents.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-27-artifact-cleanup
+  reference-set: provisional-2026-08-27-concept-atomicity
 ---
 
 # Derivon Learning Graph
@@ -55,6 +55,30 @@ compare their definitions, scope, conventions, domain, and intended use. Store
 aliases and source-specific wording in the minimal document. Keep genuinely
 different variants separate and record the unresolved relationship rather than
 silently choosing one source as canonical.
+
+### Enforce concept atomicity
+
+One Point should represent one reusable state of understanding, not a convenient
+bundle of neighboring terms from a chapter heading. Before accepting any new or
+existing Point, ask whether its label or definition joins parts that can be
+defined, learned, derived, reused, replaced, or referenced independently. If any
+part has an independent role, split the bundle into separate Points and express
+their actual learning dependencies with hyperedges.
+
+Coordination in a label -- for example Chinese `与`, `和`, `及`, `以及`, `或`,
+`、`, or English `and`, `or`, and `&` -- is a mandatory review signal. It is not by itself a
+mechanical split rule: an established concept may intrinsically state one
+relation or property whose conventional name contains such a word. Keep a
+coordinated label only when the object document can state why the whole phrase is
+one indivisible understanding state rather than two topics commonly taught
+together. Source adjacency, one section heading, or frequent co-occurrence is
+never sufficient justification.
+
+Do not "fix" a bundled Point by merely shortening its label. When it is split,
+give each concept its own identity and document, then re-evaluate every incident
+hyperedge so its tails and head retain their exact meaning. A graph import,
+merge, or structural repair is incomplete until every coordinated-label
+candidate has either been split or explicitly justified as atomic.
 
 ## Model hyperedges as real steps
 

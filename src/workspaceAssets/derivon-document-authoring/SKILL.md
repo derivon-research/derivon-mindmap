@@ -3,7 +3,7 @@ name: derivon-document-authoring
 description: Implement or substantially revise reader-facing Derivon object documents, including prose, examples, source adaptation, and interactive HTML. Use only when the user explicitly asks for document quality or document implementation; do not activate for rapid source import, graph expansion, weighting, or placeholder creation.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-27-artifact-cleanup
+  reference-set: provisional-2026-08-27-concept-atomicity
 ---
 
 # Derivon Document Authoring

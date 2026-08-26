@@ -22,7 +22,8 @@ candidate tables or patches rather than concurrently editing the manifest.
 
 For each source section, collect:
 
-- candidate reusable concepts or established claims;
+- candidate reusable concepts or established claims, split rather than copied
+  mechanically from coordinated section headings;
 - exact definitions, scope, conventions, and aliases;
 - arguments, constructions, experiments, or learning steps that may become
   hyperedges;
@@ -33,6 +34,14 @@ For each source section, collect:
 
 This is an evidence packet, not lesson prose. Do not ask extractors to generate
 chapter documents or assign final global IDs.
+
+For every candidate whose label or statement coordinates multiple named parts,
+record an atomicity decision before integration. Test whether either part can
+have its own definition, prerequisite route, downstream use, source identity, or
+mastery state. If so, return separate candidates even when the source teaches
+them in one section. A conventional coordinated name may remain one candidate
+only when it denotes one intrinsically unified relation, property, or claim; the
+evidence packet must state that reason.
 
 ## Reconcile point identity
 
@@ -45,6 +54,13 @@ meaning rather than label:
 - materially different truth conditions or inferential role: keep variants as
   separate points;
 - uncertain: keep provisional candidates separate and record the open decision.
+
+Do not let a composite Point from the first source become the canonical merge
+target merely because it already exists. Before adding another source, audit the
+existing registry for coordinated labels and bundled definitions. Split an
+existing Point when the new source addresses one component independently. Then
+rewire its incident hyperedges by their documented semantics; do not attach the
+new source to the old bundle as a shortcut.
 
 A chapter, thinker, school, historical period, or source section may be useful
 for navigation without being a derivable state. Do not force it into a Point
@@ -127,7 +143,9 @@ look finished.
 ## Accept the import
 
 Run structural validation and the learning-graph audit. Review duplicate labels,
-uniform weights, large tails, isolated points, high-cost steps, and parallel
-routes as evidence. Completion means the frozen source range has been modeled,
-uncertainties are explicit, documents are synchronized, and validation passes.
-It does not require polished lesson prose.
+coordinated-label candidates, uniform weights, large tails, isolated points,
+high-cost steps, and parallel routes as evidence. For every coordinated-label
+candidate, record either the resulting split or the semantic reason it is one
+atomic concept. Completion means the frozen source range has been modeled,
+atomicity decisions and other uncertainties are explicit, documents are
+synchronized, and validation passes. It does not require polished lesson prose.
