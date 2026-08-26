@@ -3,7 +3,7 @@ name: derivon-learning-graph
 description: Model, import, merge, weight, and audit Derivon learning graphs from books, courses, syllabi, or existing notes. Use for concept identity and granularity, hyperedge boundaries, prerequisite structure, alternative routes, source provenance, and learning-cost calibration. Do not use for polished lesson documents.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-27-layered-skills
+  reference-set: provisional-2026-08-27-float-weight-calibration
 ---
 
 # Derivon Learning Graph
@@ -98,9 +98,13 @@ node .agents/skills/derivon-learning-graph/scripts/audit-learning-graph.mjs .
 node .agents/skills/derivon-learning-graph/scripts/audit-learning-graph.mjs --json .
 ```
 
-The report summarizes weights, tail sizes, parallel routes, duplicate labels,
-and isolated points. These are review signals, not automatic semantic errors.
-Inspect the cited objects before changing them.
+The report summarizes exact float weights, anchor bands, dispersion, tail sizes,
+parallel routes, duplicate labels, and isolated points. These are review signals,
+not automatic semantic errors. A concentrated weight distribution can be the
+correct result of consistently atomic step boundaries. It limits a dataset's
+coverage for testing variable-weight routing, but does not by itself justify
+changing weights or splitting edges. Inspect rationales, pairwise comparisons,
+and route behavior before changing the graph.
 
 Finish by running the workspace validator. Report structural decisions,
 provisional identities, unsupported relation types, and weight uncertainty

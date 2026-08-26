@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { validateDocument } from './domain';
-import { WORKSPACE_AGENT_FILES } from './agentSkill';
+import { WORKSPACE_AGENT_FILES, WORKSPACE_AGENT_REFERENCE_SET } from './agentSkill';
 import { sampleDocument, sampleWorkspace } from './sample';
 import {
   attachWorkspaceAgentFiles,
@@ -92,6 +92,7 @@ function memoryDirectory(initial: Record<string, string> = {}): {
 
 describe('authoring workspace', () => {
   it('bundles layered Derivon skills and reusable resources for common agent paths', () => {
+    expect(WORKSPACE_AGENT_REFERENCE_SET).toBe('provisional-2026-08-27-float-weight-calibration');
     const paths = Object.keys(WORKSPACE_AGENT_FILES);
     expect(paths).toContain('.agents/skills/derivon-workspace/SKILL.md');
     expect(paths).toContain('.agents/skills/derivon-workspace/scripts/render-documents.mjs');
@@ -140,6 +141,10 @@ describe('authoring workspace', () => {
     expect(new Set(weightReferences).size).toBe(1);
     expect(weightReferences[0]).toContain('marginal cognitive effort');
     expect(weightReferences[0]).toContain('| 5 | A major learning unit');
+    expect(weightReferences[0]).toContain('it is not an integer enum');
+    expect(weightReferences[0]).toContain('A concentrated distribution is not inherently defective');
+    expect(weightReferences[0]).toContain('limited coverage for testing whether variable weights change route selection');
+    expect(weightReferences[0]).toContain('`1.9`,\n`2.0`, and `2.1`');
     const documentSkills = paths.filter((path) => path.endsWith('/derivon-document-authoring/SKILL.md')).map((path) => WORKSPACE_AGENT_FILES[path]);
     expect(new Set(documentSkills).size).toBe(1);
     expect(documentSkills[0]).toContain('The user must explicitly ask');
@@ -165,6 +170,12 @@ describe('authoring workspace', () => {
     const graphAuditScripts = paths.filter((path) => path.endsWith('/scripts/audit-learning-graph.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
     expect(new Set(graphAuditScripts).size).toBe(1);
     expect(graphAuditScripts[0]).toContain('weightHistogram');
+    expect(graphAuditScripts[0]).toContain('weightAnchorBands');
+    expect(graphAuditScripts[0]).toContain('weightStatistics');
+    expect(graphAuditScripts[0]).toContain('reviewSignals');
+    expect(graphAuditScripts[0]).toContain('consistently atomic granularity');
+    expect(graphAuditScripts[0]).toContain('limited coverage for testing variable-weight routing');
+    expect(graphAuditScripts[0]).toContain('expected at most one decimal place');
     expect(graphAuditScripts[0]).toContain('parallelRoutes');
     expect(graphAuditScripts[0]).toContain('alternativeHeads');
     const documentAuditScripts = paths.filter((path) => path.endsWith('/scripts/audit-document-pages.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);

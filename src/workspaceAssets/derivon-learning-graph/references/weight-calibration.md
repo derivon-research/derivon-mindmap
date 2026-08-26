@@ -11,10 +11,19 @@ The value belongs to the whole joint step. It is not the total difficulty of the
 head, the total course time, the number of source pages, or a separate value for
 each visual connection.
 
-## Initial 0-5 rubric
+## Continuous scale with 0-5 anchors
 
-Use integers during initial imports. The schema permits one decimal place, but
-decimals should represent later calibration rather than invented precision.
+The persisted weight is a non-negative finite float with at most one decimal
+place. The `0-5` learning rubric below supplies semantic anchors on a continuous
+application-level scale; it is not an integer enum and it does not narrow the
+Core schema's legal range.
+
+For an initial source import, use integer or half-step estimates such as `2.0`,
+`2.5`, or `3.0` when the evidence supports the distinction. Use tenths such as
+`2.3` only after pairwise comparison, route evaluation, or other calibration
+provides a reason for that precision. Never add decimal jitter merely to make a
+distribution look varied, and never round an existing float to an integer without
+a semantic reason.
 
 | Weight | Operational anchor |
 |---:|---|
@@ -25,9 +34,13 @@ decimals should represent later calibration rather than invented precision.
 | 4 | A key technique or substantial conceptual bridge that usually needs guided explanation. |
 | 5 | A major learning unit or difficult argument whose understanding is itself a significant milestone. |
 
-A rating of 4 or 5 triggers a granularity review: decide whether the step hides a
-reusable intermediate point. Do not split it automatically when the move is
-conceptually atomic despite being difficult.
+Values between anchors interpolate their meaning. For example, `2.5` is a mostly
+routine combination containing a choice or observation that needs explanation;
+`3.5` is clearly non-obvious and also forms a substantial conceptual bridge.
+
+A rating of `4.0` or above triggers a granularity review: decide whether the step
+hides a reusable intermediate point. Do not split it automatically when the move
+is conceptually atomic despite being difficult.
 
 ## Rating rules
 
@@ -42,6 +55,9 @@ conceptually atomic despite being difficult.
   cognitively easier than a shorter proof with a surprising trick.
 - Positive transfer is represented by an additional lower-cost hyperedge whose
   tails include the enabling knowledge, never by a negative weight.
+- Treat one decimal place as fixed-point authoring precision. A Core
+  implementation may multiply by ten and operate on integer cost units so sums do
+  not accumulate binary floating-point error.
 - Record a short rationale and `low`, `medium`, or `high` confidence in the
   hyperedge placeholder or import report. Confidence is authoring metadata, not a
   new core manifest field.
@@ -54,18 +70,39 @@ against parallel routes. Use one audience assumption across the graph; a route
 for experts and a route for beginners may need distinct calibration or distinct
 application views.
 
+## Interpret distributions without optimizing them
+
+A concentrated distribution is not inherently defective. If hyperedges have
+been deliberately normalized to comparable atomic learning steps, many or even
+all weights may correctly be equal. Topology and the number of steps can still
+differentiate route costs.
+
+The same distribution has a separate experimental implication: it provides
+limited coverage for testing whether variable weights change route selection.
+Report that as a dataset-coverage limitation, not a semantic graph error. Do not
+alter correct weights merely to exercise an algorithm; use additional realistic
+routes or a dedicated benchmark dataset when variable-weight behavior needs
+testing.
+
+Exact values near one anchor can also create false variety. A set such as `1.9`,
+`2.0`, and `2.1` should be inspected both as exact floats and as one anchor band.
+Small differences count only when their rationales and route effects are real.
+
 After an import batch:
 
-1. inspect the weight histogram;
-2. investigate an all-equal or nearly all-equal distribution;
+1. inspect the exact one-decimal histogram, anchor-band distribution, and
+   dispersion statistics;
+2. investigate an all-equal or concentrated distribution without assuming it is
+   wrong;
 3. pairwise-compare a sample of adjacent ratings;
-4. review every 4 or 5 for hidden intermediate points;
+4. review every value at or above `4.0` for hidden intermediate points;
 5. compare parallel routes for meaningful cost differences;
 6. run route queries and inspect whether the selected paths match informed human
    judgment.
 
 Change a rating when these comparisons expose inconsistency, not merely to make
-the histogram look varied. Record the reason for material changes.
+the histogram look varied or improve a test metric. Record the reason for
+material changes.
 
 ## Limits
 
