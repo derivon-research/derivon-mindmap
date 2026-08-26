@@ -3,7 +3,7 @@ name: derivon-math-authoring
 description: Write or revise beginner-facing mathematics concept and derivation documents in a Derivon workspace. Use when mathematical lessons need intuition, motivation, worked reasoning, examples, misconceptions, or interactive HTML visualizations. Use derivon-workspace separately for graph storage and validation.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-26-batched-math-authoring
+  reference-set: provisional-2026-08-26-bounded-math-authoring
 ---
 
 # Derivon Math Authoring
@@ -31,7 +31,9 @@ If no delegation capability is available, perform the same inventory, source
 packet, bounded drafting, independent review, and acceptance stages sequentially
 in small batches. Lack of SubAgents never lowers the teaching or validation bar.
 Do not interpret file coverage, generated prose, or successful rendering as
-evidence that the documents are complete.
+evidence that the documents are complete. Treat the workflow as bounded
+delivery, not open-ended optimization: freeze the acceptance bar before drafting,
+repair blocking defects once, and finish when that fixed bar is met.
 
 ## Establish the teaching situation
 

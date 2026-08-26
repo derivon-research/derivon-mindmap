@@ -121,6 +121,8 @@ describe('authoring workspace', () => {
     expect(largeScaleReferences[0]).toContain('When delegation is unavailable');
     expect(largeScaleReferences[0]).toContain('Scripts may inventory, extract source material, render, compare, and audit');
     expect(largeScaleReferences[0]).toContain('Do not blindly assign one Agent per document');
+    expect(largeScaleReferences[0]).toContain('Give the writer at most one repair pass');
+    expect(largeScaleReferences[0]).toContain('prevent completion, and after this checklist passes');
     const renderScripts = paths.filter((path) => path.endsWith('/scripts/render-documents.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
     expect(new Set(renderScripts).size).toBe(1);
     expect(renderScripts[0]).toContain('marked-katex-extension');

@@ -3,7 +3,7 @@ name: derivon-workspace
 description: Operate and validate a Derivon knowledge-graph workspace. Use for .derivon/workspace.json, object document storage, HTML publication, hyperedge relations, prerequisites, conclusions, weights, graph consistency, and workspace validation. Do not use this skill to choose a subject-specific teaching voice or lesson design.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-26-batched-math-authoring
+  reference-set: provisional-2026-08-26-bounded-math-authoring
 ---
 
 # Derivon Workspace

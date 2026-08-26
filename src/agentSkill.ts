@@ -9,7 +9,7 @@ import paper from './workspaceAssets/references/derivon-paper.md?raw';
 import blog from './workspaceAssets/references/learning-route-hypergraph.md?raw';
 import validator from './workspaceAssets/validate-workspace.mjs?raw';
 
-export const WORKSPACE_AGENT_REFERENCE_SET = 'provisional-2026-08-26-batched-math-authoring';
+export const WORKSPACE_AGENT_REFERENCE_SET = 'provisional-2026-08-26-bounded-math-authoring';
 
 export const WORKSPACE_AGENT_FILES: Readonly<Record<string, string>> = Object.freeze({
   '.agents/skills/derivon-workspace/SKILL.md': skill,

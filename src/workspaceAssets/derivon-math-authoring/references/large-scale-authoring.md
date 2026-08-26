@@ -7,22 +7,28 @@ work is too large for one undifferentiated writing pass.
 The protocol names roles and artifacts, not vendor APIs. A platform may call the
 capability SubAgents, child agents, delegated tasks, parallel agents, workers, or
 something else. Use only capabilities the current environment actually exposes.
+This is a bounded delivery protocol, not a mandate to keep finding improvements.
+Freeze scope and acceptance criteria once, execute them, then stop.
 
 ## Non-negotiable ownership rules
 
 - `document.md` remains the source of truth for every Markdown object. Publish
   `index.html` from it using the workspace renderer after the prose is accepted.
-- The main Agent owns the inventory, work plan, shared-file writes, publication,
-  graph-wide validation, and the final completion claim.
-- Delegated Agents should return drafts and review reports, or write only inside
-  isolated workspaces explicitly assigned to them. Do not let multiple Agents
-  concurrently edit the same workspace files.
+- The main Agent owns the inventory, work plan, integration, graph-wide
+  validation, and the final completion claim.
+- Delegated Agents may write assigned documents directly when the platform
+  provides isolated worktrees or guarantees exclusive ownership of disjoint
+  paths. Otherwise they return drafts and review reports. Never let multiple
+  Agents edit the same file, and do not make the main Agent retype a usable patch.
 - Scripts may inventory, extract source material, render, compare, and audit.
   They must not contain chapter prose, lesson-sized text maps, or templates that
   bulk-author the documents. If such a generator already exists, do not run,
   extend, or treat its output as accepted teaching material.
 - A page that exists, renders, or passes structural checks is not thereby a
   finished lesson. Coverage and quality are separate facts.
+- An accepted page is closed. Do not reopen it because another analogy, stylistic
+  refinement, or visualization might also be good. Reopen only for concrete new
+  evidence of a blocking defect or a changed user requirement.
 
 ## 1. Establish the baseline
 
@@ -35,6 +41,10 @@ publication files. Classify each page as one of:
   bulk-generated pages as provisional even if they are syntactically complete.
 - **Missing:** absent, empty, placeholder-only, or unusable.
 
+Make this graph-wide inventory once. Freeze the in-scope page list and acceptance
+rubric before the pilot begins. Do not repeatedly rediscover the workspace or
+expand scope unless files, sources, or the user's request actually change.
+
 Also inspect `.derivon/` and nearby tooling for scripts or data modules that
 duplicate lesson prose. Record them as provenance risks. Preserve them unless
 the user asks for removal, but never continue that authoring pattern.
@@ -45,13 +55,11 @@ derivation. Extract their useful qualities rather than copying their headings or
 surface style. If there is no accepted exemplar, complete and review a small
 pilot cluster before scaling.
 
-Maintain one progress ledger owned by the main Agent, using persistent task state
-when the platform provides it or a task-local work log otherwise. For every page,
-record its source packet, writer and reviewer (when delegated), current
-classification, unresolved findings, publication state, and audit result. This
-ledger is coordination metadata, never a substitute for lesson content or a
-second source of truth. Delegated Agents may report updates; only the main Agent
-changes the ledger.
+Maintain one compact progress ledger owned by the main Agent, using persistent
+task state when the platform provides it or a task-local work log otherwise. One
+row per page is enough: record its cluster, current classification, blocking
+finding if any, publication state, and audit result. This ledger is coordination
+metadata, never a substitute for lesson content or a second source of truth.
 
 ## 2. Build source packets before drafting
 
@@ -65,6 +73,11 @@ each teaching cluster, prepare a bounded source packet containing:
 - the relevant accepted exemplars;
 - notation, audience assumptions, source-fidelity requirements, and known gaps;
 - the output documents and the acceptance criteria that apply to each one.
+
+Keep the packet proportional to the cluster and reuse shared chapter material.
+It is context for writing, not a separate research deliverable that must become
+exhaustive before drafting can start. Once the exact governing sections and
+examples are available, write the lesson.
 
 When the user requires the graph to replace reading the textbook, the packet
 must include every source passage needed to teach the scoped material. A source
@@ -91,8 +104,10 @@ At the start of a large task, inspect the available Agent capabilities.
 **When delegation is available:** use it for independent, bounded work such as
 source extraction, cluster drafting, and review. Give each delegated Agent the
 source packet and a concrete deliverable. Parallelize only clusters that do not
-share files or unsettled notation. The main Agent remains responsible for
-reconciling cross-cluster terminology and integrating changes serially.
+share files or unsettled notation. A well-bounded writer may read its supplied
+source and draft in one assignment; do not create extra Agent stages merely to
+make the workflow look thorough. The main Agent remains responsible for
+reconciling cross-cluster terminology and integrating isolated results.
 
 **When delegation is unavailable:** run the same roles sequentially. Complete
 one bounded cluster, clear the drafting context as much as the platform permits,
@@ -159,16 +174,34 @@ These are semantic gates, not mandatory section headings or phrase-matching
 checks. Depth follows the learning obstacle. A short page may pass when the idea
 is genuinely simple; a long page fails if it merely repeats formulas.
 
+Freeze these gates before drafting. A reviewer may apply them but may not invent
+a stricter textbook, a new style preference, or additional scope after seeing the
+draft.
+
 ## 7. Review, integrate, and scale gradually
+
+Classify review findings before changing anything:
+
+- **Blocking:** mathematical error, circular reasoning, material source conflict,
+  missing prerequisite, omission of an applicable acceptance-gate element, or a
+  broken publication or interaction.
+- **Non-blocking:** another possible analogy, extra example, alternative proof,
+  stylistic preference, optional animation, or polish beyond the frozen bar.
+
+Only blocking findings trigger a repair. Record non-blocking ideas only when they
+are useful to the user; never let them delay acceptance.
 
 For each batch:
 
-1. Have a reviewer compare every draft against its source packet, graph
-   semantics, acceptance gate, and the accepted exemplars.
-2. Resolve substantive findings before publication. Do not defer missing
-   motivation, reasoning, examples, or boundaries as cosmetic polish.
-3. Let the main Agent write accepted drafts into `document.md` serially, render
-   `index.html`, and run the workspace and math-page audits.
+1. Give each cluster one review pass against its source packet, graph semantics,
+   frozen acceptance gate, and accepted exemplars.
+2. Give the writer at most one repair pass for the blocking findings. The
+   reviewer may then verify only those findings; it must not start a fresh review.
+   If a blocker remains, mark the page blocked with the exact reason and continue
+   unaffected work instead of entering another loop.
+3. Integrate accepted `document.md` changes, render `index.html`, and run audits
+   scoped to the changed pages. Run graph-wide validation once at the end unless
+   an actual structural error requires it earlier.
 4. Inspect interactive pages at normal and narrow widths. Verify the component
    teaches its stated question, responds correctly, and does not create nested
    vertical scrolling.
@@ -180,17 +213,19 @@ For each batch:
 The first batch contains exactly one pilot teaching cluster. Declare the finite
 set of clusters in each later batch before dispatching it, and do not dispatch a
 new batch until every cluster in the current one is accepted or explicitly
-blocked. This makes quality loss visible before it spreads across the graph.
+blocked. After the pilot, use the available parallel capacity for disjoint
+clusters instead of serializing work that has no shared dependencies.
 
 Stop scaling when a batch misses the quality gate, shows repeated notation or
-source errors, or becomes materially thinner than the exemplars. Reduce the
-cluster size, improve the source packet or assignment, and re-review the failed
-batch before continuing. More Agents do not repair a weak contract.
+source errors, or becomes materially thinner than the exemplars. Correct the
+shared assignment once before the next batch; do not restart the inventory,
+rewrite already accepted pages, or repeatedly redesign the process.
 
 ## Completion standard
 
-Claim completion only when every in-scope page has passed its applicable
-acceptance gate, source and graph review, publication sync, and technical audit.
-Report provisional or blocked pages explicitly. A count of populated files,
-generated modules, passing render commands, or successful Agent tasks is never
-enough on its own.
+Finish when every frozen in-scope page is either accepted or explicitly blocked,
+accepted pages are published and audited, and final workspace validation passes.
+Report blocked pages and their concrete reasons. Non-blocking improvements do not
+prevent completion, and after this checklist passes the Agent must stop looking
+for more work. A count of populated files, generated modules, passing render
+commands, or successful Agent tasks is never enough on its own.
