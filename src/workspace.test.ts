@@ -36,6 +36,11 @@ function memoryDirectory(initial: Record<string, string> = {}): {
   const directoryHandle = (prefix: string, name: string): FileSystemDirectoryHandle => ({
     kind: 'directory',
     name,
+    async removeEntry(filename: string) {
+      const filePath = [prefix, filename].filter(Boolean).join('/');
+      if (!files.has(filePath)) throw new DOMException(`Missing file ${filePath}`, 'NotFoundError');
+      files.delete(filePath);
+    },
     async getDirectoryHandle(child: string, options?: { create?: boolean }) {
       const childPath = [prefix, child].filter(Boolean).join('/');
       if (!directories.has(childPath)) {
@@ -86,7 +91,7 @@ function memoryDirectory(initial: Record<string, string> = {}): {
 }
 
 describe('authoring workspace', () => {
-  it('bundles Derivon skills and their scripts for common coding-agent discovery paths', () => {
+  it('bundles layered Derivon skills and reusable resources for common agent paths', () => {
     const paths = Object.keys(WORKSPACE_AGENT_FILES);
     expect(paths).toContain('.agents/skills/derivon-workspace/SKILL.md');
     expect(paths).toContain('.agents/skills/derivon-workspace/scripts/render-documents.mjs');
@@ -94,15 +99,18 @@ describe('authoring workspace', () => {
     expect(paths).toContain('.claude/skills/derivon-workspace/scripts/render-documents.mjs');
     expect(paths).toContain('.github/skills/derivon-workspace/SKILL.md');
     expect(paths).toContain('.github/skills/derivon-workspace/scripts/render-documents.mjs');
-    expect(paths).toContain('.agents/skills/derivon-math-authoring/SKILL.md');
-    expect(paths).toContain('.agents/skills/derivon-math-authoring/references/large-scale-authoring.md');
-    expect(paths).toContain('.agents/skills/derivon-math-authoring/scripts/audit-math-pages.mjs');
-    expect(paths).toContain('.claude/skills/derivon-math-authoring/SKILL.md');
-    expect(paths).toContain('.claude/skills/derivon-math-authoring/references/large-scale-authoring.md');
-    expect(paths).toContain('.claude/skills/derivon-math-authoring/scripts/audit-math-pages.mjs');
-    expect(paths).toContain('.github/skills/derivon-math-authoring/SKILL.md');
-    expect(paths).toContain('.github/skills/derivon-math-authoring/references/large-scale-authoring.md');
-    expect(paths).toContain('.github/skills/derivon-math-authoring/scripts/audit-math-pages.mjs');
+    for (const root of ['.agents', '.claude', '.github']) {
+      expect(paths).toContain(`${root}/skills/derivon-learning-graph/SKILL.md`);
+      expect(paths).toContain(`${root}/skills/derivon-learning-graph/references/source-import.md`);
+      expect(paths).toContain(`${root}/skills/derivon-learning-graph/references/weight-calibration.md`);
+      expect(paths).toContain(`${root}/skills/derivon-learning-graph/scripts/audit-learning-graph.mjs`);
+      expect(paths).toContain(`${root}/skills/derivon-document-authoring/SKILL.md`);
+      expect(paths).toContain(`${root}/skills/derivon-document-authoring/references/large-scale-authoring.md`);
+      expect(paths).toContain(`${root}/skills/derivon-document-authoring/scripts/audit-document-pages.mjs`);
+      expect(paths).toContain(`${root}/skills/derivon-math-authoring/SKILL.md`);
+      expect(paths).not.toContain(`${root}/skills/derivon-math-authoring/references/large-scale-authoring.md`);
+      expect(paths).not.toContain(`${root}/skills/derivon-math-authoring/scripts/audit-math-pages.mjs`);
+    }
     expect(paths).toContain('.derivon/agent/references/README.md');
     expect(paths).toContain('.derivon/agent/references/model.md');
     expect(paths).toContain('.derivon/agent/references/derivon-paper.md');
@@ -117,32 +125,52 @@ describe('authoring workspace', () => {
     expect(workspaceSkills[0]).toContain('Review a derivation');
     expect(workspaceSkills[0]).toContain('missing prerequisite');
     expect(workspaceSkills[0]).toContain('automatically sized sandboxed iframe');
+    expect(workspaceSkills[0]).toContain('Use `derivon-learning-graph`');
     expect(workspaceSkills[0]).not.toContain('SVG diagrams, Canvas simulations');
+    const learningSkills = paths.filter((path) => path.endsWith('/derivon-learning-graph/SKILL.md')).map((path) => WORKSPACE_AGENT_FILES[path]);
+    expect(new Set(learningSkills).size).toBe(1);
+    expect(learningSkills[0]).toContain('concept identity and scope');
+    expect(learningSkills[0]).toContain('historical influence');
+    expect(learningSkills[0]).toContain('weight-calibration.md');
+    const sourceImportReferences = paths.filter((path) => path.endsWith('/references/source-import.md')).map((path) => WORKSPACE_AGENT_FILES[path]);
+    expect(new Set(sourceImportReferences).size).toBe(1);
+    expect(sourceImportReferences[0]).toContain('This distinction is especially important in philosophy');
+    expect(sourceImportReferences[0]).toContain('Produce minimal object documents');
+    const weightReferences = paths.filter((path) => path.endsWith('/references/weight-calibration.md')).map((path) => WORKSPACE_AGENT_FILES[path]);
+    expect(new Set(weightReferences).size).toBe(1);
+    expect(weightReferences[0]).toContain('marginal cognitive effort');
+    expect(weightReferences[0]).toContain('| 5 | A major learning unit');
+    const documentSkills = paths.filter((path) => path.endsWith('/derivon-document-authoring/SKILL.md')).map((path) => WORKSPACE_AGENT_FILES[path]);
+    expect(new Set(documentSkills).size).toBe(1);
+    expect(documentSkills[0]).toContain('The user must explicitly ask');
+    expect(documentSkills[0]).toContain('more than five documents');
+    expect(documentSkills[0]).toContain('responsive normal flow');
     const mathSkills = paths.filter((path) => path.endsWith('/derivon-math-authoring/SKILL.md')).map((path) => WORKSPACE_AGENT_FILES[path]);
     expect(new Set(mathSkills).size).toBe(1);
     expect(mathSkills[0]).toContain('name: derivon-math-authoring');
-    expect(mathSkills[0]).toContain('excellent introductory');
-    expect(mathSkills[0]).toContain('Before a formula, explain the plan');
-    expect(mathSkills[0]).toContain('Interactive mathematical HTML');
-    expect(mathSkills[0]).toContain('references/large-scale-authoring.md');
+    expect(mathSkills[0]).toContain('Do not turn a request to import');
+    expect(mathSkills[0]).toContain('Before a substantial formula');
+    expect(mathSkills[0]).toContain('Mathematical visual decisions');
     const largeScaleReferences = paths
       .filter((path) => path.endsWith('/references/large-scale-authoring.md'))
       .map((path) => WORKSPACE_AGENT_FILES[path]);
     expect(new Set(largeScaleReferences).size).toBe(1);
-    expect(largeScaleReferences[0]).toContain('The protocol names roles and artifacts, not vendor APIs');
-    expect(largeScaleReferences[0]).toContain('When delegation is unavailable');
-    expect(largeScaleReferences[0]).toContain('Scripts may inventory, extract source material, render, compare, and audit');
-    expect(largeScaleReferences[0]).toContain('Do not blindly assign one Agent per document');
-    expect(largeScaleReferences[0]).toContain('Give the writer at most one repair pass');
-    expect(largeScaleReferences[0]).toContain('prevent completion, and after this checklist passes');
+    expect(largeScaleReferences[0]).toContain('actively use them');
+    expect(largeScaleReferences[0]).toContain('tell the user before undertaking');
+    expect(largeScaleReferences[0]).toContain('at most one repair pass');
     const renderScripts = paths.filter((path) => path.endsWith('/scripts/render-documents.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
     expect(new Set(renderScripts).size).toBe(1);
     expect(renderScripts[0]).toContain('marked-katex-extension');
     expect(renderScripts[0]).toContain("argv.includes('--write')");
-    const auditScripts = paths.filter((path) => path.endsWith('/scripts/audit-math-pages.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
-    expect(new Set(auditScripts).size).toBe(1);
-    expect(auditScripts[0]).toContain('formulaOverflow');
-    expect(auditScripts[0]).toContain('componentScroll');
+    const graphAuditScripts = paths.filter((path) => path.endsWith('/scripts/audit-learning-graph.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
+    expect(new Set(graphAuditScripts).size).toBe(1);
+    expect(graphAuditScripts[0]).toContain('weightHistogram');
+    expect(graphAuditScripts[0]).toContain('parallelRoutes');
+    expect(graphAuditScripts[0]).toContain('alternativeHeads');
+    const documentAuditScripts = paths.filter((path) => path.endsWith('/scripts/audit-document-pages.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
+    expect(new Set(documentAuditScripts).size).toBe(1);
+    expect(documentAuditScripts[0]).toContain('formulaOverflow');
+    expect(documentAuditScripts[0]).toContain('componentScroll');
     expect(WORKSPACE_AGENT_FILES['.derivon/agent/references/README.md']).toContain('Migration when official documentation ships');
     const model = WORKSPACE_AGENT_FILES['.derivon/agent/references/model.md'];
     expect(model).toContain('Empty tail is not the start set');
@@ -193,6 +221,32 @@ describe('authoring workspace', () => {
     const bundle = JSON.parse(directory.read('.derivon/agent/bundle.json')!);
     expect(bundle.protectedFiles).toContain(managedPath);
     expect(bundle.files).not.toHaveProperty(managedPath);
+  });
+
+  it('removes retired managed files while preserving customized retired files', async () => {
+    const retiredPath = '.agents/skills/retired/SKILL.md';
+    const customizedPath = '.agents/skills/customized-retired/SKILL.md';
+    const generated = 'generated instructions\n';
+    const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(generated)));
+    const digest = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    const directory = memoryDirectory({
+      [retiredPath]: generated,
+      [customizedPath]: `${generated}user changes\n`,
+      '.derivon/agent/bundle.json': `${JSON.stringify({
+        schema: 'derivon.agent-bundle/v0.1.0',
+        referenceSet: 'retired-set',
+        files: { [retiredPath]: digest, [customizedPath]: digest },
+        protectedFiles: [],
+      })}\n`,
+    });
+
+    await attachWorkspaceAgentFiles(directory.handle);
+
+    expect(directory.read(retiredPath)).toBeUndefined();
+    expect(directory.read(customizedPath)).toBe(`${generated}user changes\n`);
+    const bundle = JSON.parse(directory.read('.derivon/agent/bundle.json')!);
+    expect(bundle.files).not.toHaveProperty(retiredPath);
+    expect(bundle.protectedFiles).toContain(customizedPath);
   });
 
   it('requests explicit read-write permission for a selected directory', async () => {

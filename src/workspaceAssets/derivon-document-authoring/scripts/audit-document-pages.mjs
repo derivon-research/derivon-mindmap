@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const usage = `Usage:
-  node audit-math-pages.mjs [--base-url <url>] [--runtime <project>] <workspace> [object-id-or-document ...]
+  node audit-document-pages.mjs [--base-url <url>] [--runtime <project>] <workspace> [object-id-or-document ...]
 
 Static publication checks have no package dependency. With --base-url, the runtime
 project must provide playwright and the command also audits a 390px browser viewport.`;
@@ -111,5 +111,5 @@ if (issues.length > 0) {
   for (const issue of issues) console.error(`error  ${issue}`);
   process.exitCode = 1;
 } else {
-  console.log(`ok     ${selected.length} mathematical publication(s) audited${baseUrl ? ' in a 390px browser viewport' : ''}`);
+  console.log(`ok     ${selected.length} publication(s) audited${baseUrl ? ' in a 390px browser viewport' : ''}`);
 }

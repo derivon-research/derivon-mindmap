@@ -218,6 +218,13 @@ async function writeTextFile(root: FileSystemDirectoryHandle, path: string, cont
   await writable.close();
 }
 
+async function removeTextFile(root: FileSystemDirectoryHandle, path: string): Promise<void> {
+  const parts = path.split('/');
+  const filename = parts.pop()!;
+  const directory = await getDirectory(root, parts, false);
+  await directory.removeEntry(filename);
+}
+
 function isNotFoundError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'NotFoundError';
 }
@@ -312,6 +319,22 @@ export async function attachWorkspaceAgentFiles(root: FileSystemDirectoryHandle)
       if (!isNotFoundError(error)) throw error;
       await writeTextFile(root, path, content);
       nextFiles[path] = desiredDigest;
+      protectedFiles.delete(path);
+    }
+  }
+
+  for (const [path, previousDigest] of Object.entries(stored.manifest?.files ?? {})) {
+    if (Object.hasOwn(WORKSPACE_AGENT_FILES, path)) continue;
+    try {
+      const existingDigest = await contentDigest(await readTextFile(root, path));
+      if (existingDigest === previousDigest) {
+        await removeTextFile(root, path);
+        protectedFiles.delete(path);
+      } else {
+        protectedFiles.add(path);
+      }
+    } catch (error) {
+      if (!isNotFoundError(error)) throw error;
       protectedFiles.delete(path);
     }
   }

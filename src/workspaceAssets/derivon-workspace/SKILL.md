@@ -1,17 +1,17 @@
 ---
 name: derivon-workspace
-description: Operate and validate a Derivon knowledge-graph workspace. Use for .derivon/workspace.json, object document storage, HTML publication, hyperedge relations, prerequisites, conclusions, weights, graph consistency, and workspace validation. Do not use this skill to choose a subject-specific teaching voice or lesson design.
+description: Operate and validate a Derivon workspace. Use for .derivon/workspace.json, object document storage, HTML publication, core point and hyperedge semantics, graph consistency, and workspace validation. Do not use this skill to choose learning-graph granularity, calibrate application weights, import a subject, or design reader-facing lessons.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-26-bounded-math-authoring
+  reference-set: provisional-2026-08-27-layered-skills
 ---
 
 # Derivon Workspace
 
-Treat the Derivon workspace as a knowledge graph whose points and hyperedges own
-documents. Help the user edit both the graph and its written reasoning. Do not
-reduce a hyperedge to a collection of ordinary binary edges or infer semantics
-from the canvas alone.
+Treat the Derivon workspace as a core graph plus authoring payload and view state.
+Operate those layers without choosing an application ontology or teaching style.
+Do not reduce a hyperedge to ordinary binary edges or infer semantics from the
+canvas alone.
 
 ## Required model references
 
@@ -50,8 +50,10 @@ ask the user which semantics they intend.
 5. Read the documents of every object affected by the request. For one
    hyperedge, inspect all premise documents, the hyperedge document, and the
    conclusion document together.
-6. Preserve unrelated document content exactly. When the task concerns teaching
-   quality or subject exposition, also use an installed subject-authoring Skill.
+6. Preserve unrelated document content exactly. Use `derivon-learning-graph` for
+   source import, concept identity, hyperedge granularity, and learning weights.
+   Use `derivon-document-authoring` only for an explicit document-writing request,
+   plus an installed subject-authoring Skill when applicable.
 
 Use these discovery commands when useful:
 
@@ -143,13 +145,20 @@ $$
 
 This Skill governs document ownership, synchronization, and runtime boundaries.
 It deliberately does not prescribe lesson structure, prose depth, examples, or
-visual design. For beginner-facing mathematics, use `derivon-math-authoring`
-alongside this Skill when it is installed.
+visual design. Rapid graph imports should create the auditable placeholders
+specified by `derivon-learning-graph`. Use `derivon-document-authoring` only when
+the user explicitly requests developed documents, and add a subject Skill such as
+`derivon-math-authoring` for domain-specific standards.
 
 ## Edit graph relations
 
 Make graph changes in `.derivon/workspace.json`; directory names do not define
 relations.
+
+This section preserves core graph semantics. When the task requires deciding what
+real-world concept becomes a point, how a source becomes hyperedges, or which
+learning-cost value to assign, use `derivon-learning-graph` rather than guessing
+from these storage rules.
 
 - Add a concept before referencing its ID. Give it a unique document directory
   and create all files required by its format.

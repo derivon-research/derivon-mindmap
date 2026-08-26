@@ -39,12 +39,17 @@ Derivon 使用普通文件夹作为工作区：
 
 ```text
 my-workspace/
-├── .agents/skills/derivon-workspace/SKILL.md
-├── .agents/skills/derivon-math-authoring/
-│   ├── SKILL.md
-│   └── references/large-scale-authoring.md
-├── .claude/skills/derivon-workspace/SKILL.md
-├── .github/skills/derivon-workspace/SKILL.md
+├── .agents/skills/
+│   ├── derivon-workspace/SKILL.md
+│   ├── derivon-learning-graph/
+│   │   ├── SKILL.md
+│   │   └── references/{source-import,weight-calibration}.md
+│   ├── derivon-document-authoring/
+│   │   ├── SKILL.md
+│   │   └── references/large-scale-authoring.md
+│   └── derivon-math-authoring/SKILL.md
+├── .claude/skills/…
+├── .github/skills/…
 ├── .derivon/
 │   ├── agent/
 │   │   ├── bundle.json
@@ -79,26 +84,37 @@ Markdown 正文可以直接嵌入 HTML 块。样式、表单、脚本和交互�
 
 浏览器基于隐私限制只提供授权目录的名称，不提供系统绝对路径。未选中点或推导时，右侧 `Graph` 总览会显示当前打开的项目文件夹；尚未连接目录时显示“未打开项目文件夹”。
 
-连接目录时还会自动附加 `derivon-workspace` 和 `derivon-math-authoring` Agent Skills。相同的 Skill 会写入
-`.agents/skills/`、`.claude/skills/` 与 `.github/skills/`，供 Codex、Cursor、
-Claude Code、GitHub Copilot 等支持 `SKILL.md` 的 Coding Agent 自动发现。应用会在
-连接、另存和后续自动保存时同步最新参考集；`.derivon/agent/bundle.json` 记录上次
-生成内容的 SHA-256。只有仍与上次生成版本一致的文件会自动升级，用户修改过的文件
-会进入 `protectedFiles` 并保持原样，没有托管记录的用户自建 Skill 也不会被覆盖。
-`derivon-workspace` 只指导 Agent 操作 manifest、对象文档、发布 HTML、超边 AND/OR
-语义和工作区校验；`derivon-math-authoring` 独立负责把数学概念与推导写成面向初学者的
-教材内容，包括动机、直觉、完整推理、教材案例和交互可视化。分离后，Derivon 的文件与
-图模型不会把某一学科的写作方式强加给其他学科，后续可按同样方式增加其他领域 Skill。
-两个 Skill 还会分发各自的 `scripts/`：工作区 Skill 提供确定性的 Markdown 发布与漂移
-检查，数学 Skill 提供静态及 Playwright 窄屏审计，避免 Agent 每次重新编写一次性脚本。
-当任务覆盖多个章节或大量文档时，数学 Skill 还会要求读取
-`references/large-scale-authoring.md`：先区分已验收案例、临时草稿与缺失页面，再按教学
-主题构造小批次。Agent 平台提供 SubAgent、委派或同类能力时，用它们分别完成受约束的
-资料整理、成稿和独立审校；在平台能隔离工作区或保证文件独占时，可并行写入互不重叠的
-文档，否则由主 Agent 集成草稿。平台不提供该能力时，则按同样阶段顺序执行。能力差异
-只影响调度，不降低文档质量，也不允许用脚本或正文数据映射批量代写教材内容。大任务会
-在试点前冻结范围和验收标准；每个教学簇只允许一次审校和一次阻断问题返修。可选的措辞、
-类比或视觉改进不妨碍完成，已验收页面不会被反复重开。
+连接目录时会附加四层 Agent Skills。相同内容写入 `.agents/skills/`、`.claude/skills/`
+与 `.github/skills/`，供 Codex、Cursor、Claude Code、GitHub Copilot 等支持 `SKILL.md`
+的 Agent 发现：
+
+- `derivon-workspace` 只负责 manifest、对象所有权、HTML 发布、核心超边语义和校验；
+- `derivon-learning-graph` 负责从书本、课程和笔记建立或合并学习图，优先检查概念身份、
+  点和超边的粒度、平行路线、来源与学习成本；
+- `derivon-document-authoring` 只在用户明确要求实现文档时启用，负责正文、HTML、发布
+  审计和大规模 SubAgent 编排；
+- `derivon-math-authoring` 只补充数学特有的精确定义、推导叙述、例子与数学视觉标准，
+  不再承担教材导入或通用文档工程。
+
+快速导入默认产生可审计的准确占位文档，而不是把每个节点扩写成教材章节。概念占位记录
+规范陈述、范围、别名、来源和身份疑问；超边占位记录联合前提如何支持结论、来源以及权重
+理由。学习权重统一解释为“所有 tails 已掌握后，理解并验证当前步骤的边际认知成本”，
+初始按 `0–5` 整数锚点评级，再通过分布、平行路线和人工比较校准。
+
+通用导入规则不会把任意关系伪装成超边。特别是在哲学、历史和文学中，历史影响、时间
+顺序、引文、对立和主题相似本身不表示 tails 推出 head；这些证据保留在来源记录中，
+确有导航需求时应推动单独的关系或视图设计。学习依赖或论证依赖只有在联合前提和步骤都
+能准确说明时才进入 Derivon 超边。
+
+工作区 Skill 提供确定性的 Markdown 渲染；学习图 Skill 提供权重、tails、平行路线、
+重复标签和孤立点报告；通用文档 Skill 提供静态及 Playwright 窄屏审计。脚本只做确定性
+渲染和审计，不批量编写正文。显式的大规模文档任务在平台支持时必须主动使用 SubAgent；
+没有委派能力时，Agent 必须在开始长时间串行写作前告知用户。
+
+应用会在连接、另存和后续自动保存时同步最新参考集；`.derivon/agent/bundle.json` 记录
+托管内容的 SHA-256。仍与旧 bundle 哈希一致的文件会自动升级；Skill 重构后退役且未经
+修改的托管文件会安全删除。用户修改过的旧文件进入 `protectedFiles` 并保持原样，没有
+托管记录的用户自建 Skill 也不会被覆盖。
 
 `.derivon/agent/references/` 会随 Skill 一起附加当前临时模型文档：`model.md` 明确
 核心数学对象与 authoring manifest 的映射，`derivon-paper.md` 是当前 paper 工作草案
