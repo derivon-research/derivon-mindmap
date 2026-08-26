@@ -92,14 +92,17 @@ function memoryDirectory(initial: Record<string, string> = {}): {
 
 describe('authoring workspace', () => {
   it('bundles layered Derivon skills and reusable resources for common agent paths', () => {
-    expect(WORKSPACE_AGENT_REFERENCE_SET).toBe('provisional-2026-08-27-float-weight-calibration');
+    expect(WORKSPACE_AGENT_REFERENCE_SET).toBe('provisional-2026-08-27-artifact-cleanup');
     const paths = Object.keys(WORKSPACE_AGENT_FILES);
     expect(paths).toContain('.agents/skills/derivon-workspace/SKILL.md');
     expect(paths).toContain('.agents/skills/derivon-workspace/scripts/render-documents.mjs');
+    expect(paths).toContain('.agents/skills/derivon-workspace/scripts/audit-workspace-artifacts.mjs');
     expect(paths).toContain('.claude/skills/derivon-workspace/SKILL.md');
     expect(paths).toContain('.claude/skills/derivon-workspace/scripts/render-documents.mjs');
+    expect(paths).toContain('.claude/skills/derivon-workspace/scripts/audit-workspace-artifacts.mjs');
     expect(paths).toContain('.github/skills/derivon-workspace/SKILL.md');
     expect(paths).toContain('.github/skills/derivon-workspace/scripts/render-documents.mjs');
+    expect(paths).toContain('.github/skills/derivon-workspace/scripts/audit-workspace-artifacts.mjs');
     for (const root of ['.agents', '.claude', '.github']) {
       expect(paths).toContain(`${root}/skills/derivon-learning-graph/SKILL.md`);
       expect(paths).toContain(`${root}/skills/derivon-learning-graph/references/source-import.md`);
@@ -126,6 +129,9 @@ describe('authoring workspace', () => {
     expect(workspaceSkills[0]).toContain('Review a derivation');
     expect(workspaceSkills[0]).toContain('missing prerequisite');
     expect(workspaceSkills[0]).toContain('automatically sized sandboxed iframe');
+    expect(workspaceSkills[0]).toContain('audit-workspace-artifacts.mjs');
+    expect(workspaceSkills[0]).toContain('Move reusable deterministic logic');
+    expect(workspaceSkills[0]).toContain('Preserve pre-existing or unknown files');
     expect(workspaceSkills[0]).toContain('Use `derivon-learning-graph`');
     expect(workspaceSkills[0]).not.toContain('SVG diagrams, Canvas simulations');
     const learningSkills = paths.filter((path) => path.endsWith('/derivon-learning-graph/SKILL.md')).map((path) => WORKSPACE_AGENT_FILES[path]);
@@ -167,6 +173,11 @@ describe('authoring workspace', () => {
     expect(new Set(renderScripts).size).toBe(1);
     expect(renderScripts[0]).toContain('marked-katex-extension');
     expect(renderScripts[0]).toContain("argv.includes('--write')");
+    const workspaceAuditScripts = paths.filter((path) => path.endsWith('/scripts/audit-workspace-artifacts.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
+    expect(new Set(workspaceAuditScripts).size).toBe(1);
+    expect(workspaceAuditScripts[0]).toContain('unownedDocumentDirectories');
+    expect(workspaceAuditScripts[0]).toContain('workspaceHelperCandidates');
+    expect(workspaceAuditScripts[0]).toContain('It never deletes or changes files');
     const graphAuditScripts = paths.filter((path) => path.endsWith('/scripts/audit-learning-graph.mjs')).map((path) => WORKSPACE_AGENT_FILES[path]);
     expect(new Set(graphAuditScripts).size).toBe(1);
     expect(graphAuditScripts[0]).toContain('weightHistogram');

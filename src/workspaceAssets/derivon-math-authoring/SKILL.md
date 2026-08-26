@@ -3,7 +3,7 @@ name: derivon-math-authoring
 description: "Supply mathematics-specific exposition standards for explicitly requested Derivon document writing: precise definitions, beginner intuition, worked reasoning, examples, counterexamples, and mathematical visualizations. Use alongside derivon-document-authoring; do not activate for graph import, concept extraction, edge modeling, weighting, or placeholder creation."
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-27-float-weight-calibration
+  reference-set: provisional-2026-08-27-artifact-cleanup
 ---
 
 # Derivon Math Authoring

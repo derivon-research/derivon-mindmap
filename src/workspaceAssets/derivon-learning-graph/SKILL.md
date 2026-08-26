@@ -3,7 +3,7 @@ name: derivon-learning-graph
 description: Model, import, merge, weight, and audit Derivon learning graphs from books, courses, syllabi, or existing notes. Use for concept identity and granularity, hyperedge boundaries, prerequisite structure, alternative routes, source provenance, and learning-cost calibration. Do not use for polished lesson documents.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-27-float-weight-calibration
+  reference-set: provisional-2026-08-27-artifact-cleanup
 ---
 
 # Derivon Learning Graph

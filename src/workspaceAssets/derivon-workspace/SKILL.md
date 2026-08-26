@@ -3,7 +3,7 @@ name: derivon-workspace
 description: Operate and validate a Derivon workspace. Use for .derivon/workspace.json, object document storage, HTML publication, core point and hyperedge semantics, graph consistency, and workspace validation. Do not use this skill to choose learning-graph granularity, calibrate application weights, import a subject, or design reader-facing lessons.
 metadata:
   managed-by: derivon-mindmap-demo
-  reference-set: provisional-2026-08-27-float-weight-calibration
+  reference-set: provisional-2026-08-27-artifact-cleanup
 ---
 
 # Derivon Workspace
@@ -236,12 +236,23 @@ about cycle grounding, exact route cost, multi-head encoding, or folding.
 
 ## Finish safely
 
-1. Reparse `.derivon/workspace.json` as JSON.
-2. Run `node .derivon/agent/validate-workspace.mjs .` and fix every error.
-3. Re-read changed documents and their graph neighbors for stale terminology.
-4. Check that changed model descriptions agree with the bundled source hierarchy;
+1. Inventory files created during the task. Move reusable deterministic logic
+   into the relevant Skill's `scripts/` directory. Remove confirmed one-off
+   generators, checkpoints, test fixtures, and reports that no longer serve the
+   workspace. Preserve pre-existing or unknown files unless the user authorizes
+   their removal.
+2. Run
+   `node .agents/skills/derivon-workspace/scripts/audit-workspace-artifacts.mjs .`.
+   Resolve every unowned document directory and scratch artifact. For each
+   workspace-local helper, either remove it, migrate reusable logic into a Skill,
+   or report why it intentionally remains. The audit reports review signals and
+   never authorizes deletion by itself.
+3. Reparse `.derivon/workspace.json` as JSON.
+4. Run `node .derivon/agent/validate-workspace.mjs .` and fix every error.
+5. Re-read changed documents and their graph neighbors for stale terminology.
+6. Check that changed model descriptions agree with the bundled source hierarchy;
    do not introduce a competing definition into object documents.
-5. Summarize graph changes separately from document changes. Call out remaining
+7. Summarize graph changes separately from document changes. Call out remaining
    semantic uncertainty or publication drift instead of hiding it.
 
 Keep changes scoped to the user's request. Preserve unknown files and never

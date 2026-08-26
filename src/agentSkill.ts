@@ -1,5 +1,6 @@
 import skill from './workspaceAssets/derivon-workspace/SKILL.md?raw';
 import renderDocumentsScript from './workspaceAssets/derivon-workspace/scripts/render-documents.mjs?raw';
+import auditWorkspaceArtifactsScript from './workspaceAssets/derivon-workspace/scripts/audit-workspace-artifacts.mjs?raw';
 import learningGraphSkill from './workspaceAssets/derivon-learning-graph/SKILL.md?raw';
 import sourceImportReference from './workspaceAssets/derivon-learning-graph/references/source-import.md?raw';
 import weightCalibrationReference from './workspaceAssets/derivon-learning-graph/references/weight-calibration.md?raw';
@@ -14,15 +15,18 @@ import paper from './workspaceAssets/references/derivon-paper.md?raw';
 import blog from './workspaceAssets/references/learning-route-hypergraph.md?raw';
 import validator from './workspaceAssets/validate-workspace.mjs?raw';
 
-export const WORKSPACE_AGENT_REFERENCE_SET = 'provisional-2026-08-27-float-weight-calibration';
+export const WORKSPACE_AGENT_REFERENCE_SET = 'provisional-2026-08-27-artifact-cleanup';
 
 export const WORKSPACE_AGENT_FILES: Readonly<Record<string, string>> = Object.freeze({
   '.agents/skills/derivon-workspace/SKILL.md': skill,
   '.agents/skills/derivon-workspace/scripts/render-documents.mjs': renderDocumentsScript,
+  '.agents/skills/derivon-workspace/scripts/audit-workspace-artifacts.mjs': auditWorkspaceArtifactsScript,
   '.claude/skills/derivon-workspace/SKILL.md': skill,
   '.claude/skills/derivon-workspace/scripts/render-documents.mjs': renderDocumentsScript,
+  '.claude/skills/derivon-workspace/scripts/audit-workspace-artifacts.mjs': auditWorkspaceArtifactsScript,
   '.github/skills/derivon-workspace/SKILL.md': skill,
   '.github/skills/derivon-workspace/scripts/render-documents.mjs': renderDocumentsScript,
+  '.github/skills/derivon-workspace/scripts/audit-workspace-artifacts.mjs': auditWorkspaceArtifactsScript,
   '.agents/skills/derivon-learning-graph/SKILL.md': learningGraphSkill,
   '.agents/skills/derivon-learning-graph/references/source-import.md': sourceImportReference,
   '.agents/skills/derivon-learning-graph/references/weight-calibration.md': weightCalibrationReference,
