@@ -372,6 +372,30 @@ button { color: inherit; }
 .json-modal .text-button { background: #fff; }
 .json-modal .primary-button { border-color: #354b40; background: #354b40; color: #fff; }
 
+.workspace-error-backdrop { z-index: 130; }
+.workspace-error-modal {
+  width: min(720px, 100%);
+  max-height: min(720px, 92vh);
+  display: grid;
+  grid-template-rows: auto auto minmax(120px, 1fr) auto;
+  border: 1px solid #8f9691;
+  border-radius: 4px;
+  background: #fbfbfa;
+  box-shadow: 0 16px 45px rgba(23, 27, 25, 0.24);
+}
+.workspace-error-modal header { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border-bottom: 1px solid #d9dbd7; }
+.workspace-error-modal header div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.workspace-error-modal header strong { overflow-wrap: anywhere; font-size: 14px; }
+.workspace-error-modal header button { width: 31px; height: 31px; flex: 0 0 auto; display: inline-grid; place-items: center; border: 1px solid transparent; background: transparent; cursor: pointer; }
+.workspace-error-modal header button:hover { border-color: #d4d7d2; background: #f1f2ef; }
+.workspace-error-modal p { margin: 0; padding: 14px 16px; border-bottom: 1px solid #e3e5e1; color: #773b32; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.workspace-error-modal pre { min-height: 0; margin: 0; overflow: auto; padding: 16px; background: #f3f4f1; color: #26312b; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.workspace-error-modal footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #d9dbd7; }
+.workspace-error-modal footer button { min-width: 88px; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid #bbc0bb; background: #fff; color: #303633; cursor: pointer; font-size: 11px; }
+.workspace-error-modal footer button:hover { background: #f0f2ef; }
+.workspace-error-modal footer .primary-button { border-color: #354b40; background: #354b40; color: #fff; }
+.workspace-error-modal footer .primary-button:hover { background: #293d33; }
+
 .workspace-conflict-backdrop { z-index: 120; }
 .workspace-conflict-modal {
   width: min(520px, 100%);

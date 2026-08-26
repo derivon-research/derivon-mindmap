@@ -299,7 +299,12 @@ export async function attachWorkspaceAgentFiles(root: FileSystemDirectoryHandle)
 
 export async function readWorkspaceDirectorySnapshot(root: FileSystemDirectoryHandle): Promise<WorkspaceDirectorySnapshot> {
   const manifestText = await readTextFile(root, WORKSPACE_MANIFEST);
-  const manifest = parseDocument(manifestText);
+  let manifest: AuthoringDocument;
+  try {
+    manifest = parseDocument(manifestText);
+  } catch (error) {
+    throw new Error(`${WORKSPACE_MANIFEST} 无效`, { cause: error });
+  }
   const files: Record<string, string> = {};
   await Promise.all(referencedDocumentFiles(manifest).map(async (path) => {
     try {

@@ -589,6 +589,64 @@ test('confirms derivation deletion and allows it to be undone', async ({ page })
   await expect(derivation).toBeVisible();
 });
 
+test('keeps malformed workspace errors open and copyable until dismissed', async ({ page }) => {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        async writeText(text: string) {
+          (window as unknown as { __copiedWorkspaceError: string }).__copiedWorkspaceError = text;
+        },
+      },
+    });
+    const derivonDirectory = {
+      kind: 'directory',
+      name: '.derivon',
+      async getFileHandle(filename: string) {
+        return {
+          kind: 'file',
+          name: filename,
+          async getFile() { return new File(['{"schema":'], filename); },
+        } as FileSystemFileHandle;
+      },
+    } as FileSystemDirectoryHandle;
+    window.showDirectoryPicker = async () => ({
+      kind: 'directory',
+      name: 'broken-workspace',
+      async queryPermission() { return 'granted'; },
+      async requestPermission() { return 'granted'; },
+      async getDirectoryHandle(name: string) {
+        if (name === '.derivon') return derivonDirectory;
+        throw new DOMException(`Missing directory ${name}`, 'NotFoundError');
+      },
+    }) as FileSystemDirectoryHandle;
+  });
+
+  await page.getByTitle('连接工作区文件夹').click();
+
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('打开项目文件夹失败');
+  await expect(dialog).toContainText('.derivon/workspace.json 无效');
+  await expect(dialog.locator('pre')).toContainText('SyntaxError');
+  await page.waitForTimeout(2600);
+  await expect(dialog).toBeVisible();
+  await page.screenshot({ path: '/tmp/derivon-workspace-error-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(dialog).toBeVisible();
+  await page.screenshot({ path: '/tmp/derivon-workspace-error-mobile.png', fullPage: true });
+
+  await dialog.getByRole('button', { name: '复制错误' }).click();
+  await expect(dialog.getByRole('button', { name: '已复制' })).toBeVisible();
+  const copied = await page.evaluate(() => (window as unknown as { __copiedWorkspaceError: string }).__copiedWorkspaceError);
+  expect(copied).toContain('操作: 打开项目文件夹');
+  expect(copied).toContain('工作区清单: .derivon/workspace.json');
+  expect(copied).toContain('Caused by: SyntaxError');
+
+  await dialog.getByTitle('关闭').click();
+  await expect(dialog).toHaveCount(0);
+});
+
 test('detects workspace changes outside the WebUI and resolves both choices', async ({ page }) => {
   await expect(page.locator('.workspace-directory-name')).toHaveText('未打开项目文件夹');
 

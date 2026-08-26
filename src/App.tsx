@@ -18,6 +18,7 @@ import {
   ArrowLeft,
   Braces,
   CircleHelp,
+  Copy,
   Eye,
   EyeOff,
   FileText,
@@ -107,6 +108,11 @@ type HistoryAction =
 type ExternalWorkspaceChange = {
   snapshot: WorkspaceDirectorySnapshot;
 };
+type WorkspaceOperationError = {
+  title: string;
+  summary: string;
+  details: string;
+};
 type DeleteCandidate =
   | {
       kind: 'concept';
@@ -121,6 +127,39 @@ type DeleteCandidate =
     };
 
 const HISTORY_LIMIT = 100;
+
+function formatWorkspaceError(operation: string, error: unknown): WorkspaceOperationError {
+  const firstMessage = error instanceof Error ? error.message : String(error);
+  const lines = [
+    `操作: ${operation}`,
+    `工作区清单: ${WORKSPACE_MANIFEST}`,
+    `时间: ${new Date().toISOString()}`,
+    '',
+  ];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  let depth = 0;
+  while (current !== undefined && current !== null && !seen.has(current)) {
+    seen.add(current);
+    if (current instanceof Error) {
+      lines.push(`${depth === 0 ? '' : 'Caused by: '}${current.name}: ${current.message}`);
+      if (current.stack) {
+        const stackLines = current.stack.split('\n').slice(1);
+        if (stackLines.length) lines.push(...stackLines);
+      }
+      current = current.cause;
+    } else {
+      lines.push(`${depth === 0 ? '' : 'Caused by: '}${String(current)}`);
+      current = undefined;
+    }
+    depth += 1;
+  }
+  return {
+    title: `${operation}失败`,
+    summary: firstMessage.split('\n')[0] || '发生未知错误',
+    details: lines.join('\n'),
+  };
+}
 
 function historyReducer(state: DocumentHistory, action: HistoryAction): DocumentHistory {
   if (action.type === 'replace') {
@@ -238,6 +277,8 @@ function AuthoringCanvas() {
   const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectory | null>(null);
   const [externalWorkspaceChange, setExternalWorkspaceChange] = useState<ExternalWorkspaceChange | null>(null);
   const [resolvingExternalChange, setResolvingExternalChange] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<WorkspaceOperationError | null>(null);
+  const [workspaceErrorCopied, setWorkspaceErrorCopied] = useState(false);
   const workspaceDirectoryRef = useRef<WorkspaceDirectory | null>(null);
   const workspaceRevisionRef = useRef<string | null>(null);
   const externalWorkspaceChangeRef = useRef<ExternalWorkspaceChange | null>(null);
@@ -261,6 +302,11 @@ function AuthoringCanvas() {
   const fileInput = useRef<HTMLInputElement>(null);
   const confirmDeleteButton = useRef<HTMLButtonElement>(null);
   const { fitView, screenToFlowPosition } = useReactFlow<AuthoringFlowNode, ProjectedEdge>();
+
+  const reportWorkspaceError = useCallback((operation: string, error: unknown) => {
+    setWorkspaceError(formatWorkspaceError(operation, error));
+    setWorkspaceErrorCopied(false);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify({ manifest: document, files }));
@@ -293,22 +339,22 @@ function AuthoringCanvas() {
         }
         await writeWorkspaceDirectory(workspaceDirectory, workspace);
         workspaceRevisionRef.current = await workspaceRevision(workspace);
-      }).catch((error: unknown) => setStatus(error instanceof Error ? error.message : '工作区保存失败'));
+      }).catch((error: unknown) => reportWorkspaceError('自动保存项目文件夹', error));
     }, 250);
     return () => window.clearTimeout(timeout);
-  }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, reportExternalWorkspaceChange, workspaceDirectory]);
+  }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, reportExternalWorkspaceChange, reportWorkspaceError, workspaceDirectory]);
 
   useEffect(() => {
-    if (!workspaceDirectory || externalWorkspaceChange) return;
+    if (!workspaceDirectory || externalWorkspaceChange || workspaceError) return;
     const interval = window.setInterval(() => {
       void enqueueDirectoryOperation(async () => {
         if (workspaceDirectoryRef.current !== workspaceDirectory || externalWorkspaceChangeRef.current) return;
         const disk = await readWorkspaceDirectorySnapshot(workspaceDirectory);
         if (workspaceRevisionRef.current !== disk.revision) reportExternalWorkspaceChange(disk);
-      }).catch((error: unknown) => setStatus(error instanceof Error ? error.message : '无法检查项目文件夹更改'));
+      }).catch((error: unknown) => reportWorkspaceError('检查项目文件夹', error));
     }, 1500);
     return () => window.clearInterval(interval);
-  }, [enqueueDirectoryOperation, externalWorkspaceChange, reportExternalWorkspaceChange, workspaceDirectory]);
+  }, [enqueueDirectoryOperation, externalWorkspaceChange, reportExternalWorkspaceChange, reportWorkspaceError, workspaceDirectory, workspaceError]);
 
   useEffect(() => {
     if (!status) return;
@@ -857,9 +903,9 @@ function AuthoringCanvas() {
       window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法打开工作区');
+      reportWorkspaceError('打开项目文件夹', error);
     }
-  }, [clearTransientView, document, files, fitView]);
+  }, [clearTransientView, document, files, fitView, reportWorkspaceError]);
 
   const createWorkspaceInNewDirectory = useCallback(async () => {
     try {
@@ -879,9 +925,9 @@ function AuthoringCanvas() {
       window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法创建空项目');
+      reportWorkspaceError('创建空项目', error);
     }
-  }, [clearTransientView, fitView]);
+  }, [clearTransientView, fitView, reportWorkspaceError]);
 
   const saveWorkspaceAs = useCallback(async () => {
     try {
@@ -895,9 +941,9 @@ function AuthoringCanvas() {
       setStatus(`已另存到新工作区 ${handle.name}`);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法另存工作区');
+      reportWorkspaceError('另存项目文件夹', error);
     }
-  }, [document, files]);
+  }, [document, files, reportWorkspaceError]);
 
   const importFile = useCallback(async (file: File) => {
     try {
@@ -969,9 +1015,9 @@ function AuthoringCanvas() {
       externalWorkspaceChangeRef.current = null;
       setExternalWorkspaceChange(null);
       setStatus('已保留 WebUI 更改并覆盖项目文件夹');
-    }).catch((error: unknown) => setStatus(error instanceof Error ? error.message : '工作区保存失败'))
+    }).catch((error: unknown) => reportWorkspaceError('覆盖项目文件夹', error))
       .finally(() => setResolvingExternalChange(false));
-  }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, resolvingExternalChange, workspaceDirectory]);
+  }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, reportWorkspaceError, resolvingExternalChange, workspaceDirectory]);
 
   const selectNode = useCallback((id: string, shiftKey: boolean) => {
     const displayedDerivation = displayedDerivationByNodeId.get(id);
@@ -1372,6 +1418,32 @@ function AuthoringCanvas() {
           )}
         </aside>
       </section>
+      )}
+
+      {workspaceError && (
+        <div className="modal-backdrop workspace-error-backdrop" role="presentation">
+          <section className="workspace-error-modal" role="alertdialog" aria-modal="true" aria-labelledby="workspace-error-title" aria-describedby="workspace-error-summary">
+            <header>
+              <div>
+                <span className="eyebrow">项目文件夹错误</span>
+                <strong id="workspace-error-title">{workspaceError.title}</strong>
+              </div>
+              <button type="button" title="关闭" onClick={() => setWorkspaceError(null)}><X size={18} /></button>
+            </header>
+            <p id="workspace-error-summary">{workspaceError.summary}</p>
+            <pre tabIndex={0}>{workspaceError.details}</pre>
+            <footer>
+              <button type="button" className="text-button" onClick={() => setWorkspaceError(null)}>关闭</button>
+              <button type="button" className="primary-button" onClick={() => {
+                void navigator.clipboard.writeText(workspaceError.details).then(() => {
+                  setWorkspaceErrorCopied(true);
+                }).catch((error: unknown) => {
+                  setStatus(error instanceof Error ? `复制失败：${error.message}` : '复制失败，请手动选择错误详情');
+                });
+              }}><Copy size={14} />{workspaceErrorCopied ? '已复制' : '复制错误'}</button>
+            </footer>
+          </section>
+        </div>
       )}
 
       {externalWorkspaceChange && workspaceDirectory && (
