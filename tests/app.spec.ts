@@ -817,7 +817,7 @@ test('offers saving the current project to a new folder', async ({ page }) => {
 
 test('links to the GitHub repository beside search', async ({ page }) => {
   const repositoryLink = page.getByRole('link', { name: '查看 GitHub 仓库' });
-  await expect(repositoryLink).toHaveAttribute('href', 'https://github.com/derivon-research/mindmap-demo');
+  await expect(repositoryLink).toHaveAttribute('href', 'https://github.com/derivon-research/derivon-mindmap');
   await expect(repositoryLink).toHaveAttribute('target', '_blank');
   await expect(repositoryLink).toHaveAttribute('rel', 'noreferrer');
 });
