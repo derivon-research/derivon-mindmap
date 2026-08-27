@@ -16,6 +16,11 @@ type NativeChosenWorkspace = {
   created: false;
 };
 
+type NativeSelectedDirectory = {
+  path: string;
+  name: string;
+};
+
 export function isNativeWorkspaceDirectory(value: unknown): value is NativeWorkspaceDirectory {
   return typeof value === 'object' && value !== null && (value as NativeWorkspaceDirectory).kind === 'tauri';
 }
@@ -35,6 +40,17 @@ export async function chooseNativeWorkspace(): Promise<{
     revision: result.revision,
     created: false,
   };
+}
+
+export async function saveNativeWorkspaceAs(
+  workspace: AuthoringWorkspace,
+): Promise<NativeWorkspaceDirectory> {
+  const result = await invoke<NativeSelectedDirectory | null>('save_workspace_as', {
+    manifest: workspace.manifest,
+    files: workspace.files,
+  });
+  if (!result) throw new DOMException('Folder selection cancelled', 'AbortError');
+  return { kind: 'tauri', name: result.name, path: result.path };
 }
 
 export async function readNativeWorkspace(

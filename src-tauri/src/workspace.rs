@@ -33,6 +33,13 @@ pub struct ChosenWorkspace {
     pub created: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDirectory {
+    pub path: String,
+    pub name: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DocumentReference {
@@ -128,6 +135,29 @@ pub async fn choose_workspace() -> Result<Option<ChosenWorkspace>, String> {
 }
 
 #[tauri::command]
+pub async fn save_workspace_as(
+    manifest: WorkspaceDocument,
+    files: HashMap<String, String>,
+) -> Result<Option<WorkspaceDirectory>, String> {
+    let Some(root) = rfd::AsyncFileDialog::new().pick_folder().await else {
+        return Ok(None);
+    };
+    let root = root.path().to_owned();
+    let directory = WorkspaceDirectory {
+        name: root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("workspace")
+            .to_owned(),
+        path: root.to_string_lossy().into_owned(),
+    };
+    tauri::async_runtime::spawn_blocking(move || write_new_workspace_files(&root, manifest, files))
+        .await
+        .map_err(|error| format!("workspace creator task failed: {error}"))??;
+    Ok(Some(directory))
+}
+
+#[tauri::command]
 pub async fn read_workspace(
     root_path: String,
     load_files: bool,
@@ -158,17 +188,33 @@ pub async fn write_workspace(
     manifest: WorkspaceDocument,
     files: HashMap<String, String>,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || write_workspace_files(root_path, manifest, files))
-        .await
-        .map_err(|error| format!("workspace writer task failed: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        write_workspace_files(Path::new(&root_path), manifest, files)
+    })
+    .await
+    .map_err(|error| format!("workspace writer task failed: {error}"))?
 }
 
-fn write_workspace_files(
-    root_path: String,
+fn write_new_workspace_files(
+    root: &Path,
     manifest: WorkspaceDocument,
     files: HashMap<String, String>,
 ) -> Result<(), String> {
-    let root = Path::new(&root_path);
+    let manifest_path = root.join(MANIFEST_PATH);
+    if manifest_path
+        .try_exists()
+        .map_err(|error| format!("cannot inspect {}: {error}", manifest_path.display()))?
+    {
+        return Err("所选文件夹已经是 Derivon 工作区，请选择新的文件夹".to_owned());
+    }
+    write_workspace_files(root, manifest, files)
+}
+
+fn write_workspace_files(
+    root: &Path,
+    manifest: WorkspaceDocument,
+    files: HashMap<String, String>,
+) -> Result<(), String> {
     let manifest_path = root.join(MANIFEST_PATH);
     let manifest_parent = manifest_path
         .parent()
@@ -204,6 +250,28 @@ mod tests {
         assert!(safe_relative_path("../secret").is_err());
         assert!(safe_relative_path("/tmp/secret").is_err());
         assert!(safe_relative_path("docs/concept/document.md").is_ok());
+    }
+
+    #[test]
+    fn creates_new_workspace_without_overwriting_an_existing_manifest() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
+        let source = read_snapshot(&fixture, true).unwrap().workspace;
+        let destination = tempfile::tempdir().unwrap();
+
+        write_new_workspace_files(
+            destination.path(),
+            source.manifest.clone(),
+            source.files.clone(),
+        )
+        .unwrap();
+        let saved = read_snapshot(destination.path(), true).unwrap();
+        assert_eq!(saved.workspace.manifest.graph.points.len(), 6);
+        assert_eq!(saved.workspace.files.len(), 26);
+
+        let error = write_new_workspace_files(destination.path(), source.manifest, source.files)
+            .unwrap_err();
+        assert!(error.contains("已经是 Derivon 工作区"));
     }
 
     #[test]

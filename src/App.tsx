@@ -56,6 +56,11 @@ import { activeHyperedge, groupHyperedges, hyperedgeGroupKey, type HyperedgeGrou
 import { layoutDocument, layoutNeighborhood } from './layout';
 import { DocumentEditor } from './DocumentEditor';
 import { convertDocumentContent } from './documentContent';
+import {
+  CRASH_REPORT_EVENT,
+  clearPendingCrashReports,
+  readPendingCrashReport,
+} from './crashReport';
 import { projectDocument } from './projection';
 import { replacementFromSelection } from './replacements';
 import { RoutePanel } from './RoutePanel';
@@ -293,6 +298,8 @@ function AuthoringCanvas() {
   const [resolvingExternalChange, setResolvingExternalChange] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<WorkspaceOperationError | null>(null);
   const [workspaceErrorCopied, setWorkspaceErrorCopied] = useState(false);
+  const [crashReport, setCrashReport] = useState<string | null>(null);
+  const [crashReportCopied, setCrashReportCopied] = useState(false);
   const workspaceDirectoryRef = useRef<WorkspaceDirectory | null>(null);
   const workspaceRevisionRef = useRef<string | null>(null);
   const externalWorkspaceChangeRef = useRef<ExternalWorkspaceChange | null>(null);
@@ -327,6 +334,25 @@ function AuthoringCanvas() {
   const reportWorkspaceError = useCallback((operation: string, error: unknown) => {
     setWorkspaceError(formatWorkspaceError(operation, error));
     setWorkspaceErrorCopied(false);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void readPendingCrashReport().then((details) => {
+      if (active && details) setCrashReport(details);
+    });
+    const handleCrashReport = (event: Event) => {
+      const details = (event as CustomEvent<{ details?: string }>).detail?.details;
+      if (details) {
+        setCrashReport(details);
+        setCrashReportCopied(false);
+      }
+    };
+    window.addEventListener(CRASH_REPORT_EVENT, handleCrashReport);
+    return () => {
+      active = false;
+      window.removeEventListener(CRASH_REPORT_EVENT, handleCrashReport);
+    };
   }, []);
 
   useEffect(() => {
@@ -596,6 +622,9 @@ function AuthoringCanvas() {
     const candidates = neighborhood(document, focusedId);
     return new Set([...candidates].filter((id) => projection.visibleIds.has(id)));
   }, [document, focusedId, projection.visibleIds]);
+  const controlsFitViewOptions = useMemo(() => focusedId
+    ? { nodes: [...activeIds].map((id) => ({ id })), padding: 0.28, duration: 260, maxZoom: 1.25 }
+    : { padding: 0.12, duration: 260, maxZoom: 1.1 }, [activeIds, focusedId]);
   const hoveredIds = useMemo(() => {
     const candidates = neighborhood(document, hoveredId);
     return new Set([...candidates].filter((id) => projection.visibleIds.has(id)));
@@ -1062,7 +1091,7 @@ function AuthoringCanvas() {
   const applyJson = useCallback(async () => {
     try {
       const parsed = importManifest(jsonText, files, { allowMissingFiles: !!workspaceDirectory }).manifest;
-      if (workspaceDirectory) await validateWorkspaceDirectoryFiles(workspaceDirectory, parsed);
+      if (workspaceDirectory) await validateWorkspaceDirectoryFiles(workspaceDirectory, parsed, files);
       const positions = Object.keys(parsed.view.positions).length ? parsed.view.positions : layoutDocument(parsed);
       commit(() => ({ ...parsed, view: { ...parsed.view, positions } }));
       setFocusLayouts({});
@@ -1703,7 +1732,12 @@ function AuthoringCanvas() {
             proOptions={{ hideAttribution: true }}
           >
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#d7d8d4" />
-            <Controls showInteractive={false} position="bottom-left" {...tourTarget(TOUR_FEATURES.zoom)} />
+            <Controls
+              showInteractive={false}
+              position="bottom-left"
+              fitViewOptions={controlsFitViewOptions}
+              {...tourTarget(TOUR_FEATURES.zoom)}
+            />
             <MiniMap
               position="bottom-right"
               pannable
@@ -1846,7 +1880,40 @@ function AuthoringCanvas() {
       </section>
       )}
 
-      {workspaceError && (
+      {crashReport && (
+        <div className="modal-backdrop crash-report-backdrop" role="presentation">
+          <section className="workspace-error-modal crash-report-modal" role="alertdialog" aria-modal="true" aria-labelledby="crash-report-title" aria-describedby="crash-report-summary">
+            <header>
+              <div>
+                <span className="eyebrow">崩溃报告</span>
+                <strong id="crash-report-title">检测到应用异常</strong>
+              </div>
+              <button type="button" title="关闭" onClick={() => setCrashReport(null)}><X size={18} /></button>
+            </header>
+            <p id="crash-report-summary">报告仅保存在本机，不会自动上传。复制后可将其附在 GitHub issue 中。</p>
+            <pre tabIndex={0}>{crashReport}</pre>
+            <footer>
+              <button type="button" className="text-button" onClick={() => {
+                void clearPendingCrashReports().then(() => {
+                  setCrashReport(null);
+                  setCrashReportCopied(false);
+                }).catch((error: unknown) => {
+                  setStatus(error instanceof Error ? `清除报告失败：${error.message}` : '清除报告失败');
+                });
+              }}>清除报告</button>
+              <button type="button" className="primary-button" onClick={() => {
+                void navigator.clipboard.writeText(crashReport).then(() => {
+                  setCrashReportCopied(true);
+                }).catch((error: unknown) => {
+                  setStatus(error instanceof Error ? `复制失败：${error.message}` : '复制失败，请手动选择报告详情');
+                });
+              }}><Copy size={14} />{crashReportCopied ? '已复制' : '复制报告'}</button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {workspaceError && !crashReport && (
         <div className="modal-backdrop workspace-error-backdrop" role="presentation">
           <section className="workspace-error-modal" role="alertdialog" aria-modal="true" aria-labelledby="workspace-error-title" aria-describedby="workspace-error-summary">
             <header>

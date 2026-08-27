@@ -90,7 +90,7 @@ export const ONBOARDING_STEPS = [
     id: 'workspace',
     feature: TOUR_FEATURES.newWorkspace,
     title: '新建项目文件夹',
-    description: '点击高亮按钮，选择或创建一个空文件夹。项目、对象文档和 derivon-workspace Skill 会写入该目录，并在后续编辑时自动保存。请使用 Chromium 系浏览器。',
+    description: '点击高亮按钮，选择或创建一个空文件夹。项目、对象文档和 derivon-workspace Skill 会写入该目录，并在后续编辑时自动保存。桌面应用和 Chromium 系浏览器均支持此操作。',
     advanceOn: 'workspace-created',
   },
   {
