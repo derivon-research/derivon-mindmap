@@ -377,7 +377,19 @@ test('opens the editable local layout only on the second click', async ({ page }
   await expect.poll(() => node.evaluate((element) => (element as HTMLElement).style.transform)).toBe(anchorTransform);
   await expect.poll(() => neighbor.evaluate((element) => (element as HTMLElement).style.transform)).not.toBe(neighborOverviewTransform);
   await expect(page.locator('.concept-node.is-dimmed')).toHaveCount(1);
-  await expect(page.locator('.react-flow__node[data-id="D"] .concept-node')).toHaveClass(/is-dimmed/);
+  const dimmedNode = page.locator('.react-flow__node[data-id="D"]');
+  await expect(dimmedNode.locator('.concept-node')).toHaveClass(/is-dimmed/);
+  await expect(dimmedNode).toHaveCSS('pointer-events', 'none');
+  await expect(dimmedNode).not.toHaveClass(/selectable|draggable/);
+  const stacking = await page.locator('.react-flow__node[data-id="A"], .react-flow__node[data-id="D"]').evaluateAll((elements) =>
+    Object.fromEntries(elements.map((element) => [
+      element.getAttribute('data-id'),
+      Number(getComputedStyle(element).zIndex),
+    ])),
+  );
+  expect(stacking.A).toBeGreaterThan(stacking.D);
+  await expect(node.locator('.concept-node')).toHaveCSS('opacity', '1');
+  await expect(node.locator('.concept-node')).toHaveCSS('background-color', 'rgb(250, 251, 249)');
 
   const overviewPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions.A);
   const box = await node.boundingBox();
@@ -422,6 +434,23 @@ test('shows a pointer and lift shadow when selectable graph objects are hovered'
     await expect(item.node).toHaveCSS('translate', '0px -2px');
     await expect.poll(() => item.shadow.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe(restingShadow);
   }
+});
+
+test('keeps edges passive and only emphasizes the hovered neighborhood', async ({ page }) => {
+  const related = page.locator('.react-flow__edge[data-id="premise:h-b:A"]');
+  const incoming = page.locator('.react-flow__edge[data-id="head:h-a"]');
+  const unrelated = page.locator('.react-flow__edge[data-id="head:h-d-points"]');
+
+  for (const edge of [related, incoming, unrelated]) {
+    await expect(edge).toHaveCSS('pointer-events', 'none');
+    await expect(edge).not.toHaveClass(/selectable/);
+    await expect(edge.locator('.react-flow__edge-path')).toHaveCSS('opacity', '0.18');
+  }
+
+  await page.locator('.react-flow__node[data-id="A"]').hover();
+  await expect(related.locator('.react-flow__edge-path')).toHaveCSS('opacity', '1');
+  await expect(incoming.locator('.react-flow__edge-path')).toHaveCSS('opacity', '1');
+  await expect(unrelated.locator('.react-flow__edge-path')).toHaveCSS('opacity', '0.18');
 });
 
 test('stacks parallel derivations and lets each implementation be inspected', async ({ page }) => {
@@ -920,6 +949,89 @@ test('selects multiple route starts and targets with fuzzy search and canvas but
   await page.getByRole('button', { name: '开始求解' }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('button', { name: '开始求解' })).toBeVisible();
   await page.screenshot({ path: '/tmp/derivon-multi-target-route-mobile.png', fullPage: true });
+});
+
+test('renders a long route across a large workspace without blocking the canvas', async ({ page }) => {
+  const routeResult = {
+    reachable: true,
+    hyperedgeIds: Array.from({ length: 16 }, (_, index) => `h-${index}`),
+    executableOrder: Array.from({ length: 16 }, (_, index) => `h-${index}`),
+    pointIds: [...Array.from({ length: 17 }, (_, index) => `p-${index}`), 'p-63'],
+    cost: 37,
+    lower: 37,
+    upper: 37,
+    provenOptimal: true,
+    nodes: 14,
+    millis: 1,
+    targetDiagnoses: [],
+  };
+  await page.addInitScript((result) => {
+    (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string) => Promise<unknown> } }).__TAURI_INTERNALS__ = {
+      invoke: async (command) => {
+        if (command === 'solve_route') return result;
+        throw new Error(`Unexpected command: ${command}`);
+      },
+    };
+  }, routeResult);
+  await page.evaluate(() => {
+    const points = Array.from({ length: 64 }, (_, index) => ({
+      id: `p-${index}`,
+      data: { label: `P${index}`, document: `docs/p-${index}`, format: 'html' },
+    }));
+    const hyperedges = Array.from({ length: 68 }, (_, index) => {
+      const tail = index < 63 ? index : index - 63;
+      const head = index < 63 ? index + 1 : index - 61;
+      return {
+        id: `h-${index}`,
+        weight: index === 15 ? 7 : 2,
+        tails: [`p-${tail}`],
+        head: `p-${head}`,
+        data: { document: `docs/h-${index}`, format: 'html' },
+      };
+    });
+    const positions = Object.fromEntries([
+      ...points.map((point, index) => [point.id, { x: (index % 16) * 220, y: Math.floor(index / 16) * 180 }]),
+      ...hyperedges.map((edge, index) => [edge.id, { x: (index % 16) * 220 + 150, y: Math.floor(index / 16) * 180 + 5 }]),
+    ]);
+    const files = Object.fromEntries([
+      ...points.map((point) => [`${point.data.document}/index.html`, `<h1>${point.data.label}</h1>`]),
+      ...hyperedges.map((edge) => [`${edge.data.document}/index.html`, `<h1>${edge.id}</h1>`]),
+    ]);
+    localStorage.setItem('derivon.authoring.workspace/v0.2.0', JSON.stringify({
+      manifest: {
+        schema: 'derivon.authoring/v0.2.0',
+        document: { title: 'Large route regression', description: '', updatedAt: new Date().toISOString() },
+        graph: { points, hyperedges },
+        view: { positions, replacements: [] },
+      },
+      files,
+    }));
+  });
+  await page.reload();
+  await page.getByTitle('打开路线模式').click();
+
+  const startSearch = page.getByRole('combobox', { name: '已经掌握', exact: true });
+  const startResults = page.getByRole('listbox', { name: '已经掌握搜索结果' });
+  await startSearch.fill('P0');
+  await startResults.getByRole('checkbox', { name: /^P0\b/ }).check();
+  await startSearch.fill('P63');
+  await startResults.getByRole('checkbox', { name: /^P63\b/ }).check();
+  const targetSearch = page.getByRole('combobox', { name: '目标概念', exact: true });
+  await targetSearch.fill('P16');
+  await page.getByRole('listbox', { name: '目标概念搜索结果' }).getByRole('checkbox', { name: /^P16\b/ }).check();
+  await targetSearch.fill('');
+
+  await page.getByRole('button', { name: '开始求解' }).click();
+  const result = page.getByRole('region', { name: '路线结果' });
+  await expect(result).toBeVisible({ timeout: 2000 });
+  await expect(result.locator('.route-steps li')).toHaveCount(16);
+  await page.getByRole('button', { name: 'Fit View' }).click();
+  const active = page.locator('.react-flow__node[data-id="p-0"]');
+  const dimmed = page.locator('.react-flow__node[data-id="p-62"]');
+  await expect(active).toHaveCSS('pointer-events', 'auto');
+  await expect(dimmed).toHaveCSS('pointer-events', 'none');
+  await expect(page.locator('.react-flow__edge[data-id="premise:h-0:p-0"] .react-flow__edge-path')).toHaveCSS('opacity', '1');
+  await expect(page.locator('.react-flow__edge[data-id="premise:h-61:p-61"] .react-flow__edge-path')).toHaveCSS('opacity', '0.08');
 });
 
 test('keeps the canvas and inspector separated on a narrow viewport', async ({ page }) => {

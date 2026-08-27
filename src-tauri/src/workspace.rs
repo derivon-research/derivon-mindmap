@@ -128,8 +128,22 @@ pub async fn choose_workspace() -> Result<Option<ChosenWorkspace>, String> {
 }
 
 #[tauri::command]
-pub fn read_workspace(root_path: String, load_files: bool) -> Result<WorkspaceSnapshot, String> {
-    read_snapshot(Path::new(&root_path), load_files)
+pub async fn read_workspace(
+    root_path: String,
+    load_files: bool,
+) -> Result<WorkspaceSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || read_snapshot(Path::new(&root_path), load_files))
+        .await
+        .map_err(|error| format!("workspace reader task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn workspace_revision(root_path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        read_snapshot(Path::new(&root_path), false).map(|snapshot| snapshot.revision)
+    })
+    .await
+    .map_err(|error| format!("workspace revision task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -139,7 +153,17 @@ pub fn read_workspace_file(root_path: String, relative_path: String) -> Result<S
 }
 
 #[tauri::command]
-pub fn write_workspace(
+pub async fn write_workspace(
+    root_path: String,
+    manifest: WorkspaceDocument,
+    files: HashMap<String, String>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || write_workspace_files(root_path, manifest, files))
+        .await
+        .map_err(|error| format!("workspace writer task failed: {error}"))?
+}
+
+fn write_workspace_files(
     root_path: String,
     manifest: WorkspaceDocument,
     files: HashMap<String, String>,

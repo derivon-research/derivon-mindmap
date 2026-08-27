@@ -46,6 +46,10 @@ export async function readNativeWorkspace(
   return snapshot;
 }
 
+export function readNativeWorkspaceRevision(root: NativeWorkspaceDirectory): Promise<string> {
+  return invoke('workspace_revision', { rootPath: root.path });
+}
+
 export function writeNativeWorkspace(
   root: NativeWorkspaceDirectory,
   workspace: AuthoringWorkspace,
