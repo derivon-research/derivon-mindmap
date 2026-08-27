@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -88,6 +88,7 @@ import {
   documentSourcePath,
   importManifest,
   loadLocalWorkspace,
+  readWorkspaceDirectoryRevision,
   readWorkspaceDirectorySnapshot,
   readWorkspaceDocumentSource,
   saveWorkspaceAsDirectory,
@@ -300,6 +301,7 @@ function AuthoringCanvas() {
   const editingIdRef = useRef<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusLayouts, setFocusLayouts] = useState<Record<string, Record<string, Position>>>({});
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('已自动保存');
@@ -319,6 +321,7 @@ function AuthoringCanvas() {
   });
   const fileInput = useRef<HTMLInputElement>(null);
   const confirmDeleteButton = useRef<HTMLButtonElement>(null);
+  const canvasInteractionRef = useRef(false);
   const { fitView, screenToFlowPosition } = useReactFlow<AuthoringFlowNode, ProjectedEdge>();
 
   const reportWorkspaceError = useCallback((operation: string, error: unknown) => {
@@ -358,15 +361,15 @@ function AuthoringCanvas() {
     const timeout = window.setTimeout(() => {
       void enqueueDirectoryOperation(async () => {
         if (workspaceDirectoryRef.current !== workspaceDirectory || externalWorkspaceChangeRef.current) return;
-        const disk = await readWorkspaceDirectorySnapshot(workspaceDirectory, { loadFiles: false });
-        if (workspaceRevisionRef.current !== disk.revision) {
-          reportExternalWorkspaceChange(disk);
+        const revision = await readWorkspaceDirectoryRevision(workspaceDirectory);
+        if (workspaceRevisionRef.current !== revision) {
+          reportExternalWorkspaceChange(
+            await readWorkspaceDirectorySnapshot(workspaceDirectory, { loadFiles: false }),
+          );
           return;
         }
         await writeWorkspaceDirectoryChanges(workspaceDirectory, document, files);
-        workspaceRevisionRef.current = (
-          await readWorkspaceDirectorySnapshot(workspaceDirectory, { loadFiles: false })
-        ).revision;
+        workspaceRevisionRef.current = await readWorkspaceDirectoryRevision(workspaceDirectory);
       }).catch((error: unknown) => reportWorkspaceError('自动保存项目文件夹', error));
     }, 250);
     return () => window.clearTimeout(timeout);
@@ -375,10 +378,15 @@ function AuthoringCanvas() {
   useEffect(() => {
     if (!workspaceDirectory || externalWorkspaceChange || workspaceError) return;
     const interval = window.setInterval(() => {
+      if (canvasInteractionRef.current || globalThis.document.hidden) return;
       void enqueueDirectoryOperation(async () => {
         if (workspaceDirectoryRef.current !== workspaceDirectory || externalWorkspaceChangeRef.current) return;
-        const disk = await readWorkspaceDirectorySnapshot(workspaceDirectory, { loadFiles: false });
-        if (workspaceRevisionRef.current !== disk.revision) reportExternalWorkspaceChange(disk);
+        const revision = await readWorkspaceDirectoryRevision(workspaceDirectory);
+        if (workspaceRevisionRef.current !== revision) {
+          reportExternalWorkspaceChange(
+            await readWorkspaceDirectorySnapshot(workspaceDirectory, { loadFiles: false }),
+          );
+        }
       }).catch((error: unknown) => reportWorkspaceError('检查项目文件夹', error));
     }, 1500);
     return () => window.clearInterval(interval);
@@ -588,6 +596,10 @@ function AuthoringCanvas() {
     const candidates = neighborhood(document, focusedId);
     return new Set([...candidates].filter((id) => projection.visibleIds.has(id)));
   }, [document, focusedId, projection.visibleIds]);
+  const hoveredIds = useMemo(() => {
+    const candidates = neighborhood(document, hoveredId);
+    return new Set([...candidates].filter((id) => projection.visibleIds.has(id)));
+  }, [document, hoveredId, projection.visibleIds]);
   const focusPositions = useMemo(
     () => focusedId
       ? focusLayouts[focusedId] ?? layoutNeighborhood(document, activeIds, focusedId)
@@ -615,6 +627,7 @@ function AuthoringCanvas() {
     return [
       ...projection.points.map((item): AuthoringFlowNode => {
         const concept = conceptById.get(item.id)!;
+        const isDimmed = dimmed(concept.id);
         return {
           id: concept.id,
           type: 'concept',
@@ -624,9 +637,15 @@ function AuthoringCanvas() {
             routeSelection.result && routeIds.has(concept.id) ? 'is-route-member' : '',
           ].filter(Boolean).join(' ') || undefined,
           position: position(concept.id),
+          zIndex: isDimmed ? 0 : focusedId || routeSelection.result ? 1 : 0,
+          draggable: !isDimmed,
+          selectable: !isDimmed,
+          connectable: !isDimmed,
+          focusable: !isDimmed,
+          style: { pointerEvents: isDimmed ? 'none' : 'auto' },
           data: {
             label: concept.data.label,
-            dimmed: dimmed(concept.id),
+            dimmed: isDimmed,
             depth: item.depth,
             replacements: item.controls.map((control) => ({ ...control, onToggle: toggleReplacement })),
             onDelete: requestDelete,
@@ -635,18 +654,25 @@ function AuthoringCanvas() {
       }),
       ...visibleDerivationGroups.map((group): AuthoringFlowNode => {
         const derivation = activeHyperedge(group, activeDerivationByGroup[group.key]);
+        const isDimmed = routeSelection.result
+          ? !group.members.some((member) => routeEdgeIds.has(member.id))
+          : dimmed(group.nodeId);
         return {
           id: group.nodeId,
           type: 'derivation',
           className: group.members.some((member) => routeEdgeIds.has(member.id)) ? 'is-route-member' : undefined,
           position: position(group.nodeId),
+          zIndex: isDimmed ? 0 : focusedId || routeSelection.result ? 1 : 0,
+          draggable: !isDimmed,
+          selectable: !isDimmed,
+          connectable: !isDimmed,
+          focusable: !isDimmed,
+          style: { pointerEvents: isDimmed ? 'none' : 'auto' },
           data: {
             activeId: derivation.id,
             weight: derivation.weight,
             premiseCount: derivation.tails.length,
-            dimmed: routeSelection.result
-              ? !group.members.some((member) => routeEdgeIds.has(member.id))
-              : dimmed(group.nodeId),
+            dimmed: isDimmed,
             alternatives: group.members.map((member) => ({ id: member.id, weight: member.weight })),
             onSelect: (id) => selectDerivation(group, id),
             onDelete: requestDelete,
@@ -700,7 +726,10 @@ function AuthoringCanvas() {
       const derivation = activeHyperedge(group, activeDerivationByGroup[group.key]);
       const derivationActive = routeSelection.result
         ? routeEdgeIds.has(derivation.id)
-        : !focusedId || activeIds.has(group.nodeId);
+        : hoveredId
+          ? hoveredIds.has(group.nodeId)
+          : !!focusedId && activeIds.has(group.nodeId);
+      const inactiveOpacity = focusedId || routeSelection.result ? 0.08 : 0.18;
       for (const premise of derivation.tails) {
         result.push({
           id: `premise:${group.nodeId}:${premise}`,
@@ -710,8 +739,11 @@ function AuthoringCanvas() {
           targetHandle: 'premise-in',
           type: 'default',
           deletable: false,
+          selectable: false,
+          focusable: false,
+          interactionWidth: 0,
           data: { kind: 'premise', derivationId: derivation.id, premiseId: premise },
-          style: { stroke: '#2f7087', strokeWidth: derivationActive ? 1.8 : 1.1, opacity: derivationActive ? 0.9 : 0.08 },
+          style: { stroke: '#2f7087', strokeWidth: derivationActive ? 1.8 : 1.1, opacity: derivationActive ? 1 : inactiveOpacity, pointerEvents: 'none' },
           markerEnd: { type: MarkerType.ArrowClosed, color: '#2f7087', width: 14, height: 14 },
         });
       }
@@ -723,13 +755,16 @@ function AuthoringCanvas() {
         targetHandle: 'concept-in',
         type: 'default',
         deletable: false,
+        selectable: false,
+        focusable: false,
+        interactionWidth: 0,
         data: { kind: 'conclusion', derivationId: derivation.id },
-        style: { stroke: '#a44f3f', strokeWidth: derivationActive ? 2 : 1.2, opacity: derivationActive ? 0.92 : 0.08 },
+        style: { stroke: '#a44f3f', strokeWidth: derivationActive ? 2 : 1.2, opacity: derivationActive ? 1 : inactiveOpacity, pointerEvents: 'none' },
         markerEnd: { type: MarkerType.ArrowClosed, color: '#a44f3f', width: 15, height: 15 },
       });
     }
     return result;
-  }, [activeDerivationByGroup, activeIds, focusedId, routeEdgeIds, routeSelection.result, visibleDerivationGroups]);
+  }, [activeDerivationByGroup, activeIds, focusedId, hoveredId, hoveredIds, routeEdgeIds, routeSelection.result, visibleDerivationGroups]);
 
   const persistNodePositions = useCallback((draggedNodes: AuthoringFlowNode[]) => {
     const movedPositions = draggedNodes.flatMap((node) => {
@@ -964,9 +999,7 @@ function AuthoringCanvas() {
       const workspace = createEmptyWorkspace();
       const handle = await saveWorkspaceAsDirectory(workspace);
       workspaceDirectoryRef.current = handle;
-      workspaceRevisionRef.current = (
-        await readWorkspaceDirectorySnapshot(handle, { loadFiles: false })
-      ).revision;
+      workspaceRevisionRef.current = await readWorkspaceDirectoryRevision(handle);
       externalWorkspaceChangeRef.current = null;
       setExternalWorkspaceChange(null);
       setFiles(workspace.files);
@@ -988,9 +1021,7 @@ function AuthoringCanvas() {
       const workspace = { manifest: document, files };
       const handle = await saveWorkspaceAsDirectory(workspace, workspaceDirectory ?? undefined);
       workspaceDirectoryRef.current = handle;
-      workspaceRevisionRef.current = (
-        await readWorkspaceDirectorySnapshot(handle, { loadFiles: false })
-      ).revision;
+      workspaceRevisionRef.current = await readWorkspaceDirectoryRevision(handle);
       externalWorkspaceChangeRef.current = null;
       setExternalWorkspaceChange(null);
       setWorkspaceDirectory(handle);
@@ -1067,9 +1098,7 @@ function AuthoringCanvas() {
     void enqueueDirectoryOperation(async () => {
       if (workspaceDirectoryRef.current !== workspaceDirectory) return;
       await writeWorkspaceDirectoryChanges(workspaceDirectory, document, files);
-      workspaceRevisionRef.current = (
-        await readWorkspaceDirectorySnapshot(workspaceDirectory, { loadFiles: false })
-      ).revision;
+      workspaceRevisionRef.current = await readWorkspaceDirectoryRevision(workspaceDirectory);
       externalWorkspaceChangeRef.current = null;
       setExternalWorkspaceChange(null);
       setStatus('已保留 WebUI 更改并覆盖项目文件夹');
@@ -1104,17 +1133,19 @@ function AuthoringCanvas() {
     setRouteSolving(true);
     setRouteError(null);
     void solveWorkspaceRoute(document, routeSelection).then((result) => {
-      setRouteSelection((current) => ({ ...current, result }));
-      if (result.reachable) {
-        const active = Object.fromEntries(result.hyperedgeIds.flatMap((id) => {
-          const group = groupByMemberId.get(id);
-          return group ? [[group.key, id]] : [];
-        }));
-        setActiveDerivationByGroup((current) => ({ ...current, ...active }));
-        setStatus(result.provenOptimal ? '已找到并证明最优路线' : '已找到当前最佳路线');
-      } else {
-        setStatus('部分目标当前不可达');
-      }
+      startTransition(() => {
+        setRouteSelection((current) => ({ ...current, result }));
+        if (result.reachable) {
+          const active = Object.fromEntries(result.hyperedgeIds.flatMap((id) => {
+            const group = groupByMemberId.get(id);
+            return group ? [[group.key, id]] : [];
+          }));
+          setActiveDerivationByGroup((current) => ({ ...current, ...active }));
+          setStatus(result.provenOptimal ? '已找到并证明最优路线' : '已找到当前最佳路线');
+        } else {
+          setStatus('部分目标当前不可达');
+        }
+      });
     }).catch((error: unknown) => {
       setRouteError(error instanceof Error ? error.message : String(error));
     }).finally(() => setRouteSolving(false));
@@ -1618,7 +1649,26 @@ function AuthoringCanvas() {
             onNodesChange={onNodesChange}
             onSelectionChange={handleSelectionChange}
             onConnect={onConnect}
-            onNodeDragStop={(_, node, draggedNodes) => persistNodePositions(draggedNodes.length ? draggedNodes : [node])}
+            onNodeDragStart={() => {
+              canvasInteractionRef.current = true;
+            }}
+            onNodeDragStop={(_, node, draggedNodes) => {
+              canvasInteractionRef.current = false;
+              persistNodePositions(draggedNodes.length ? draggedNodes : [node]);
+            }}
+            onMoveStart={() => {
+              canvasInteractionRef.current = true;
+            }}
+            onMoveEnd={() => {
+              canvasInteractionRef.current = false;
+            }}
+            onNodeMouseEnter={(_, node) => {
+              setHoveredId(displayedDerivationByNodeId.get(node.id)?.id ?? node.id);
+            }}
+            onNodeMouseLeave={(_, node) => {
+              const semanticId = displayedDerivationByNodeId.get(node.id)?.id ?? node.id;
+              setHoveredId((current) => current === semanticId ? null : current);
+            }}
             onNodeClick={(event, node) => selectNode(node.id, event.shiftKey)}
             onNodeContextMenu={(event, node) => {
               if (!routeMode) return;
@@ -1630,6 +1680,7 @@ function AuthoringCanvas() {
             }}
             onNodeDoubleClick={(_, node) => openDocument(displayedDerivationByNodeId.get(node.id)?.id ?? node.id)}
             onPaneClick={() => {
+              setHoveredId(null);
               setFocusedId(null);
               setSelectedId(null);
               setSelectedNodeIds([]);
@@ -1639,6 +1690,7 @@ function AuthoringCanvas() {
               }
             }}
             deleteKeyCode={null}
+            onlyRenderVisibleElements
             fitView
             fitViewOptions={{ padding: 0.12, maxZoom: 1.1 }}
             minZoom={0.08}

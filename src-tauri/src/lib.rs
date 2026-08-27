@@ -2,8 +2,10 @@ mod route;
 mod workspace;
 
 #[tauri::command]
-fn solve_route(request: route::RouteRequest) -> Result<route::RouteResponse, String> {
-    route::solve_route(request)
+async fn solve_route(request: route::RouteRequest) -> Result<route::RouteResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || route::solve_route(request))
+        .await
+        .map_err(|error| format!("route solver task failed: {error}"))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -13,6 +15,7 @@ pub fn run() {
             solve_route,
             workspace::choose_workspace,
             workspace::read_workspace,
+            workspace::workspace_revision,
             workspace::read_workspace_file,
             workspace::write_workspace,
         ])

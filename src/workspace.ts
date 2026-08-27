@@ -10,6 +10,7 @@ import {
   isNativeWorkspaceDirectory,
   readNativeWorkspace,
   readNativeWorkspaceDocument,
+  readNativeWorkspaceRevision,
   writeNativeWorkspace,
   type NativeWorkspaceDirectory,
 } from './tauriWorkspace';
@@ -401,6 +402,11 @@ export async function readWorkspaceDirectorySnapshot(
 
 export async function readWorkspaceDirectory(root: WorkspaceDirectory): Promise<AuthoringWorkspace> {
   return (await readWorkspaceDirectorySnapshot(root)).workspace;
+}
+
+export async function readWorkspaceDirectoryRevision(root: WorkspaceDirectory): Promise<string> {
+  if (isNativeWorkspaceDirectory(root)) return readNativeWorkspaceRevision(root);
+  return (await readWorkspaceDirectorySnapshot(root, { loadFiles: false })).revision;
 }
 
 export async function writeWorkspaceDirectoryChanges(

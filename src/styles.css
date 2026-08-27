@@ -86,6 +86,7 @@ button { color: inherit; }
 .workspace { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 318px; }
 .canvas-wrap { position: relative; min-width: 0; min-height: 0; border-right: 1px solid #d9dbd7; }
 .canvas-wrap .react-flow { background: #f7f7f5; }
+.react-flow__edge { pointer-events: none; }
 .react-flow__edge-path { transition: opacity 140ms ease, stroke-width 140ms ease; }
 .react-flow__node { transition: opacity 140ms ease, translate 140ms ease; }
 .react-flow__node-concept.selectable, .react-flow__node-derivation.selectable { cursor: pointer; }
