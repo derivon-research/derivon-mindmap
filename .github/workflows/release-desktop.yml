@@ -117,15 +117,20 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Derivon Mindmap ${{ github.ref_name }}
           releaseBody: |
-            Derivon Mindmap v0.2.0 is the first stable desktop release for authoring Derivon workspaces and finding efficient learning routes.
+            Derivon Mindmap v0.2.1 improves route selection, guided onboarding, graph responsiveness, and visual focus. These notes cover the three commits merged after v0.2.0.
 
-            ## Highlights
+            ## Fixes and improvements
 
-            - Plan one route toward multiple target concepts with derivon-core v0.2.0. Shared prerequisite work is selected once and charged once.
-            - Select multiple known and target concepts with fuzzy search, or use left click for known concepts and right click for targets directly on the canvas.
-            - Inspect executable derivation steps, route cost, bounds, optimality, and target-specific diagnostics for unreachable goals.
-            - Open, edit, validate, and automatically save local Derivon workspaces from the Tauri desktop application.
-            - Author Markdown, KaTeX, tables, and interactive HTML documents alongside concepts and derivations.
+            - Keep fuzzy-search results open after selecting a known or target concept, so multiple route inputs can be chosen without reopening the search.
+            - Complete guided-onboarding steps from the Next action while preserving titles, descriptions, concept names, and derivation weights already entered by the user.
+            - Refine the onboarding Skip and Next presentation, and rebuild desktop icons with true transparency to remove dark edges in the macOS Dock.
+            - Move route solving, workspace I/O, and revision hashing off the Tauri UI thread; use lightweight revision checks, pause polling during canvas interaction or while backgrounded, and render only visible graph elements.
+            - Keep large route results responsive with React transitions and dedicated regression coverage for large workspaces and long routes.
+            - Make edges passive and low-opacity by default, highlight the neighborhood of the hovered concept or derivation, keep focused and routed nodes fully visible and correctly stacked, and prevent dimmed nodes from intercepting interaction.
+
+            ## Test stability
+
+            - Replace the changing external math-reforged test checkout with a repository-local A/B/C/D/X/Y workspace fixture used by Rust and desktop release tests.
 
             ## Downloads
 
@@ -133,6 +138,8 @@ jobs:
             - Windows x64 NSIS installer.
 
             The macOS and Windows packages are currently unsigned. Your operating system may show an unverified developer warning on first launch.
+
+            **Full Changelog**: https://github.com/derivon-research/derivon-mindmap/compare/v0.2.0...v0.2.1
           releaseDraft: false
           prerelease: ${{ needs.validate.outputs.prerelease }}
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}

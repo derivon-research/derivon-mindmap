@@ -40,8 +40,8 @@ required status checks。
 
 `.github/workflows/release-desktop.yml` 在推送 `v*` tag 时构建并发布 GitHub Release。tag
 必须指向 `main` 中的提交，且去掉 `v` 后必须与 `package.json`、`src-tauri/Cargo.toml` 和
-`src-tauri/tauri.conf.json` 中的版本一致。带预发布后缀的 tag（例如 `v0.2.0-beta`）会创建
-prerelease，稳定版本 tag（例如 `v0.2.0`）会创建正式 release。发布包含：
+`src-tauri/tauri.conf.json` 中的版本一致。带预发布后缀的 tag（例如 `v0.2.1-beta`）会创建
+prerelease，稳定版本 tag（例如 `v0.2.1`）会创建正式 release。发布包含：
 
 - macOS universal DMG，同时包含 Apple Silicon 与 Intel 架构；
 - Windows x64 NSIS 安装程序。
@@ -52,8 +52,8 @@ prerelease，稳定版本 tag（例如 `v0.2.0`）会创建正式 release。发�
 ```bash
 git switch main
 git pull --ff-only
-git tag -a v0.2.0 -m "derivon-mindmap v0.2.0"
-git push origin v0.2.0
+git tag -a v0.2.1 -m "derivon-mindmap v0.2.1"
+git push origin v0.2.1
 ```
 
 CI 使用实际 tag 创建同名 Release，不在 workflow 中固定发布版本。当前构建没有 Apple
