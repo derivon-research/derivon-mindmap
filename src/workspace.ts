@@ -5,6 +5,15 @@ import {
   markdownToHtml,
 } from './documentContent';
 import { WORKSPACE_AGENT_FILES, WORKSPACE_AGENT_REFERENCE_SET } from './agentSkill';
+import {
+  chooseNativeWorkspace,
+  isNativeWorkspaceDirectory,
+  readNativeWorkspace,
+  readNativeWorkspaceDocument,
+  writeNativeWorkspace,
+  type NativeWorkspaceDirectory,
+} from './tauriWorkspace';
+import { isTauriRuntime } from './route';
 
 export const WORKSPACE_MANIFEST = '.derivon/workspace.json';
 export const LOCAL_WORKSPACE_KEY = 'derivon.authoring.workspace/v0.2.0';
@@ -16,7 +25,7 @@ export type AuthoringWorkspace = {
   files: Record<string, string>;
 };
 
-export type WorkspaceDirectory = FileSystemDirectoryHandle;
+export type WorkspaceDirectory = FileSystemDirectoryHandle | NativeWorkspaceDirectory;
 
 export type WorkspaceDirectorySnapshot = {
   workspace: AuthoringWorkspace;
@@ -188,16 +197,23 @@ async function readTextFile(root: FileSystemDirectoryHandle, path: string): Prom
 }
 
 export async function readWorkspaceDocumentSource(
-  root: FileSystemDirectoryHandle,
+  root: WorkspaceDirectory,
   reference: DocumentReference,
 ): Promise<string> {
+  if (isNativeWorkspaceDirectory(root)) return readNativeWorkspaceDocument(root, reference);
   return readTextFile(root, documentSourcePath(reference));
 }
 
 export async function validateWorkspaceDirectoryFiles(
-  root: FileSystemDirectoryHandle,
+  root: WorkspaceDirectory,
   manifest: AuthoringDocument,
 ): Promise<void> {
+  if (isNativeWorkspaceDirectory(root)) {
+    const disk = await readNativeWorkspace(root, true);
+    const missing = referencedDocumentFiles(manifest).filter((path) => typeof disk.workspace.files[path] !== 'string');
+    if (missing.length) throw new Error(`工作区缺少文档：${missing.slice(0, 3).join('、')}`);
+    return;
+  }
   await Promise.all(referencedDocumentFiles(manifest).map(async (path) => {
     try {
       await readFile(root, path);
@@ -350,9 +366,10 @@ export async function attachWorkspaceAgentFiles(root: FileSystemDirectoryHandle)
 }
 
 export async function readWorkspaceDirectorySnapshot(
-  root: FileSystemDirectoryHandle,
+  root: WorkspaceDirectory,
   { loadFiles = true }: { loadFiles?: boolean } = {},
 ): Promise<WorkspaceDirectorySnapshot> {
+  if (isNativeWorkspaceDirectory(root)) return readNativeWorkspace(root, loadFiles);
   const manifestText = await readTextFile(root, WORKSPACE_MANIFEST);
   let manifest: AuthoringDocument;
   try {
@@ -382,15 +399,19 @@ export async function readWorkspaceDirectorySnapshot(
   return { workspace, revision };
 }
 
-export async function readWorkspaceDirectory(root: FileSystemDirectoryHandle): Promise<AuthoringWorkspace> {
+export async function readWorkspaceDirectory(root: WorkspaceDirectory): Promise<AuthoringWorkspace> {
   return (await readWorkspaceDirectorySnapshot(root)).workspace;
 }
 
 export async function writeWorkspaceDirectoryChanges(
-  root: FileSystemDirectoryHandle,
+  root: WorkspaceDirectory,
   manifest: AuthoringDocument,
   files: Record<string, string>,
 ): Promise<void> {
+  if (isNativeWorkspaceDirectory(root)) {
+    await writeNativeWorkspace(root, { manifest, files });
+    return;
+  }
   await writeTextFile(root, WORKSPACE_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
   for (const [path, content] of Object.entries(files)) {
     await writeTextFile(root, path, content);
@@ -404,7 +425,7 @@ export async function writeWorkspaceDirectory(root: FileSystemDirectoryHandle, w
 }
 
 export function supportsWorkspaceDirectory(): boolean {
-  return window.isSecureContext && typeof window.showDirectoryPicker === 'function';
+  return isTauriRuntime() || (window.isSecureContext && typeof window.showDirectoryPicker === 'function');
 }
 
 function requireWorkspaceDirectoryPicker(): NonNullable<Window['showDirectoryPicker']> {
@@ -416,7 +437,8 @@ function requireWorkspaceDirectoryPicker(): NonNullable<Window['showDirectoryPic
   return picker;
 }
 
-export async function ensureWorkspaceDirectoryPermission(handle: FileSystemDirectoryHandle): Promise<void> {
+export async function ensureWorkspaceDirectoryPermission(handle: WorkspaceDirectory): Promise<void> {
+  if (isNativeWorkspaceDirectory(handle)) return;
   const descriptor: FileSystemHandlePermissionDescriptor = { mode: 'readwrite' };
   if (!handle.queryPermission || !handle.requestPermission) return;
   try {
@@ -444,8 +466,9 @@ export async function writeWorkspaceToNewDirectory(
 
 export async function saveWorkspaceAsDirectory(
   current: AuthoringWorkspace,
-  source?: FileSystemDirectoryHandle,
-): Promise<FileSystemDirectoryHandle> {
+  source?: WorkspaceDirectory,
+): Promise<WorkspaceDirectory> {
+  if (isTauriRuntime()) throw new Error('本地应用 MVP 暂不支持“另存为”，请编辑已打开的工作区');
   const picker = requireWorkspaceDirectoryPicker();
   const handle = await picker({ mode: 'readwrite' });
   await ensureWorkspaceDirectoryPermission(handle);
@@ -463,11 +486,12 @@ export async function saveWorkspaceAsDirectory(
 }
 
 export async function chooseWorkspaceDirectory(current: AuthoringWorkspace): Promise<{
-  handle: FileSystemDirectoryHandle;
+  handle: WorkspaceDirectory;
   workspace: AuthoringWorkspace;
   revision: string;
   created: boolean;
 }> {
+  if (isTauriRuntime()) return chooseNativeWorkspace();
   const picker = requireWorkspaceDirectoryPicker();
   const handle = await picker({ mode: 'readwrite' });
   await ensureWorkspaceDirectoryPermission(handle);

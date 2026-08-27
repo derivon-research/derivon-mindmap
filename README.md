@@ -10,7 +10,49 @@ Derivon 加权有向 B-超图的前端录入实验。React Flow 负责画布交�
   <img src="https://v3n0.top/post/2026/learning-route-hypergraph/DerivonResearch-QGroup.jpg" alt="Derivon Research Q 群二维码" width="320" />
 </a>
 
-## 运行
+## 本地应用运行
+
+需要 Node.js、Rust stable 和 macOS Xcode Command Line Tools。安装依赖后启动 Tauri 2 应用：
+
+```bash
+npm install
+npm run tauri:dev
+```
+
+打开应用后，用工具栏的文件夹按钮选择一个已有 Derivon 工作区。验收工作区位于
+`../mindmaps/math-reforged`。工具栏的路线按钮进入路线模式：选择目标概念、勾选一个或
+多个已掌握概念并开始求解。结果会高亮路线中的概念和超边，按可执行顺序列出步骤，并
+显示成本、上下界和最优性状态；不可达结果会列出阻塞概念与阻塞环。
+
+桌面 release 构建：
+
+```bash
+npm run tauri:build
+```
+
+### Beta 发布 CI
+
+`.github/workflows/release-desktop.yml` 在推送 `v0.1.0-beta` tag 时构建并发布 GitHub
+prerelease，也可以从 Actions 页面手动重跑。发布包含：
+
+- macOS universal DMG，同时包含 Apple Silicon 与 Intel 架构；
+- Windows x64 NSIS 安装程序。
+
+发布版本由 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 共同固定为
+`0.1.0-beta`。CI 在两个平台上先运行前端与 Rust 测试，再由 Tauri Action 构建并上传
+bundle。当前 beta 没有 Apple Developer ID 或 Windows 代码签名，首次启动时操作系统可能
+显示未验证开发者警告。
+
+Tauri Rust bridge 位于 `src-tauri/`，直接依赖
+`derivon-research/derivon` 的 `v0.1.0` tag。`.derivon/workspace.json` 始终是持久化事实来源；
+Rust adapter 在每次查询时重建 Core Graph，把最多一位小数的权重严格乘以 10 后交给
+Core，并只向前端返回持久化字符串 ID。
+
+当前 MVP 的桌面端只支持打开和原地自动保存已有工作区；“新建工作区”和“另存为”仍只在
+浏览器版本可用。桌面端暂未加入文件监听，使用与浏览器相同的定时 revision 检查。第一版
+只返回一条当前最佳路线，不提供 K-shortest、来源过滤或云同步。
+
+## 浏览器运行
 
 ```bash
 npm install
@@ -23,6 +65,10 @@ npm run dev
 npm run build
 npm test
 npm run test:e2e
+cd src-tauri
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
+cargo test
 ```
 
 ## 初始页面与操作引导
