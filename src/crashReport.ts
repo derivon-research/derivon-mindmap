@@ -3,6 +3,11 @@ import { invoke } from '@tauri-apps/api/core';
 export const CRASH_REPORT_EVENT = 'derivon:crash-report';
 export const FRONTEND_CRASH_REPORT_KEY = 'derivon.crash-report/v1';
 
+const RESIZE_OBSERVER_LOOP_WARNINGS = new Set([
+  'ResizeObserver loop completed with undelivered notifications.',
+  'ResizeObserver loop limit exceeded',
+]);
+
 type NativeCrashReport = {
   details: string;
   path: string;
@@ -10,6 +15,16 @@ type NativeCrashReport = {
 
 function isTauriRuntime(): boolean {
   return '__TAURI_INTERNALS__' in window;
+}
+
+export function isBenignResizeObserverWarning(message: string, error: unknown): boolean {
+  return error == null && RESIZE_OBSERVER_LOOP_WARNINGS.has(message.trim());
+}
+
+export function isStoredResizeObserverWarning(details: string): boolean {
+  if (!details.startsWith('来源: 前端未处理异常\n')) return false;
+  const lastLine = details.trimEnd().split('\n').at(-1)?.trim() ?? '';
+  return RESIZE_OBSERVER_LOOP_WARNINGS.has(lastLine);
 }
 
 function errorDetails(value: unknown): string[] {
@@ -55,6 +70,7 @@ export function persistFrontendCrash(details: string): void {
 
 export function installGlobalCrashCapture(): () => void {
   const handleError = (event: ErrorEvent) => {
+    if (isBenignResizeObserverWarning(event.message, event.error)) return;
     persistFrontendCrash(formatFrontendCrash('前端未处理异常', event.error ?? event.message));
   };
   const handleRejection = (event: PromiseRejectionEvent) => {
@@ -71,7 +87,11 @@ export function installGlobalCrashCapture(): () => void {
 export async function readPendingCrashReport(): Promise<string | null> {
   const reports: string[] = [];
   const frontend = localStorage.getItem(FRONTEND_CRASH_REPORT_KEY);
-  if (frontend) reports.push(`=== Frontend ===\n${frontend}`);
+  if (frontend && isStoredResizeObserverWarning(frontend)) {
+    localStorage.removeItem(FRONTEND_CRASH_REPORT_KEY);
+  } else if (frontend) {
+    reports.push(`=== Frontend ===\n${frontend}`);
+  }
   if (isTauriRuntime()) {
     try {
       const native = await invoke<NativeCrashReport | null>('read_crash_report');

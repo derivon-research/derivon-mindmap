@@ -1,6 +1,7 @@
 import { Eraser, Play, X } from 'lucide-react';
 import { ConceptMultiSelect } from './ConceptMultiSelect';
 import { formatWeight, type AuthoringDocument } from './domain';
+import { TOUR_FEATURES, tourTarget } from './onboarding';
 import type { RouteSelection } from './route';
 
 type RoutePanelProps = {
@@ -47,6 +48,7 @@ export function RoutePanel({
         points={document.graph.points}
         selectedIds={selection.startPointIds}
         tone="start"
+        tourFeatureId={TOUR_FEATURES.routeStart.id}
         onToggle={onToggleStart}
       />
 
@@ -56,12 +58,14 @@ export function RoutePanel({
         points={document.graph.points}
         selectedIds={selection.targetPointIds}
         tone="target"
+        tourFeatureId={TOUR_FEATURES.routeTarget.id}
         onToggle={onToggleTarget}
       />
 
       <button
         className="route-solve-button"
         type="button"
+        {...tourTarget(TOUR_FEATURES.routeSolve)}
         disabled={solving || !selection.targetPointIds.length}
         onClick={onSolve}
       >
@@ -72,7 +76,7 @@ export function RoutePanel({
       {error && <p className="route-error" role="alert">{error}</p>}
 
       {result?.reachable && (
-        <section className="route-result" aria-label="路线结果">
+        <section className="route-result" aria-label="路线结果" {...tourTarget(TOUR_FEATURES.routeResult)}>
           <header>
             <div>
               <span>{result.provenOptimal ? '已证明最优' : '当前最佳'}</span>

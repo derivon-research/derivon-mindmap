@@ -1,0 +1,1940 @@
+{
+  "schema": "derivon.authoring/v0.2.0",
+  "document": {
+    "description": "依据 Sheldon Axler《线性代数应该这样学（第四版）》重构的非线性知识图。概念节点仅承载定义；超边承载书中明确的推导关系。",
+    "title": "线性代数应该这样学：概念与推导图",
+    "updatedAt": "2026-08-27T11:48:01.229Z"
+  },
+  "graph": {
+    "points": [
+      {
+        "id": "foundation-fields",
+        "data": {
+          "document": "docs/concept-foundation-fields",
+          "format": "markdown",
+          "label": "数域"
+        }
+      },
+      {
+        "id": "vector-space",
+        "data": {
+          "document": "docs/concept-vector-space",
+          "format": "markdown",
+          "label": "向量空间"
+        }
+      },
+      {
+        "id": "subspace",
+        "data": {
+          "document": "docs/concept-subspace",
+          "format": "markdown",
+          "label": "子空间"
+        }
+      },
+      {
+        "id": "direct-sum",
+        "data": {
+          "document": "docs/concept-direct-sum",
+          "format": "markdown",
+          "label": "直和"
+        }
+      },
+      {
+        "id": "span",
+        "data": {
+          "document": "docs/concept-span",
+          "format": "markdown",
+          "label": "张成"
+        }
+      },
+      {
+        "id": "independence",
+        "data": {
+          "document": "docs/concept-independence",
+          "format": "markdown",
+          "label": "线性无关"
+        }
+      },
+      {
+        "id": "basis",
+        "data": {
+          "document": "docs/concept-basis",
+          "format": "markdown",
+          "label": "基"
+        }
+      },
+      {
+        "id": "dimension",
+        "data": {
+          "document": "docs/concept-dimension",
+          "format": "markdown",
+          "label": "维数"
+        }
+      },
+      {
+        "id": "linear-map",
+        "data": {
+          "document": "docs/concept-linear-map",
+          "format": "markdown",
+          "label": "线性映射"
+        }
+      },
+      {
+        "id": "null-range",
+        "data": {
+          "document": "docs/concept-null-range",
+          "format": "markdown",
+          "label": "零空间"
+        }
+      },
+      {
+        "id": "injective-surjective",
+        "data": {
+          "document": "docs/concept-injective-surjective",
+          "format": "markdown",
+          "label": "单射"
+        }
+      },
+      {
+        "id": "matrix",
+        "data": {
+          "document": "docs/concept-matrix",
+          "format": "markdown",
+          "label": "线性映射的矩阵"
+        }
+      },
+      {
+        "id": "rank",
+        "data": {
+          "document": "docs/concept-rank",
+          "format": "markdown",
+          "label": "秩"
+        }
+      },
+      {
+        "id": "isomorphism",
+        "data": {
+          "document": "docs/concept-isomorphism",
+          "format": "markdown",
+          "label": "同构"
+        }
+      },
+      {
+        "id": "quotient",
+        "data": {
+          "document": "docs/concept-quotient",
+          "format": "markdown",
+          "label": "商空间"
+        }
+      },
+      {
+        "id": "dual",
+        "data": {
+          "document": "docs/concept-dual",
+          "format": "markdown",
+          "label": "对偶空间"
+        }
+      },
+      {
+        "id": "polynomial",
+        "data": {
+          "document": "docs/concept-polynomial",
+          "format": "markdown",
+          "label": "多项式"
+        }
+      },
+      {
+        "id": "operator",
+        "data": {
+          "document": "docs/concept-operator",
+          "format": "markdown",
+          "label": "算子"
+        }
+      },
+      {
+        "id": "eigen",
+        "data": {
+          "document": "docs/concept-eigen",
+          "format": "markdown",
+          "label": "特征值"
+        }
+      },
+      {
+        "id": "minimal-polynomial",
+        "data": {
+          "document": "docs/concept-minimal-polynomial",
+          "format": "markdown",
+          "label": "最小多项式"
+        }
+      },
+      {
+        "id": "triangular-diagonal",
+        "data": {
+          "document": "docs/concept-triangular-diagonal",
+          "format": "markdown",
+          "label": "上三角化"
+        }
+      },
+      {
+        "id": "inner-product",
+        "data": {
+          "document": "docs/concept-inner-product",
+          "format": "markdown",
+          "label": "内积空间"
+        }
+      },
+      {
+        "id": "norm-orthogonal",
+        "data": {
+          "document": "docs/concept-norm-orthogonal",
+          "format": "markdown",
+          "label": "范数"
+        }
+      },
+      {
+        "id": "orthonormal",
+        "data": {
+          "document": "docs/concept-orthonormal",
+          "format": "markdown",
+          "label": "规范正交基"
+        }
+      },
+      {
+        "id": "orthogonal-projection",
+        "data": {
+          "document": "docs/concept-orthogonal-projection",
+          "format": "markdown",
+          "label": "正交投影"
+        }
+      },
+      {
+        "id": "adjoint",
+        "data": {
+          "document": "docs/concept-adjoint",
+          "format": "markdown",
+          "label": "伴随"
+        }
+      },
+      {
+        "id": "normal-selfadjoint",
+        "data": {
+          "document": "docs/concept-normal-selfadjoint",
+          "format": "markdown",
+          "label": "正规算子"
+        }
+      },
+      {
+        "id": "spectral-theorem",
+        "data": {
+          "document": "docs/concept-spectral-theorem",
+          "format": "markdown",
+          "label": "谱定理"
+        }
+      },
+      {
+        "id": "isometry-unitary",
+        "data": {
+          "document": "docs/concept-isometry-unitary",
+          "format": "markdown",
+          "label": "等距映射"
+        }
+      },
+      {
+        "id": "svd",
+        "data": {
+          "document": "docs/concept-svd",
+          "format": "markdown",
+          "label": "奇异值分解"
+        }
+      },
+      {
+        "id": "pseudoinverse",
+        "data": {
+          "document": "docs/concept-pseudoinverse",
+          "format": "markdown",
+          "label": "伪逆"
+        }
+      },
+      {
+        "id": "nilpotent",
+        "data": {
+          "document": "docs/concept-nilpotent",
+          "format": "markdown",
+          "label": "幂零算子"
+        }
+      },
+      {
+        "id": "characteristic",
+        "data": {
+          "document": "docs/concept-characteristic",
+          "format": "markdown",
+          "label": "特征多项式"
+        }
+      },
+      {
+        "id": "jordan",
+        "data": {
+          "document": "docs/concept-jordan",
+          "format": "markdown",
+          "label": "若当基"
+        }
+      },
+      {
+        "id": "trace",
+        "data": {
+          "document": "docs/concept-trace",
+          "format": "markdown",
+          "label": "迹"
+        }
+      },
+      {
+        "id": "bilinear",
+        "data": {
+          "document": "docs/concept-bilinear",
+          "format": "markdown",
+          "label": "双线性型"
+        }
+      },
+      {
+        "id": "alternating",
+        "data": {
+          "document": "docs/concept-alternating",
+          "format": "markdown",
+          "label": "交错多重线性型"
+        }
+      },
+      {
+        "id": "determinant",
+        "data": {
+          "document": "docs/concept-determinant",
+          "format": "markdown",
+          "label": "行列式"
+        }
+      },
+      {
+        "id": "tensor",
+        "data": {
+          "document": "docs/concept-tensor",
+          "format": "markdown",
+          "label": "张量积"
+        }
+      },
+      {
+        "id": "finite-tuple",
+        "data": {
+          "document": "docs/concept-finite-tuple",
+          "format": "markdown",
+          "label": "有限有序组"
+        }
+      },
+      {
+        "id": "coordinate-space",
+        "data": {
+          "document": "docs/concept-coordinate-space",
+          "format": "markdown",
+          "label": "坐标空间"
+        }
+      },
+      {
+        "id": "subspace-sum",
+        "data": {
+          "document": "docs/concept-subspace-sum",
+          "format": "markdown",
+          "label": "子空间的和"
+        }
+      },
+      {
+        "id": "linear-combination",
+        "data": {
+          "document": "docs/concept-linear-combination",
+          "format": "markdown",
+          "label": "线性组合"
+        }
+      },
+      {
+        "id": "finite-dimensional",
+        "data": {
+          "document": "docs/concept-finite-dimensional",
+          "format": "markdown",
+          "label": "有限维"
+        }
+      },
+      {
+        "id": "range",
+        "data": {
+          "document": "docs/concept-range",
+          "format": "markdown",
+          "label": "值域"
+        }
+      },
+      {
+        "id": "surjective",
+        "data": {
+          "document": "docs/concept-surjective",
+          "format": "markdown",
+          "label": "满射"
+        }
+      },
+      {
+        "id": "invertible",
+        "data": {
+          "document": "docs/concept-invertible",
+          "format": "markdown",
+          "label": "可逆线性映射"
+        }
+      },
+      {
+        "id": "rank-nullity",
+        "data": {
+          "document": "docs/concept-rank-nullity",
+          "format": "markdown",
+          "label": "线性映射基本定理"
+        }
+      },
+      {
+        "id": "change-of-basis",
+        "data": {
+          "document": "docs/concept-change-of-basis",
+          "format": "markdown",
+          "label": "换基"
+        }
+      },
+      {
+        "id": "dual-map",
+        "data": {
+          "document": "docs/concept-dual-map",
+          "format": "markdown",
+          "label": "对偶映射"
+        }
+      },
+      {
+        "id": "polynomial-zero",
+        "data": {
+          "document": "docs/concept-polynomial-zero",
+          "format": "markdown",
+          "label": "多项式的零点"
+        }
+      },
+      {
+        "id": "invariant-subspace",
+        "data": {
+          "document": "docs/concept-invariant-subspace",
+          "format": "markdown",
+          "label": "不变子空间"
+        }
+      },
+      {
+        "id": "eigenvector",
+        "data": {
+          "document": "docs/concept-eigenvector",
+          "format": "markdown",
+          "label": "特征向量"
+        }
+      },
+      {
+        "id": "diagonalization",
+        "data": {
+          "document": "docs/concept-diagonalization",
+          "format": "markdown",
+          "label": "对角化"
+        }
+      },
+      {
+        "id": "orthogonality",
+        "data": {
+          "document": "docs/concept-orthogonality",
+          "format": "markdown",
+          "label": "正交"
+        }
+      },
+      {
+        "id": "orthogonal-complement",
+        "data": {
+          "document": "docs/concept-orthogonal-complement",
+          "format": "markdown",
+          "label": "正交补"
+        }
+      },
+      {
+        "id": "self-adjoint",
+        "data": {
+          "document": "docs/concept-self-adjoint",
+          "format": "markdown",
+          "label": "自伴算子"
+        }
+      },
+      {
+        "id": "positive-operator",
+        "data": {
+          "document": "docs/concept-positive-operator",
+          "format": "markdown",
+          "label": "正算子"
+        }
+      },
+      {
+        "id": "unitary-operator",
+        "data": {
+          "document": "docs/concept-unitary-operator",
+          "format": "markdown",
+          "label": "幺正算子"
+        }
+      },
+      {
+        "id": "singular-value",
+        "data": {
+          "document": "docs/concept-singular-value",
+          "format": "markdown",
+          "label": "奇异值"
+        }
+      },
+      {
+        "id": "generalized-eigenspace",
+        "data": {
+          "document": "docs/concept-generalized-eigenspace",
+          "format": "markdown",
+          "label": "广义特征空间"
+        }
+      },
+      {
+        "id": "cayley-hamilton",
+        "data": {
+          "document": "docs/concept-cayley-hamilton",
+          "format": "markdown",
+          "label": "Cayley-Hamilton 定理"
+        }
+      },
+      {
+        "id": "jordan-form",
+        "data": {
+          "document": "docs/concept-jordan-form",
+          "format": "markdown",
+          "label": "若当型"
+        }
+      },
+      {
+        "id": "quadratic-form",
+        "data": {
+          "document": "docs/concept-quadratic-form",
+          "format": "markdown",
+          "label": "二次型"
+        }
+      }
+    ],
+    "hyperedges": [
+      {
+        "id": "given-fields",
+        "weight": 3.0,
+        "tails": [
+          "foundation-fields",
+          "finite-tuple"
+        ],
+        "head": "coordinate-space",
+        "data": {
+          "document": "docs/derivation-given-fields",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "def-vector",
+        "weight": 4.0,
+        "tails": [
+          "foundation-fields",
+          "coordinate-space"
+        ],
+        "head": "vector-space",
+        "data": {
+          "document": "docs/derivation-def-vector",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "subspace-test",
+        "weight": 2.0,
+        "tails": [
+          "vector-space"
+        ],
+        "head": "subspace",
+        "data": {
+          "document": "docs/derivation-subspace-test",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "sum-direct",
+        "weight": 3.0,
+        "tails": [
+          "subspace-sum"
+        ],
+        "head": "direct-sum",
+        "data": {
+          "document": "docs/derivation-sum-direct",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "span-minimal",
+        "weight": 2.0,
+        "tails": [
+          "linear-combination",
+          "subspace"
+        ],
+        "head": "span",
+        "data": {
+          "document": "docs/derivation-span-minimal",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "dependence",
+        "weight": 3.0,
+        "tails": [
+          "span"
+        ],
+        "head": "independence",
+        "data": {
+          "document": "docs/derivation-dependence",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "basis-criterion",
+        "weight": 2.0,
+        "tails": [
+          "span",
+          "independence"
+        ],
+        "head": "basis",
+        "data": {
+          "document": "docs/derivation-basis-criterion",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "basis-exists",
+        "weight": 5.0,
+        "tails": [
+          "finite-dimensional",
+          "basis"
+        ],
+        "head": "dimension",
+        "data": {
+          "document": "docs/derivation-basis-exists",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "linear-map-def",
+        "weight": 2.0,
+        "tails": [
+          "vector-space"
+        ],
+        "head": "linear-map",
+        "data": {
+          "document": "docs/derivation-linear-map-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "null-range-subspaces",
+        "weight": 2.0,
+        "tails": [
+          "linear-map",
+          "subspace"
+        ],
+        "head": "null-range",
+        "data": {
+          "document": "docs/derivation-null-range-subspaces",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "fundamental-map",
+        "weight": 4.0,
+        "tails": [
+          "null-range",
+          "range",
+          "dimension"
+        ],
+        "head": "rank-nullity",
+        "data": {
+          "document": "docs/derivation-fundamental-map",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "matrix-representation",
+        "weight": 3.0,
+        "tails": [
+          "linear-map",
+          "basis"
+        ],
+        "head": "matrix",
+        "data": {
+          "document": "docs/derivation-matrix-representation",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "rank-equality",
+        "weight": 4.0,
+        "tails": [
+          "matrix",
+          "dimension"
+        ],
+        "head": "rank",
+        "data": {
+          "document": "docs/derivation-rank-equality",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "isomorphism-dim",
+        "weight": 1.0,
+        "tails": [
+          "invertible"
+        ],
+        "head": "isomorphism",
+        "data": {
+          "document": "docs/derivation-isomorphism-dim",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "quotient-space",
+        "weight": 3.0,
+        "tails": [
+          "subspace",
+          "vector-space"
+        ],
+        "head": "quotient",
+        "data": {
+          "document": "docs/derivation-quotient-space",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "dual-build",
+        "weight": 1.0,
+        "tails": [
+          "dual",
+          "linear-map"
+        ],
+        "head": "dual-map",
+        "data": {
+          "document": "docs/derivation-dual-build",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "given-polynomial",
+        "weight": 5.0,
+        "tails": [
+          "foundation-fields"
+        ],
+        "head": "polynomial",
+        "data": {
+          "document": "docs/derivation-given-polynomial",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "operator-invariance",
+        "weight": 2.0,
+        "tails": [
+          "operator",
+          "subspace"
+        ],
+        "head": "invariant-subspace",
+        "data": {
+          "document": "docs/derivation-operator-invariance",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "eigen-equivalence",
+        "weight": 2.0,
+        "tails": [
+          "operator",
+          "null-range"
+        ],
+        "head": "eigen",
+        "data": {
+          "document": "docs/derivation-eigen-equivalence",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "minimal-exists",
+        "weight": 4.0,
+        "tails": [
+          "operator",
+          "polynomial",
+          "dimension"
+        ],
+        "head": "minimal-polynomial",
+        "data": {
+          "document": "docs/derivation-minimal-exists",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "triangular",
+        "weight": 5.0,
+        "tails": [
+          "eigenvector",
+          "basis"
+        ],
+        "head": "triangular-diagonal",
+        "data": {
+          "document": "docs/derivation-triangular",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "inner-def",
+        "weight": 1.0,
+        "tails": [
+          "vector-space",
+          "foundation-fields"
+        ],
+        "head": "inner-product",
+        "data": {
+          "document": "docs/derivation-inner-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "norm-cs",
+        "weight": 3.0,
+        "tails": [
+          "inner-product"
+        ],
+        "head": "norm-orthogonal",
+        "data": {
+          "document": "docs/derivation-norm-cs",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "gram-schmidt",
+        "weight": 3.0,
+        "tails": [
+          "basis",
+          "norm-orthogonal",
+          "orthogonality"
+        ],
+        "head": "orthonormal",
+        "data": {
+          "document": "docs/derivation-gram-schmidt",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "projection",
+        "weight": 4.0,
+        "tails": [
+          "subspace",
+          "orthonormal",
+          "orthogonal-complement"
+        ],
+        "head": "orthogonal-projection",
+        "data": {
+          "document": "docs/derivation-projection",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "adjoint-riesz",
+        "weight": 4.0,
+        "tails": [
+          "linear-map",
+          "inner-product",
+          "orthonormal"
+        ],
+        "head": "adjoint",
+        "data": {
+          "document": "docs/derivation-adjoint-riesz",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "normal-classes",
+        "weight": 3.0,
+        "tails": [
+          "self-adjoint"
+        ],
+        "head": "positive-operator",
+        "data": {
+          "document": "docs/derivation-normal-classes",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "spectral",
+        "weight": 5.0,
+        "tails": [
+          "triangular-diagonal",
+          "orthonormal",
+          "normal-selfadjoint"
+        ],
+        "head": "spectral-theorem",
+        "data": {
+          "document": "docs/derivation-spectral",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "unitary",
+        "weight": 3.0,
+        "tails": [
+          "isometry-unitary",
+          "adjoint",
+          "operator"
+        ],
+        "head": "unitary-operator",
+        "data": {
+          "document": "docs/derivation-unitary",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "svd-step",
+        "weight": 4.0,
+        "tails": [
+          "singular-value",
+          "adjoint",
+          "spectral-theorem"
+        ],
+        "head": "svd",
+        "data": {
+          "document": "docs/derivation-svd-step",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "pinv-step",
+        "weight": 2.0,
+        "tails": [
+          "svd",
+          "orthogonal-projection"
+        ],
+        "head": "pseudoinverse",
+        "data": {
+          "document": "docs/derivation-pinv-step",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "nilpotent-generalized",
+        "weight": 3.0,
+        "tails": [
+          "null-range",
+          "finite-dimensional",
+          "eigen",
+          "nilpotent"
+        ],
+        "head": "generalized-eigenspace",
+        "data": {
+          "document": "docs/derivation-nilpotent-generalized",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "charpoly",
+        "weight": 3.0,
+        "tails": [
+          "characteristic",
+          "generalized-eigenspace",
+          "nilpotent"
+        ],
+        "head": "cayley-hamilton",
+        "data": {
+          "document": "docs/derivation-charpoly",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "jordan-chains",
+        "weight": 5.0,
+        "tails": [
+          "nilpotent",
+          "generalized-eigenspace",
+          "basis",
+          "dual",
+          "direct-sum",
+          "rank-nullity"
+        ],
+        "head": "jordan",
+        "data": {
+          "document": "docs/derivation-jordan-chains",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "trace-invariant",
+        "weight": 3.0,
+        "tails": [
+          "matrix",
+          "characteristic",
+          "jordan-form"
+        ],
+        "head": "trace",
+        "data": {
+          "document": "docs/derivation-trace-invariant",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "bilinear-matrix",
+        "weight": 2.0,
+        "tails": [
+          "bilinear"
+        ],
+        "head": "quadratic-form",
+        "data": {
+          "document": "docs/derivation-bilinear-matrix",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "alternating-space",
+        "weight": 4.0,
+        "tails": [
+          "bilinear",
+          "dimension"
+        ],
+        "head": "alternating",
+        "data": {
+          "document": "docs/derivation-alternating-space",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "det-build",
+        "weight": 3.0,
+        "tails": [
+          "alternating",
+          "operator"
+        ],
+        "head": "determinant",
+        "data": {
+          "document": "docs/derivation-det-build",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "tensor-linearize",
+        "weight": 4.0,
+        "tails": [
+          "dual",
+          "bilinear"
+        ],
+        "head": "tensor",
+        "data": {
+          "document": "docs/derivation-tensor-linearize",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "subspace-sum-def",
+        "weight": 2.0,
+        "tails": [
+          "subspace"
+        ],
+        "head": "subspace-sum",
+        "data": {
+          "document": "docs/derivation-subspace-sum-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "linear-combination-def",
+        "weight": 1.0,
+        "tails": [
+          "vector-space"
+        ],
+        "head": "linear-combination",
+        "data": {
+          "document": "docs/derivation-linear-combination-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "finite-dimensional-def",
+        "weight": 1.0,
+        "tails": [
+          "span"
+        ],
+        "head": "finite-dimensional",
+        "data": {
+          "document": "docs/derivation-finite-dimensional-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "range-subspace",
+        "weight": 2.0,
+        "tails": [
+          "linear-map",
+          "subspace"
+        ],
+        "head": "range",
+        "data": {
+          "document": "docs/derivation-range-subspace",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "injective-def",
+        "weight": 1.0,
+        "tails": [
+          "linear-map"
+        ],
+        "head": "injective-surjective",
+        "data": {
+          "document": "docs/derivation-injective-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "surjective-def",
+        "weight": 1.0,
+        "tails": [
+          "linear-map"
+        ],
+        "head": "surjective",
+        "data": {
+          "document": "docs/derivation-surjective-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "invertible-bijection",
+        "weight": 1.0,
+        "tails": [
+          "injective-surjective",
+          "surjective"
+        ],
+        "head": "invertible",
+        "data": {
+          "document": "docs/derivation-invertible-bijection",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "change-of-basis-build",
+        "weight": 2.0,
+        "tails": [
+          "isomorphism",
+          "basis",
+          "matrix"
+        ],
+        "head": "change-of-basis",
+        "data": {
+          "document": "docs/derivation-change-of-basis-build",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "dual-space-build",
+        "weight": 1.0,
+        "tails": [
+          "linear-map"
+        ],
+        "head": "dual",
+        "data": {
+          "document": "docs/derivation-dual-space-build",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "polynomial-zero-factor",
+        "weight": 1.0,
+        "tails": [
+          "polynomial"
+        ],
+        "head": "polynomial-zero",
+        "data": {
+          "document": "docs/derivation-polynomial-zero-factor",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "operator-def",
+        "weight": 1.0,
+        "tails": [
+          "linear-map"
+        ],
+        "head": "operator",
+        "data": {
+          "document": "docs/derivation-operator-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "eigenvector-def",
+        "weight": 1.0,
+        "tails": [
+          "operator",
+          "eigen"
+        ],
+        "head": "eigenvector",
+        "data": {
+          "document": "docs/derivation-eigenvector-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "diagonalization-eigenbasis",
+        "weight": 2.0,
+        "tails": [
+          "eigenvector",
+          "basis",
+          "operator"
+        ],
+        "head": "diagonalization",
+        "data": {
+          "document": "docs/derivation-diagonalization-eigenbasis",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "orthogonality-def",
+        "weight": 1.0,
+        "tails": [
+          "inner-product"
+        ],
+        "head": "orthogonality",
+        "data": {
+          "document": "docs/derivation-orthogonality-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "orthogonal-complement-def",
+        "weight": 2.0,
+        "tails": [
+          "subspace",
+          "orthogonality"
+        ],
+        "head": "orthogonal-complement",
+        "data": {
+          "document": "docs/derivation-orthogonal-complement-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "normal-operator-def",
+        "weight": 1.0,
+        "tails": [
+          "adjoint",
+          "operator"
+        ],
+        "head": "normal-selfadjoint",
+        "data": {
+          "document": "docs/derivation-normal-operator-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "self-adjoint-def",
+        "weight": 1.0,
+        "tails": [
+          "adjoint",
+          "operator"
+        ],
+        "head": "self-adjoint",
+        "data": {
+          "document": "docs/derivation-self-adjoint-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "self-adjoint-normal",
+        "weight": 1.0,
+        "tails": [
+          "self-adjoint"
+        ],
+        "head": "normal-selfadjoint",
+        "data": {
+          "document": "docs/derivation-self-adjoint-normal",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "spectral-self-adjoint",
+        "weight": 5.0,
+        "tails": [
+          "orthonormal",
+          "self-adjoint"
+        ],
+        "head": "spectral-theorem",
+        "data": {
+          "document": "docs/derivation-spectral-self-adjoint",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "isometry-def",
+        "weight": 2.0,
+        "tails": [
+          "inner-product",
+          "linear-map"
+        ],
+        "head": "isometry-unitary",
+        "data": {
+          "document": "docs/derivation-isometry-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "singular-values-spectral",
+        "weight": 2.0,
+        "tails": [
+          "adjoint",
+          "positive-operator",
+          "spectral-theorem"
+        ],
+        "head": "singular-value",
+        "data": {
+          "document": "docs/derivation-singular-values-spectral",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "nilpotent-def",
+        "weight": 1.0,
+        "tails": [
+          "operator"
+        ],
+        "head": "nilpotent",
+        "data": {
+          "document": "docs/derivation-nilpotent-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "characteristic-build",
+        "weight": 2.0,
+        "tails": [
+          "generalized-eigenspace",
+          "dimension"
+        ],
+        "head": "characteristic",
+        "data": {
+          "document": "docs/derivation-characteristic-build",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "jordan-form-build",
+        "weight": 1.0,
+        "tails": [
+          "jordan",
+          "matrix"
+        ],
+        "head": "jordan-form",
+        "data": {
+          "document": "docs/derivation-jordan-form-build",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "bilinear-form-def",
+        "weight": 1.0,
+        "tails": [
+          "vector-space",
+          "foundation-fields"
+        ],
+        "head": "bilinear",
+        "data": {
+          "document": "docs/derivation-bilinear-form-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "null-space-def",
+        "weight": 1.0,
+        "tails": [
+          "linear-map"
+        ],
+        "head": "null-range",
+        "data": {
+          "document": "docs/derivation-null-space-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "range-def",
+        "weight": 1.0,
+        "tails": [
+          "linear-map"
+        ],
+        "head": "range",
+        "data": {
+          "document": "docs/derivation-range-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "eigenvalue-def",
+        "weight": 1.0,
+        "tails": [
+          "operator"
+        ],
+        "head": "eigen",
+        "data": {
+          "document": "docs/derivation-eigenvalue-def",
+          "format": "markdown"
+        }
+      },
+      {
+        "id": "triangularization-def",
+        "weight": 1.0,
+        "tails": [
+          "operator",
+          "basis",
+          "matrix"
+        ],
+        "head": "triangular-diagonal",
+        "data": {
+          "document": "docs/derivation-triangularization-def",
+          "format": "markdown"
+        }
+      }
+    ]
+  },
+  "view": {
+    "positions": {
+      "adjoint": {
+        "x": 3080,
+        "y": 2144.5
+      },
+      "adjoint-riesz": {
+        "x": 2931,
+        "y": 2149.5
+      },
+      "alternating": {
+        "x": 3080,
+        "y": 247.5
+      },
+      "alternating-space": {
+        "x": 2931,
+        "y": 252.5
+      },
+      "basis": {
+        "x": 2320,
+        "y": 1927.5
+      },
+      "basis-criterion": {
+        "x": 2171,
+        "y": 1932.5
+      },
+      "basis-exists": {
+        "x": 2551,
+        "y": 615.5
+      },
+      "bilinear": {
+        "x": 2320,
+        "y": 691.5
+      },
+      "bilinear-form-def": {
+        "x": 1031,
+        "y": 696.5
+      },
+      "bilinear-matrix": {
+        "x": 2551,
+        "y": 1273.5
+      },
+      "cayley-hamilton": {
+        "x": 3840,
+        "y": 40
+      },
+      "change-of-basis": {
+        "x": 3460,
+        "y": 1148
+      },
+      "change-of-basis-build": {
+        "x": 3311,
+        "y": 1153
+      },
+      "characteristic": {
+        "x": 3460,
+        "y": 76.5
+      },
+      "characteristic-build": {
+        "x": 3311,
+        "y": 81.5
+      },
+      "charpoly": {
+        "x": 3691,
+        "y": 45
+      },
+      "coordinate-space": {
+        "x": 420,
+        "y": 1943
+      },
+      "def-vector": {
+        "x": 651,
+        "y": 1465.5
+      },
+      "dependence": {
+        "x": 1791,
+        "y": 1978.5
+      },
+      "det-build": {
+        "x": 3311,
+        "y": 297
+      },
+      "determinant": {
+        "x": 3460,
+        "y": 292
+      },
+      "diagonalization": {
+        "x": 3460,
+        "y": 1400
+      },
+      "diagonalization-eigenbasis": {
+        "x": 3311,
+        "y": 1405
+      },
+      "dimension": {
+        "x": 2700,
+        "y": 610.5
+      },
+      "direct-sum": {
+        "x": 3080,
+        "y": 2042.5
+      },
+      "dual": {
+        "x": 2320,
+        "y": 1132.5
+      },
+      "dual-build": {
+        "x": 2551,
+        "y": 966.5
+      },
+      "dual-map": {
+        "x": 2700,
+        "y": 961.5
+      },
+      "dual-space-build": {
+        "x": 2171,
+        "y": 1137.5
+      },
+      "eigen": {
+        "x": 2700,
+        "y": 1450
+      },
+      "eigen-equivalence": {
+        "x": 2551,
+        "y": 1409
+      },
+      "eigenvalue-def": {
+        "x": 2551,
+        "y": 1501
+      },
+      "eigenvector": {
+        "x": 3080,
+        "y": 1868.5
+      },
+      "eigenvector-def": {
+        "x": 2931,
+        "y": 1873.5
+      },
+      "finite-dimensional": {
+        "x": 2320,
+        "y": 553.5
+      },
+      "finite-dimensional-def": {
+        "x": 2171,
+        "y": 558.5
+      },
+      "finite-tuple": {
+        "x": 40,
+        "y": 2192
+      },
+      "foundation-fields": {
+        "x": 40,
+        "y": 1222.5
+      },
+      "fundamental-map": {
+        "x": 2931,
+        "y": 2273.5
+      },
+      "generalized-eigenspace": {
+        "x": 3080,
+        "y": 868
+      },
+      "given-fields": {
+        "x": 271,
+        "y": 1948
+      },
+      "given-polynomial": {
+        "x": 2551,
+        "y": 846.5
+      },
+      "gram-schmidt": {
+        "x": 2551,
+        "y": 2544.5
+      },
+      "independence": {
+        "x": 1940,
+        "y": 1973.5
+      },
+      "injective-def": {
+        "x": 2171,
+        "y": 354.5
+      },
+      "injective-surjective": {
+        "x": 2320,
+        "y": 349.5
+      },
+      "inner-def": {
+        "x": 1031,
+        "y": 2146
+      },
+      "inner-product": {
+        "x": 1940,
+        "y": 2141
+      },
+      "invariant-subspace": {
+        "x": 2700,
+        "y": 1063.5
+      },
+      "invertible": {
+        "x": 2700,
+        "y": 499.5
+      },
+      "invertible-bijection": {
+        "x": 2551,
+        "y": 504.5
+      },
+      "isometry-def": {
+        "x": 2171,
+        "y": 1705
+      },
+      "isometry-unitary": {
+        "x": 2320,
+        "y": 1700
+      },
+      "isomorphism": {
+        "x": 3080,
+        "y": 499.5
+      },
+      "isomorphism-dim": {
+        "x": 2931,
+        "y": 504.5
+      },
+      "jordan": {
+        "x": 3460,
+        "y": 2089.5
+      },
+      "jordan-chains": {
+        "x": 3311,
+        "y": 2094.5
+      },
+      "jordan-form": {
+        "x": 3840,
+        "y": 2248.5
+      },
+      "jordan-form-build": {
+        "x": 3691,
+        "y": 2253.5
+      },
+      "linear-combination": {
+        "x": 1180,
+        "y": 1203.5
+      },
+      "linear-combination-def": {
+        "x": 1031,
+        "y": 1208.5
+      },
+      "linear-map": {
+        "x": 1940,
+        "y": 1645.5
+      },
+      "linear-map-def": {
+        "x": 1791,
+        "y": 1650.5
+      },
+      "matrix": {
+        "x": 2700,
+        "y": 1790.5
+      },
+      "matrix-representation": {
+        "x": 2551,
+        "y": 1795.5
+      },
+      "minimal-exists": {
+        "x": 2931,
+        "y": 354.5
+      },
+      "minimal-polynomial": {
+        "x": 3080,
+        "y": 349.5
+      },
+      "nilpotent": {
+        "x": 2700,
+        "y": 1613.5
+      },
+      "nilpotent-def": {
+        "x": 2551,
+        "y": 1618.5
+      },
+      "nilpotent-generalized": {
+        "x": 2931,
+        "y": 873
+      },
+      "norm-cs": {
+        "x": 2171,
+        "y": 2514.5
+      },
+      "norm-orthogonal": {
+        "x": 2320,
+        "y": 2509.5
+      },
+      "normal-classes": {
+        "x": 4071,
+        "y": 2405.5
+      },
+      "normal-operator-def": {
+        "x": 3311,
+        "y": 2611
+      },
+      "normal-selfadjoint": {
+        "x": 3840,
+        "y": 2698
+      },
+      "null-range": {
+        "x": 2320,
+        "y": 1304.5
+      },
+      "null-range-subspaces": {
+        "x": 2171,
+        "y": 1234.5
+      },
+      "null-space-def": {
+        "x": 2171,
+        "y": 1363
+      },
+      "operator": {
+        "x": 2320,
+        "y": 1564.5
+      },
+      "operator-def": {
+        "x": 2171,
+        "y": 1569.5
+      },
+      "operator-invariance": {
+        "x": 2551,
+        "y": 1068.5
+      },
+      "orthogonal-complement": {
+        "x": 2700,
+        "y": 2928
+      },
+      "orthogonal-complement-def": {
+        "x": 2551,
+        "y": 2933
+      },
+      "orthogonal-projection": {
+        "x": 3080,
+        "y": 2919
+      },
+      "orthogonality": {
+        "x": 2320,
+        "y": 2618.5
+      },
+      "orthogonality-def": {
+        "x": 2171,
+        "y": 2623.5
+      },
+      "orthonormal": {
+        "x": 2700,
+        "y": 2539.5
+      },
+      "pinv-step": {
+        "x": 5211,
+        "y": 2876
+      },
+      "polynomial": {
+        "x": 2700,
+        "y": 841.5
+      },
+      "polynomial-zero": {
+        "x": 3080,
+        "y": 1250.5
+      },
+      "polynomial-zero-factor": {
+        "x": 2931,
+        "y": 1255.5
+      },
+      "positive-operator": {
+        "x": 4220,
+        "y": 2400.5
+      },
+      "projection": {
+        "x": 2931,
+        "y": 2924
+      },
+      "pseudoinverse": {
+        "x": 5360,
+        "y": 2871
+      },
+      "quadratic-form": {
+        "x": 2700,
+        "y": 1268.5
+      },
+      "quotient": {
+        "x": 1560,
+        "y": 781.5
+      },
+      "quotient-space": {
+        "x": 1411,
+        "y": 786.5
+      },
+      "range": {
+        "x": 2320,
+        "y": 2268
+      },
+      "range-def": {
+        "x": 2171,
+        "y": 2353.5
+      },
+      "range-subspace": {
+        "x": 2171,
+        "y": 2227
+      },
+      "rank": {
+        "x": 3080,
+        "y": 145.5
+      },
+      "rank-equality": {
+        "x": 2931,
+        "y": 150.5
+      },
+      "rank-nullity": {
+        "x": 3080,
+        "y": 2268.5
+      },
+      "self-adjoint": {
+        "x": 3460,
+        "y": 2698
+      },
+      "self-adjoint-def": {
+        "x": 3311,
+        "y": 2703
+      },
+      "self-adjoint-normal": {
+        "x": 3691,
+        "y": 2703
+      },
+      "singular-value": {
+        "x": 4600,
+        "y": 2379
+      },
+      "singular-values-spectral": {
+        "x": 4451,
+        "y": 2384
+      },
+      "span": {
+        "x": 1560,
+        "y": 1328.5
+      },
+      "span-minimal": {
+        "x": 1411,
+        "y": 1333.5
+      },
+      "spectral": {
+        "x": 4071,
+        "y": 2611
+      },
+      "spectral-self-adjoint": {
+        "x": 3691,
+        "y": 2795
+      },
+      "spectral-theorem": {
+        "x": 4220,
+        "y": 2734.5
+      },
+      "subspace": {
+        "x": 1180,
+        "y": 1305.5
+      },
+      "subspace-sum": {
+        "x": 2700,
+        "y": 2042.5
+      },
+      "subspace-sum-def": {
+        "x": 2551,
+        "y": 2047.5
+      },
+      "subspace-test": {
+        "x": 1031,
+        "y": 1310.5
+      },
+      "sum-direct": {
+        "x": 2931,
+        "y": 2047.5
+      },
+      "surjective": {
+        "x": 2320,
+        "y": 451.5
+      },
+      "surjective-def": {
+        "x": 2171,
+        "y": 456.5
+      },
+      "svd": {
+        "x": 4980,
+        "y": 2841
+      },
+      "svd-step": {
+        "x": 4831,
+        "y": 2846
+      },
+      "tensor": {
+        "x": 2700,
+        "y": 730.5
+      },
+      "tensor-linearize": {
+        "x": 2551,
+        "y": 735.5
+      },
+      "trace": {
+        "x": 4220,
+        "y": 1990.5
+      },
+      "trace-invariant": {
+        "x": 4071,
+        "y": 1995.5
+      },
+      "triangular": {
+        "x": 3311,
+        "y": 2391
+      },
+      "triangular-diagonal": {
+        "x": 3460,
+        "y": 2431.5
+      },
+      "triangularization-def": {
+        "x": 2931,
+        "y": 2460
+      },
+      "unitary": {
+        "x": 3311,
+        "y": 1726.5
+      },
+      "unitary-operator": {
+        "x": 3460,
+        "y": 1721.5
+      },
+      "vector-space": {
+        "x": 800,
+        "y": 1460.5
+      }
+    },
+    "replacements": []
+  }
+}

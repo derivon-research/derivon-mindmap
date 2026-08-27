@@ -12,125 +12,22 @@ async function connect(page: import('@playwright/test').Page, source: string, ta
   await page.mouse.up();
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/?example=replace-with');
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
-});
-
-test('opens a blank workspace with a target-bound guided tour', async ({ page }) => {
-  await page.evaluate(() => localStorage.clear());
-  await page.goto('/');
-
-  await expect(page.locator('.react-flow__node')).toHaveCount(0);
-  await expect(page.getByLabel('操作引导：新建项目文件夹')).toBeVisible();
-  await expect(page.getByLabel('操作引导：新建项目文件夹')).toContainText('1 / 37');
-  const newWorkspace = page.getByTitle('在新文件夹创建空项目');
-  await expect(newWorkspace).toHaveAttribute('data-tour-feature', 'new-workspace');
-  const targetBox = await newWorkspace.boundingBox();
-  const highlightBox = await page.locator('.tour-highlight').boundingBox();
-  expect(targetBox).not.toBeNull();
-  expect(highlightBox).not.toBeNull();
-  expect(highlightBox!.x).toBeLessThan(targetBox!.x);
-  expect(highlightBox!.x + highlightBox!.width).toBeGreaterThan(targetBox!.x + targetBox!.width);
-  const next = page.getByRole('button', { name: 'Next' });
-  const skip = page.getByRole('button', { name: '跳过引导' });
-  await expect(next).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-  await expect(next).toHaveCSS('color', 'rgb(47, 109, 79)');
-  await expect(skip).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-  await expect(skip).toHaveCSS('color', 'rgb(133, 141, 136)');
-  await page.evaluate(() => {
-    window.showDirectoryPicker = async () => {
-      localStorage.setItem('derivon.test.tour-picker', 'called');
-      throw new DOMException('Cancelled', 'AbortError');
-    };
-  });
-  await next.click();
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('derivon.test.tour-picker'))).toBe('called');
-  await expect(page.getByLabel('操作引导：新建项目文件夹')).toBeVisible();
-  await page.screenshot({ path: '/tmp/derivon-onboarding-desktop.png', fullPage: true });
-
-  await skip.click();
-  await expect(page.getByLabel('操作引导：新建项目文件夹')).toHaveCount(0);
-  await page.reload();
-  await expect(page.locator('.react-flow__node')).toHaveCount(0);
-  await expect(page.getByLabel('操作引导：新建项目文件夹')).toHaveCount(0);
-  await page.getByRole('button', { name: '操作引导' }).click();
-  await expect(page.getByLabel('操作引导：新建项目文件夹')).toBeVisible();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByLabel('操作引导：新建项目文件夹')).toBeVisible();
-  await page.screenshot({ path: '/tmp/derivon-onboarding-mobile.png', fullPage: true });
-});
-
-test('advances guide steps from the bound feature actions', async ({ page }) => {
-  await page.evaluate(() => localStorage.clear());
-  await page.goto('/');
-
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent('derivon:tour-action', {
-    detail: { action: 'workspace-created' },
-  })));
-  await expect(page.getByLabel('操作引导：命名示例项目')).toBeVisible();
-  await page.getByLabel('文档标题').fill('用户输入的项目标题');
-  await page.getByRole('button', { name: 'Next' }).click();
-  await expect(page.getByLabel('操作引导：补充项目说明')).toBeVisible();
-  await expect(page.getByLabel('文档标题')).toHaveValue('用户输入的项目标题');
-
-  const description = page.locator('.inspector textarea');
-  await page.getByRole('button', { name: 'Next' }).click();
-  await expect(page.getByLabel('操作引导：新建第一个概念')).toBeVisible();
-  await expect(description).toHaveValue('演示如何由概念 A 和 B 构造替换概念 X。');
-
-  await page.getByRole('button', { name: 'Next' }).click();
-  await expect(page.getByLabel('操作引导：命名概念 A')).toBeVisible();
-  const name = page.locator('.inspector label').filter({ hasText: '名称' }).locator('input');
-  await name.fill('A');
-  await page.getByRole('button', { name: 'Next' }).click();
-  await expect(page.getByLabel('操作引导：打开概念文档')).toBeVisible();
-  await expect(name).toHaveValue('A');
-});
-
-test('completes every preset guide action through Next', async ({ page }) => {
-  await page.evaluate(() => localStorage.clear());
-  await page.goto('/');
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent('derivon:tour-action', {
-    detail: { action: 'workspace-created' },
-  })));
-
-  const tour = page.locator('.tour-popover');
-  await expect(tour).toContainText('2 / 37');
-  for (let step = 3; step <= 37; step += 1) {
-    await tour.getByRole('button', { name: 'Next' }).click();
-    await expect(tour).toContainText(`${step} / 37`);
-  }
-  await tour.getByRole('button', { name: '完成' }).click();
-  await expect(tour).toHaveCount(0);
-});
-
-test('creates a native workspace and completes the full guide in the Tauri runtime', async ({ page }) => {
+async function installNativeWorkspace(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
-    const commands: string[] = [];
     let workspace: { manifest: unknown; files: Record<string, string> } | null = null;
     (window as unknown as {
       __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
-      __nativeTourCommands: string[];
     }).__TAURI_INTERNALS__ = {
       invoke: async (command, args) => {
-        commands.push(command);
         if (command === 'save_workspace_as') {
-          workspace = {
-            manifest: args?.manifest,
-            files: args?.files as Record<string, string>,
-          };
+          workspace = { manifest: args?.manifest, files: args?.files as Record<string, string> };
           return { path: '/tmp/derivon-tour-workspace', name: 'derivon-tour-workspace' };
         }
         if (command === 'workspace_revision') return 'native-tour-revision';
         if (command === 'write_workspace') {
           workspace = {
             manifest: args?.manifest,
-            files: {
-              ...(workspace?.files ?? {}),
-              ...(args?.files as Record<string, string>),
-            },
+            files: { ...(workspace?.files ?? {}), ...(args?.files as Record<string, string>) },
           };
           return null;
         }
@@ -139,33 +36,613 @@ test('creates a native workspace and completes the full guide in the Tauri runti
           return { workspace, revision: 'native-tour-revision' };
         }
         if (command === 'read_crash_report') return null;
+        if (command === 'solve_route') {
+          return {
+            reachable: true,
+            hyperedgeIds: ['injective-def', 'surjective-def', 'invertible-bijection'],
+            executableOrder: ['injective-def', 'surjective-def', 'invertible-bijection'],
+            pointIds: ['linear-map', 'injective-surjective', 'surjective', 'invertible'],
+            cost: 3,
+            lower: 3,
+            upper: 3,
+            provenOptimal: true,
+            nodes: 4,
+            millis: 1,
+            targetDiagnoses: [],
+          };
+        }
         throw new Error(`Unexpected command: ${command}`);
       },
     };
-    (window as unknown as { __nativeTourCommands: string[] }).__nativeTourCommands = commands;
   });
+}
+
+async function expectTourWithinViewport(page: import('@playwright/test').Page) {
+  const metrics = await page.locator('.tour-popover').evaluate((popover) => {
+    const rect = popover.getBoundingClientRect();
+    const buttons = [...popover.querySelectorAll('footer button')].map((button) => {
+      const box = button.getBoundingClientRect();
+      return { left: box.left, top: box.top, right: box.right, bottom: box.bottom };
+    });
+    const overlaps = buttons.some((first, index) => buttons.slice(index + 1).some((second) => (
+      Math.min(first.right, second.right) > Math.max(first.left, second.left)
+      && Math.min(first.bottom, second.bottom) > Math.max(first.top, second.top)
+    )));
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      popover: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+      buttons,
+      overlaps,
+    };
+  });
+
+  expect(metrics.popover.left).toBeGreaterThanOrEqual(0);
+  expect(metrics.popover.top).toBeGreaterThanOrEqual(0);
+  expect(metrics.popover.right).toBeLessThanOrEqual(metrics.viewport.width);
+  expect(metrics.popover.bottom).toBeLessThanOrEqual(metrics.viewport.height);
+  expect(metrics.overlaps).toBe(false);
+  metrics.buttons.forEach((button) => {
+    expect(button.left).toBeGreaterThanOrEqual(metrics.popover.left);
+    expect(button.top).toBeGreaterThanOrEqual(metrics.popover.top);
+    expect(button.right).toBeLessThanOrEqual(metrics.popover.right);
+    expect(button.bottom).toBeLessThanOrEqual(metrics.popover.bottom);
+  });
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/?example=replace-with');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+});
+
+test('starts the eight-step basics tour and opens the modular tutorial menu', async ({ page }) => {
   await page.evaluate(() => localStorage.clear());
   await page.goto('/');
 
-  const tour = page.locator('.tour-popover');
-  await expect(tour).toContainText('1 / 37');
-  await tour.getByRole('button', { name: 'Next' }).click();
-  await expect(tour).toContainText('2 / 37');
-  await expect(page.locator('.workspace-directory-name')).toHaveText('derivon-tour-workspace/');
-  await expect.poll(() => page.evaluate(() => (
-    window as unknown as { __nativeTourCommands: string[] }
-  ).__nativeTourCommands)).toEqual(expect.arrayContaining([
-    'save_workspace_as',
-    'workspace_revision',
-  ]));
+  const tour = page.getByLabel('操作引导：创建第一个项目');
+  await expect(page.locator('.react-flow__node')).toHaveCount(0);
+  await expect(tour).toBeVisible();
+  await expect(tour).toContainText('1 / 8');
+  await expect(page.getByTitle('在新文件夹创建空项目')).toHaveAttribute('data-tour-feature', 'new-workspace');
+  await expect(tour.getByRole('button', { name: '请完成当前操作' })).toBeDisabled();
 
-  for (let step = 3; step <= 37; step += 1) {
-    await tour.getByRole('button', { name: 'Next' }).click();
-    await expect(tour).toContainText(`${step} / 37`);
-  }
-  await tour.getByRole('button', { name: '完成' }).click();
-  await expect(tour).toHaveCount(0);
+  await tour.getByRole('button', { name: '退出并保留进度' }).click();
+  const menu = page.getByRole('dialog', { name: '选择一个小教程' });
+  await expect(menu).toBeVisible();
+  await expect(menu.locator('.onboarding-tour-list > button')).toHaveCount(6);
+  await expect(menu).toContainText('理解 Derivon 的基本图模型');
+  await expect(menu).not.toContainText('Replace With');
+  await expect(menu).toContainText('下载 Derivon 本地版');
+  await expect(menu).not.toContainText('JSON');
 });
+
+test('only auto-advances explicit creation actions', async ({ page }) => {
+  await installNativeWorkspace(page);
+  await page.evaluate(() => localStorage.clear());
+  await page.goto('/');
+
+  await page.getByTitle('在新文件夹创建空项目').click();
+  const titleTour = page.getByLabel('操作引导：给项目起一个名字');
+  await expect(titleTour).toContainText('2 / 8');
+  await page.getByLabel('文档标题').fill('A、B 与 X');
+  await expect(titleTour).toBeVisible();
+  await expect(titleTour.getByRole('button', { name: '下一步' })).toBeEnabled();
+  await page.getByLabel('文档标题').blur();
+  await expect(titleTour).toBeVisible();
+  await titleTour.getByRole('button', { name: '下一步' }).click();
+
+  const descriptionTour = page.getByLabel('操作引导：说明这个项目研究什么');
+  const description = page.locator('.inspector textarea');
+  await description.fill('学习概念和推导模型。');
+  await expect(descriptionTour).toBeVisible();
+  await descriptionTour.getByRole('button', { name: '下一步' }).click();
+
+  await page.getByTitle('新建概念').click();
+  const nameTour = page.getByLabel('操作引导：命名概念 A');
+  await expect(nameTour).toContainText('5 / 8');
+  const name = page.locator('.inspector label').filter({ hasText: '名称' }).locator('input');
+  await name.fill('A');
+  await expect(nameTour).toBeVisible();
+  await name.blur();
+  await expect(nameTour).toBeVisible();
+});
+
+test('loads a bundled linear algebra case for the graph-model tutorial', async ({ page }) => {
+  await page.evaluate(() => {
+    const workspaceKey = 'derivon.authoring.workspace/v0.2.0';
+    const workspace = JSON.parse(localStorage.getItem(workspaceKey)!);
+    workspace.manifest.graph.points = [];
+    workspace.manifest.graph.hyperedges = [];
+    workspace.manifest.view.positions = {};
+    workspace.manifest.view.replacements = [];
+    localStorage.setItem(workspaceKey, JSON.stringify(workspace));
+    localStorage.setItem('derivon.onboarding/v2', JSON.stringify({ version: 2, completedTours: [], progress: { graph: 0 } }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: '理解 Derivon 的基本图模型' }).click();
+
+  const intro = page.getByLabel('操作引导：进入线性代数案例');
+  await expect(intro).toContainText('1 / 20');
+  await expect(page.getByLabel('文档标题')).toHaveValue('线性映射：零空间与可逆性');
+  await expect(page.locator('.react-flow__node[data-id="linear-map"]')).toContainText('线性映射');
+  await expect(page.locator('.react-flow__node[data-id="null-range"]')).toContainText('零空间');
+  await expect(page.locator('.react-flow__node[data-id="invertible"]')).toContainText('可逆线性映射');
+  await expect(page.getByLabel('该推导路径有 2 种方式实现')).toBeVisible();
+  await expect(page.locator('.react-flow__node[data-id="A"], .react-flow__node[data-id="B"], .react-flow__node[data-id="X"]')).toHaveCount(0);
+  await expect(page.locator('.onboarding-target-error')).toHaveCount(0);
+});
+
+test('guides the user back to the canvas after leaving a canvas tutorial step', async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.setItem('derivon.onboarding/v2', JSON.stringify({
+      version: 2,
+      completedTours: [],
+      progress: { graph: 1 },
+    }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: '理解 Derivon 的基本图模型' }).click();
+
+  await expect(page.getByLabel('操作引导：概念是需要理解的对象')).toBeVisible();
+  await page.locator('.react-flow__node[data-id="linear-map"]').dblclick();
+
+  const recovery = page.getByLabel('操作引导：返回知识图继续');
+  await expect(recovery).toBeVisible();
+  await expect(recovery.getByRole('button', { name: '请返回教学区域' })).toBeDisabled();
+  await page.locator('[data-tour-feature="return-canvas"]').click();
+
+  await expect(page.getByLabel('操作引导：概念是需要理解的对象')).toBeVisible();
+  await expect(page.locator('.onboarding-target-error')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (
+    JSON.parse(localStorage.getItem('derivon.onboarding/v2')!).progress.graph
+  ))).toBe(1);
+});
+
+test('guides the user back to the editor after leaving an editor tutorial step', async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.setItem('derivon.onboarding/v2', JSON.stringify({
+      version: 2,
+      completedTours: [],
+      progress: { documents: 1 },
+    }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /文档工具/ }).click();
+
+  await expect(page.getByLabel('操作引导：体验排版工具')).toBeVisible();
+  await page.locator('[data-tour-feature="return-canvas"]').click();
+
+  const recovery = page.getByLabel('操作引导：返回文档继续');
+  await expect(recovery).toBeVisible();
+  await expect(recovery.getByRole('button', { name: '请返回教学区域' })).toBeDisabled();
+  await page.getByRole('button', { name: '编辑文档' }).click();
+
+  await expect(page.getByLabel('操作引导：体验排版工具')).toBeVisible();
+  await expect(page.locator('.onboarding-target-error')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (
+    JSON.parse(localStorage.getItem('derivon.onboarding/v2')!).progress.documents
+  ))).toBe(1);
+});
+
+test('accepts natural editor shortcuts and typed formula syntax in document tutorials', async ({ page }) => {
+  const primaryModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+  const startDocumentStep = async (index: number, title: string) => {
+    await page.evaluate((stepIndex) => {
+      localStorage.setItem('derivon.onboarding/v2', JSON.stringify({
+        version: 2,
+        completedTours: [],
+        progress: { documents: stepIndex },
+      }));
+    }, index);
+    await page.reload();
+    await page.getByRole('button', { name: '操作引导' }).click();
+    await page.getByRole('button', { name: /文档工具/ }).click();
+    return page.getByLabel(`操作引导：${title}`);
+  };
+
+  let tour = await startDocumentStep(1, '体验排版工具');
+  const body = page.getByLabel('Markdown 正文');
+  await body.click();
+  await page.keyboard.press(`${primaryModifier}+a`);
+  await page.keyboard.press(`${primaryModifier}+i`);
+  await expect(tour.getByRole('button', { name: '下一步' })).toBeEnabled();
+
+  tour = await startDocumentStep(2, '插入 KaTeX 公式');
+  await body.click();
+  await page.keyboard.press('End');
+  await page.keyboard.insertText(' $x$');
+  await expect(body.locator('.tiptap-mathematics-render[data-type="inline-math"]')).toBeVisible();
+  await expect(tour.getByRole('button', { name: '下一步' })).toBeEnabled();
+
+  tour = await startDocumentStep(5, '撤回一段临时输入');
+  await body.click();
+  await page.keyboard.press('End');
+  await page.keyboard.insertText('临时修改');
+  await page.keyboard.press(`${primaryModifier}+z`);
+  await expect(tour.getByRole('button', { name: '完成教程' })).toBeEnabled();
+});
+
+test('persists incomplete progress and replays completed tours from the beginning', async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem('derivon.onboarding/v2', JSON.stringify({ version: 2, completedTours: [], progress: { basics: 2 } }));
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /第一次创建项目/ }).click();
+  await expect(page.getByLabel('操作引导：说明这个项目研究什么')).toContainText('3 / 8');
+  await page.getByRole('button', { name: '退出并保留进度' }).click();
+
+  await page.evaluate(() => localStorage.setItem('derivon.onboarding/v2', JSON.stringify({ version: 2, completedTours: ['basics'], progress: { basics: 0 } })));
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /第一次创建项目/ }).click();
+  await expect(page.getByLabel('操作引导：创建第一个项目')).toContainText('1 / 8');
+});
+
+test('opens the concept document when resuming a document tutorial from the canvas', async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.setItem('derivon.onboarding/v2', JSON.stringify({ version: 2, completedTours: [], progress: { documents: 4 } }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /文档工具/ }).click();
+
+  await expect(page.getByLabel('操作引导：插入 HTML 交互内容')).toBeVisible();
+  await expect(page.getByLabel('Markdown 正文')).toBeVisible();
+  await expect(page.locator('.onboarding-target-error')).toHaveCount(0);
+});
+
+test('opens a derivation document when resuming its authoring step from the canvas', async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.setItem('derivon.onboarding/v2', JSON.stringify({ version: 2, completedTours: [], progress: { graph: 9 } }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /图模型/ }).click();
+
+  await expect(page.getByLabel('操作引导：推导文档回答“为什么”')).toBeVisible();
+  await expect(page.getByLabel('Markdown 正文')).toBeVisible();
+  await expect(page.locator('.onboarding-target-error')).toHaveCount(0);
+});
+
+test('selects a real parallel derivation group when resuming the comparison step', async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.setItem('derivon.onboarding/v2', JSON.stringify({ version: 2, completedTours: [], progress: { graph: 12 } }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /图模型/ }).click();
+
+  await expect(page.getByLabel('操作引导：比较两种推导')).toBeVisible();
+  const alternatives = page.getByLabel('查看推导方式');
+  await expect(alternatives).toBeVisible();
+  await expect(page.locator('.onboarding-target-error')).toHaveCount(0);
+  await alternatives.selectOption('null-space-equations');
+  const comparison = page.getByLabel('操作引导：比较两种推导');
+  await expect(comparison.getByRole('button', { name: '下一步' })).toBeEnabled();
+  await comparison.getByRole('button', { name: '下一步' }).click();
+  await expect(page.getByLabel('操作引导：调整当前实现的学习成本')).toBeVisible();
+  await expect(page.locator('.inspector-heading strong')).toHaveText('null-space-equations');
+});
+
+test('rebuilds the graph example when resuming directly at the learning-cost step', async ({ page }) => {
+  await page.evaluate(() => {
+    const workspaceKey = 'derivon.authoring.workspace/v0.2.0';
+    const workspace = JSON.parse(localStorage.getItem(workspaceKey)!);
+    workspace.manifest.graph.points = [];
+    workspace.manifest.graph.hyperedges = [];
+    workspace.manifest.view.positions = {};
+    workspace.manifest.view.replacements = [];
+    localStorage.setItem(workspaceKey, JSON.stringify(workspace));
+    localStorage.setItem('derivon.onboarding/v2', JSON.stringify({
+      version: 2,
+      completedTours: [],
+      progress: { graph: 13 },
+    }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /图模型/ }).click();
+
+  const weightStep = page.getByLabel('操作引导：调整当前实现的学习成本');
+  await expect(weightStep).toBeVisible();
+  await expect(weightStep).toContainText('权重越大，学习成本越高');
+  await expect(page.getByLabel('文档标题')).toHaveValue('线性映射：零空间与可逆性');
+  await expect(page.getByLabel('查看推导方式').locator('option')).toHaveCount(2);
+  await expect(page.locator('[data-tour-feature="derivation-weight"]')).toBeVisible();
+  await expect(page.locator('.onboarding-target-error')).toHaveCount(0);
+});
+
+test('rebuilds replacement state when resuming the final graph-model steps', async ({ page }) => {
+  const startGraphStep = async (step: number) => {
+    await page.evaluate((index) => {
+      localStorage.setItem('derivon.onboarding/v2', JSON.stringify({
+        version: 2,
+        completedTours: [],
+        progress: { graph: index },
+      }));
+    }, step);
+    await page.reload();
+    await page.getByRole('button', { name: '操作引导' }).click();
+    await page.getByRole('button', { name: /图模型/ }).click();
+  };
+
+  await startGraphStep(16);
+  const selectionStep = page.getByLabel('操作引导：选择单射和满射');
+  const replaceButton = page.getByTitle('替换');
+  await expect(selectionStep).toBeVisible();
+  await expect(replaceButton).toBeDisabled();
+  await page.locator('.react-flow__node[data-id="injective-surjective"]').click();
+  await page.locator('.react-flow__node[data-id="surjective"]').click({ modifiers: ['Shift'] });
+
+  const startReplacementStep = page.getByLabel('操作引导：开始建立替换');
+  await expect(startReplacementStep).toBeVisible();
+  await expect(replaceButton).toBeEnabled();
+  await replaceButton.click();
+  const autoAdvancedTargetStep = page.getByLabel('操作引导：选择整体概念');
+  await expect(autoAdvancedTargetStep).toBeVisible();
+  await page.locator('.react-flow__node[data-id="invertible"]').click();
+  await expect(autoAdvancedTargetStep.getByRole('button', { name: '下一步' })).toBeEnabled();
+
+  await startGraphStep(18);
+  const targetStep = page.getByLabel('操作引导：选择整体概念');
+  await expect(targetStep).toBeVisible();
+  await page.locator('.react-flow__node[data-id="invertible"]').click();
+  await expect(targetStep.getByRole('button', { name: '下一步' })).toBeEnabled();
+
+  await startGraphStep(19);
+  const toggleStep = page.getByLabel('操作引导：在整体和细分之间切换');
+  await expect(toggleStep).toBeVisible();
+  await page.getByRole('group', { name: 'invertible 显示方式' }).getByRole('button', { name: 'invertible' }).click();
+  await expect(toggleStep.getByRole('button', { name: '完成教程' })).toBeEnabled();
+  await expect(page.locator('.onboarding-target-error')).toHaveCount(0);
+});
+
+test('allows returning through completed graph steps after their targets disappear', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('derivon.onboarding/v2', JSON.stringify({
+    version: 2,
+    completedTours: [],
+    progress: { graph: 12 },
+  })));
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /图模型/ }).click();
+
+  let step = page.getByLabel('操作引导：比较两种推导');
+  await page.getByLabel('查看推导方式').selectOption('null-space-equations');
+  await step.getByRole('button', { name: '下一步' }).click();
+
+  step = page.getByLabel('操作引导：调整当前实现的学习成本');
+  await page.locator('[data-tour-feature="derivation-weight"]').fill('4.2');
+  await step.getByRole('button', { name: '下一步' }).click();
+
+  step = page.getByLabel('操作引导：为推导追加一个前提');
+  const floater = page.locator('[data-testid="floater"]');
+  await floater.evaluate((element) => { (element as HTMLElement).style.pointerEvents = 'none'; });
+  await connect(page, 'subspace', 'null-space-def');
+  await floater.evaluate((element) => { (element as HTMLElement).style.pointerEvents = 'auto'; });
+  await expect(step.getByRole('button', { name: '下一步' })).toBeEnabled();
+  await step.getByRole('button', { name: '下一步' }).click();
+  await expect(page.getByLabel('操作引导：在整体和细分视图间切换')).toBeVisible();
+
+  await page.getByRole('button', { name: '上一步' }).click();
+  await expect(page.getByLabel('操作引导：为推导追加一个前提').getByRole('button', { name: '下一步' })).toBeEnabled();
+  await page.getByRole('button', { name: '上一步' }).click();
+  await expect(page.getByLabel('操作引导：调整当前实现的学习成本').getByRole('button', { name: '下一步' })).toBeEnabled();
+  await page.getByRole('button', { name: '上一步' }).click();
+
+  const completedComparison = page.getByLabel('操作引导：比较两种推导');
+  await expect(completedComparison).toContainText('这一步已经完成');
+  await expect(completedComparison.getByRole('button', { name: '下一步' })).toBeEnabled();
+  await expect(page.locator('.onboarding-target-error')).toHaveCount(0);
+});
+
+test('returns to the project overview before resuming the project-description step', async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.setItem('derivon.onboarding/v2', JSON.stringify({ version: 2, completedTours: [], progress: { basics: 2 } }));
+  });
+  await page.reload();
+  await page.locator('.react-flow__node[data-id="A"]').click();
+  await page.getByRole('button', { name: '编辑文档' }).click();
+  await expect(page.getByLabel('Markdown 正文')).toBeVisible();
+
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /第一次创建项目/ }).click();
+
+  await expect(page.getByLabel('操作引导：说明这个项目研究什么')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '说明', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Markdown 正文')).toHaveCount(0);
+  await expect(page.locator('.onboarding-target-error')).toHaveCount(0);
+});
+
+test('restores the user workspace after the large-project tutorial exits', async ({ page }) => {
+  const title = page.getByLabel('文档标题');
+  await expect(title).toHaveValue('A + B → X');
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /大型项目导航/ }).click();
+  await expect(page.getByLabel('操作引导：进入大型示例项目')).toBeVisible();
+  await expect(title).toHaveValue('线性代数应该这样学：概念与推导图');
+  await expect(page.locator('.react-flow__node-concept')).toHaveCount(64);
+
+  await page.getByRole('button', { name: '退出并保留进度' }).click();
+  await expect(title).toHaveValue('A + B → X');
+  await expect(page.locator('.react-flow__node-concept')).toHaveCount(4);
+});
+
+test('teaches direct navigation in the math-reforged example', async ({ page }) => {
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /大型项目导航/ }).click();
+
+  const introStep = page.getByLabel('操作引导：进入大型示例项目');
+  await expect(introStep).toContainText('这个大型 derivon 实例项目是 math-reforged');
+  await expect(introStep.getByRole('link', { name: '查看 Math Reforged 的 GitHub 仓库' })).toHaveAttribute(
+    'href',
+    'https://github.com/derivon-research/math-reforged',
+  );
+  await introStep.getByRole('button', { name: '下一步' }).click();
+
+  const zoomStep = page.getByLabel('操作引导：缩放和浏览大型知识图');
+  await expect(zoomStep).toContainText('鼠标滚轮缩放');
+  await expect(zoomStep).toContainText('MacBook 触控板上双指缩放');
+  await zoomStep.getByRole('button', { name: '下一步' }).click();
+
+  const focusStep = page.getByLabel('操作引导：打开概念或推导的关联视图');
+  await expect(focusStep).toContainText('概念和推导都可以打开关联视图');
+  await expect(page.locator('[data-tour-feature="focused-view"]')).toBeVisible();
+  const derivation = page.locator('.react-flow__node-derivation').first();
+  await derivation.click();
+  await derivation.click();
+  await expect(focusStep.getByRole('button', { name: '下一步' })).toBeEnabled();
+  await focusStep.getByRole('button', { name: '下一步' }).click();
+
+  const searchStep = page.getByLabel('操作引导：按名称定位概念');
+  await expect(searchStep).toContainText('只输入“Hamilton”');
+  await page.getByLabel('搜索概念').fill('Hamilton');
+  const searchResults = page.getByRole('listbox', { name: '概念搜索结果' });
+  await expect(searchResults).toBeVisible();
+  const searchTargetBounds = await page.locator('[data-tour-feature="search"]').boundingBox();
+  const searchResultsBounds = await searchResults.boundingBox();
+  if (!searchTargetBounds || !searchResultsBounds) throw new Error('search tutorial target is not visible');
+  expect(searchTargetBounds.y + searchTargetBounds.height).toBeGreaterThanOrEqual(
+    searchResultsBounds.y + searchResultsBounds.height,
+  );
+  await searchResults.getByRole('option', { name: /Cayley-Hamilton 定理/ }).click();
+  await expect(searchStep.getByRole('button', { name: '下一步' })).toBeEnabled();
+  await expect(page.locator('.inspector').getByLabel('名称')).toHaveValue('Cayley-Hamilton 定理');
+});
+
+test('keeps the delete confirmation interactive above Joyride', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('derivon.onboarding/v2', JSON.stringify({ version: 2, completedTours: [], progress: { navigation: 5 } })));
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /大型项目导航/ }).click();
+  await expect(page.getByLabel('操作引导：安全删除对象')).toBeVisible();
+  await page.getByTitle('删除概念').click();
+
+  const backdrop = page.locator('.delete-confirm-backdrop');
+  await expect(backdrop).toBeVisible();
+  expect(await backdrop.evaluate((element) => Number(getComputedStyle(element).zIndex))).toBeGreaterThan(90);
+  await backdrop.getByRole('button', { name: '删除', exact: true }).click();
+  await expect(page.getByLabel('操作引导：撤回画布修改')).toBeVisible();
+});
+
+test('links the browser tutorial to the latest desktop release', async ({ page }) => {
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /下载 Derivon 本地版/ }).click();
+  const downloadStep = page.getByLabel('操作引导：下载 Derivon 本地版');
+  await expect(downloadStep).toContainText('路线推导只在本地应用中提供');
+  await expect(downloadStep.getByRole('link', { name: '下载最新本地版' })).toHaveAttribute(
+    'href',
+    'https://github.com/derivon-research/derivon-mindmap/releases/latest',
+  );
+});
+
+test('runs the route tutorial inside the local application', async ({ page }) => {
+  await installNativeWorkspace(page);
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+
+  const menu = page.getByRole('dialog', { name: '选择一个小教程' });
+  await expect(menu).toContainText('推导学习路线');
+  await expect(menu).not.toContainText('下载 Derivon 本地版');
+  await page.getByRole('button', { name: /推导学习路线/ }).click();
+
+  const intro = page.getByLabel('操作引导：从已知概念推导学习路线');
+  await expect(intro).toContainText('已经掌握的概念作为起点');
+  await expect(page.getByLabel('文档标题')).toHaveValue('线性代数应该这样学：概念与推导图');
+  await intro.getByRole('button', { name: '下一步' }).click();
+
+  await page.getByTitle('打开路线模式').click();
+  const startStep = page.getByLabel('操作引导：选择已经掌握的概念');
+  await expect(startStep).toBeVisible();
+  const startSearch = page.getByRole('combobox', { name: '已经掌握', exact: true });
+  await startSearch.fill('线性映射');
+  const startResults = page.getByRole('listbox', { name: '已经掌握搜索结果' });
+  const startTargetBounds = await page.locator('[data-tour-feature="route-start"]').boundingBox();
+  const startResultsBounds = await startResults.boundingBox();
+  if (!startTargetBounds || !startResultsBounds) throw new Error('route start tutorial target is not visible');
+  expect(startTargetBounds.y + startTargetBounds.height).toBeGreaterThanOrEqual(
+    startResultsBounds.y + startResultsBounds.height,
+  );
+  await startResults.getByRole('checkbox', { name: '线性映射 linear-map', exact: true }).check();
+  await expect(startStep.getByRole('button', { name: '下一步' })).toBeEnabled();
+  await startStep.getByRole('button', { name: '下一步' }).click();
+
+  const targetStep = page.getByLabel('操作引导：选择想学习的目标');
+  const targetSearch = page.getByRole('combobox', { name: '目标概念', exact: true });
+  await targetSearch.fill('可逆线性映射');
+  await page.getByRole('listbox', { name: '目标概念搜索结果' })
+    .getByRole('checkbox', { name: '可逆线性映射 invertible', exact: true }).check();
+  await expect(targetStep.getByRole('button', { name: '下一步' })).toBeEnabled();
+  await targetStep.getByRole('button', { name: '下一步' }).click();
+
+  const solveStep = page.getByLabel('操作引导：计算学习路线');
+  await page.getByRole('button', { name: '开始求解' }).click();
+  await expect(solveStep).toBeVisible();
+  await expect(solveStep.getByRole('button', { name: '下一步' })).toBeEnabled();
+  await solveStep.getByRole('button', { name: '下一步' }).click();
+
+  const resultStep = page.getByLabel('操作引导：阅读推导顺序和总成本');
+  await expect(resultStep).toContainText('整条路线的总学习成本');
+  await expect(page.getByRole('region', { name: '路线结果' })).toBeVisible();
+  await expect(page.locator('.route-steps li')).toHaveCount(3);
+});
+
+test('keeps tutorial popovers and footer controls inside short and narrow viewports', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 360 });
+  await page.evaluate(() => localStorage.setItem('derivon.onboarding/v2', JSON.stringify({
+    version: 2,
+    completedTours: [],
+    progress: { basics: 5 },
+  })));
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /第一次创建项目/ }).click();
+  await expect(page.getByLabel('操作引导：概念拥有独立文档')).toBeVisible();
+  await expectTourWithinViewport(page);
+
+  await page.setViewportSize({ width: 320, height: 480 });
+  await expect.poll(async () => page.locator('.tour-popover').evaluate((element) => element.getBoundingClientRect().right)).toBeLessThanOrEqual(320);
+  await expectTourWithinViewport(page);
+
+  await page.getByRole('button', { name: '退出并保留进度' }).click();
+  await page.getByRole('button', { name: /下载 Derivon 本地版/ }).click();
+  await expect(page.getByLabel('操作引导：下载 Derivon 本地版')).toBeVisible();
+  await expectTourWithinViewport(page);
+
+  await page.getByRole('button', { name: '退出并保留进度' }).click();
+  await page.getByRole('button', { name: '关闭操作引导' }).click();
+  await page.setViewportSize({ width: 900, height: 360 });
+  await page.evaluate(() => localStorage.setItem('derivon.onboarding/v2', JSON.stringify({
+    version: 2,
+    completedTours: [],
+    progress: { basics: 2 },
+  })));
+  await page.reload();
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /第一次创建项目/ }).click();
+  await expect(page.getByLabel('操作引导：说明这个项目研究什么')).toBeVisible();
+  await expectTourWithinViewport(page);
+});
+
+test('disables native text selection while drawing a connection', async ({ page }) => {
+  const handle = page.locator('.react-flow__node[data-id="A"] .react-flow__handle-right');
+  const box = await handle.boundingBox();
+  if (!box) throw new Error('connection handle is not visible');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 80, box.y + 20, { steps: 4 });
+  const canvas = page.locator('.canvas-wrap');
+  await expect(canvas).toHaveClass(/is-interacting/);
+  await expect(canvas).toHaveCSS('user-select', 'none');
+  await page.mouse.up();
+  await expect(canvas).not.toHaveClass(/is-interacting/);
+});
+
 
 test('authors source concepts and derivations without persisting React Flow objects', async ({ page }) => {
   const errors: string[] = [];
@@ -265,6 +742,31 @@ test('authors Markdown in place with shortcuts and interactive HTML blocks', asy
   expect(stored.files['docs/concept-c-1/index.html']).toContain('<button id="expand"');
 });
 
+test('renders Chinese and Latin italic text visibly and preserves its Markdown mark', async ({ page }) => {
+  await page.getByTitle('新建概念').click();
+  await page.getByRole('button', { name: '编辑文档' }).click();
+
+  const body = page.getByLabel('Markdown 正文');
+  const primaryModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await body.click();
+  await page.keyboard.press(`${primaryModifier}+a`);
+  await page.keyboard.press('Backspace');
+  await page.keyboard.insertText('中文 Italic text');
+  await page.keyboard.press(`${primaryModifier}+a`);
+  await page.getByRole('button', { name: '斜体' }).click();
+
+  const italic = body.locator('em');
+  await expect(italic).toHaveText('中文 Italic text');
+  expect(await italic.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { fontStyle: style.fontStyle, fontSynthesis: style.fontSynthesis };
+  })).toEqual({ fontStyle: 'oblique 12deg', fontSynthesis: 'style' });
+  await expect.poll(() => page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).files;
+    return files['docs/concept-c-1/document.md'];
+  })).toContain('*中文 Italic text*');
+});
+
 test('renders and edits inline and block KaTeX syntax', async ({ page }) => {
   await page.evaluate(() => {
     const key = 'derivon.authoring.workspace/v0.2.0';
@@ -307,6 +809,17 @@ $$`;
     markdown: expect.stringContaining('$a^2 + b^2 = c^2$'),
     html: expect.stringContaining('class="katex"'),
   });
+});
+
+test('inserts HTML at the current selection, including inside a table cell', async ({ page }) => {
+  await page.getByTitle('新建概念').click();
+  await page.getByRole('button', { name: '编辑文档' }).click();
+  const body = page.getByLabel('Markdown 正文');
+  await body.click();
+  await page.getByRole('button', { name: '插入表格' }).click();
+  await body.locator('table td').first().click();
+  await page.getByRole('button', { name: '插入 HTML 交互示例' }).click();
+  await expect(body.locator('table .raw-html-block')).toHaveCount(1);
 });
 
 test('turns typed single and double dollar syntax into live formulas', async ({ page }) => {
@@ -472,6 +985,26 @@ test('opens the editable local layout only on the second click', async ({ page }
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions.A)).toEqual(overviewPosition);
 });
 
+test('opens documents with a modifier click and keeps double-click for the local view', async ({ page }) => {
+  const concept = page.locator('.react-flow__node[data-id="A"]');
+  await concept.click({ modifiers: ['Control'] });
+  await expect(page.getByLabel('Markdown 正文')).toBeVisible();
+  await expect(page.locator('.editor-context .eyebrow')).toHaveText('概念文档');
+  await page.getByTitle('返回画布').first().click();
+
+  const derivation = page.locator('.react-flow__node-derivation').first();
+  await derivation.click({ modifiers: ['Meta'] });
+  await expect(page.getByLabel('Markdown 正文')).toBeVisible();
+  await expect(page.locator('.editor-context .eyebrow')).toHaveText('推导文档');
+  await page.getByTitle('返回画布').first().click();
+
+  await page.reload();
+  const overviewConcept = page.locator('.react-flow__node[data-id="A"]');
+  await overviewConcept.dblclick();
+  await expect(page.getByLabel('Markdown 正文')).toHaveCount(0);
+  await expect(page.locator('.concept-node.is-dimmed')).toHaveCount(1);
+});
+
 test('toggles selection with Shift without opening the local view', async ({ page }) => {
   const node = page.locator('.react-flow__node[data-id="A"]');
   const neighbor = page.locator('.react-flow__node[data-id="B"]');
@@ -486,24 +1019,138 @@ test('toggles selection with Shift without opening the local view', async ({ pag
   await expect(page.locator('.concept-node.is-dimmed')).toHaveCount(0);
 });
 
+test('keeps the existing selection when Shift and pointer down happen in the same task', async ({ page }) => {
+  const nodeA = page.locator('.react-flow__node[data-id="A"]');
+  await nodeA.click();
+  await expect(nodeA).toHaveClass(/selected/);
+
+  await page.evaluate(() => {
+    const nodeB = document.querySelector<HTMLElement>('.react-flow__node[data-id="B"]');
+    if (!nodeB) throw new Error('B is not visible');
+    nodeB.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Shift',
+      code: 'ShiftLeft',
+      bubbles: true,
+      shiftKey: true,
+    }));
+    nodeB.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true,
+      button: 0,
+      buttons: 1,
+      pointerId: 1,
+      pointerType: 'mouse',
+      shiftKey: true,
+    }));
+    nodeB.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true,
+      button: 0,
+      pointerId: 1,
+      pointerType: 'mouse',
+      shiftKey: true,
+    }));
+    nodeB.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      button: 0,
+      shiftKey: true,
+    }));
+    window.dispatchEvent(new KeyboardEvent('keyup', {
+      key: 'Shift',
+      code: 'ShiftLeft',
+      bubbles: true,
+    }));
+  });
+
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
+  await expect(nodeA).toHaveClass(/selected/);
+  await expect(page.locator('.react-flow__node[data-id="B"]')).toHaveClass(/selected/);
+});
+
+test('keeps Shift-click on a node when the pointer moves slightly before release', async ({ page }) => {
+  const nodeA = page.locator('.react-flow__node[data-id="A"]');
+  const nodeB = page.locator('.react-flow__node[data-id="B"]');
+  await nodeA.click();
+  const bounds = await nodeB.boundingBox();
+  if (!bounds) throw new Error('B is not visible');
+
+  await page.keyboard.down('Shift');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 + 1, bounds.y + bounds.height / 2 + 1);
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+
+  await expect(nodeA).toHaveClass(/selected/);
+  await expect(nodeB).toHaveClass(/selected/);
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
+  await expect(page.locator('.react-flow__selection')).toHaveCount(0);
+});
+
+test('writes opt-in selection diagnostics to the development server', async ({ page }) => {
+  await page.goto('/?example=replace-with&debugSelection=1');
+  const nodeA = page.locator('.react-flow__node[data-id="A"]');
+  const nodeB = page.locator('.react-flow__node[data-id="B"]');
+  await nodeA.click();
+  await nodeB.click({ modifiers: ['Shift'] });
+
+  await expect.poll(async () => {
+    const response = await page.request.get('/__derivon_selection_debug');
+    return response.text();
+  }).toContain('pointer-down-capture');
+  const log = await (await page.request.get('/__derivon_selection_debug')).text();
+  expect(log).toContain('"event":"keydown"');
+  expect(log).toContain('"event":"selection-change"');
+  expect(log).toContain('"nodeId":"B"');
+  expect(log).toContain('"storeMultiSelectionActive":true');
+});
+
+test('Shift-selects a derivation from the visible edge of its stacked diamond', async ({ page }) => {
+  const concept = page.locator('.react-flow__node[data-id="A"]');
+  const derivation = page.locator('.react-flow__node-derivation').filter({
+    has: page.locator('.stack-layer-1'),
+  });
+  await concept.click();
+  await expect(concept).toHaveClass(/selected/);
+
+  const bounds = await derivation.boundingBox();
+  if (!bounds) throw new Error('stacked derivation is not visible');
+  await page.keyboard.down('Shift');
+  await page.mouse.click(bounds.x + bounds.width + 2, bounds.y + bounds.height / 2 - 3);
+  await page.keyboard.up('Shift');
+
+  await expect(derivation).toHaveClass(/selected/);
+  await expect(concept).toHaveClass(/selected/);
+  await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
+});
+
 test('shows a pointer and lift shadow when selectable graph objects are hovered', async ({ page }) => {
   const cases = [
     {
       node: page.locator('.react-flow__node-concept[data-id="A"]'),
       shadow: page.locator('.react-flow__node-concept[data-id="A"] .concept-node'),
+      hitSlopBottom: '-3px',
     },
     {
       node: page.locator('.react-flow__node-derivation').first(),
       shadow: page.locator('.react-flow__node-derivation .derivation-diamond').first(),
+      hitSlopBottom: '-8px',
     },
   ];
 
   for (const item of cases) {
+    const restingBounds = await item.node.boundingBox();
+    if (!restingBounds) throw new Error('graph object is not visible');
     const restingShadow = await item.shadow.evaluate((element) => getComputedStyle(element).boxShadow);
-    await item.node.hover();
+    await page.mouse.move(
+      restingBounds.x + restingBounds.width / 2,
+      restingBounds.y + restingBounds.height - 1,
+    );
     await expect(item.node).toHaveCSS('cursor', 'pointer');
     await expect(item.node).toHaveCSS('translate', '0px -2px');
     await expect.poll(() => item.shadow.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe(restingShadow);
+    await expect.poll(() => item.node.evaluate((element) => getComputedStyle(element, '::before').bottom)).toBe(item.hitSlopBottom);
+    await page.waitForTimeout(200);
+    await expect(item.node).toHaveCSS('translate', '0px -2px');
   }
 });
 
@@ -522,6 +1169,21 @@ test('keeps edges passive and only emphasizes the hovered neighborhood', async (
   await expect(related.locator('.react-flow__edge-path')).toHaveCSS('opacity', '1');
   await expect(incoming.locator('.react-flow__edge-path')).toHaveCSS('opacity', '1');
   await expect(unrelated.locator('.react-flow__edge-path')).toHaveCSS('opacity', '0.18');
+});
+
+test('keeps background edges dimmed when a concept is hovered in the related view', async ({ page }) => {
+  const anchor = page.locator('.react-flow__node[data-id="A"]');
+  await anchor.click();
+  await anchor.click();
+
+  const activeEdge = page.locator('.react-flow__edge[data-id="premise:h-b:A"] .react-flow__edge-path');
+  const backgroundEdge = page.locator('.react-flow__edge[data-id="premise:h-d-points:B"] .react-flow__edge-path');
+  await expect(activeEdge).toHaveCSS('opacity', '1');
+  await expect(backgroundEdge).toHaveCSS('opacity', '0.08');
+
+  await page.locator('.react-flow__node[data-id="B"]').hover();
+  await expect(activeEdge).toHaveCSS('opacity', '1');
+  await expect(backgroundEdge).toHaveCSS('opacity', '0.08');
 });
 
 test('stacks parallel derivations and lets each implementation be inspected', async ({ page }) => {
@@ -610,6 +1272,21 @@ test('keeps only node highlights after a Shift marquee selection', async ({ page
   await expect(persistentSelection).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
 });
 
+test('Shift marquee selects a node when the selection only overlaps its edge', async ({ page }) => {
+  const node = page.locator('.react-flow__node[data-id="A"]');
+  const box = await node.boundingBox();
+  if (!box) throw new Error('A is not visible');
+
+  await page.keyboard.down('Shift');
+  await page.mouse.move(box.x - 12, box.y + box.height / 2 - 6);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 3, box.y + box.height / 2 + 6, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+
+  await expect(node).toHaveClass(/selected/);
+});
+
 test('switches between the detailed A B path and X inside the shared C D graph', async ({ page }) => {
   const pointA = page.locator('.react-flow__node-concept[data-id="A"]');
   await expect(pointA.locator('.replacement-tag')).toContainText('X');
@@ -643,14 +1320,14 @@ test('switches between the detailed A B path and X inside the shared C D graph',
   await expect(page.locator('.react-flow__node-derivation')).toHaveCount(5);
 });
 
-test('defines replace with by selecting a point set and an existing target', async ({ page }) => {
+test('defines a replacement by selecting a point set and an existing target', async ({ page }) => {
   await page.locator('.react-flow__node[data-id="A"]').click();
   await page.getByTitle('解除替换关系').click();
   await expect(page.locator('.react-flow__node-concept')).toHaveCount(5);
 
   await page.locator('.react-flow__node[data-id="A"]').click();
   await page.locator('.react-flow__node[data-id="B"]').click({ modifiers: ['Shift'] });
-  await page.getByTitle('Replace with').click();
+  await page.getByTitle('替换').click();
   await page.locator('.react-flow__node[data-id="X"]').click();
 
   await expect(page.locator('.react-flow__node[data-id="X"]')).toHaveCount(0);
@@ -784,6 +1461,14 @@ test('keeps malformed workspace errors open and copyable until dismissed', async
 });
 
 test('persists, copies, and clears an unhandled frontend crash report', async ({ page }) => {
+  await page.evaluate(() => {
+    window.dispatchEvent(new ErrorEvent('error', {
+      message: 'ResizeObserver loop completed with undelivered notifications.',
+    }));
+  });
+  await expect(page.getByRole('alertdialog', { name: '检测到应用异常' })).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('derivon.crash-report/v1'))).toBeNull();
+
   await page.evaluate(() => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,

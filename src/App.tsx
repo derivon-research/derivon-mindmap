@@ -8,11 +8,14 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   type Connection,
   type Edge,
+  type NodeChange,
   type OnSelectionChangeParams,
   useNodesState,
   useReactFlow,
+  useStoreApi,
 } from '@xyflow/react';
 import {
   ArrowLeft,
@@ -33,13 +36,13 @@ import {
   RotateCcw,
   RotateCw,
   Save,
-  Search,
   Trash2,
   Unlink,
   X,
 } from 'lucide-react';
 import '@xyflow/react/dist/style.css';
 import './styles.css';
+import { selectionDebugEnabled, traceSelection } from './selectionDebug';
 import {
   formatWeight,
   normalizeWeight,
@@ -55,6 +58,7 @@ import { ConceptNode, DerivationNode, type AuthoringFlowNode } from './GraphNode
 import { activeHyperedge, groupHyperedges, hyperedgeGroupKey, type HyperedgeGroup } from './hyperedgeGroups';
 import { layoutDocument, layoutNeighborhood } from './layout';
 import { DocumentEditor } from './DocumentEditor';
+import { ConceptSearch } from './ConceptSearch';
 import { convertDocumentContent } from './documentContent';
 import {
   CRASH_REPORT_EVENT,
@@ -73,14 +77,21 @@ import {
   toggleRouteTarget,
   type RouteSelection,
 } from './route';
-import { createEmptyWorkspace, sampleWorkspace } from './sample';
+import {
+  createEmptyWorkspace,
+  graphTutorialWorkspace,
+  graphTutorialWorkspaceWithReplacement,
+  navigationSampleWorkspace,
+  sampleWorkspace,
+} from './sample';
 import {
   GuidedTour,
   ONBOARDING_STORAGE_KEY,
   TOUR_FEATURES,
   notifyTourAction,
   tourTarget,
-  type TourStepId,
+  type TourId,
+  type TourPreparation,
 } from './onboarding';
 import {
   LOCAL_WORKSPACE_KEY,
@@ -131,6 +142,12 @@ type WorkspaceOperationError = {
   title: string;
   summary: string;
   details: string;
+};
+type TutorialWorkspaceSnapshot = {
+  manifest: AuthoringDocument;
+  files: Record<string, string>;
+  directory: WorkspaceDirectory | null;
+  revision: string | null;
 };
 type DeleteCandidate =
   | {
@@ -224,6 +241,12 @@ function initialWorkspace(): AuthoringWorkspace {
     workspace.manifest.view.positions = layoutDocument(workspace.manifest);
   }
   return workspace;
+}
+
+function shouldStartFirstTour(): boolean {
+  return !isExampleMode()
+    && !localStorage.getItem(LOCAL_WORKSPACE_KEY)
+    && !localStorage.getItem(ONBOARDING_STORAGE_KEY);
 }
 
 function neighborhood(document: AuthoringDocument, selectedId: string | null): Set<string> {
@@ -322,14 +345,15 @@ function AuthoringCanvas() {
   const [routeSelection, setRouteSelection] = useState<RouteSelection>(createRouteSelection);
   const [routeSolving, setRouteSolving] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
-  const [tourOpen, setTourOpen] = useState(() => {
-    const hasSavedWorkspace = !!localStorage.getItem(LOCAL_WORKSPACE_KEY);
-    return !isExampleMode() && !hasSavedWorkspace && localStorage.getItem(ONBOARDING_STORAGE_KEY) !== 'complete';
-  });
+  const [tourOpen, setTourOpen] = useState(shouldStartFirstTour);
+  const [tourStart, setTourStart] = useState<TourId | null>(() => shouldStartFirstTour() ? 'basics' : null);
+  const [canvasInteracting, setCanvasInteracting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const confirmDeleteButton = useRef<HTMLButtonElement>(null);
   const canvasInteractionRef = useRef(false);
+  const tutorialWorkspaceRef = useRef<TutorialWorkspaceSnapshot | null>(null);
   const { fitView, screenToFlowPosition } = useReactFlow<AuthoringFlowNode, ProjectedEdge>();
+  const flowStore = useStoreApi<AuthoringFlowNode, ProjectedEdge>();
 
   const reportWorkspaceError = useCallback((operation: string, error: unknown) => {
     setWorkspaceError(formatWorkspaceError(operation, error));
@@ -356,7 +380,7 @@ function AuthoringCanvas() {
   }, []);
 
   useEffect(() => {
-    if (workspaceDirectory) return;
+    if (workspaceDirectory || tutorialWorkspaceRef.current) return;
     try {
       localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify({ manifest: document, files }));
     } catch (error) {
@@ -661,6 +685,7 @@ function AuthoringCanvas() {
           id: concept.id,
           type: 'concept',
           className: [
+            'nokey',
             routeSelection.startPointIds.includes(concept.id) ? 'is-route-start' : '',
             routeSelection.targetPointIds.includes(concept.id) ? 'is-route-target' : '',
             routeSelection.result && routeIds.has(concept.id) ? 'is-route-member' : '',
@@ -689,7 +714,7 @@ function AuthoringCanvas() {
         return {
           id: group.nodeId,
           type: 'derivation',
-          className: group.members.some((member) => routeEdgeIds.has(member.id)) ? 'is-route-member' : undefined,
+          className: ['nokey', group.members.some((member) => routeEdgeIds.has(member.id)) ? 'is-route-member' : ''].filter(Boolean).join(' '),
           position: position(group.nodeId),
           zIndex: isDimmed ? 0 : focusedId || routeSelection.result ? 1 : 0,
           draggable: !isDimmed,
@@ -712,6 +737,61 @@ function AuthoringCanvas() {
   }, [activeDerivationByGroup, activeIds, document.graph.points, document.view.positions, focusPositions, focusedId, projection.points, requestDelete, routeEdgeIds, routeIds, routeSelection.result, routeSelection.startPointIds, routeSelection.targetPointIds, selectDerivation, toggleReplacement, visibleDerivationGroups]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<AuthoringFlowNode>([]);
+
+  const selectionSnapshot = useCallback(() => {
+    const state = flowStore.getState();
+    return {
+      storeMultiSelectionActive: state.multiSelectionActive,
+      storeSelectedIds: state.nodes.filter((node) => node.selected).map((node) => node.id).sort(),
+      controlledSelectedIds: nodes.filter((node) => node.selected).map((node) => node.id).sort(),
+      appSelectedNodeIds: [...selectedNodeIds],
+      selectedId,
+      focusedId,
+      replacementActive: !!replacementDraft,
+      routeMode,
+    };
+  }, [flowStore, focusedId, nodes, replacementDraft, routeMode, selectedId, selectedNodeIds]);
+  const selectionSnapshotRef = useRef(selectionSnapshot);
+  useEffect(() => {
+    selectionSnapshotRef.current = selectionSnapshot;
+  }, [selectionSnapshot]);
+
+  const handleNodesChange = useCallback((changes: NodeChange<AuthoringFlowNode>[]) => {
+    traceSelection('nodes-change', {
+      changes: changes.map((change) => change.type === 'select'
+        ? { type: change.type, id: change.id, selected: change.selected }
+        : { type: change.type, id: 'id' in change ? change.id : undefined }),
+      before: selectionSnapshotRef.current(),
+    });
+    onNodesChange(changes);
+    queueMicrotask(() => traceSelection('nodes-change-microtask', { state: selectionSnapshotRef.current() }));
+  }, [onNodesChange]);
+
+  useEffect(() => {
+    if (!selectionDebugEnabled) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') {
+        traceSelection(event.type, {
+          key: event.key,
+          code: event.code,
+          shiftKey: event.shiftKey,
+          repeat: event.repeat,
+          target: event.target instanceof Element ? `${event.target.tagName}.${event.target.className}` : String(event.target),
+          state: selectionSnapshotRef.current(),
+        });
+      }
+    };
+    const handleBlur = () => traceSelection('window-blur', { state: selectionSnapshotRef.current() });
+    window.addEventListener('keydown', handleKey, true);
+    window.addEventListener('keyup', handleKey, true);
+    window.addEventListener('blur', handleBlur, true);
+    traceSelection('debug-started', { userAgent: navigator.userAgent, state: selectionSnapshotRef.current() });
+    return () => {
+      window.removeEventListener('keydown', handleKey, true);
+      window.removeEventListener('keyup', handleKey, true);
+      window.removeEventListener('blur', handleBlur, true);
+    };
+  }, []);
 
   useEffect(() => {
     setNodes((current) => {
@@ -755,9 +835,11 @@ function AuthoringCanvas() {
       const derivation = activeHyperedge(group, activeDerivationByGroup[group.key]);
       const derivationActive = routeSelection.result
         ? routeEdgeIds.has(derivation.id)
-        : hoveredId
-          ? hoveredIds.has(group.nodeId)
-          : !!focusedId && activeIds.has(group.nodeId);
+        : focusedId
+          ? activeIds.has(group.nodeId)
+          : hoveredId
+            ? hoveredIds.has(group.nodeId)
+            : false;
       const inactiveOpacity = focusedId || routeSelection.result ? 0.08 : 0.18;
       for (const premise of derivation.tails) {
         result.push({
@@ -956,6 +1038,11 @@ function AuthoringCanvas() {
     }));
   }, [commit]);
 
+  const updateConceptName = useCallback((id: string, value: string) => {
+    updatePointData(id, { label: value });
+    if (value.trim() && value.trim() !== '新概念') notifyTourAction('concept-renamed');
+  }, [updatePointData]);
+
   const updateHyperedge = useCallback((id: string, patch: HyperedgePatch) => {
     const currentHyperedge = document.graph.hyperedges.find((item) => item.id === id);
     if (currentHyperedge) {
@@ -975,6 +1062,12 @@ function AuthoringCanvas() {
     }));
   }, [commit, document.graph.hyperedges]);
 
+  const updateDerivationWeight = useCallback((id: string, value: string) => {
+    const parsed = Number(value);
+    updateHyperedge(id, { weight: normalizeWeight(parsed) });
+    if (value.trim() && Number.isFinite(parsed) && parsed >= 0) notifyTourAction('derivation-weight-edited');
+  }, [updateHyperedge]);
+
   const applyLayout = useCallback(() => {
     const positions = layoutDocument(document);
     setFocusedId(null);
@@ -984,11 +1077,13 @@ function AuthoringCanvas() {
     window.setTimeout(() => void fitView({ padding: 0.12, duration: 350 }), 40);
   }, [commit, document, fitView]);
 
-  const findConcept = useCallback(() => {
+  const findConcept = useCallback((pointId?: string) => {
     const query = search.trim().toLocaleLowerCase();
-    const concept = document.graph.points.find((item) =>
-      item.id.toLocaleLowerCase() === query || item.data.label.toLocaleLowerCase().includes(query),
-    );
+    const concept = pointId
+      ? document.graph.points.find((item) => item.id === pointId)
+      : document.graph.points.find((item) =>
+        item.id.toLocaleLowerCase() === query || item.data.label.toLocaleLowerCase().includes(query),
+      );
     if (!concept) {
       setStatus('没有匹配的概念');
       return;
@@ -1136,19 +1231,28 @@ function AuthoringCanvas() {
   }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, reportWorkspaceError, resolvingExternalChange, workspaceDirectory]);
 
   const toggleRouteMode = useCallback(() => {
-    setRouteMode((current) => !current);
+    setRouteMode((current) => {
+      if (!current) notifyTourAction('route-mode-opened');
+      return !current;
+    });
     setRouteError(null);
     setFocusedId(null);
     setSelectedId(null);
   }, []);
 
   const toggleStartPoint = useCallback((pointId: string) => {
-    setRouteSelection((current) => toggleRouteStart(current, pointId));
+    setRouteSelection((current) => {
+      if (!current.startPointIds.includes(pointId)) notifyTourAction('route-start-selected');
+      return toggleRouteStart(current, pointId);
+    });
     setRouteError(null);
   }, []);
 
   const toggleTargetPoint = useCallback((pointId: string) => {
-    setRouteSelection((current) => toggleRouteTarget(current, pointId));
+    setRouteSelection((current) => {
+      if (!current.targetPointIds.includes(pointId)) notifyTourAction('route-target-selected');
+      return toggleRouteTarget(current, pointId);
+    });
     setRouteError(null);
   }, []);
 
@@ -1164,6 +1268,7 @@ function AuthoringCanvas() {
     void solveWorkspaceRoute(document, routeSelection).then((result) => {
       startTransition(() => {
         setRouteSelection((current) => ({ ...current, result }));
+        notifyTourAction('route-solved');
         if (result.reachable) {
           const active = Object.fromEntries(result.hyperedgeIds.flatMap((id) => {
             const group = groupByMemberId.get(id);
@@ -1227,24 +1332,27 @@ function AuthoringCanvas() {
 
   const handleSelectionChange = useCallback((selection: OnSelectionChangeParams<AuthoringFlowNode, ProjectedEdge>) => {
     const ids = selection.nodes.map((node) => node.id).sort();
+    traceSelection('selection-change', { ids, state: selectionSnapshotRef.current() });
+    const conceptIds = new Set(document.graph.points.map((concept) => concept.id));
+    if (ids.filter((id) => conceptIds.has(id)).length >= 2) notifyTourAction('multiple-concepts-selected');
     setSelectedNodeIds((current) =>
       current.length === ids.length && current.every((id, index) => id === ids[index]) ? current : ids,
     );
-  }, []);
+  }, [document.graph.points]);
 
   const toggleFocusedView = useCallback(() => {
     setFocusedId((current) => current ? null : selectedId);
     notifyTourAction('focused-view-toggled');
   }, [selectedId]);
 
-  const openDocument = useCallback((id: string) => {
+  const openDocument = useCallback((id: string, reportTourAction = true) => {
     const item = document.graph.points.find((point) => point.id === id)
       ?? document.graph.hyperedges.find((hyperedge) => hyperedge.id === id);
     if (!item) return;
     const sourcePath = documentSourcePath(item.data);
     if (!workspaceDirectory || typeof files[sourcePath] === 'string') {
       setEditingId(id);
-      notifyTourAction('document-opened');
+      if (reportTourAction) notifyTourAction('document-opened');
       return;
     }
     setStatus(`正在读取 ${sourcePath}`);
@@ -1254,7 +1362,7 @@ function AuthoringCanvas() {
       setFiles((current) => ({ ...current, [sourcePath]: source }));
       setEditingId(id);
       setStatus('文档已加载');
-      notifyTourAction('document-opened');
+      if (reportTourAction) notifyTourAction('document-opened');
     }).catch((error: unknown) => reportWorkspaceError(`读取 ${sourcePath}`, error));
   }, [document.graph.hyperedges, document.graph.points, enqueueDirectoryOperation, files, reportWorkspaceError, workspaceDirectory]);
 
@@ -1279,9 +1387,6 @@ function AuthoringCanvas() {
       });
     }, 500);
   }, [document.graph.hyperedges, document.graph.points, editingId, workspaceDirectory]);
-
-  const confirmConceptName = useCallback(() => notifyTourAction('concept-renamed'), []);
-  const confirmDerivationWeight = useCallback(() => notifyTourAction('derivation-weight-edited'), []);
 
   const selectedConcept = document.graph.points.find((item) => item.id === selectedId);
   const selectedDerivation = document.graph.hyperedges.find((item) => item.id === selectedId);
@@ -1334,210 +1439,221 @@ function AuthoringCanvas() {
     else migrateHtmlDocument();
   }, [editingConcept, editingDerivation, editingId, migrateHtmlDocument]);
 
-  const completeTourStep = useCallback((stepId: TourStepId) => {
-    const pointNamed = (label: string) => document.graph.points.find((point) => point.data.label === label);
-    const clickFeatureButton = (featureId: string, selector = 'button:not(:disabled)') => {
-      window.document.querySelector<HTMLElement>(`[data-tour-feature="${featureId}"]${selector.startsWith(':') ? selector : ` ${selector}`}`)?.click();
-    };
+  const restoreTutorialWorkspace = useCallback(() => {
+    const snapshot = tutorialWorkspaceRef.current;
+    if (!snapshot) return;
+    tutorialWorkspaceRef.current = null;
+    workspaceDirectoryRef.current = snapshot.directory;
+    workspaceRevisionRef.current = snapshot.revision;
+    externalWorkspaceChangeRef.current = null;
+    setExternalWorkspaceChange(null);
+    setFiles(snapshot.files);
+    dispatchHistory({ type: 'replace', document: snapshot.manifest });
+    setWorkspaceDirectory(snapshot.directory);
+    setEditingId(null);
+    setRouteMode(false);
+    setRouteSelection(createRouteSelection());
+    clearTransientView();
+    window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
+  }, [clearTransientView, fitView]);
 
-    switch (stepId) {
-      case 'workspace':
-        void createWorkspaceInNewDirectory();
-        return;
-      case 'title':
-        if (!document.document.title.trim() || document.document.title === '未命名项目') {
-          commit((current) => ({ ...current, document: { ...current.document, title: 'A + B → X' } }));
+  const openBundledTutorialWorkspace = useCallback((workspace: AuthoringWorkspace, message: string, initialSelectedId: string | null) => {
+    if (tutorialWorkspaceRef.current) return;
+    tutorialWorkspaceRef.current = {
+      manifest: document,
+      files,
+      directory: workspaceDirectory,
+      revision: workspaceRevisionRef.current,
+    };
+    const example = workspace.manifest;
+    const positions = Object.keys(example.view.positions).length ? example.view.positions : layoutDocument(example);
+    workspaceDirectoryRef.current = null;
+    workspaceRevisionRef.current = null;
+    externalWorkspaceChangeRef.current = null;
+    setExternalWorkspaceChange(null);
+    setWorkspaceDirectory(null);
+    setFiles(workspace.files);
+    dispatchHistory({ type: 'replace', document: { ...example, view: { ...example.view, positions } } });
+    setEditingId(null);
+    setRouteMode(false);
+    setRouteSelection(createRouteSelection());
+    clearTransientView();
+    setSelectedId(initialSelectedId);
+    setStatus(message);
+    window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
+  }, [clearTransientView, document, files, fitView, workspaceDirectory]);
+
+  const openTutorialExample = useCallback(() => {
+    openBundledTutorialWorkspace(
+      navigationSampleWorkspace,
+      '已临时打开 math-reforged 教学项目',
+      null,
+    );
+  }, [openBundledTutorialWorkspace]);
+
+  const openGraphTutorialExample = useCallback((withReplacement = false) => {
+    openBundledTutorialWorkspace(
+      withReplacement ? graphTutorialWorkspaceWithReplacement : graphTutorialWorkspace,
+      '已临时打开线性代数图模型案例',
+      'linear-map',
+    );
+  }, [openBundledTutorialWorkspace]);
+
+  const prepareTourStep = useCallback(async (preparation: TourPreparation) => {
+    const selectedConcept = document.graph.points.find((point) => point.id === selectedId);
+    const selectedDerivation = document.graph.hyperedges.find((item) => item.id === selectedId);
+    const concept = selectedConcept ?? document.graph.points.at(-1) ?? document.graph.points[0];
+    const derivation = selectedDerivation ?? document.graph.hyperedges.at(-1);
+
+    if (preparation.startsWith('open-route-example')) {
+      openTutorialExample();
+      setEditingId(null);
+      setFocusedId(null);
+      setSelectedId(null);
+      setRouteError(null);
+
+      const startPointIds = preparation === 'open-route-example-with-start'
+        || preparation === 'open-route-example-with-start-and-target'
+        || preparation === 'open-route-example-with-result'
+        ? ['linear-map']
+        : [];
+      const targetPointIds = preparation === 'open-route-example-with-start-and-target'
+        || preparation === 'open-route-example-with-result'
+        ? ['invertible']
+        : [];
+      const selection = { startPointIds, targetPointIds, result: null };
+      setRouteMode(preparation !== 'open-route-example');
+      setRouteSelection(selection);
+
+      if (preparation === 'open-route-example-with-result') {
+        try {
+          const result = await solveWorkspaceRoute(navigationSampleWorkspace.manifest, selection);
+          const resultMemberIds = new Set(result.hyperedgeIds);
+          const active = Object.fromEntries(groupHyperedges(navigationSampleWorkspace.manifest.graph.hyperedges)
+            .flatMap((group) => {
+              const member = group.members.find((item) => resultMemberIds.has(item.id));
+              return member ? [[group.key, member.id]] : [];
+            }));
+          setActiveDerivationByGroup((current) => ({ ...current, ...active }));
+          setRouteSelection({ ...selection, result });
+          setStatus(result.provenOptimal ? '已找到并证明最优路线' : '已找到当前最佳路线');
+        } catch (error) {
+          setRouteError(error instanceof Error ? error.message : String(error));
         }
-        notifyTourAction('project-title-edited');
-        return;
-      case 'description':
-        if (!document.document.description.trim()) {
-          commit((current) => ({
-            ...current,
-            document: { ...current.document, description: '演示如何由概念 A 和 B 构造替换概念 X。' },
-          }));
-        }
-        notifyTourAction('project-description-edited');
-        return;
-      case 'add-a':
-      case 'add-b':
-      case 'add-x':
-        addConcept();
-        return;
-      case 'name-a':
-      case 'name-b':
-      case 'name-x': {
-        const concept = document.graph.points.find((point) => point.id === selectedId);
-        if (!concept) return;
-        const preset = stepId === 'name-a' ? 'A' : stepId === 'name-b' ? 'B' : 'X';
-        if (!concept.data.label.trim() || concept.data.label === '新概念') {
-          updatePointData(concept.id, { label: preset });
-        }
-        notifyTourAction('concept-renamed');
-        return;
       }
-      case 'open-concept-document':
-        if (selectedId) openDocument(selectedId);
-        return;
-      case 'author-document':
-        if (editingReference) {
-          updateDocumentSource(editingReference, '# 概念 A\n\nA 是这个推导演示的起始概念。', editingLabel);
-        }
-        return;
-      case 'format-document':
-        clickFeatureButton(TOUR_FEATURES.documentFormat.id, 'button[aria-label="粗体"]');
-        return;
-      case 'insert-formula':
-        clickFeatureButton(TOUR_FEATURES.insertFormula.id, ':not(:disabled)');
-        return;
-      case 'insert-table':
-        clickFeatureButton(TOUR_FEATURES.insertTable.id, ':not(:disabled)');
-        return;
-      case 'insert-html':
-        clickFeatureButton(TOUR_FEATURES.insertHtml.id, ':not(:disabled)');
-        return;
-      case 'editor-history':
-        clickFeatureButton(TOUR_FEATURES.editorHistory.id);
-        return;
-      case 'return-canvas':
-        returnToCanvas();
-        return;
-      case 'layout':
-        applyLayout();
-        return;
-      case 'connect':
-      case 'parallel': {
-        const source = pointNamed('A');
-        const target = pointNamed('B');
-        if (!source || !target) return;
-        onConnect({ source: source.id, target: target.id, sourceHandle: 'concept-out', targetHandle: 'concept-in' });
-        return;
-      }
-      case 'parallel-select': {
-        const source = pointNamed('A');
-        const target = pointNamed('B');
-        const group = source && target
-          ? derivationGroups.find((candidate) => candidate.members.length > 1
-            && candidate.members[0]?.head === target.id
-            && candidate.members[0]?.tails.length === 1
-            && candidate.members[0]?.tails[0] === source.id)
-          : null;
-        if (!group) return;
-        const nextMember = group.members.find((member) => member.id !== selectedId) ?? group.members[0];
-        selectDerivation(group, nextMember.id);
-        return;
-      }
-      case 'weight': {
-        const derivation = document.graph.hyperedges.find((item) => item.id === selectedId)
-          ?? document.graph.hyperedges.at(-1);
-        if (!derivation) return;
-        if (derivation.weight === 1) updateHyperedge(derivation.id, { weight: 0.5 });
-        notifyTourAction('derivation-weight-edited');
-        return;
-      }
-      case 'more-premises': {
-        const derivation = document.graph.hyperedges.find((item) => item.id === selectedId)
-          ?? document.graph.hyperedges.at(-1);
-        const extraPremise = pointNamed('X');
-        if (!derivation || !extraPremise) return;
-        if (!derivation.tails.includes(extraPremise.id)) {
-          updateHyperedge(derivation.id, { tails: [...derivation.tails, extraPremise.id] });
-        }
-        notifyTourAction('derivation-updated');
-        return;
-      }
-      case 'replace-select': {
-        const points = [pointNamed('A'), pointNamed('B')].filter((point): point is Point => !!point);
-        if (points.length !== 2) return;
-        const ids = points.map((point) => point.id);
-        setSelectedNodeIds(ids);
-        setSelectedId(ids[0]);
-        setReplacementDraft(ids);
-        setStatus('请选择已有概念作为替换点');
-        notifyTourAction('replacement-started');
-        return;
-      }
-      case 'replace-target': {
-        const target = pointNamed('X');
-        if (target) selectNode(target.id, false);
-        return;
-      }
-      case 'toggle-replacement': {
-        const replacement = document.view.replacements[0];
-        if (replacement) {
-          toggleReplacement(replacement.replaceWith, replacement.show === 'points' ? 'replacement' : 'points');
-        }
-        return;
-      }
-      case 'focus': {
-        const target = document.graph.points.find((point) => point.id === selectedId) ?? document.graph.points[0];
-        if (!target) return;
-        setSelectedId(target.id);
-        setFocusedId(target.id);
-        notifyTourAction('focused-view-toggled');
-        return;
-      }
-      case 'search': {
-        const query = search.trim().toLocaleLowerCase();
-        const target = query
-          ? document.graph.points.find((point) => point.id.toLocaleLowerCase() === query
-            || point.data.label.toLocaleLowerCase().includes(query))
-          : pointNamed('X') ?? document.graph.points[0];
-        if (!target) {
-          setStatus('没有匹配的概念');
-          return;
-        }
-        if (!query) setSearch(target.data.label);
-        const revealed = revealConcept(document, target.id);
-        commit(() => revealed);
-        setFocusedId(null);
-        setSelectedId(target.id);
-        notifyTourAction('concept-found');
-        window.setTimeout(() => void fitView({ nodes: [{ id: target.id }], padding: 2, duration: 300, maxZoom: 1.4 }), 30);
-        return;
-      }
-      case 'move': {
-        const target = document.graph.points.find((point) => point.id === selectedId) ?? document.graph.points[0];
-        if (!target) return;
-        const position = document.view.positions[target.id] ?? { x: 0, y: 0 };
-        commit((current) => ({
-          ...current,
-          view: {
-            ...current.view,
-            positions: { ...current.view.positions, [target.id]: { x: position.x + 40, y: position.y + 24 } },
-          },
-        }));
-        notifyTourAction('node-moved');
-        return;
-      }
-      case 'delete': {
-        const targetId = selectedId && (
-          document.graph.points.some((point) => point.id === selectedId)
-          || document.graph.hyperedges.some((item) => item.id === selectedId)
-        ) ? selectedId : document.graph.points[0]?.id ?? document.graph.hyperedges[0]?.id;
-        if (!targetId) return;
-        deleteItem(targetId);
-        notifyTourAction('item-deleted');
-        return;
-      }
-      case 'undo':
-      case 'restore-after-redo':
-        undo();
-        return;
-      case 'redo':
-        redo();
-        return;
-      case 'json':
-        openJsonEditor();
-        return;
-      case 'json-apply':
-        void applyJson();
-        return;
+      return;
     }
-  }, [addConcept, applyJson, applyLayout, commit, createWorkspaceInNewDirectory, deleteItem, derivationGroups,
-    document, editingLabel, editingReference, fitView, onConnect, openDocument, openJsonEditor, redo,
-    returnToCanvas, search, selectDerivation, selectNode, selectedId, toggleReplacement, undo,
-    updateDocumentSource, updateHyperedge, updatePointData]);
+
+    if (preparation.startsWith('open-graph-example')) {
+      const withReplacement = preparation === 'open-graph-example-with-replacement';
+      openGraphTutorialExample(withReplacement);
+      setEditingId(null);
+      setRouteMode(false);
+      setFocusedId(null);
+
+      if (preparation === 'open-graph-example-and-select-concept') {
+        setSelectedId('linear-map');
+      } else if (preparation === 'open-graph-example-and-open-concept-document') {
+        setSelectedId('linear-map');
+        setEditingId('linear-map');
+      } else if (preparation === 'open-graph-example-and-select-derivation') {
+        setSelectedId('null-space-def');
+        setActiveDerivationByGroup((current) => ({
+          ...current,
+          [hyperedgeGroupKey({ tails: ['linear-map'], head: 'null-range' })]: 'null-space-def',
+        }));
+      } else if (preparation === 'open-graph-example-and-open-derivation-document') {
+        setSelectedId('null-space-def');
+        setEditingId('null-space-def');
+      } else if (preparation === 'open-graph-example-and-select-parallel-derivation') {
+        const parallelIds = ['null-space-def', 'null-space-equations'];
+        const currentId = selectedId && parallelIds.includes(selectedId) ? selectedId : 'null-space-def';
+        setSelectedId(currentId);
+        setActiveDerivationByGroup((current) => ({
+          ...current,
+          [hyperedgeGroupKey({ tails: ['linear-map'], head: 'null-range' })]: currentId,
+        }));
+      } else if (preparation === 'open-graph-example-and-select-replacement-points') {
+        const points = ['injective-surjective', 'surjective'];
+        setSelectedNodeIds(points);
+        setSelectedId(points[0]);
+        window.setTimeout(() => {
+          setNodes((current) => current.map((node) => ({ ...node, selected: points.includes(node.id) })));
+        }, 30);
+        setReplacementDraft(null);
+      } else if (preparation === 'open-graph-example-and-prepare-replacement') {
+        const points = ['injective-surjective', 'surjective'];
+        setSelectedNodeIds(points);
+        setSelectedId(points[0]);
+        setReplacementDraft(points);
+      } else if (preparation === 'open-graph-example-with-replacement') {
+        setSelectedNodeIds([]);
+        setSelectedId('injective-surjective');
+        setReplacementDraft(null);
+      }
+      return;
+    }
+
+    if (preparation === 'show-canvas') {
+      setEditingId(null);
+      setRouteMode(false);
+      return;
+    }
+    if (preparation === 'show-project-overview') {
+      setEditingId(null);
+      setRouteMode(false);
+      setFocusedId(null);
+      setSelectedId(null);
+      return;
+    }
+    if (preparation === 'select-concept') {
+      setEditingId(null);
+      setRouteMode(false);
+      setFocusedId(null);
+      if (concept) setSelectedId(concept.id);
+      return;
+    }
+    if (preparation === 'select-derivation') {
+      setEditingId(null);
+      setRouteMode(false);
+      setFocusedId(null);
+      if (derivation) setSelectedId(derivation.id);
+      return;
+    }
+    if (preparation === 'select-parallel-derivation') {
+      const parallelDerivation = derivationGroups.find((group) => group.members.length > 1)?.members[0];
+      setEditingId(null);
+      setRouteMode(false);
+      setFocusedId(null);
+      if (parallelDerivation) setSelectedId(parallelDerivation.id);
+      return;
+    }
+    if (preparation === 'open-selected-document') {
+      if (concept) {
+        setRouteMode(false);
+        setFocusedId(null);
+        setSelectedId(concept.id);
+        openDocument(concept.id, false);
+      }
+      return;
+    }
+    if (preparation === 'open-selected-derivation-document') {
+      if (derivation) {
+        setRouteMode(false);
+        setFocusedId(null);
+        setSelectedId(derivation.id);
+        openDocument(derivation.id, false);
+      }
+      return;
+    }
+    openTutorialExample();
+    setEditingId(null);
+    setRouteMode(false);
+    setFocusedId(null);
+    if (preparation === 'open-navigation-example-and-select-concept') {
+      setSelectedId(navigationSampleWorkspace.manifest.graph.points[0]?.id ?? null);
+    }
+  }, [derivationGroups, document.graph.hyperedges, document.graph.points, openDocument, openGraphTutorialExample, openTutorialExample, selectedId, setNodes]);
 
   return (
     <main className="app-shell">
@@ -1549,16 +1665,22 @@ function AuthoringCanvas() {
             value={document.document.title}
             aria-label="文档标题"
             {...tourTarget(TOUR_FEATURES.projectTitle)}
-            onChange={(event) => commit((current) => ({ ...current, document: { ...current.document, title: event.target.value } }))}
-            onBlur={() => notifyTourAction('project-title-edited')}
-            onKeyDown={(event) => event.key === 'Enter' && notifyTourAction('project-title-edited')}
+            onChange={(event) => {
+              const title = event.target.value;
+              commit((current) => ({ ...current, document: { ...current.document, title } }));
+              if (title.trim() && title.trim() !== '未命名项目') notifyTourAction('project-title-edited');
+            }}
           />
         </div>
         <div className={`search-cluster ${editingId ? 'is-hidden' : ''}`}>
-          <div className="search-box" {...tourTarget(TOUR_FEATURES.search)}>
-            <Search size={15} />
-            <input value={search} aria-label="搜索概念" placeholder="搜索概念" onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && findConcept()} />
-          </div>
+          <ConceptSearch
+            points={document.graph.points}
+            value={search}
+            tourFeatureId={TOUR_FEATURES.search.id}
+            onChange={setSearch}
+            onSelect={findConcept}
+            onSubmit={() => findConcept()}
+          />
           <a
             className="github-link"
             href="https://github.com/derivon-research/derivon-mindmap"
@@ -1572,7 +1694,10 @@ function AuthoringCanvas() {
         </div>
         <div className="toolbar" aria-label="文档工具栏">
           {editingId ? (
-            <button type="button" title="返回画布" {...tourTarget(TOUR_FEATURES.returnCanvas)} onClick={returnToCanvas}><ArrowLeft size={18} /></button>
+            <>
+              <button type="button" title="返回画布" {...tourTarget(TOUR_FEATURES.returnCanvas)} onClick={returnToCanvas}><ArrowLeft size={18} /></button>
+              <button type="button" title="操作引导" aria-label="操作引导" {...tourTarget(TOUR_FEATURES.help)} onClick={() => { setTourStart(null); setTourOpen(true); }}><CircleHelp size={17} /></button>
+            </>
           ) : (
             <>
               <button type="button" title="新建概念" {...tourTarget(TOUR_FEATURES.addConcept)} onClick={() => addConcept()}><Plus size={18} /></button>
@@ -1580,7 +1705,7 @@ function AuthoringCanvas() {
                 type="button"
                 className={replacementDraft ? 'is-active' : ''}
                 {...tourTarget(TOUR_FEATURES.replaceWith)}
-                title={replacementDraft ? '取消替换' : 'Replace with'}
+                title={replacementDraft ? '取消替换' : '替换'}
                 disabled={!replacementDraft && selectedNodeIds.length === 0}
                 onClick={beginReplacement}
               >
@@ -1600,6 +1725,7 @@ function AuthoringCanvas() {
               <button
                 type="button"
                 className={routeMode ? 'is-active' : ''}
+                {...tourTarget(TOUR_FEATURES.routeMode)}
                 title={routeMode ? '关闭路线模式' : '打开路线模式'}
                 aria-label={routeMode ? '关闭路线模式' : '打开路线模式'}
                 onClick={toggleRouteMode}
@@ -1612,7 +1738,7 @@ function AuthoringCanvas() {
               <button type="button" title="另存到新文件夹" onClick={() => void saveWorkspaceAs()}><Save size={17} /></button>
               <button type="button" title="编辑工作区 JSON" {...tourTarget(TOUR_FEATURES.workspaceJson)} onClick={openJsonEditor}><Braces size={17} /></button>
               <button type="button" title="导入旧版 JSON" onClick={() => fileInput.current?.click()}><FileUp size={17} /></button>
-              <button type="button" title="操作引导" aria-label="操作引导" {...tourTarget(TOUR_FEATURES.help)} onClick={() => setTourOpen(true)}><CircleHelp size={17} /></button>
+              <button type="button" title="操作引导" aria-label="操作引导" {...tourTarget(TOUR_FEATURES.help)} onClick={() => { setTourStart(null); setTourOpen(true); }}><CircleHelp size={17} /></button>
             </>
           )}
           <input ref={fileInput} hidden type="file" accept=".json,.derivon.json,application/json" onChange={(event) => {
@@ -1623,9 +1749,11 @@ function AuthoringCanvas() {
         </div>
       </header>
 
+      {selectionDebugEnabled && <div className="selection-debug-badge">选择诊断已开启</div>}
+
       {editingId && editingReference && editingSourcePath && editingEntryPath ? (
         <section className="document-workspace">
-          <div className="document-editor-main">
+          <div className="document-editor-main" {...tourTarget(TOUR_FEATURES.documentWorkspace)}>
             <DocumentEditor
               label={editingLabel}
               value={files[editingSourcePath] ?? ''}
@@ -1641,7 +1769,7 @@ function AuthoringCanvas() {
               <button type="button" title="返回画布" onClick={returnToCanvas}><ArrowLeft size={17} /></button>
             </div>
             {editingConcept && (
-              <label>名称<input value={editingConcept.data.label} {...tourTarget(TOUR_FEATURES.conceptName)} onChange={(event) => updatePointData(editingConcept.id, { label: event.target.value })} onBlur={confirmConceptName} onKeyDown={(event) => event.key === 'Enter' && confirmConceptName()} /></label>
+              <label>名称<input value={editingConcept.data.label} {...tourTarget(TOUR_FEATURES.conceptName)} onChange={(event) => updateConceptName(editingConcept.id, event.target.value)} /></label>
             )}
             {editingDerivation && (
               <>
@@ -1654,7 +1782,7 @@ function AuthoringCanvas() {
                   <span className="field-title">结论</span>
                   <span className="conclusion-label">{labelById.get(editingDerivation.head) ?? editingDerivation.head}</span>
                 </div>
-                <label className="weight-field">成本权重<input type="number" min="0" step="0.1" value={formatWeight(editingDerivation.weight)} {...tourTarget(TOUR_FEATURES.derivationWeight)} onChange={(event) => updateHyperedge(editingDerivation.id, { weight: normalizeWeight(Number(event.target.value)) })} onBlur={confirmDerivationWeight} onKeyDown={(event) => event.key === 'Enter' && confirmDerivationWeight()} /></label>
+                <label className="weight-field">成本权重<input type="number" min="0" step="0.1" value={formatWeight(editingDerivation.weight)} {...tourTarget(TOUR_FEATURES.derivationWeight)} onChange={(event) => updateDerivationWeight(editingDerivation.id, event.target.value)} /></label>
               </>
             )}
             <div className="workspace-file">
@@ -1670,45 +1798,107 @@ function AuthoringCanvas() {
         </section>
       ) : (
       <section className="workspace">
-        <div className={`canvas-wrap ${replacementDraft ? 'is-replacing' : ''}`} {...tourTarget(TOUR_FEATURES.canvas)}>
+        <div
+          className={`canvas-wrap ${replacementDraft ? 'is-replacing' : ''} ${canvasInteracting ? 'is-interacting' : ''}`}
+          onPointerDownCapture={(event) => {
+            const target = event.target as Element;
+            const node = target.closest<HTMLElement>('.react-flow__node');
+            traceSelection('pointer-down-capture', {
+              nodeId: node?.dataset.id ?? null,
+              shiftKey: event.shiftKey,
+              button: event.button,
+              target: `${target.tagName}.${target.getAttribute('class') ?? ''}`,
+              before: selectionSnapshotRef.current(),
+            });
+            if (node) {
+              flowStore.setState({ multiSelectionActive: event.shiftKey });
+              traceSelection('pointer-down-synced', { nodeId: node.dataset.id, state: selectionSnapshotRef.current() });
+            }
+          }}
+          onPointerUpCapture={(event) => {
+            const target = event.target as Element;
+            traceSelection('pointer-up-capture', {
+              nodeId: target.closest<HTMLElement>('.react-flow__node')?.dataset.id ?? null,
+              shiftKey: event.shiftKey,
+              target: `${target.tagName}.${target.getAttribute('class') ?? ''}`,
+              state: selectionSnapshotRef.current(),
+            });
+          }}
+          {...tourTarget(TOUR_FEATURES.canvas)}
+        >
           <ReactFlow<AuthoringFlowNode, ProjectedEdge>
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange}
+            onNodesChange={handleNodesChange}
             onSelectionChange={handleSelectionChange}
             onConnect={onConnect}
-            onNodeDragStart={() => {
+            onConnectStart={() => {
               canvasInteractionRef.current = true;
+              setCanvasInteracting(true);
+            }}
+            onConnectEnd={() => {
+              canvasInteractionRef.current = false;
+              setCanvasInteracting(false);
+            }}
+            onNodeDragStart={(_, node, draggedNodes) => {
+              traceSelection('node-drag-start', { nodeId: node.id, draggedNodeIds: draggedNodes.map((item) => item.id), state: selectionSnapshotRef.current() });
+              canvasInteractionRef.current = true;
+              setCanvasInteracting(true);
             }}
             onNodeDragStop={(_, node, draggedNodes) => {
+              traceSelection('node-drag-stop', { nodeId: node.id, draggedNodeIds: draggedNodes.map((item) => item.id), state: selectionSnapshotRef.current() });
               canvasInteractionRef.current = false;
+              setCanvasInteracting(false);
               persistNodePositions(draggedNodes.length ? draggedNodes : [node]);
             }}
             onMoveStart={() => {
               canvasInteractionRef.current = true;
+              setCanvasInteracting(true);
             }}
             onMoveEnd={() => {
               canvasInteractionRef.current = false;
+              setCanvasInteracting(false);
             }}
             onNodeMouseEnter={(_, node) => {
+              traceSelection('node-mouse-enter', { nodeId: node.id, state: selectionSnapshotRef.current() });
               setHoveredId(displayedDerivationByNodeId.get(node.id)?.id ?? node.id);
             }}
             onNodeMouseLeave={(_, node) => {
+              traceSelection('node-mouse-leave', { nodeId: node.id, state: selectionSnapshotRef.current() });
               const semanticId = displayedDerivationByNodeId.get(node.id)?.id ?? node.id;
               setHoveredId((current) => current === semanticId ? null : current);
             }}
-            onNodeClick={(event, node) => selectNode(node.id, event.shiftKey)}
+            onNodeClick={(event, node) => {
+              const semanticId = displayedDerivationByNodeId.get(node.id)?.id ?? node.id;
+              traceSelection('node-click', {
+                nodeId: node.id,
+                shiftKey: event.shiftKey,
+                ctrlKey: event.ctrlKey,
+                metaKey: event.metaKey,
+                state: selectionSnapshotRef.current(),
+              });
+              if (event.ctrlKey || event.metaKey) {
+                openDocument(semanticId);
+                return;
+              }
+              selectNode(node.id, event.shiftKey);
+            }}
             onNodeContextMenu={(event, node) => {
+              const semanticId = displayedDerivationByNodeId.get(node.id)?.id ?? node.id;
+              if (event.ctrlKey || event.metaKey) {
+                event.preventDefault();
+                openDocument(semanticId);
+                return;
+              }
               if (!routeMode) return;
               event.preventDefault();
-              const semanticId = displayedDerivationByNodeId.get(node.id)?.id ?? node.id;
               if (document.graph.points.some((concept) => concept.id === semanticId)) {
                 toggleTargetPoint(semanticId);
               }
             }}
-            onNodeDoubleClick={(_, node) => openDocument(displayedDerivationByNodeId.get(node.id)?.id ?? node.id)}
             onPaneClick={() => {
+              traceSelection('pane-click', { state: selectionSnapshotRef.current() });
               setHoveredId(null);
               setFocusedId(null);
               setSelectedId(null);
@@ -1725,6 +1915,7 @@ function AuthoringCanvas() {
             minZoom={0.08}
             maxZoom={2}
             multiSelectionKeyCode="Shift"
+            selectionMode={SelectionMode.Partial}
             connectionLineStyle={{ stroke: '#4f5961', strokeWidth: 1.5 }}
             connectionLineType={ConnectionLineType.Bezier}
             defaultEdgeOptions={{ type: 'default' }}
@@ -1784,7 +1975,7 @@ function AuthoringCanvas() {
                 <div><span className="eyebrow">概念</span><strong>{selectedConcept.id}</strong></div>
                 <button type="button" title="删除概念" {...tourTarget(TOUR_FEATURES.deleteItem)} onClick={() => requestDelete(selectedConcept.id)}><Trash2 size={16} /></button>
               </div>
-              <label>名称<input value={selectedConcept.data.label} {...tourTarget(TOUR_FEATURES.conceptName)} onChange={(event) => updatePointData(selectedConcept.id, { label: event.target.value })} onBlur={confirmConceptName} onKeyDown={(event) => event.key === 'Enter' && confirmConceptName()} /></label>
+              <label>名称<input value={selectedConcept.data.label} {...tourTarget(TOUR_FEATURES.conceptName)} onChange={(event) => updateConceptName(selectedConcept.id, event.target.value)} /></label>
               <button className="open-document-button" type="button" {...tourTarget(TOUR_FEATURES.openDocument)} onClick={() => openDocument(selectedConcept.id)}>
                 <FileText size={16} />
                 <span>编辑文档</span>
@@ -1855,7 +2046,7 @@ function AuthoringCanvas() {
                 <span>编辑文档</span>
               </button>
               <code className="document-path">{selectedDerivation.data.document}/index.html</code>
-              <label className="weight-field">成本权重<input type="number" min="0" step="0.1" value={formatWeight(selectedDerivation.weight)} {...tourTarget(TOUR_FEATURES.derivationWeight)} onChange={(event) => updateHyperedge(selectedDerivation.id, { weight: normalizeWeight(Number(event.target.value)) })} onBlur={confirmDerivationWeight} onKeyDown={(event) => event.key === 'Enter' && confirmDerivationWeight()} /></label>
+              <label className="weight-field">成本权重<input type="number" min="0" step="0.1" value={formatWeight(selectedDerivation.weight)} {...tourTarget(TOUR_FEATURES.derivationWeight)} onChange={(event) => updateDerivationWeight(selectedDerivation.id, event.target.value)} /></label>
             </>
           ) : (
             <>
@@ -1867,7 +2058,11 @@ function AuthoringCanvas() {
                   </strong>
                 </div>
               </div>
-              <label>说明<textarea value={document.document.description} {...tourTarget(TOUR_FEATURES.projectDescription)} onChange={(event) => commit((current) => ({ ...current, document: { ...current.document, description: event.target.value } }))} onBlur={() => notifyTourAction('project-description-edited')} onKeyDown={(event) => (event.metaKey || event.ctrlKey) && event.key === 'Enter' && notifyTourAction('project-description-edited')} /></label>
+              <label>说明<textarea value={document.document.description} {...tourTarget(TOUR_FEATURES.projectDescription)} onChange={(event) => {
+                const description = event.target.value;
+                commit((current) => ({ ...current, document: { ...current.document, description } }));
+                if (description.trim()) notifyTourAction('project-description-edited');
+              }} /></label>
               <div className="document-stats">
                 <div><strong>{document.graph.points.length}</strong><span>概念</span></div>
                 <div><strong>{document.graph.hyperedges.length}</strong><span>推导</span></div>
@@ -1999,8 +2194,15 @@ function AuthoringCanvas() {
 
       <GuidedTour
         open={tourOpen}
+        startTour={tourStart}
+        currentSurface={editingId ? 'editor' : 'canvas'}
         onClose={() => setTourOpen(false)}
-        onCompleteStep={completeTourStep}
+        onTourStart={(tourId) => {
+          setTourStart(null);
+          if (tourId === 'navigation') openTutorialExample();
+        }}
+        onTourEnd={restoreTutorialWorkspace}
+        onPrepareStep={prepareTourStep}
       />
     </main>
   );
