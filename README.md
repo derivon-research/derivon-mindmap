@@ -30,18 +30,33 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
-### Beta 发布 CI
+### 桌面构建与发布 CI
 
-`.github/workflows/release-desktop.yml` 在推送 `v0.1.0-beta` tag 时构建并发布 GitHub
-prerelease，也可以从 Actions 页面手动重跑。发布包含：
+`.github/workflows/desktop-build.yml` 在 `main` 更新以及 PR 请求合并到 `main` 时运行。两个
+平台都会执行前端与 Rust 测试，并完整构建桌面 bundle，但不会创建 GitHub Release。配置
+`main` 分支保护时，可将 `Build macOS universal DMG` 和 `Build Windows x64 NSIS` 设为
+required status checks。
+
+`.github/workflows/release-desktop.yml` 在推送 `v*` tag 时构建并发布 GitHub Release。tag
+必须指向 `main` 中的提交，且去掉 `v` 后必须与 `package.json`、`src-tauri/Cargo.toml` 和
+`src-tauri/tauri.conf.json` 中的版本一致。带预发布后缀的 tag（例如 `v0.2.0-beta`）会创建
+prerelease，稳定版本 tag（例如 `v0.2.0`）会创建正式 release。发布包含：
 
 - macOS universal DMG，同时包含 Apple Silicon 与 Intel 架构；
 - Windows x64 NSIS 安装程序。
 
-发布版本由 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 共同固定为
-`0.1.0-beta`。CI 在两个平台上先运行前端与 Rust 测试，再由 Tauri Action 构建并上传
-bundle。当前 beta 没有 Apple Developer ID 或 Windows 代码签名，首次启动时操作系统可能
-显示未验证开发者警告。
+准备发布时，先在 PR 中同步更新三个 manifest 的版本并合并到 `main`，然后在最新的
+`main` 提交上创建并推送对应 tag：
+
+```bash
+git switch main
+git pull --ff-only
+git tag -a v0.2.0-beta -m "mindmap-demo v0.2.0-beta"
+git push origin v0.2.0-beta
+```
+
+CI 使用实际 tag 创建同名 Release，不在 workflow 中固定发布版本。当前构建没有 Apple
+Developer ID 或 Windows 代码签名，首次启动时操作系统可能显示未验证开发者警告。
 
 Tauri Rust bridge 位于 `src-tauri/`，直接依赖
 `derivon-research/derivon` 的 `v0.1.0` tag。`.derivon/workspace.json` 始终是持久化事实来源；
