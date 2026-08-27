@@ -845,7 +845,8 @@ test('selects multiple route starts and targets with fuzzy search and canvas but
   await targetSearch.fill('Lnear Algera');
   const targetResults = page.getByRole('listbox', { name: '目标概念搜索结果' });
   await expect(targetResults.getByText('Linear Algebra')).toBeVisible();
-  await targetResults.getByRole('checkbox').check();
+  await targetResults.getByText('Linear Algebra').click();
+  await expect(targetResults).toBeVisible();
   await expect(page.getByLabel('已选择的目标概念', { exact: true })).toContainText('Linear Algebra');
 
   const startSearch = page.getByRole('combobox', { name: '已经掌握', exact: true });
