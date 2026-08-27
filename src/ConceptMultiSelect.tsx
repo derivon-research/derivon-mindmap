@@ -68,7 +68,12 @@ export function ConceptMultiSelect({
         {open && !!query.trim() && (
           <div className="route-search-results" id={listboxId} role="listbox" aria-label={`${label}搜索结果`}>
             {results.length ? results.map((point) => (
-              <label key={point.id} role="option" aria-selected={selected.has(point.id)}>
+              <label
+                key={point.id}
+                role="option"
+                aria-selected={selected.has(point.id)}
+                onMouseDown={(event) => event.preventDefault()}
+              >
                 <input
                   type="checkbox"
                   checked={selected.has(point.id)}
