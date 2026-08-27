@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-use derivon_core::{blocking_frontier, executable_order, solve, Budget, Cost, Graph, PointSet};
+use derivon_core::{
+    blocking_frontier, closure, executable_order, solve_many, Budget, Cost, Graph, PointSet,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -63,9 +65,17 @@ impl Default for SolveBudget {
 pub struct RouteRequest {
     pub workspace: WorkspaceDocument,
     pub start_point_ids: Vec<String>,
-    pub target_point_id: String,
+    pub target_point_ids: Vec<String>,
     #[serde(default)]
     pub budget: Option<SolveBudget>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetDiagnosis {
+    pub target_point_id: String,
+    pub blocking_point_ids: Vec<String>,
+    pub cycles: Vec<Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -81,8 +91,7 @@ pub struct RouteResponse {
     pub proven_optimal: bool,
     pub nodes: u64,
     pub millis: u64,
-    pub blocking_point_ids: Vec<String>,
-    pub cycles: Vec<Vec<String>>,
+    pub target_diagnoses: Vec<TargetDiagnosis>,
 }
 
 fn scaled_cost(weight: f64, edge_id: &str) -> Result<Cost, String> {
@@ -173,19 +182,36 @@ pub fn solve_route(request: RouteRequest) -> Result<RouteResponse, String> {
         .collect::<Result<Vec<_>, _>>()?;
     let start =
         PointSet::from_ids(&graph, start_ids.iter().copied()).map_err(|error| error.to_string())?;
-    let target = graph
-        .point_id(&request.target_point_id)
-        .ok_or_else(|| format!("unknown target point id `{}`", request.target_point_id))?;
+    let target_point_ids: Vec<_> = request
+        .target_point_ids
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if target_point_ids.is_empty() {
+        return Err("at least one target point is required".to_owned());
+    }
+    let target_ids = target_point_ids
+        .iter()
+        .map(|id| {
+            graph
+                .point_id(id)
+                .ok_or_else(|| format!("unknown target point id `{id}`"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let targets = PointSet::from_ids(&graph, target_ids.iter().copied())
+        .map_err(|error| error.to_string())?;
     let requested_budget = request.budget.unwrap_or_default();
     if requested_budget.max_nodes > MAX_NODES || requested_budget.max_millis > MAX_MILLIS {
         return Err(format!(
             "budget exceeds the application limit ({MAX_NODES} nodes, {MAX_MILLIS} ms)"
         ));
     }
-    let solution = solve(
+    let solution = solve_many(
         &graph,
         &start,
-        target,
+        &targets,
         &Budget {
             max_nodes: requested_budget.max_nodes,
             max_millis: requested_budget.max_millis,
@@ -194,7 +220,33 @@ pub fn solve_route(request: RouteRequest) -> Result<RouteResponse, String> {
     .map_err(|error| error.to_string())?;
 
     if !solution.cost.is_finite() {
-        let diagnosis = blocking_frontier(&graph, &start, target);
+        let reached = closure(&graph, &start);
+        let target_diagnoses = target_ids
+            .iter()
+            .zip(&target_point_ids)
+            .filter(|(target, _)| !reached.contains(**target))
+            .map(|(&target, target_point_id)| {
+                let diagnosis = blocking_frontier(&graph, &start, target);
+                TargetDiagnosis {
+                    target_point_id: target_point_id.clone(),
+                    blocking_point_ids: diagnosis
+                        .blocking
+                        .into_iter()
+                        .map(|point| point_name(&graph, point))
+                        .collect(),
+                    cycles: diagnosis
+                        .cycles
+                        .into_iter()
+                        .map(|cycle| {
+                            cycle
+                                .into_iter()
+                                .map(|point| point_name(&graph, point))
+                                .collect()
+                        })
+                        .collect(),
+                }
+            })
+            .collect();
         return Ok(RouteResponse {
             reachable: false,
             hyperedge_ids: Vec::new(),
@@ -206,28 +258,14 @@ pub fn solve_route(request: RouteRequest) -> Result<RouteResponse, String> {
             proven_optimal: solution.proven_optimal,
             nodes: solution.nodes,
             millis: solution.millis,
-            blocking_point_ids: diagnosis
-                .blocking
-                .into_iter()
-                .map(|point| point_name(&graph, point))
-                .collect(),
-            cycles: diagnosis
-                .cycles
-                .into_iter()
-                .map(|cycle| {
-                    cycle
-                        .into_iter()
-                        .map(|point| point_name(&graph, point))
-                        .collect()
-                })
-                .collect(),
+            target_diagnoses,
         });
     }
 
     let ordered = executable_order(&graph, &start, &solution.derivation)
         .map_err(|error| error.to_string())?;
     let mut points: BTreeSet<String> = request.start_point_ids.into_iter().collect();
-    points.insert(request.target_point_id);
+    points.extend(target_point_ids);
     for edge_id in &solution.derivation {
         let edge = graph
             .hyperedge(*edge_id)
@@ -256,8 +294,7 @@ pub fn solve_route(request: RouteRequest) -> Result<RouteResponse, String> {
         proven_optimal: solution.proven_optimal,
         nodes: solution.nodes,
         millis: solution.millis,
-        blocking_point_ids: Vec::new(),
-        cycles: Vec::new(),
+        target_diagnoses: Vec::new(),
     })
 }
 
@@ -295,11 +332,11 @@ mod tests {
         }
     }
 
-    fn request(workspace: WorkspaceDocument, starts: &[&str], target: &str) -> RouteRequest {
+    fn request(workspace: WorkspaceDocument, starts: &[&str], targets: &[&str]) -> RouteRequest {
         RouteRequest {
             workspace,
             start_point_ids: starts.iter().map(|id| (*id).to_owned()).collect(),
-            target_point_id: target.to_owned(),
+            target_point_ids: targets.iter().map(|id| (*id).to_owned()).collect(),
             budget: None,
         }
     }
@@ -352,7 +389,8 @@ mod tests {
         assert!(build_graph(&workspace(&["a"], &[("bad", 1.25, &[], "a")])).is_err());
         assert!(build_graph(&workspace(&["a"], &[("bad", -1.0, &[], "a")])).is_err());
         assert!(build_graph(&workspace(&["a"], &[("bad", 1.0, &["missing"], "a")])).is_err());
-        assert!(solve_route(request(workspace(&["a"], &[],), &["missing"], "a")).is_err());
+        assert!(solve_route(request(workspace(&["a"], &[],), &["missing"], &["a"])).is_err());
+        assert!(solve_route(request(workspace(&["a"], &[],), &[], &[])).is_err());
     }
 
     #[test]
@@ -366,7 +404,7 @@ mod tests {
                 ],
             ),
             &["b"],
-            "goal",
+            &["goal"],
         );
         query.budget = Some(SolveBudget {
             max_nodes: 0,
@@ -393,12 +431,57 @@ mod tests {
                 ],
             ),
             &[],
-            "a",
+            &["a"],
         ))
         .unwrap();
         assert!(!result.reachable);
-        assert_eq!(result.blocking_point_ids, vec!["a", "b"]);
-        assert_eq!(result.cycles.len(), 1);
+        assert_eq!(result.target_diagnoses.len(), 1);
+        assert_eq!(result.target_diagnoses[0].target_point_id, "a");
+        assert_eq!(
+            result.target_diagnoses[0].blocking_point_ids,
+            vec!["a", "b"]
+        );
+        assert_eq!(result.target_diagnoses[0].cycles.len(), 1);
+    }
+
+    #[test]
+    fn multiple_targets_share_route_cost_and_selected_edges() {
+        let result = solve_route(request(
+            workspace(
+                &["start", "shared", "left", "right"],
+                &[
+                    ("to-shared", 3.0, &["start"], "shared"),
+                    ("to-left", 1.0, &["shared"], "left"),
+                    ("to-right", 1.0, &["shared"], "right"),
+                ],
+            ),
+            &["start"],
+            &["right", "left", "left"],
+        ))
+        .unwrap();
+
+        assert!(result.reachable);
+        assert_eq!(result.cost, Some(5.0));
+        assert_eq!(result.hyperedge_ids.len(), 3);
+        assert_eq!(result.point_ids, vec!["left", "right", "shared", "start"]);
+        assert!(result.target_diagnoses.is_empty());
+    }
+
+    #[test]
+    fn unreachable_diagnostics_are_grouped_by_target() {
+        let result = solve_route(request(
+            workspace(
+                &["start", "reachable", "blocked"],
+                &[("reachable-edge", 1.0, &["start"], "reachable")],
+            ),
+            &["start"],
+            &["reachable", "blocked"],
+        ))
+        .unwrap();
+
+        assert!(!result.reachable);
+        assert_eq!(result.target_diagnoses.len(), 1);
+        assert_eq!(result.target_diagnoses[0].target_point_id, "blocked");
     }
 
     #[test]
@@ -423,7 +506,7 @@ mod tests {
         let result = solve_route(RouteRequest {
             workspace: document.clone(),
             start_point_ids: Vec::new(),
-            target_point_id: "svd".to_owned(),
+            target_point_ids: vec!["svd".to_owned()],
             budget: None,
         })
         .unwrap();

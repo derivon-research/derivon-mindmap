@@ -822,6 +822,69 @@ test('links to the GitHub repository beside search', async ({ page }) => {
   await expect(repositoryLink).toHaveAttribute('rel', 'noreferrer');
 });
 
+test('selects multiple route starts and targets with fuzzy search and canvas buttons', async ({ page }) => {
+  await page.evaluate(() => {
+    const key = 'derivon.authoring.workspace/v0.2.0';
+    const workspace = JSON.parse(localStorage.getItem(key)!);
+    const labels: Record<string, string> = {
+      A: 'Linear Algebra',
+      B: 'Basis',
+      C: 'Coordinates',
+      D: 'Dimension',
+      X: 'Vector Space',
+    };
+    workspace.manifest.graph.points.forEach((point: { id: string; data: { label: string } }) => {
+      point.data.label = labels[point.id];
+    });
+    localStorage.setItem(key, JSON.stringify(workspace));
+  });
+  await page.reload();
+  await page.getByTitle('打开路线模式').click();
+
+  const targetSearch = page.getByRole('combobox', { name: '目标概念', exact: true });
+  await targetSearch.fill('Lnear Algera');
+  const targetResults = page.getByRole('listbox', { name: '目标概念搜索结果' });
+  await expect(targetResults.getByText('Linear Algebra')).toBeVisible();
+  await targetResults.getByRole('checkbox').check();
+  await expect(page.getByLabel('已选择的目标概念', { exact: true })).toContainText('Linear Algebra');
+
+  const startSearch = page.getByRole('combobox', { name: '已经掌握', exact: true });
+  await startSearch.fill('Bais');
+  const startResults = page.getByRole('listbox', { name: '已经掌握搜索结果' });
+  await expect(startResults.getByText('Basis')).toBeVisible();
+  await startResults.getByRole('checkbox').check();
+  await expect(page.getByLabel('已选择的已经掌握', { exact: true })).toContainText('Basis');
+
+  await page.getByRole('button', { name: '移除 Linear Algebra' }).click();
+  await expect(page.getByLabel('已选择的目标概念', { exact: true })).not.toContainText('Linear Algebra');
+  await targetSearch.fill('Vetor Spce');
+  await expect(targetResults.getByText('Vector Space')).toBeVisible();
+  await targetResults.getByRole('checkbox').check();
+
+  const dimension = page.locator('.react-flow__node[data-id="D"]');
+  await dimension.click();
+  await dimension.click({ button: 'right' });
+  await expect(dimension).toHaveClass(/is-route-start/);
+  await expect(dimension).toHaveClass(/is-route-target/);
+  const selectedStyle = await dimension.locator('.concept-node').evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { borderColor: style.borderColor, boxShadow: style.boxShadow };
+  });
+  expect(selectedStyle.borderColor).toBe('rgb(164, 79, 63)');
+  expect(selectedStyle.boxShadow).toContain('rgb(47, 112, 135)');
+  await expect(page.getByLabel('已选择的已经掌握', { exact: true })).toContainText('Dimension');
+  await expect(page.getByLabel('已选择的目标概念', { exact: true })).toContainText('Dimension');
+  await expect(page.getByLabel('已选择的目标概念', { exact: true })).toContainText('Vector Space');
+  await page.screenshot({ path: '/tmp/derivon-multi-target-route.png', fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('complementary', { name: '路线', exact: true })).toBeVisible();
+  await expect(page.getByLabel('已选择的目标概念', { exact: true })).toContainText('Dimension');
+  await page.getByRole('button', { name: '开始求解' }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole('button', { name: '开始求解' })).toBeVisible();
+  await page.screenshot({ path: '/tmp/derivon-multi-target-route-mobile.png', fullPage: true });
+});
+
 test('keeps the canvas and inspector separated on a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
