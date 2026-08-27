@@ -30,6 +30,19 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
+### Beta 发布 CI
+
+`.github/workflows/release-desktop.yml` 在推送 `v0.1.0-beta` tag 时构建并发布 GitHub
+prerelease，也可以从 Actions 页面手动重跑。发布包含：
+
+- macOS universal DMG，同时包含 Apple Silicon 与 Intel 架构；
+- Windows x64 NSIS 安装程序。
+
+发布版本由 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 共同固定为
+`0.1.0-beta`。CI 在两个平台上先运行前端与 Rust 测试，再由 Tauri Action 构建并上传
+bundle。当前 beta 没有 Apple Developer ID 或 Windows 代码签名，首次启动时操作系统可能
+显示未验证开发者警告。
+
 Tauri Rust bridge 位于 `src-tauri/`，直接依赖
 `derivon-research/derivon` 的 `v0.1.0` tag。`.derivon/workspace.json` 始终是持久化事实来源；
 Rust adapter 在每次查询时重建 Core Graph，把最多一位小数的权重严格乘以 10 后交给

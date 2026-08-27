@@ -1,0 +1,77 @@
+name: Release Desktop App
+
+on:
+  push:
+    tags:
+      - v0.1.0-beta
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS universal DMG
+            platform: macos-latest
+            target: universal-apple-darwin
+            rustTargets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundles: dmg
+          - name: Windows x64 NSIS
+            platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            rustTargets: x86_64-pc-windows-msvc
+            bundles: nsis
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rustTargets }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test frontend
+        run: npm test
+
+      - name: Test Rust bridge
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build and publish prerelease
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Derivon v__VERSION__
+          releaseBody: |
+            Derivon desktop beta with the local workspace authoring tool and derivon-core route solving.
+
+            The macOS and Windows packages are unsigned beta builds.
+          releaseDraft: false
+          prerelease: true
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
