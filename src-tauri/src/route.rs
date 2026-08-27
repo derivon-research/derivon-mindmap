@@ -266,7 +266,7 @@ mod tests {
     use super::*;
     use std::collections::{HashMap, HashSet};
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     fn workspace(points: &[&str], edges: &[(&str, f64, &[&str], &str)]) -> WorkspaceDocument {
         WorkspaceDocument {
@@ -403,8 +403,12 @@ mod tests {
 
     #[test]
     fn math_reforged_reaches_svd_in_executable_order() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../mindmaps/math-reforged/.derivon/workspace.json");
+        let root = std::env::var_os("DERIVON_TEST_WORKSPACE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mindmaps/math-reforged")
+            });
+        let path = root.join(".derivon/workspace.json");
         let document: WorkspaceDocument =
             serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
         assert_eq!(document.graph.points.len(), 39);

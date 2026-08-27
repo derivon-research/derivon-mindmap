@@ -184,7 +184,11 @@ mod tests {
 
     #[test]
     fn math_reforged_loads_with_expected_counts_and_files() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mindmaps/math-reforged");
+        let root = std::env::var_os("DERIVON_TEST_WORKSPACE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mindmaps/math-reforged")
+            });
         let snapshot = read_snapshot(&root, true).unwrap();
         assert_eq!(snapshot.workspace.manifest.graph.points.len(), 39);
         assert_eq!(snapshot.workspace.manifest.graph.hyperedges.len(), 39);
