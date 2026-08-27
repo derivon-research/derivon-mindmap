@@ -782,8 +782,8 @@ dependencies = [
 
 [[package]]
 name = "derivon-core"
-version = "0.1.0"
-source = "git+https://github.com/derivon-research/derivon.git?tag=v0.1.0#17938175b5761eaa623e28f6f63a42980c461fc0"
+version = "0.2.0"
+source = "git+https://github.com/derivon-research/derivon.git?tag=v0.2.0#41cc99409e2f6ec79441bdc991f8eda671a85c9b"
 
 [[package]]
 name = "digest"

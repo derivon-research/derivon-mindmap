@@ -59,9 +59,9 @@ CI 使用实际 tag 创建同名 Release，不在 workflow 中固定发布版本
 Developer ID 或 Windows 代码签名，首次启动时操作系统可能显示未验证开发者警告。
 
 Tauri Rust bridge 位于 `src-tauri/`，直接依赖
-`derivon-research/derivon` 的 `v0.1.0` tag。`.derivon/workspace.json` 始终是持久化事实来源；
+`derivon-research/derivon` 的 `v0.2.0` tag。`.derivon/workspace.json` 始终是持久化事实来源；
 Rust adapter 在每次查询时重建 Core Graph，把最多一位小数的权重严格乘以 10 后交给
-Core，并只向前端返回持久化字符串 ID。
+Core。路线查询原生接受起点集合和目标集合，并只向前端返回持久化字符串 ID。
 
 当前 MVP 的桌面端只支持打开和原地自动保存已有工作区；“新建工作区”和“另存为”仍只在
 浏览器版本可用。桌面端暂未加入文件监听，使用与浏览器相同的定时 revision 检查。第一版

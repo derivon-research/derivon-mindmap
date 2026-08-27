@@ -17,13 +17,16 @@ export type RouteResponse = {
   provenOptimal: boolean;
   nodes: number;
   millis: number;
-  blockingPointIds: string[];
-  cycles: string[][];
+  targetDiagnoses: Array<{
+    targetPointId: string;
+    blockingPointIds: string[];
+    cycles: string[][];
+  }>;
 };
 
 export type RouteSelection = {
   startPointIds: string[];
-  targetPointId: string | null;
+  targetPointIds: string[];
   result: RouteResponse | null;
 };
 
@@ -33,18 +36,22 @@ export const DEFAULT_ROUTE_BUDGET: RouteBudget = {
 };
 
 export function createRouteSelection(): RouteSelection {
-  return { startPointIds: [], targetPointId: null, result: null };
+  return { startPointIds: [], targetPointIds: [], result: null };
+}
+
+function togglePointId(pointIds: string[], pointId: string): string[] {
+  const selected = new Set(pointIds);
+  if (selected.has(pointId)) selected.delete(pointId);
+  else selected.add(pointId);
+  return [...selected].sort();
 }
 
 export function toggleRouteStart(selection: RouteSelection, pointId: string): RouteSelection {
-  const selected = new Set(selection.startPointIds);
-  if (selected.has(pointId)) selected.delete(pointId);
-  else selected.add(pointId);
-  return { ...selection, startPointIds: [...selected].sort(), result: null };
+  return { ...selection, startPointIds: togglePointId(selection.startPointIds, pointId), result: null };
 }
 
-export function setRouteTarget(selection: RouteSelection, pointId: string | null): RouteSelection {
-  return { ...selection, targetPointId: pointId, result: null };
+export function toggleRouteTarget(selection: RouteSelection, pointId: string): RouteSelection {
+  return { ...selection, targetPointIds: togglePointId(selection.targetPointIds, pointId), result: null };
 }
 
 export function invalidateRoute(selection: RouteSelection): RouteSelection {
@@ -64,13 +71,13 @@ export async function solveWorkspaceRoute(
   selection: RouteSelection,
   budget: RouteBudget = DEFAULT_ROUTE_BUDGET,
 ): Promise<RouteResponse> {
-  if (!selection.targetPointId) throw new Error('请先选择目标概念');
+  if (!selection.targetPointIds.length) throw new Error('请至少选择一个目标概念');
   if (!isTauriRuntime()) throw new Error('路线求解需要在 Derivon 本地应用中运行');
   return invoke<RouteResponse>('solve_route', {
     request: {
       workspace,
       startPointIds: selection.startPointIds,
-      targetPointId: selection.targetPointId,
+      targetPointIds: selection.targetPointIds,
       budget,
     },
   });

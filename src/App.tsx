@@ -63,9 +63,9 @@ import {
   createRouteSelection,
   invalidateRoute,
   routeHighlightIds,
-  setRouteTarget,
   solveWorkspaceRoute,
   toggleRouteStart,
+  toggleRouteTarget,
   type RouteSelection,
 } from './route';
 import { createEmptyWorkspace, sampleWorkspace } from './sample';
@@ -399,9 +399,7 @@ function AuthoringCanvas() {
     setRouteSelection((current) => ({
       ...invalidateRoute(current),
       startPointIds: current.startPointIds.filter((id) => pointIds.has(id)),
-      targetPointId: current.targetPointId && pointIds.has(current.targetPointId)
-        ? current.targetPointId
-        : null,
+      targetPointIds: current.targetPointIds.filter((id) => pointIds.has(id)),
     }));
     setRouteError(null);
   }, [document]);
@@ -619,11 +617,11 @@ function AuthoringCanvas() {
         return {
           id: concept.id,
           type: 'concept',
-          className: routeSelection.targetPointId === concept.id
-            ? 'is-route-target'
-            : routeSelection.startPointIds.includes(concept.id)
-              ? 'is-route-start'
-              : routeSelection.result && routeIds.has(concept.id) ? 'is-route-member' : undefined,
+          className: [
+            routeSelection.startPointIds.includes(concept.id) ? 'is-route-start' : '',
+            routeSelection.targetPointIds.includes(concept.id) ? 'is-route-target' : '',
+            routeSelection.result && routeIds.has(concept.id) ? 'is-route-member' : '',
+          ].filter(Boolean).join(' ') || undefined,
           position: position(concept.id),
           data: {
             label: concept.data.label,
@@ -655,7 +653,7 @@ function AuthoringCanvas() {
         };
       }),
     ];
-  }, [activeDerivationByGroup, activeIds, document.graph.points, document.view.positions, focusPositions, focusedId, projection.points, requestDelete, routeEdgeIds, routeIds, routeSelection.result, routeSelection.startPointIds, routeSelection.targetPointId, selectDerivation, toggleReplacement, visibleDerivationGroups]);
+  }, [activeDerivationByGroup, activeIds, document.graph.points, document.view.positions, focusPositions, focusedId, projection.points, requestDelete, routeEdgeIds, routeIds, routeSelection.result, routeSelection.startPointIds, routeSelection.targetPointIds, selectDerivation, toggleReplacement, visibleDerivationGroups]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<AuthoringFlowNode>([]);
 
@@ -1090,8 +1088,8 @@ function AuthoringCanvas() {
     setRouteError(null);
   }, []);
 
-  const changeRouteTarget = useCallback((pointId: string | null) => {
-    setRouteSelection((current) => setRouteTarget(current, pointId));
+  const toggleTargetPoint = useCallback((pointId: string) => {
+    setRouteSelection((current) => toggleRouteTarget(current, pointId));
     setRouteError(null);
   }, []);
 
@@ -1114,7 +1112,7 @@ function AuthoringCanvas() {
         setActiveDerivationByGroup((current) => ({ ...current, ...active }));
         setStatus(result.provenOptimal ? '已找到并证明最优路线' : '已找到当前最佳路线');
       } else {
-        setStatus('目标当前不可达');
+        setStatus('部分目标当前不可达');
       }
     }).catch((error: unknown) => {
       setRouteError(error instanceof Error ? error.message : String(error));
@@ -1416,6 +1414,14 @@ function AuthoringCanvas() {
             onConnect={onConnect}
             onNodeDragStop={(_, node, draggedNodes) => persistNodePositions(draggedNodes.length ? draggedNodes : [node])}
             onNodeClick={(event, node) => selectNode(node.id, event.shiftKey)}
+            onNodeContextMenu={(event, node) => {
+              if (!routeMode) return;
+              event.preventDefault();
+              const semanticId = displayedDerivationByNodeId.get(node.id)?.id ?? node.id;
+              if (document.graph.points.some((concept) => concept.id === semanticId)) {
+                toggleTargetPoint(semanticId);
+              }
+            }}
             onNodeDoubleClick={(_, node) => openDocument(displayedDerivationByNodeId.get(node.id)?.id ?? node.id)}
             onPaneClick={() => {
               setFocusedId(null);
@@ -1474,7 +1480,7 @@ function AuthoringCanvas() {
             solving={routeSolving}
             error={routeError}
             onToggleStart={toggleStartPoint}
-            onTargetChange={changeRouteTarget}
+            onToggleTarget={toggleTargetPoint}
             onSolve={runRouteSolve}
             onClear={clearRoute}
             onClose={() => setRouteMode(false)}

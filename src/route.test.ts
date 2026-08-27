@@ -3,8 +3,8 @@ import {
   createRouteSelection,
   invalidateRoute,
   routeHighlightIds,
-  setRouteTarget,
   toggleRouteStart,
+  toggleRouteTarget,
   type RouteResponse,
 } from './route';
 
@@ -19,19 +19,20 @@ const reachable: RouteResponse = {
   provenOptimal: false,
   nodes: 10,
   millis: 2,
-  blockingPointIds: [],
-  cycles: [],
+  targetDiagnoses: [],
 };
 
 describe('route state', () => {
-  it('tracks multiple starts and one target without duplicates', () => {
+  it('tracks start and target sets without duplicates', () => {
     let selection = createRouteSelection();
     selection = toggleRouteStart(selection, 'b');
     selection = toggleRouteStart(selection, 'a');
-    selection = setRouteTarget(selection, 'goal');
+    selection = toggleRouteTarget(selection, 'goal-b');
+    selection = toggleRouteTarget(selection, 'goal-a');
     expect(selection.startPointIds).toEqual(['a', 'b']);
-    expect(selection.targetPointId).toBe('goal');
+    expect(selection.targetPointIds).toEqual(['goal-a', 'goal-b']);
     expect(toggleRouteStart(selection, 'a').startPointIds).toEqual(['b']);
+    expect(toggleRouteTarget(selection, 'goal-a').targetPointIds).toEqual(['goal-b']);
   });
 
   it('maps a route response to persistent graph ids for highlighting', () => {
@@ -39,10 +40,10 @@ describe('route state', () => {
   });
 
   it('invalidates a stale result when workspace state changes', () => {
-    const selection = { ...createRouteSelection(), targetPointId: 'goal', result: reachable };
+    const selection = { ...createRouteSelection(), targetPointIds: ['goal'], result: reachable };
     expect(invalidateRoute(selection)).toEqual({
       startPointIds: [],
-      targetPointId: 'goal',
+      targetPointIds: ['goal'],
       result: null,
     });
   });

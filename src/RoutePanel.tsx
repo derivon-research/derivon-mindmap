@@ -1,4 +1,5 @@
 import { Eraser, Play, X } from 'lucide-react';
+import { ConceptMultiSelect } from './ConceptMultiSelect';
 import { formatWeight, type AuthoringDocument } from './domain';
 import type { RouteSelection } from './route';
 
@@ -8,7 +9,7 @@ type RoutePanelProps = {
   solving: boolean;
   error: string | null;
   onToggleStart: (pointId: string) => void;
-  onTargetChange: (pointId: string | null) => void;
+  onToggleTarget: (pointId: string) => void;
   onSolve: () => void;
   onClear: () => void;
   onClose: () => void;
@@ -20,7 +21,7 @@ export function RoutePanel({
   solving,
   error,
   onToggleStart,
-  onTargetChange,
+  onToggleTarget,
   onSolve,
   onClear,
   onClose,
@@ -40,40 +41,28 @@ export function RoutePanel({
         </div>
       </div>
 
-      <label>
-        目标概念
-        <select
-          aria-label="目标概念"
-          value={selection.targetPointId ?? ''}
-          onChange={(event) => onTargetChange(event.target.value || null)}
-        >
-          <option value="">未选择</option>
-          {document.graph.points.map((point) => (
-            <option value={point.id} key={point.id}>{point.data.label} · {point.id}</option>
-          ))}
-        </select>
-      </label>
+      <ConceptMultiSelect
+        id="route-start-search"
+        label="已经掌握"
+        points={document.graph.points}
+        selectedIds={selection.startPointIds}
+        tone="start"
+        onToggle={onToggleStart}
+      />
 
-      <fieldset className="route-starts">
-        <legend>已经掌握 · {selection.startPointIds.length}</legend>
-        <div>
-          {document.graph.points.map((point) => (
-            <label key={point.id}>
-              <input
-                type="checkbox"
-                checked={selection.startPointIds.includes(point.id)}
-                onChange={() => onToggleStart(point.id)}
-              />
-              <span>{point.data.label}<small>{point.id}</small></span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <ConceptMultiSelect
+        id="route-target-search"
+        label="目标概念"
+        points={document.graph.points}
+        selectedIds={selection.targetPointIds}
+        tone="target"
+        onToggle={onToggleTarget}
+      />
 
       <button
         className="route-solve-button"
         type="button"
-        disabled={solving || !selection.targetPointId}
+        disabled={solving || !selection.targetPointIds.length}
         onClick={onSolve}
       >
         <Play size={15} />
@@ -115,17 +104,22 @@ export function RoutePanel({
 
       {result && !result.reachable && (
         <section className="route-result is-unreachable" aria-label="不可达诊断">
-          <header><div><span>不可达</span><strong>{label(selection.targetPointId ?? '')}</strong></div></header>
-          <div className="route-blocking">
-            <span>阻塞概念</span>
-            <ul>{result.blockingPointIds.map((id) => <li key={id}>{label(id)}<small>{id}</small></li>)}</ul>
-          </div>
-          {!!result.cycles.length && (
-            <div className="route-cycles">
-              <span>阻塞环</span>
-              {result.cycles.map((cycle) => <code key={cycle.join(':')}>{cycle.map(label).join(' → ')}</code>)}
+          <header><div><span>不可达</span><strong>{result.targetDiagnoses.length} 个目标</strong></div></header>
+          {result.targetDiagnoses.map((diagnosis) => (
+            <div className="route-target-diagnosis" key={diagnosis.targetPointId}>
+              <strong>{label(diagnosis.targetPointId)}</strong>
+              <div className="route-blocking">
+                <span>阻塞概念</span>
+                <ul>{diagnosis.blockingPointIds.map((id) => <li key={id}>{label(id)}<small>{id}</small></li>)}</ul>
+              </div>
+              {!!diagnosis.cycles.length && (
+                <div className="route-cycles">
+                  <span>阻塞环</span>
+                  {diagnosis.cycles.map((cycle) => <code key={cycle.join(':')}>{cycle.map(label).join(' → ')}</code>)}
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </section>
       )}
     </aside>
