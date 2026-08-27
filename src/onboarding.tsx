@@ -85,7 +85,7 @@ type TourStep = {
   target?: string;
 };
 
-export const ONBOARDING_STEPS: readonly TourStep[] = [
+export const ONBOARDING_STEPS = [
   {
     id: 'workspace',
     feature: TOUR_FEATURES.newWorkspace,
@@ -361,7 +361,9 @@ export const ONBOARDING_STEPS: readonly TourStep[] = [
     title: '继续使用 Agent 编辑',
     description: '项目已包含 derivon-workspace Skill。现在可以让 Agent 打开项目文件夹，读取 SKILL.md 和模型参考，协助新增概念、审阅推导、编辑 Markdown、KaTeX 或 HTML。此按钮也可随时打开另一个已有工作区。',
   },
-] as const;
+] as const satisfies readonly TourStep[];
+
+export type TourStepId = (typeof ONBOARDING_STEPS)[number]['id'];
 
 type Rect = { top: number; left: number; right: number; bottom: number; width: number; height: number };
 
@@ -433,12 +435,21 @@ function popoverPosition(target: Rect | null, popover: DOMRect | null): CSSPrope
   return { left: Math.max(margin, target.left - width - gap), top: clampY(target.top + target.height / 2 - height / 2) };
 }
 
-export function GuidedTour({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function GuidedTour({
+  open,
+  onClose,
+  onCompleteStep,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCompleteStep: (stepId: TourStepId) => void;
+}) {
   const [index, setIndex] = useState(0);
   const [popoverRect, setPopoverRect] = useState<DOMRect | null>(null);
   const popoverRef = useRef<HTMLElement>(null);
   const advancing = useRef(false);
-  const step = ONBOARDING_STEPS[index];
+  const stepDefinition = ONBOARDING_STEPS[index];
+  const step: TourStep = stepDefinition;
   const selector = step.target ?? `[data-tour-feature="${step.feature.id}"]`;
   const targetRect = useTargetRect(selector, open);
 
@@ -451,6 +462,11 @@ export function GuidedTour({ open, onClose }: { open: boolean; onClose: () => vo
     if (index >= ONBOARDING_STEPS.length - 1) finish();
     else setIndex((current) => current + 1);
   }, [finish, index]);
+
+  const handleNext = useCallback(() => {
+    if (step.advanceOn) onCompleteStep(stepDefinition.id);
+    else next();
+  }, [next, onCompleteStep, step, stepDefinition.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -512,8 +528,8 @@ export function GuidedTour({ open, onClose }: { open: boolean; onClose: () => vo
         {step.shortcut && <kbd>{step.shortcut}</kbd>}
         <footer>
           <button type="button" className="tour-exit" onClick={finish}>跳过引导</button>
-          <button type="button" className="tour-next" onClick={next}>
-            {index === ONBOARDING_STEPS.length - 1 ? '完成' : '下一步'}
+          <button type="button" className="tour-next" onClick={handleNext}>
+            {index === ONBOARDING_STEPS.length - 1 ? '完成' : 'Next'}
           </button>
         </footer>
       </section>

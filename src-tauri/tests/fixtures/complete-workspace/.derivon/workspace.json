@@ -1,0 +1,53 @@
+{
+  "schema": "derivon.authoring/v0.2.0",
+  "document": {
+    "title": "Complete symbolic workspace",
+    "description": "Stable in-repository fixture covering the complete Derivon workspace surface.",
+    "updatedAt": "2026-08-27T00:00:00.000Z"
+  },
+  "graph": {
+    "points": [
+      { "id": "A", "data": { "label": "A", "document": "docs/points/a", "format": "markdown" } },
+      { "id": "B", "data": { "label": "B", "document": "docs/points/b", "format": "markdown" } },
+      { "id": "C", "data": { "label": "C", "document": "docs/points/c", "format": "markdown" } },
+      { "id": "D", "data": { "label": "D", "document": "docs/points/d", "format": "markdown" } },
+      { "id": "X", "data": { "label": "X", "document": "docs/points/x", "format": "markdown" } },
+      { "id": "Y", "data": { "label": "Y", "document": "docs/points/y", "format": "html" } }
+    ],
+    "hyperedges": [
+      { "id": "given-a", "weight": 0.4, "tails": [], "head": "A", "data": { "document": "docs/edges/given-a", "format": "markdown" } },
+      { "id": "given-b", "weight": 0.6, "tails": [], "head": "B", "data": { "document": "docs/edges/given-b", "format": "markdown" } },
+      { "id": "a-to-c", "weight": 1, "tails": ["A"], "head": "C", "data": { "document": "docs/edges/a-to-c", "format": "markdown" } },
+      { "id": "ab-to-d", "weight": 2, "tails": ["A", "B"], "head": "D", "data": { "document": "docs/edges/ab-to-d", "format": "markdown" } },
+      { "id": "ab-to-d-alt", "weight": 4, "tails": ["A", "B"], "head": "D", "data": { "document": "docs/edges/ab-to-d-alt", "format": "html" } },
+      { "id": "cd-to-x", "weight": 1.5, "tails": ["C", "D"], "head": "X", "data": { "document": "docs/edges/cd-to-x", "format": "markdown" } },
+      { "id": "a-to-y", "weight": 8, "tails": ["A"], "head": "Y", "data": { "document": "docs/edges/a-to-y", "format": "markdown" } },
+      { "id": "x-to-y", "weight": 1, "tails": ["X"], "head": "Y", "data": { "document": "docs/edges/x-to-y", "format": "markdown" } }
+    ]
+  },
+  "view": {
+    "positions": {
+      "given-a": { "x": 20, "y": 80 },
+      "A": { "x": 180, "y": 80 },
+      "given-b": { "x": 20, "y": 260 },
+      "B": { "x": 180, "y": 260 },
+      "a-to-c": { "x": 360, "y": 40 },
+      "C": { "x": 520, "y": 40 },
+      "ab-to-d": { "x": 360, "y": 200 },
+      "ab-to-d-alt": { "x": 360, "y": 320 },
+      "D": { "x": 520, "y": 240 },
+      "cd-to-x": { "x": 700, "y": 140 },
+      "X": { "x": 860, "y": 140 },
+      "a-to-y": { "x": 700, "y": 360 },
+      "x-to-y": { "x": 1020, "y": 140 },
+      "Y": { "x": 1180, "y": 200 }
+    },
+    "replacements": [
+      {
+        "points": ["A", "B"],
+        "replaceWith": "X",
+        "show": "points"
+      }
+    ]
+  }
+}

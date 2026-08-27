@@ -8,8 +8,24 @@ import {
   validateDocument,
 } from './domain';
 import { sampleDocument } from './sample';
+import completeWorkspace from '../src-tauri/tests/fixtures/complete-workspace/.derivon/workspace.json';
 
 describe('authoring document', () => {
+  it('accepts the complete in-repository workspace fixture', () => {
+    const parsed = parseDocument(JSON.stringify(completeWorkspace));
+    const dEdges = parsed.graph.hyperedges.filter((edge) => edge.head === 'D');
+
+    expect(parsed.graph.points).toHaveLength(6);
+    expect(parsed.graph.hyperedges).toHaveLength(8);
+    expect(new Set(parsed.graph.points.map((point) => point.data.format))).toEqual(new Set(['markdown', 'html']));
+    expect(new Set(parsed.graph.hyperedges.map((edge) => edge.data.format))).toEqual(new Set(['markdown', 'html']));
+    expect(parsed.graph.hyperedges.some((edge) => edge.tails.length === 0)).toBe(true);
+    expect(parsed.graph.hyperedges.some((edge) => edge.tails.length === 1)).toBe(true);
+    expect(parsed.graph.hyperedges.some((edge) => edge.tails.length === 2)).toBe(true);
+    expect(dEdges.map((edge) => edge.tails)).toEqual([['A', 'B'], ['A', 'B']]);
+    expect(parsed.view.replacements).toEqual([{ points: ['A', 'B'], replaceWith: 'X', show: 'points' }]);
+  });
+
   it('round-trips the A B C D → X sample without projected objects', () => {
     const parsed = parseDocument(JSON.stringify(sampleDocument));
     expect(parsed.schema).toBe(DOCUMENT_SCHEMA);

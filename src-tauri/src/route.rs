@@ -303,7 +303,7 @@ mod tests {
     use super::*;
     use std::collections::{HashMap, HashSet};
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     fn workspace(points: &[&str], edges: &[(&str, f64, &[&str], &str)]) -> WorkspaceDocument {
         WorkspaceDocument {
@@ -485,17 +485,11 @@ mod tests {
     }
 
     #[test]
-    fn math_reforged_reaches_svd_in_executable_order() {
-        let root = std::env::var_os("DERIVON_TEST_WORKSPACE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mindmaps/math-reforged")
-            });
+    fn complete_fixture_solves_shared_multi_target_route_in_executable_order() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
         let path = root.join(".derivon/workspace.json");
         let document: WorkspaceDocument =
             serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-        assert_eq!(document.graph.points.len(), 39);
-        assert_eq!(document.graph.hyperedges.len(), 39);
 
         let edge_by_id: HashMap<_, _> = document
             .graph
@@ -505,23 +499,35 @@ mod tests {
             .collect();
         let result = solve_route(RouteRequest {
             workspace: document.clone(),
-            start_point_ids: Vec::new(),
-            target_point_ids: vec!["svd".to_owned()],
+            start_point_ids: vec!["A".to_owned(), "B".to_owned()],
+            target_point_ids: vec!["X".to_owned(), "Y".to_owned()],
             budget: None,
         })
         .unwrap();
 
         assert!(result.reachable);
-        assert!(result
-            .hyperedge_ids
-            .iter()
-            .all(|id| edge_by_id.contains_key(id.as_str())));
-        let mut known: HashSet<String> = HashSet::new();
+        assert_eq!(result.cost, Some(5.5));
+        assert_eq!(result.lower, Some(5.5));
+        assert_eq!(result.upper, Some(5.5));
+        assert!(result.proven_optimal);
+        assert_eq!(
+            result
+                .hyperedge_ids
+                .iter()
+                .map(String::as_str)
+                .collect::<HashSet<_>>(),
+            HashSet::from(["a-to-c", "ab-to-d", "cd-to-x", "x-to-y"])
+        );
+        assert!(!result.hyperedge_ids.iter().any(|id| id == "ab-to-d-alt"));
+        assert!(!result.hyperedge_ids.iter().any(|id| id == "a-to-y"));
+
+        let mut known = HashSet::from(["A".to_owned(), "B".to_owned()]);
         for id in &result.executable_order {
             let edge = edge_by_id[id.as_str()];
             assert!(edge.tails.iter().all(|tail| known.contains(tail)));
             known.insert(edge.head.clone());
         }
-        assert!(known.contains("svd"));
+        assert!(known.contains("X"));
+        assert!(known.contains("Y"));
     }
 }

@@ -33,9 +33,24 @@ test('opens a blank workspace with a target-bound guided tour', async ({ page })
   expect(highlightBox).not.toBeNull();
   expect(highlightBox!.x).toBeLessThan(targetBox!.x);
   expect(highlightBox!.x + highlightBox!.width).toBeGreaterThan(targetBox!.x + targetBox!.width);
+  const next = page.getByRole('button', { name: 'Next' });
+  const skip = page.getByRole('button', { name: '跳过引导' });
+  await expect(next).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(next).toHaveCSS('color', 'rgb(47, 109, 79)');
+  await expect(skip).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(skip).toHaveCSS('color', 'rgb(133, 141, 136)');
+  await page.evaluate(() => {
+    window.showDirectoryPicker = async () => {
+      localStorage.setItem('derivon.test.tour-picker', 'called');
+      throw new DOMException('Cancelled', 'AbortError');
+    };
+  });
+  await next.click();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('derivon.test.tour-picker'))).toBe('called');
+  await expect(page.getByLabel('操作引导：新建项目文件夹')).toBeVisible();
   await page.screenshot({ path: '/tmp/derivon-onboarding-desktop.png', fullPage: true });
 
-  await page.getByRole('button', { name: '跳过引导' }).click();
+  await skip.click();
   await expect(page.getByLabel('操作引导：新建项目文件夹')).toHaveCount(0);
   await page.reload();
   await expect(page.locator('.react-flow__node')).toHaveCount(0);
@@ -51,23 +66,44 @@ test('advances guide steps from the bound feature actions', async ({ page }) => 
   await page.evaluate(() => localStorage.clear());
   await page.goto('/');
 
-  await page.getByRole('button', { name: '下一步' }).click();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('derivon:tour-action', {
+    detail: { action: 'workspace-created' },
+  })));
   await expect(page.getByLabel('操作引导：命名示例项目')).toBeVisible();
-  await page.getByLabel('文档标题').fill('A + B → X');
-  await page.getByLabel('文档标题').press('Enter');
+  await page.getByLabel('文档标题').fill('用户输入的项目标题');
+  await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByLabel('操作引导：补充项目说明')).toBeVisible();
+  await expect(page.getByLabel('文档标题')).toHaveValue('用户输入的项目标题');
 
   const description = page.locator('.inspector textarea');
-  await description.fill('引导创建的最小示例');
-  await description.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Enter`);
+  await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByLabel('操作引导：新建第一个概念')).toBeVisible();
+  await expect(description).toHaveValue('演示如何由概念 A 和 B 构造替换概念 X。');
 
-  await page.getByTitle('新建概念').click();
+  await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByLabel('操作引导：命名概念 A')).toBeVisible();
   const name = page.locator('.inspector label').filter({ hasText: '名称' }).locator('input');
   await name.fill('A');
-  await name.press('Enter');
+  await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByLabel('操作引导：打开概念文档')).toBeVisible();
+  await expect(name).toHaveValue('A');
+});
+
+test('completes every preset guide action through Next', async ({ page }) => {
+  await page.evaluate(() => localStorage.clear());
+  await page.goto('/');
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('derivon:tour-action', {
+    detail: { action: 'workspace-created' },
+  })));
+
+  const tour = page.locator('.tour-popover');
+  await expect(tour).toContainText('2 / 37');
+  for (let step = 3; step <= 37; step += 1) {
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await expect(tour).toContainText(`${step} / 37`);
+  }
+  await tour.getByRole('button', { name: '完成' }).click();
+  await expect(tour).toHaveCount(0);
 });
 
 test('authors source concepts and derivations without persisting React Flow objects', async ({ page }) => {

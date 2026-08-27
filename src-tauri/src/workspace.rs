@@ -183,15 +183,48 @@ mod tests {
     }
 
     #[test]
-    fn math_reforged_loads_with_expected_counts_and_files() {
-        let root = std::env::var_os("DERIVON_TEST_WORKSPACE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mindmaps/math-reforged")
-            });
+    fn complete_fixture_loads_manifest_documents_and_revision() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
         let snapshot = read_snapshot(&root, true).unwrap();
-        assert_eq!(snapshot.workspace.manifest.graph.points.len(), 39);
-        assert_eq!(snapshot.workspace.manifest.graph.hyperedges.len(), 39);
-        assert_eq!(snapshot.workspace.files.len(), 156);
+        let manifest = &snapshot.workspace.manifest;
+
+        assert_eq!(manifest.graph.points.len(), 6);
+        assert_eq!(manifest.graph.hyperedges.len(), 8);
+        assert_eq!(snapshot.workspace.files.len(), 26);
+        assert!(snapshot
+            .workspace
+            .files
+            .contains_key("docs/points/a/document.md"));
+        assert!(snapshot
+            .workspace
+            .files
+            .contains_key("docs/points/y/index.html"));
+        assert!(!snapshot
+            .workspace
+            .files
+            .contains_key("docs/points/y/document.md"));
+        assert!(!root.join("docs/points/y/document.md").exists());
+
+        let positions = manifest.view["positions"].as_object().unwrap();
+        assert_eq!(positions.len(), 14);
+        assert!(manifest
+            .graph
+            .points
+            .iter()
+            .map(|point| &point.id)
+            .chain(manifest.graph.hyperedges.iter().map(|edge| &edge.id))
+            .all(|id| positions.contains_key(id)));
+        assert_eq!(
+            manifest.view["replacements"],
+            serde_json::json!([{
+                "points": ["A", "B"],
+                "replaceWith": "X",
+                "show": "points"
+            }])
+        );
+
+        let manifest_only = read_snapshot(&root, false).unwrap();
+        assert!(manifest_only.workspace.files.is_empty());
+        assert_eq!(manifest_only.revision, snapshot.revision);
     }
 }
