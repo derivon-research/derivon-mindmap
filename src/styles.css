@@ -451,6 +451,8 @@ button { color: inherit; }
 .json-modal .primary-button { border-color: #354b40; background: #354b40; color: #fff; }
 
 .workspace-error-backdrop { z-index: 130; }
+.crash-report-backdrop { z-index: 140; }
+.crash-screen { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: #f3f4f1; }
 .workspace-error-modal {
   width: min(720px, 100%);
   max-height: min(720px, 92vh);

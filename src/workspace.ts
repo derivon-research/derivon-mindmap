@@ -11,6 +11,7 @@ import {
   readNativeWorkspace,
   readNativeWorkspaceDocument,
   readNativeWorkspaceRevision,
+  saveNativeWorkspaceAs,
   writeNativeWorkspace,
   type NativeWorkspaceDirectory,
 } from './tauriWorkspace';
@@ -208,14 +209,18 @@ export async function readWorkspaceDocumentSource(
 export async function validateWorkspaceDirectoryFiles(
   root: WorkspaceDirectory,
   manifest: AuthoringDocument,
+  pendingFiles: Record<string, string> = {},
 ): Promise<void> {
   if (isNativeWorkspaceDirectory(root)) {
     const disk = await readNativeWorkspace(root, true);
-    const missing = referencedDocumentFiles(manifest).filter((path) => typeof disk.workspace.files[path] !== 'string');
+    const missing = referencedDocumentFiles(manifest).filter((path) =>
+      typeof disk.workspace.files[path] !== 'string' && typeof pendingFiles[path] !== 'string',
+    );
     if (missing.length) throw new Error(`工作区缺少文档：${missing.slice(0, 3).join('、')}`);
     return;
   }
   await Promise.all(referencedDocumentFiles(manifest).map(async (path) => {
+    if (typeof pendingFiles[path] === 'string') return;
     try {
       await readFile(root, path);
     } catch (error) {
@@ -474,10 +479,6 @@ export async function saveWorkspaceAsDirectory(
   current: AuthoringWorkspace,
   source?: WorkspaceDirectory,
 ): Promise<WorkspaceDirectory> {
-  if (isTauriRuntime()) throw new Error('本地应用 MVP 暂不支持“另存为”，请编辑已打开的工作区');
-  const picker = requireWorkspaceDirectoryPicker();
-  const handle = await picker({ mode: 'readwrite' });
-  await ensureWorkspaceDirectoryPermission(handle);
   const workspace = source
     ? {
         manifest: current.manifest,
@@ -487,6 +488,10 @@ export async function saveWorkspaceAsDirectory(
         },
       }
     : current;
+  if (isTauriRuntime()) return saveNativeWorkspaceAs(workspace);
+  const picker = requireWorkspaceDirectoryPicker();
+  const handle = await picker({ mode: 'readwrite' });
+  await ensureWorkspaceDirectoryPermission(handle);
   await writeWorkspaceToNewDirectory(handle, workspace);
   return handle;
 }

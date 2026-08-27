@@ -106,6 +106,67 @@ test('completes every preset guide action through Next', async ({ page }) => {
   await expect(tour).toHaveCount(0);
 });
 
+test('creates a native workspace and completes the full guide in the Tauri runtime', async ({ page }) => {
+  await page.addInitScript(() => {
+    const commands: string[] = [];
+    let workspace: { manifest: unknown; files: Record<string, string> } | null = null;
+    (window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
+      __nativeTourCommands: string[];
+    }).__TAURI_INTERNALS__ = {
+      invoke: async (command, args) => {
+        commands.push(command);
+        if (command === 'save_workspace_as') {
+          workspace = {
+            manifest: args?.manifest,
+            files: args?.files as Record<string, string>,
+          };
+          return { path: '/tmp/derivon-tour-workspace', name: 'derivon-tour-workspace' };
+        }
+        if (command === 'workspace_revision') return 'native-tour-revision';
+        if (command === 'write_workspace') {
+          workspace = {
+            manifest: args?.manifest,
+            files: {
+              ...(workspace?.files ?? {}),
+              ...(args?.files as Record<string, string>),
+            },
+          };
+          return null;
+        }
+        if (command === 'read_workspace') {
+          if (!workspace) throw new Error('Native workspace was not created');
+          return { workspace, revision: 'native-tour-revision' };
+        }
+        if (command === 'read_crash_report') return null;
+        throw new Error(`Unexpected command: ${command}`);
+      },
+    };
+    (window as unknown as { __nativeTourCommands: string[] }).__nativeTourCommands = commands;
+  });
+  await page.evaluate(() => localStorage.clear());
+  await page.goto('/');
+
+  const tour = page.locator('.tour-popover');
+  await expect(tour).toContainText('1 / 37');
+  await tour.getByRole('button', { name: 'Next' }).click();
+  await expect(tour).toContainText('2 / 37');
+  await expect(page.locator('.workspace-directory-name')).toHaveText('derivon-tour-workspace/');
+  await expect.poll(() => page.evaluate(() => (
+    window as unknown as { __nativeTourCommands: string[] }
+  ).__nativeTourCommands)).toEqual(expect.arrayContaining([
+    'save_workspace_as',
+    'workspace_revision',
+  ]));
+
+  for (let step = 3; step <= 37; step += 1) {
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await expect(tour).toContainText(`${step} / 37`);
+  }
+  await tour.getByRole('button', { name: '完成' }).click();
+  await expect(tour).toHaveCount(0);
+});
+
 test('authors source concepts and derivations without persisting React Flow objects', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
@@ -390,6 +451,16 @@ test('opens the editable local layout only on the second click', async ({ page }
   expect(stacking.A).toBeGreaterThan(stacking.D);
   await expect(node.locator('.concept-node')).toHaveCSS('opacity', '1');
   await expect(node.locator('.concept-node')).toHaveCSS('background-color', 'rgb(250, 251, 249)');
+
+  const viewport = page.locator('.react-flow__viewport');
+  await expect.poll(() => viewport.getAttribute('style')).toContain('transform');
+  await page.waitForTimeout(300);
+  const focusedViewport = await viewport.getAttribute('style');
+  await page.getByRole('button', { name: 'Zoom Out' }).click();
+  await page.getByRole('button', { name: 'Zoom Out' }).click();
+  await expect.poll(() => viewport.getAttribute('style')).not.toBe(focusedViewport);
+  await page.getByRole('button', { name: 'Fit View' }).click();
+  await expect.poll(() => viewport.getAttribute('style')).toBe(focusedViewport);
 
   const overviewPosition = await page.evaluate(() => JSON.parse(localStorage.getItem('derivon.authoring.workspace/v0.2.0')!).manifest.view.positions.A);
   const box = await node.boundingBox();
@@ -710,6 +781,38 @@ test('keeps malformed workspace errors open and copyable until dismissed', async
 
   await dialog.getByTitle('关闭').click();
   await expect(dialog).toHaveCount(0);
+});
+
+test('persists, copies, and clears an unhandled frontend crash report', async ({ page }) => {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        async writeText(text: string) {
+          (window as unknown as { __copiedCrashReport: string }).__copiedCrashReport = text;
+        },
+      },
+    });
+    const error = new Error('simulated renderer crash');
+    window.dispatchEvent(new ErrorEvent('error', { message: error.message, error }));
+  });
+
+  const dialog = page.getByRole('alertdialog', { name: '检测到应用异常' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('报告仅保存在本机，不会自动上传');
+  await expect(dialog.locator('pre')).toContainText('来源: 前端未处理异常');
+  await expect(dialog.locator('pre')).toContainText('Error: simulated renderer crash');
+  expect(await page.evaluate(() => localStorage.getItem('derivon.crash-report/v1'))).toContain('simulated renderer crash');
+
+  await dialog.getByRole('button', { name: '复制报告' }).click();
+  await expect(dialog.getByRole('button', { name: '已复制' })).toBeVisible();
+  expect(await page.evaluate(() => (
+    window as unknown as { __copiedCrashReport: string }
+  ).__copiedCrashReport)).toContain('simulated renderer crash');
+
+  await dialog.getByRole('button', { name: '清除报告' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('derivon.crash-report/v1'))).toBeNull();
 });
 
 test('detects workspace changes outside the WebUI and resolves both choices', async ({ page }) => {
