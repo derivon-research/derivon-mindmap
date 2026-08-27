@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       prerelease: ${{ steps.version.outputs.prerelease }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -43,18 +44,7 @@ jobs:
             exit 1
           fi
 
-          package_version=$(node -p "require('./package.json').version")
-          tauri_version=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          cargo_version=$(cargo metadata --no-deps --format-version 1 \
-            --manifest-path src-tauri/Cargo.toml | jq -r '.packages[0].version')
-
-          for declared in "$package_version" "$tauri_version" "$cargo_version"; do
-            if [[ "$declared" != "$version" ]]; then
-              echo "Tag version $version does not match declared app version $declared." >&2
-              exit 1
-            fi
-          done
-
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           if [[ "$version" == *-* ]]; then
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
@@ -103,6 +93,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Configure tagged app version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          node -e "require('node:fs').writeFileSync('src-tauri/tauri.release.conf.json', JSON.stringify({ version: process.env.RELEASE_VERSION }))"
+
       - name: Test frontend
         run: npm test
 
@@ -116,30 +113,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Derivon Mindmap ${{ github.ref_name }}
-          releaseBody: |
-            Derivon Mindmap v0.2.1 improves route selection, guided onboarding, graph responsiveness, and visual focus. These notes cover the three commits merged after v0.2.0.
-
-            ## Fixes and improvements
-
-            - Keep fuzzy-search results open after selecting a known or target concept, so multiple route inputs can be chosen without reopening the search.
-            - Complete guided-onboarding steps from the Next action while preserving titles, descriptions, concept names, and derivation weights already entered by the user.
-            - Refine the onboarding Skip and Next presentation, and rebuild desktop icons with true transparency to remove dark edges in the macOS Dock.
-            - Move route solving, workspace I/O, and revision hashing off the Tauri UI thread; use lightweight revision checks, pause polling during canvas interaction or while backgrounded, and render only visible graph elements.
-            - Keep large route results responsive with React transitions and dedicated regression coverage for large workspaces and long routes.
-            - Make edges passive and low-opacity by default, highlight the neighborhood of the hovered concept or derivation, keep focused and routed nodes fully visible and correctly stacked, and prevent dimmed nodes from intercepting interaction.
-
-            ## Test stability
-
-            - Replace the changing external math-reforged test checkout with a repository-local A/B/C/D/X/Y workspace fixture used by Rust and desktop release tests.
-
-            ## Downloads
-
-            - macOS universal DMG for Apple Silicon and Intel Macs.
-            - Windows x64 NSIS installer.
-
-            The macOS and Windows packages are currently unsigned. Your operating system may show an unverified developer warning on first launch.
-
-            **Full Changelog**: https://github.com/derivon-research/derivon-mindmap/compare/v0.2.0...v0.2.1
+          generateReleaseNotes: true
           releaseDraft: false
           prerelease: ${{ needs.validate.outputs.prerelease }}
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+          args: --config src-tauri/tauri.release.conf.json --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}

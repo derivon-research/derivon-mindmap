@@ -39,15 +39,15 @@ npm run tauri:build
 required status checks。
 
 `.github/workflows/release-desktop.yml` 在推送 `v*` tag 时构建并发布 GitHub Release。tag
-必须指向 `main` 中的提交，且去掉 `v` 后必须与 `package.json`、`src-tauri/Cargo.toml` 和
-`src-tauri/tauri.conf.json` 中的版本一致。带预发布后缀的 tag（例如 `v0.2.1-beta`）会创建
-prerelease，稳定版本 tag（例如 `v0.2.1`）会创建正式 release。发布包含：
+必须指向 `main` 中的提交，且使用 SemVer 格式。CI 以 tag 为发布版本，并通过临时 Tauri
+配置将该版本注入桌面安装包，因此发布前无需专门提交 manifest 版本号变更。带预发布后缀
+的 tag（例如 `v0.2.1-beta`）会创建 prerelease，稳定版本 tag（例如 `v0.2.1`）会创建正式
+release。发布包含：
 
 - macOS universal DMG，同时包含 Apple Silicon 与 Intel 架构；
 - Windows x64 NSIS 安装程序。
 
-准备发布时，先在 PR 中同步更新三个 manifest 的版本并合并到 `main`，然后在最新的
-`main` 提交上创建并推送对应 tag：
+准备发布时，直接在最新的 `main` 提交上创建并推送对应 tag：
 
 ```bash
 git switch main
@@ -56,8 +56,9 @@ git tag -a v0.2.1 -m "derivon-mindmap v0.2.1"
 git push origin v0.2.1
 ```
 
-CI 使用实际 tag 创建同名 Release，不在 workflow 中固定发布版本。当前构建没有 Apple
-Developer ID 或 Windows 代码签名，首次启动时操作系统可能显示未验证开发者警告。
+CI 使用实际 tag 创建同名 Release 并生成从上一版本开始的变更说明，不在 workflow 中固定
+发布版本或正文。当前构建没有 Apple Developer ID 或 Windows 代码签名，首次启动时操作
+系统可能显示未验证开发者警告。
 
 Tauri Rust bridge 位于 `src-tauri/`，直接依赖
 `derivon-research/derivon` 的 `v0.2.0` tag。`.derivon/workspace.json` 始终是持久化事实来源；
