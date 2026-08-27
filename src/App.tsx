@@ -1295,7 +1295,7 @@ function AuthoringCanvas() {
           </div>
           <a
             className="github-link"
-            href="https://github.com/derivon-research/mindmap-demo"
+            href="https://github.com/derivon-research/derivon-mindmap"
             target="_blank"
             rel="noreferrer"
             title="查看 GitHub 仓库"

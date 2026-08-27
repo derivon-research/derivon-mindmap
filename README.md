@@ -1,4 +1,4 @@
-# Mindmap Demo
+# Derivon Mindmap
 
 Derivon 加权有向 B-超图的前端录入实验。React Flow 负责画布交互；领域协议、工作区读写、对象文档编辑、`replace with` 规则和可见性投影分别位于 `src/domain.ts`、`src/workspace.ts`、`src/DocumentEditor.tsx`、`src/replacements.ts` 与 `src/projection.ts`。
 
@@ -51,8 +51,8 @@ prerelease，稳定版本 tag（例如 `v0.2.0`）会创建正式 release。发�
 ```bash
 git switch main
 git pull --ff-only
-git tag -a v0.2.0-beta -m "mindmap-demo v0.2.0-beta"
-git push origin v0.2.0-beta
+git tag -a v0.2.0 -m "derivon-mindmap v0.2.0"
+git push origin v0.2.0
 ```
 
 CI 使用实际 tag 创建同名 Release，不在 workflow 中固定发布版本。当前构建没有 Apple
