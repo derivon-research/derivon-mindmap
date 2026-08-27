@@ -645,10 +645,11 @@ button { color: inherit; }
 .tour-popover > p { margin: 8px 0 0; padding: 0 16px; color: #505955; font-size: 12px; line-height: 1.7; }
 .tour-popover > kbd { display: inline-block; margin: 11px 16px 0; padding: 5px 7px; border: 1px solid #cbd0cb; border-bottom-width: 2px; border-radius: 3px; background: #f5f6f4; color: #3e4943; font: 10px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tour-popover > footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 16px; padding: 11px 12px; border-top: 1px solid #e0e2de; background: #fafbf9; }
-.tour-popover > footer button { min-width: 82px; height: 31px; padding: 0 11px; border: 1px solid #c4c9c4; background: #fff; color: #4d5651; cursor: pointer; font-size: 11px; font-weight: 650; }
-.tour-popover > footer button:hover { border-color: #929a94; }
-.tour-popover > footer .tour-next { border-color: #355c49; background: #355c49; color: #fff; }
-.tour-popover > footer .tour-next:hover { border-color: #294b3b; background: #294b3b; }
+.tour-popover > footer button { width: auto; min-width: 0; height: auto; padding: 2px 4px; border: 0; background: transparent; cursor: pointer; }
+.tour-popover > footer button:hover { background: transparent; text-decoration: underline; }
+.tour-popover > footer .tour-exit { color: #858d88; font-size: 10px; font-weight: 500; }
+.tour-popover > footer .tour-next { color: #2f6d4f; font-size: 11px; font-weight: 750; }
+.tour-popover > footer .tour-next:hover { color: #214f39; }
 
 @media (max-width: 900px) {
   .topbar { grid-template-columns: minmax(170px, 1fr) auto; gap: 8px; }

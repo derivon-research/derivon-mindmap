@@ -39,13 +39,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Checkout math-reforged test workspace
-        uses: actions/checkout@v6
-        with:
-          repository: derivon-research/math-reforged
-          ref: f44fa3224437baca6b119c87c90f77eccd3595b3
-          path: .ci/math-reforged
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -70,8 +63,6 @@ jobs:
 
       - name: Test Rust bridge
         run: cargo test --manifest-path src-tauri/Cargo.toml
-        env:
-          DERIVON_TEST_WORKSPACE: ${{ github.workspace }}/.ci/math-reforged
 
       - name: Build desktop bundle
         run: npm run tauri:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}

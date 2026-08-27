@@ -75,6 +75,7 @@ import {
   TOUR_FEATURES,
   notifyTourAction,
   tourTarget,
+  type TourStepId,
 } from './onboarding';
 import {
   LOCAL_WORKSPACE_KEY,
@@ -1273,6 +1274,211 @@ function AuthoringCanvas() {
     else migrateHtmlDocument();
   }, [editingConcept, editingDerivation, editingId, migrateHtmlDocument]);
 
+  const completeTourStep = useCallback((stepId: TourStepId) => {
+    const pointNamed = (label: string) => document.graph.points.find((point) => point.data.label === label);
+    const clickFeatureButton = (featureId: string, selector = 'button:not(:disabled)') => {
+      window.document.querySelector<HTMLElement>(`[data-tour-feature="${featureId}"]${selector.startsWith(':') ? selector : ` ${selector}`}`)?.click();
+    };
+
+    switch (stepId) {
+      case 'workspace':
+        void createWorkspaceInNewDirectory();
+        return;
+      case 'title':
+        if (!document.document.title.trim() || document.document.title === '未命名项目') {
+          commit((current) => ({ ...current, document: { ...current.document, title: 'A + B → X' } }));
+        }
+        notifyTourAction('project-title-edited');
+        return;
+      case 'description':
+        if (!document.document.description.trim()) {
+          commit((current) => ({
+            ...current,
+            document: { ...current.document, description: '演示如何由概念 A 和 B 构造替换概念 X。' },
+          }));
+        }
+        notifyTourAction('project-description-edited');
+        return;
+      case 'add-a':
+      case 'add-b':
+      case 'add-x':
+        addConcept();
+        return;
+      case 'name-a':
+      case 'name-b':
+      case 'name-x': {
+        const concept = document.graph.points.find((point) => point.id === selectedId);
+        if (!concept) return;
+        const preset = stepId === 'name-a' ? 'A' : stepId === 'name-b' ? 'B' : 'X';
+        if (!concept.data.label.trim() || concept.data.label === '新概念') {
+          updatePointData(concept.id, { label: preset });
+        }
+        notifyTourAction('concept-renamed');
+        return;
+      }
+      case 'open-concept-document':
+        if (selectedId) openDocument(selectedId);
+        return;
+      case 'author-document':
+        if (editingReference) {
+          updateDocumentSource(editingReference, '# 概念 A\n\nA 是这个推导演示的起始概念。', editingLabel);
+        }
+        return;
+      case 'format-document':
+        clickFeatureButton(TOUR_FEATURES.documentFormat.id, 'button[aria-label="粗体"]');
+        return;
+      case 'insert-formula':
+        clickFeatureButton(TOUR_FEATURES.insertFormula.id, ':not(:disabled)');
+        return;
+      case 'insert-table':
+        clickFeatureButton(TOUR_FEATURES.insertTable.id, ':not(:disabled)');
+        return;
+      case 'insert-html':
+        clickFeatureButton(TOUR_FEATURES.insertHtml.id, ':not(:disabled)');
+        return;
+      case 'editor-history':
+        clickFeatureButton(TOUR_FEATURES.editorHistory.id);
+        return;
+      case 'return-canvas':
+        returnToCanvas();
+        return;
+      case 'layout':
+        applyLayout();
+        return;
+      case 'connect':
+      case 'parallel': {
+        const source = pointNamed('A');
+        const target = pointNamed('B');
+        if (!source || !target) return;
+        onConnect({ source: source.id, target: target.id, sourceHandle: 'concept-out', targetHandle: 'concept-in' });
+        return;
+      }
+      case 'parallel-select': {
+        const source = pointNamed('A');
+        const target = pointNamed('B');
+        const group = source && target
+          ? derivationGroups.find((candidate) => candidate.members.length > 1
+            && candidate.members[0]?.head === target.id
+            && candidate.members[0]?.tails.length === 1
+            && candidate.members[0]?.tails[0] === source.id)
+          : null;
+        if (!group) return;
+        const nextMember = group.members.find((member) => member.id !== selectedId) ?? group.members[0];
+        selectDerivation(group, nextMember.id);
+        return;
+      }
+      case 'weight': {
+        const derivation = document.graph.hyperedges.find((item) => item.id === selectedId)
+          ?? document.graph.hyperedges.at(-1);
+        if (!derivation) return;
+        if (derivation.weight === 1) updateHyperedge(derivation.id, { weight: 0.5 });
+        notifyTourAction('derivation-weight-edited');
+        return;
+      }
+      case 'more-premises': {
+        const derivation = document.graph.hyperedges.find((item) => item.id === selectedId)
+          ?? document.graph.hyperedges.at(-1);
+        const extraPremise = pointNamed('X');
+        if (!derivation || !extraPremise) return;
+        if (!derivation.tails.includes(extraPremise.id)) {
+          updateHyperedge(derivation.id, { tails: [...derivation.tails, extraPremise.id] });
+        }
+        notifyTourAction('derivation-updated');
+        return;
+      }
+      case 'replace-select': {
+        const points = [pointNamed('A'), pointNamed('B')].filter((point): point is Point => !!point);
+        if (points.length !== 2) return;
+        const ids = points.map((point) => point.id);
+        setSelectedNodeIds(ids);
+        setSelectedId(ids[0]);
+        setReplacementDraft(ids);
+        setStatus('请选择已有概念作为替换点');
+        notifyTourAction('replacement-started');
+        return;
+      }
+      case 'replace-target': {
+        const target = pointNamed('X');
+        if (target) selectNode(target.id, false);
+        return;
+      }
+      case 'toggle-replacement': {
+        const replacement = document.view.replacements[0];
+        if (replacement) {
+          toggleReplacement(replacement.replaceWith, replacement.show === 'points' ? 'replacement' : 'points');
+        }
+        return;
+      }
+      case 'focus': {
+        const target = document.graph.points.find((point) => point.id === selectedId) ?? document.graph.points[0];
+        if (!target) return;
+        setSelectedId(target.id);
+        setFocusedId(target.id);
+        notifyTourAction('focused-view-toggled');
+        return;
+      }
+      case 'search': {
+        const query = search.trim().toLocaleLowerCase();
+        const target = query
+          ? document.graph.points.find((point) => point.id.toLocaleLowerCase() === query
+            || point.data.label.toLocaleLowerCase().includes(query))
+          : pointNamed('X') ?? document.graph.points[0];
+        if (!target) {
+          setStatus('没有匹配的概念');
+          return;
+        }
+        if (!query) setSearch(target.data.label);
+        const revealed = revealConcept(document, target.id);
+        commit(() => revealed);
+        setFocusedId(null);
+        setSelectedId(target.id);
+        notifyTourAction('concept-found');
+        window.setTimeout(() => void fitView({ nodes: [{ id: target.id }], padding: 2, duration: 300, maxZoom: 1.4 }), 30);
+        return;
+      }
+      case 'move': {
+        const target = document.graph.points.find((point) => point.id === selectedId) ?? document.graph.points[0];
+        if (!target) return;
+        const position = document.view.positions[target.id] ?? { x: 0, y: 0 };
+        commit((current) => ({
+          ...current,
+          view: {
+            ...current.view,
+            positions: { ...current.view.positions, [target.id]: { x: position.x + 40, y: position.y + 24 } },
+          },
+        }));
+        notifyTourAction('node-moved');
+        return;
+      }
+      case 'delete': {
+        const targetId = selectedId && (
+          document.graph.points.some((point) => point.id === selectedId)
+          || document.graph.hyperedges.some((item) => item.id === selectedId)
+        ) ? selectedId : document.graph.points[0]?.id ?? document.graph.hyperedges[0]?.id;
+        if (!targetId) return;
+        deleteItem(targetId);
+        notifyTourAction('item-deleted');
+        return;
+      }
+      case 'undo':
+      case 'restore-after-redo':
+        undo();
+        return;
+      case 'redo':
+        redo();
+        return;
+      case 'json':
+        openJsonEditor();
+        return;
+      case 'json-apply':
+        void applyJson();
+        return;
+    }
+  }, [addConcept, applyJson, applyLayout, commit, createWorkspaceInNewDirectory, deleteItem, derivationGroups,
+    document, editingLabel, editingReference, fitView, onConnect, openDocument, openJsonEditor, redo,
+    returnToCanvas, search, selectDerivation, selectNode, selectedId, toggleReplacement, undo,
+    updateDocumentSource, updateHyperedge, updatePointData]);
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1672,7 +1878,11 @@ function AuthoringCanvas() {
         </div>
       )}
 
-      <GuidedTour open={tourOpen} onClose={() => setTourOpen(false)} />
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        onCompleteStep={completeTourStep}
+      />
     </main>
   );
 }

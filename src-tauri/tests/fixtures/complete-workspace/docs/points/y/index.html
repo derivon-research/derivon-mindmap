@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Y</title></head>
+<body>
+  <h1>Y</h1>
+  <p>This point uses an authored HTML document.</p>
+  <button id="toggle" type="button">Toggle state</button>
+  <output id="state">off</output>
+  <script>
+    document.getElementById('toggle').addEventListener('click', () => {
+      const state = document.getElementById('state');
+      state.textContent = state.textContent === 'off' ? 'on' : 'off';
+    });
+  </script>
+</body>
+</html>
