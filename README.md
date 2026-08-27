@@ -1,6 +1,6 @@
 # Derivon Mindmap
 
-Derivon 加权有向 B-超图的前端录入实验。React Flow 负责画布交互；领域协议、工作区读写、对象文档编辑、`replace with` 规则和可见性投影分别位于 `src/domain.ts`、`src/workspace.ts`、`src/DocumentEditor.tsx`、`src/replacements.ts` 与 `src/projection.ts`。
+Derivon 加权有向 B-超图的前端录入实验。React Flow 负责画布交互；领域协议、工作区读写、对象文档编辑、替换规则和可见性投影分别位于 `src/domain.ts`、`src/workspace.ts`、`src/DocumentEditor.tsx`、`src/replacements.ts` 与 `src/projection.ts`。
 
 ## 交流与反馈
 
@@ -90,11 +90,15 @@ cargo test
 
 ## 初始页面与操作引导
 
-首次打开应用时使用空白工作区，不再自动载入仓库中的示例图。页面会自动启动操作引导；退出或完成后，可通过右上角问号按钮重新开始。引导从新建项目文件夹开始，带用户实际创建 A、B、X 概念和推导，并覆盖对象文档、Markdown 快捷键、KaTeX、表格、HTML、平行推导、多前提、Replace with、局部视图、搜索、拖动、删除、撤回/重做、缩放、JSON 校验与 Agent Skill。
+首次打开应用时使用空白工作区，并自动启动 8 步“第一次创建项目”教程。右上角问号打开教程目录；文档工具、“理解 Derivon 的基本图模型”、大型项目导航、本地版下载和 Agent Skills 分成独立短教程，可分别完成或重播。替换作为基本图模型的一部分讲解。生手流程不再介绍原始 JSON 编辑。
 
-引导步骤位于 `src/onboarding.tsx`。步骤只引用统一的功能标识，各控件通过 `data-tour-feature` 注册目标，并在真实操作成功后发送对应完成事件。蒙版和浮窗每次从目标元素的 DOM 边界计算位置，不保存控件坐标；修改控件时应同步使用 `TOUR_FEATURES` 和 `notifyTourAction`，让功能、目标和步骤推进保持同一绑定。
+引导实现位于 `src/onboarding.tsx`，定位、滚动、聚光区、键盘和焦点行为由 React Joyride 负责。业务控件通过 `data-tour-feature` 注册稳定目标，真实操作通过类型化的模块内事件通知当前步骤；应用不再维护自定义蒙版几何、浮窗定位、DOM Observer 或全局 `window` 事件。
 
-仓库中的完整 Replace with 示例仍可通过 `?example=replace-with` 显式打开；如果浏览器已有本地工作区，本地内容始终优先，不会被示例覆盖。
+教程采用受控进度。输入、排版、布局、搜索和图操作只会启用“下一步”，不会在用户刚看到结果时强行跳走。自动推进仅用于创建成功以及旧目标会随界面切换消失的少数步骤。进度按 `derivon.onboarding/v2` 分教程保存；未完成教程从断点恢复，已完成教程重播时从头开始。
+
+大型项目导航教程会临时加载内置的 `math-reforged` 图。进入前保存当前 manifest、对象文档、目录句柄和修订号，退出或完成时恢复；临时示例不会写入当前文件夹或浏览器工作区。路线推导只在本地应用中提供，浏览器教程直接链接到 [最新本地版](https://github.com/derivon-research/derivon-mindmap/releases/latest)，不演示路线求解过程。新增步骤时应优先复用 `TOUR_FEATURES` 和 `notifyTourAction`，只有确实跨越业务界面的步骤才在 `App.tsx` 使用 `TourPreparation`。
+
+仓库中的完整替换示例仍可通过 `?example=replace-with` 显式打开；如果浏览器已有本地工作区，本地内容始终优先，不会被示例覆盖。
 
 ## 工作区
 
@@ -215,7 +219,7 @@ node .derivon/agent/validate-workspace.mjs . --review h-1
 
 ## 文档编辑
 
-选择概念或推导后点击“编辑文档”，也可以双击画布对象。文档模式会让出画布，编辑器约占工作区宽度的 80%，右侧保留对象 ID、图关系、权重、文档目录和访问入口。
+选择概念或推导后点击“编辑文档”，也可以按住 Ctrl/Cmd 点击画布对象。文档模式会让出画布，编辑器约占工作区宽度的 80%，右侧保留对象 ID、图关系、权重、文档目录和访问入口。
 
 编辑器基于 Tiptap 的开源核心、StarterKit、Markdown 和 Mathematics 扩展。标题、粗体、斜体、删除线、链接、代码、引用、列表、表格与分隔线都在同一正文区域内直接排版；输入 `# ` 等 Markdown 语法会立即形成对应结构，`Command/Ctrl+B` 等 StarterKit 快捷键可直接使用。
 
@@ -236,12 +240,12 @@ node .derivon/agent/validate-workspace.mjs . --review h-1
 - 第一次点击节点选中它；再次点击同一节点进入一跳邻域布局。
 - 总览位置写入 `view.positions`；局部布局只存在于当前浏览器会话。
 
-## Replace With
+## 替换
 
 建立替换关系：
 
 1. 用框选或按住 `Shift` 选择一个或多个概念点。
-2. 点击工具栏的 `Replace with` 图标。
+2. 点击工具栏的“替换”图标。
 3. 点击已经存在的概念点作为替换点。
 
 该操作只修改 `view.replacements`，不会创建父概念、容器、端口、超边或权重。解除关系也不会删除概念、推导或对象文档。
@@ -252,7 +256,7 @@ node .derivon/agent/validate-workspace.mjs . --review h-1
 H_view = { h ∈ H | T(h) ∪ {head(h)} ⊆ P_view }
 ```
 
-因此 `replace with` 不承诺两侧具有相同可达性或最低成本。
+因此替换不承诺两侧具有相同可达性或最低成本。
 
 ## Manifest Schema
 

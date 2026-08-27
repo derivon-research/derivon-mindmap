@@ -1,4 +1,4 @@
-import { InputRule, type Editor } from '@tiptap/core';
+import { Extension, InputRule, type Editor } from '@tiptap/core';
 import { Markdown } from '@tiptap/markdown';
 import { BlockMath, InlineMath } from '@tiptap/extension-mathematics';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
@@ -81,6 +81,33 @@ type FormulaSelection = {
   latex: string;
 };
 
+function countMathNodes(document: Editor['state']['doc']): number {
+  let count = 0;
+  document.descendants((node) => {
+    if (node.type.name === 'inlineMath' || node.type.name === 'blockMath') count += 1;
+  });
+  return count;
+}
+
+const TourEditorShortcuts = Extension.create({
+  name: 'tourEditorShortcuts',
+  priority: 1_000,
+  addKeyboardShortcuts() {
+    const run = (command: () => boolean, action: 'document-formatted' | 'editor-history-used') => {
+      const applied = command();
+      if (applied) notifyTourAction(action);
+      return applied;
+    };
+    return {
+      'Mod-b': () => run(() => this.editor.commands.toggleBold(), 'document-formatted'),
+      'Mod-i': () => run(() => this.editor.commands.toggleItalic(), 'document-formatted'),
+      'Mod-z': () => run(() => this.editor.commands.undo(), 'editor-history-used'),
+      'Shift-Mod-z': () => run(() => this.editor.commands.redo(), 'editor-history-used'),
+      'Mod-y': () => run(() => this.editor.commands.redo(), 'editor-history-used'),
+    };
+  },
+});
+
 const MarkdownInlineMath = InlineMath.extend({
   addInputRules() {
     return [new InputRule({
@@ -117,6 +144,7 @@ const MarkdownBlockMath = BlockMath.extend({
 
 function createExtensions(onEditMath: (formula: FormulaSelection) => void) {
   return [
+    TourEditorShortcuts,
     StarterKit,
     TableKit.configure({ table: { resizable: true } }),
     MarkdownInlineMath.configure({
@@ -164,6 +192,9 @@ function EditorToolbar({ editor }: { editor: Editor }) {
     command();
     notifyTourAction('document-formatted');
   };
+  const useHistory = (command: () => boolean) => {
+    if (command()) notifyTourAction('editor-history-used');
+  };
 
   return (
     <header className="markdown-toolbar" {...tourTarget(TOUR_FEATURES.documentFormat)}>
@@ -196,8 +227,8 @@ function EditorToolbar({ editor }: { editor: Editor }) {
         <button type="button" className={state.orderedList ? 'is-active' : ''} title="有序列表" aria-label="有序列表" onClick={() => format(() => editor.chain().focus().toggleOrderedList().run())}><ListOrdered size={16} /></button>
         <button type="button" title="分隔线" aria-label="分隔线" onClick={() => format(() => editor.chain().focus().setHorizontalRule().run())}><Minus size={16} /></button>
         <button type="button" title="插入表格" aria-label="插入表格" {...tourTarget(TOUR_FEATURES.insertTable)} onClick={() => { editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); notifyTourAction('table-inserted'); }}><Table size={16} /></button>
-        <button type="button" title="插入行内公式 ($...$)" aria-label="插入行内公式" {...tourTarget(TOUR_FEATURES.insertFormula)} onClick={() => { editor.chain().focus().insertInlineMath({ latex: 'E = mc^2' }).run(); notifyTourAction('formula-inserted'); }}><Sigma size={16} /></button>
-        <button type="button" title="插入块级公式 ($$...$$)" aria-label="插入块级公式" {...tourTarget(TOUR_FEATURES.insertFormula)} onClick={() => { editor.chain().focus().insertBlockMath({ latex: '\\int_0^1 x^2 \\, dx' }).run(); notifyTourAction('formula-inserted'); }}><SquareFunction size={16} /></button>
+        <button type="button" title="插入行内公式 ($...$)" aria-label="插入行内公式" {...tourTarget(TOUR_FEATURES.insertFormula)} onClick={() => editor.chain().focus().insertInlineMath({ latex: 'E = mc^2' }).run()}><Sigma size={16} /></button>
+        <button type="button" title="插入块级公式 ($$...$$)" aria-label="插入块级公式" {...tourTarget(TOUR_FEATURES.insertFormula)} onClick={() => editor.chain().focus().insertBlockMath({ latex: '\\int_0^1 x^2 \\, dx' }).run()}><SquareFunction size={16} /></button>
         <button
           type="button"
           title="插入 HTML 交互示例"
@@ -215,8 +246,8 @@ function EditorToolbar({ editor }: { editor: Editor }) {
         </button>
       </div>
       <div className="editor-history" role="group" aria-label="编辑历史" {...tourTarget(TOUR_FEATURES.editorHistory)}>
-        <button type="button" disabled={!state.canUndo} title="撤回" aria-label="编辑器撤回" onClick={() => { editor.chain().focus().undo().run(); notifyTourAction('editor-history-used'); }}><Undo2 size={16} /></button>
-        <button type="button" disabled={!state.canRedo} title="重做" aria-label="编辑器重做" onClick={() => { editor.chain().focus().redo().run(); notifyTourAction('editor-history-used'); }}><Redo2 size={16} /></button>
+        <button type="button" disabled={!state.canUndo} title="撤回" aria-label="编辑器撤回" onClick={() => useHistory(() => editor.chain().focus().undo().run())}><Undo2 size={16} /></button>
+        <button type="button" disabled={!state.canRedo} title="重做" aria-label="编辑器重做" onClick={() => useHistory(() => editor.chain().focus().redo().run())}><Redo2 size={16} /></button>
       </div>
     </header>
   );
@@ -287,10 +318,13 @@ export function DocumentEditor({ value, onChange, label }: DocumentEditorProps) 
         'data-tour-feature': TOUR_FEATURES.documentBody.id,
       },
     },
-    onUpdate: ({ editor: current }) => {
+    onUpdate: ({ editor: current, transaction }) => {
       const markdown = current.getMarkdown();
       lastEmittedValue.current = markdown;
       onChangeRef.current(markdown);
+      if (countMathNodes(current.state.doc) > countMathNodes(transaction.before)) {
+        notifyTourAction('formula-inserted');
+      }
     },
   });
 

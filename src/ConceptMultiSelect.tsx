@@ -9,6 +9,7 @@ type ConceptMultiSelectProps = {
   points: Point[];
   selectedIds: string[];
   tone: 'start' | 'target';
+  tourFeatureId?: string;
   onToggle: (pointId: string) => void;
 };
 
@@ -18,6 +19,7 @@ export function ConceptMultiSelect({
   points,
   selectedIds,
   tone,
+  tourFeatureId,
   onToggle,
 }: ConceptMultiSelectProps) {
   const [query, setQuery] = useState('');
@@ -35,6 +37,7 @@ export function ConceptMultiSelect({
     [fuse, query],
   );
   const listboxId = `${id}-results`;
+  const resultHeight = results.length ? Math.min(results.length * 38, 210) : 38;
 
   const closeWhenFocusLeaves = (event: FocusEvent<HTMLElement>) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
@@ -42,6 +45,12 @@ export function ConceptMultiSelect({
 
   return (
     <section className={`route-concept-selector is-${tone}`} onBlur={closeWhenFocusLeaves}>
+      <div
+        className="route-concept-tour-target"
+        data-tour-feature={tourFeatureId}
+        style={{ height: open && !!query.trim() ? 63 + resultHeight : '100%' }}
+        aria-hidden="true"
+      />
       <header>
         <label htmlFor={id}>{label}</label>
         <span>{selectedIds.length}</span>
