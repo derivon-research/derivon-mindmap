@@ -3,8 +3,7 @@ name: Release Desktop App
 on:
   push:
     tags:
-      - v0.1.0-beta
-  workflow_dispatch:
+      - "v*"
 
 permissions:
   contents: write
@@ -14,8 +13,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Require a tagged main commit
+        shell: bash
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Release tag $GITHUB_REF_NAME does not point to a commit on main." >&2
+            exit 1
+          fi
+
+      - name: Validate release version
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must use a SemVer-like vX.Y.Z format: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+          package_version=$(node -p "require('./package.json').version")
+          tauri_version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          cargo_version=$(cargo metadata --no-deps --format-version 1 \
+            --manifest-path src-tauri/Cargo.toml | jq -r '.packages[0].version')
+
+          for declared in "$package_version" "$tauri_version" "$cargo_version"; do
+            if [[ "$declared" != "$version" ]]; then
+              echo "Tag version $version does not match declared app version $declared." >&2
+              exit 1
+            fi
+          done
+
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
-    name: Build ${{ matrix.name }}
+    name: Release ${{ matrix.name }}
+    needs: validate
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -70,17 +118,17 @@ jobs:
         env:
           DERIVON_TEST_WORKSPACE: ${{ github.workspace }}/.ci/math-reforged
 
-      - name: Build and publish prerelease
+      - name: Build and publish release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: Derivon v__VERSION__
+          tagName: ${{ github.ref_name }}
+          releaseName: Derivon ${{ github.ref_name }}
           releaseBody: |
-            Derivon desktop beta with the local workspace authoring tool and derivon-core route solving.
+            Derivon desktop release with the local workspace authoring tool and derivon-core route solving.
 
-            The macOS and Windows packages are unsigned beta builds.
+            The macOS and Windows packages are currently unsigned builds.
           releaseDraft: false
-          prerelease: true
+          prerelease: ${{ needs.validate.outputs.prerelease }}
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
