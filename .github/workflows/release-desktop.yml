@@ -124,11 +124,24 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: Derivon ${{ github.ref_name }}
+          releaseName: Derivon Mindmap ${{ github.ref_name }}
           releaseBody: |
-            Derivon desktop release with the local workspace authoring tool and derivon-core route solving.
+            Derivon Mindmap v0.2.0 is the first stable desktop release for authoring Derivon workspaces and finding efficient learning routes.
 
-            The macOS and Windows packages are currently unsigned builds.
+            ## Highlights
+
+            - Plan one route toward multiple target concepts with derivon-core v0.2.0. Shared prerequisite work is selected once and charged once.
+            - Select multiple known and target concepts with fuzzy search, or use left click for known concepts and right click for targets directly on the canvas.
+            - Inspect executable derivation steps, route cost, bounds, optimality, and target-specific diagnostics for unreachable goals.
+            - Open, edit, validate, and automatically save local Derivon workspaces from the Tauri desktop application.
+            - Author Markdown, KaTeX, tables, and interactive HTML documents alongside concepts and derivations.
+
+            ## Downloads
+
+            - macOS universal DMG for Apple Silicon and Intel Macs.
+            - Windows x64 NSIS installer.
+
+            The macOS and Windows packages are currently unsigned. Your operating system may show an unverified developer warning on first launch.
           releaseDraft: false
           prerelease: ${{ needs.validate.outputs.prerelease }}
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
