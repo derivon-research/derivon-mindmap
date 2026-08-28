@@ -19,6 +19,37 @@ npm install
 npm run tauri:dev
 ```
 
+源码开发构建会提供系统菜单 `Develop > Open Developer Tools`，也可按
+`Command+Shift+I`（macOS）或 `Ctrl+Shift+I`（Windows/Linux）随时打开 WebView
+开发者工具。
+
+### 性能分析与 Agent 协作
+
+需要分析性能时使用完整 debug 模式：
+
+```bash
+npm run tauri:debug
+```
+
+该命令会自动打开开发者工具，并启用 Tauri 官方 `tracing` span。复现问题后正常退出
+Derivon，完整的 Chrome Trace Event JSON 会写入
+`src-tauri/target/perf/derivon-native-<timestamp>-<pid>.json`，可直接拖入
+[Perfetto](https://ui.perfetto.dev/) 或交给 Agent。trace 包含 Tauri 自带的 IPC 请求、参数
+反序列化、command 执行、响应和 WebView eval 阶段，并额外标注 `route.build_graph` 与
+`route.core_solve` 两个业务阶段。
+
+与 Agent 协作时应提供复现步骤和 trace 文件路径；优化前后使用相同工作区与操作各录制
+多次，以区分真实变化和运行噪声。需要实时检查 IPC 参数、响应和 waterfall 时，可选用
+Tauri 官方文档推荐的
+[CrabNebula DevTools](https://v2.tauri.app/develop/debug/crabnebula-devtools)；仓库不默认
+集成它，避免与 trace writer 争用全局 tracing subscriber。
+
+WebView 侧使用 Chromium 的 Performance/React Profiler 或 macOS Web Inspector 的
+Timelines 分析渲染、脚本、布局和内存；浏览器开发模式还可由 Chrome DevTools MCP 驱动。
+Rust 开发二进制仍带调试信息，可继续连接 Instruments、Samply 或其他采样 profiler。
+调试菜单只编译进 debug 构建，trace 依赖只由 `tauri:debug` 的 `debug-tools` feature
+启用；`npm run tauri:build` 生成的 release 应用不包含这些入口和 tracing 开销。
+
 打开应用后，用工具栏的文件夹按钮选择一个已有 Derivon 工作区。仓库内置的稳定验收
 工作区位于 `src-tauri/tests/fixtures/complete-workspace`，使用 A、B、C、D、X、Y 等符号
 覆盖完整工作区功能。工具栏的路线按钮进入路线模式：选择目标概念、勾选一个或多个已

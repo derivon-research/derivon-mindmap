@@ -170,7 +170,11 @@ fn edge_name(graph: &Graph, edge: derivon_core::HyperedgeId) -> String {
 }
 
 pub fn solve_route(request: RouteRequest) -> Result<RouteResponse, String> {
-    let graph = build_graph(&request.workspace)?;
+    let graph = {
+        #[cfg(feature = "debug-tools")]
+        let _span = tracing::info_span!("route.build_graph").entered();
+        build_graph(&request.workspace)?
+    };
     let start_ids = request
         .start_point_ids
         .iter()
@@ -208,16 +212,20 @@ pub fn solve_route(request: RouteRequest) -> Result<RouteResponse, String> {
             "budget exceeds the application limit ({MAX_NODES} nodes, {MAX_MILLIS} ms)"
         ));
     }
-    let solution = solve_many(
-        &graph,
-        &start,
-        &targets,
-        &Budget {
-            max_nodes: requested_budget.max_nodes,
-            max_millis: requested_budget.max_millis,
-        },
-    )
-    .map_err(|error| error.to_string())?;
+    let solution = {
+        #[cfg(feature = "debug-tools")]
+        let _span = tracing::info_span!("route.core_solve").entered();
+        solve_many(
+            &graph,
+            &start,
+            &targets,
+            &Budget {
+                max_nodes: requested_budget.max_nodes,
+                max_millis: requested_budget.max_millis,
+            },
+        )
+        .map_err(|error| error.to_string())?
+    };
 
     if !solution.cost.is_finite() {
         let reached = closure(&graph, &start);
