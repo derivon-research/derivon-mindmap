@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { parseDocument, type DocumentReference } from './domain';
+import { parseDocumentWithMigration, type DocumentReference } from './domain';
 import type { AuthoringWorkspace, WorkspaceDirectorySnapshot } from './workspace';
 
 export type NativeWorkspaceDirectory = {
@@ -33,7 +33,8 @@ export async function chooseNativeWorkspace(): Promise<{
 }> {
   const result = await invoke<NativeChosenWorkspace | null>('choose_workspace');
   if (!result) throw new DOMException('Folder selection cancelled', 'AbortError');
-  result.workspace.manifest = parseDocument(JSON.stringify(result.workspace.manifest));
+  const parsed = parseDocumentWithMigration(JSON.stringify(result.workspace.manifest));
+  result.workspace.manifest = parsed.document;
   return {
     handle: { kind: 'tauri', name: result.name, path: result.path },
     workspace: result.workspace,
@@ -58,7 +59,8 @@ export async function readNativeWorkspace(
   loadFiles: boolean,
 ): Promise<WorkspaceDirectorySnapshot> {
   const snapshot = await invoke<WorkspaceDirectorySnapshot>('read_workspace', { rootPath: root.path, loadFiles });
-  snapshot.workspace.manifest = parseDocument(JSON.stringify(snapshot.workspace.manifest));
+  const parsed = parseDocumentWithMigration(JSON.stringify(snapshot.workspace.manifest));
+  snapshot.workspace.manifest = parsed.document;
   return snapshot;
 }
 

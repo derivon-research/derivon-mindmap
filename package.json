@@ -11,10 +11,15 @@
     "tauri:build": "tauri build",
     "build": "tsc -b && vite build",
     "test": "vitest run src",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "typecheck:perf": "tsc --noEmit -p tsconfig.performance.json",
+    "bench:graph": "playwright test --config playwright.performance.config.ts benchmarks/graph-performance.spec.ts",
+    "bench:replacement": "playwright test --config playwright.performance.config.ts benchmarks/replacement-performance.spec.ts",
+    "bench:g6-isolated": "playwright test --config playwright.performance.config.ts benchmarks/g6-performance.spec.ts"
   },
   "dependencies": {
-    "@dagrejs/dagre": "^2.0.4",
+    "@antv/g6": "^5.1.1",
+    "@dagrejs/dagre": "^3.1.1",
     "@tauri-apps/api": "^2.11.1",
     "@tiptap/extension-mathematics": "^3.30.3",
     "@tiptap/extension-table": "^3.30.3",
@@ -22,7 +27,7 @@
     "@tiptap/pm": "^3.30.3",
     "@tiptap/react": "^3.30.3",
     "@tiptap/starter-kit": "^3.30.3",
-    "@xyflow/react": "^12.10.0",
+    "d3-force": "^3.0.0",
     "fuse.js": "^7.5.0",
     "katex": "^0.18.4",
     "lucide-react": "^0.468.0",
@@ -35,6 +40,7 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@tauri-apps/cli": "^2.11.4",
+    "@types/d3-force": "^3.0.10",
     "@types/node": "^26.4.0",
     "@types/react": "^19.0.3",
     "@types/react-dom": "^19.0.2",

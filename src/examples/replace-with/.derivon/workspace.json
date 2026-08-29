@@ -1,9 +1,8 @@
 {
-  "schema": "derivon.authoring/v0.2.0",
+  "schema": "derivon.authoring/v0.3.0",
   "document": {
     "title": "A + B → X",
-    "description": "C、D 位于替换关系之外；点集视图使用 A、B，替换视图使用 X。",
-    "updatedAt": "2026-08-24T21:00:00.000Z"
+    "description": "C、D 位于替换关系之外；点集视图使用 A、B，替换视图使用 X。"
   },
   "graph": {
     "points": [
@@ -25,21 +24,6 @@
     ]
   },
   "view": {
-    "positions": {
-      "h-c": { "x": -80, "y": 263 },
-      "C": { "x": 30, "y": 258 },
-      "h-a": { "x": 250, "y": 83 },
-      "A": { "x": 360, "y": 78 },
-      "h-b": { "x": 570, "y": 83 },
-      "h-b-alt": { "x": 570, "y": 83 },
-      "B": { "x": 680, "y": 78 },
-      "h-d-points": { "x": 890, "y": 123 },
-      "h-x": { "x": 470, "y": 443 },
-      "X": { "x": 680, "y": 438 },
-      "h-d-x": { "x": 890, "y": 398 },
-      "h-d-direct": { "x": 570, "y": 263 },
-      "D": { "x": 1080, "y": 258 }
-    },
     "replacements": [
       {
         "points": ["A", "B"],

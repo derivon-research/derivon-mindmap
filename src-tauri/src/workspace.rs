@@ -120,18 +120,22 @@ pub async fn choose_workspace() -> Result<Option<ChosenWorkspace>, String> {
         return Ok(None);
     };
     let root = root.path().to_owned();
-    let snapshot = read_snapshot(&root, true)?;
-    Ok(Some(ChosenWorkspace {
-        name: root
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("workspace")
-            .to_owned(),
-        path: root.to_string_lossy().into_owned(),
-        workspace: snapshot.workspace,
-        revision: snapshot.revision,
-        created: false,
-    }))
+    tauri::async_runtime::spawn_blocking(move || {
+        let snapshot = read_snapshot(&root, true)?;
+        Ok(Some(ChosenWorkspace {
+            name: root
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("workspace")
+                .to_owned(),
+            path: root.to_string_lossy().into_owned(),
+            workspace: snapshot.workspace,
+            revision: snapshot.revision,
+            created: false,
+        }))
+    })
+    .await
+    .map_err(|error| format!("workspace chooser task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -177,9 +181,17 @@ pub async fn workspace_revision(root_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn read_workspace_file(root_path: String, relative_path: String) -> Result<String, String> {
-    let path = Path::new(&root_path).join(safe_relative_path(&relative_path)?);
-    fs::read_to_string(&path).map_err(|error| format!("cannot read {}: {error}", path.display()))
+pub async fn read_workspace_file(
+    root_path: String,
+    relative_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = Path::new(&root_path).join(safe_relative_path(&relative_path)?);
+        fs::read_to_string(&path)
+            .map_err(|error| format!("cannot read {}: {error}", path.display()))
+    })
+    .await
+    .map_err(|error| format!("workspace file reader task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -297,15 +309,8 @@ mod tests {
             .contains_key("docs/points/y/document.md"));
         assert!(!root.join("docs/points/y/document.md").exists());
 
-        let positions = manifest.view["positions"].as_object().unwrap();
-        assert_eq!(positions.len(), 14);
-        assert!(manifest
-            .graph
-            .points
-            .iter()
-            .map(|point| &point.id)
-            .chain(manifest.graph.hyperedges.iter().map(|edge| &edge.id))
-            .all(|id| positions.contains_key(id)));
+        assert_eq!(manifest.schema, "derivon.authoring/v0.3.0");
+        assert!(manifest.view.get("positions").is_none());
         assert_eq!(
             manifest.view["replacements"],
             serde_json::json!([{

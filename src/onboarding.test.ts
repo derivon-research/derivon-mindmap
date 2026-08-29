@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { groupHyperedges } from './hyperedgeGroups';
 import { createOnboardingTours, ONBOARDING_TOURS, TOUR_FEATURES } from './onboarding';
-import { graphTutorialWorkspace, graphTutorialWorkspaceWithReplacement } from './sample';
+import {
+  graphTutorialWorkspace,
+  graphTutorialWorkspaceForStage,
+  graphTutorialWorkspaceWithReplacement,
+} from './sample';
 
 describe('onboarding tour definitions', () => {
   it('keeps first-run onboarding short and splits advanced topics into modules', () => {
@@ -15,7 +19,26 @@ describe('onboarding tour definitions', () => {
     ]);
     expect(ONBOARDING_TOURS.basics.steps).toHaveLength(8);
     expect(ONBOARDING_TOURS.graph.title).toBe('理解 Derivon 的基本图模型');
-    expect(ONBOARDING_TOURS.graph.steps).toHaveLength(20);
+    expect(ONBOARDING_TOURS.graph.steps).toHaveLength(25);
+    expect(ONBOARDING_TOURS.graph.steps.slice(6, 20).map((step) => step.id)).toEqual([
+      'derivation-model',
+      'premise-and-conclusion',
+      'create-derivation-drag',
+      'create-derivation-form',
+      'open-derivation-document',
+      'understand-derivation-document',
+      'return-from-derivation',
+      'complete-invertible-premises',
+      'create-surjective-parallel',
+      'parallel',
+      'parallel-select',
+      'weight',
+      'more-premises',
+      'active-member-result',
+    ]);
+    const createDerivationStep = ONBOARDING_TOURS.graph.steps.find((step) => step.id === 'create-derivation-form');
+    expect(createDerivationStep?.description).toBe('当然，你也可以在这里创建推导');
+    expect(createDerivationStep?.requires).toBeUndefined();
     expect(ONBOARDING_TOURS.graph.steps.slice(-5).map((step) => step.id)).toEqual([
       'replacement-intro',
       'select-replacement-points',
@@ -63,7 +86,7 @@ describe('onboarding tour definitions', () => {
     const parallelStep = ONBOARDING_TOURS.graph.steps.find((step) => step.id === 'parallel-select');
     const weightStep = ONBOARDING_TOURS.graph.steps.find((step) => step.id === 'weight');
 
-    expect(parallelStep?.description).toContain('“推导步骤”的 ID、文档和成本会随之切换');
+    expect(parallelStep?.description).toContain('下方推导 ID、文档和成本会随当前方案切换');
     expect(weightStep?.description).toContain('权重越大，学习成本越高');
     expect(weightStep?.description).toContain('成本最低的默认置顶');
   });
@@ -101,6 +124,24 @@ describe('onboarding tour definitions', () => {
 
     expect(labels).toEqual(expect.arrayContaining(['线性映射', '零空间', '单射', '满射', '可逆线性映射']));
     expect(parallel?.members.map((member) => member.id)).toEqual(['null-space-def', 'null-space-equations']);
+    expect(graphTutorialWorkspace.manifest.graph.hyperedges.some((edge) => edge.head === 'invertible')).toBe(false);
+
+    const single = graphTutorialWorkspaceForStage('invertible-single').manifest;
+    expect(single.graph.hyperedges.some((edge) =>
+      edge.head === 'invertible' && edge.tails.join(',') === 'injective-surjective',
+    )).toBe(true);
+    const complete = graphTutorialWorkspaceForStage('invertible-complete').manifest;
+    expect(complete.graph.hyperedges.some((edge) =>
+      edge.head === 'invertible'
+      && edge.tails.includes('injective-surjective')
+      && edge.tails.includes('surjective'),
+    )).toBe(true);
+    const stagedParallel = groupHyperedges(graphTutorialWorkspaceForStage('surjective-parallel').manifest.graph.hyperedges)
+      .find((group) => group.members.some((edge) => edge.head === 'surjective'));
+    expect(stagedParallel?.members).toHaveLength(2);
+    expect(graphTutorialWorkspaceForStage('null-space-updated').manifest.graph.hyperedges
+      .find((edge) => edge.id === 'null-space-def')?.tails).toEqual(['linear-map', 'subspace']);
+
     expect(graphTutorialWorkspaceWithReplacement.manifest.view.replacements).toEqual([{
       points: ['injective-surjective', 'surjective'],
       replaceWith: 'invertible',
@@ -130,8 +171,13 @@ describe('onboarding tour definitions', () => {
       'basics:return-canvas',
       'graph:open-linear-map-document',
       'graph:return-from-concept',
+      'graph:create-derivation-drag',
       'graph:open-derivation-document',
       'graph:return-from-derivation',
+      'graph:complete-invertible-premises',
+      'graph:create-surjective-parallel',
+      'graph:parallel-select',
+      'graph:more-premises',
       'graph:select-replacement-points',
       'graph:replace-select',
       'navigation:delete',

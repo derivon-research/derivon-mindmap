@@ -1,4 +1,5 @@
-export const DOCUMENT_SCHEMA = 'derivon.authoring/v0.2.0' as const;
+export const DOCUMENT_SCHEMA = 'derivon.authoring/v0.3.0' as const;
+export const PREVIOUS_DOCUMENT_SCHEMA = 'derivon.authoring/v0.2.0' as const;
 export const WEIGHT_DECIMAL_PLACES = 1;
 const WEIGHT_SCALE = 10 ** WEIGHT_DECIMAL_PLACES;
 
@@ -52,16 +53,18 @@ export type AuthoringDocument = {
   document: {
     title: string;
     description: string;
-    updatedAt: string;
   };
   graph: {
     points: Point[];
     hyperedges: Hyperedge[];
   };
   view: {
-    positions: Record<string, Position>;
     replacements: ViewReplacement[];
   };
+};
+
+export type ParsedDocument = {
+  document: AuthoringDocument;
 };
 
 export type DocumentIssue = { path: string; message: string };
@@ -94,9 +97,13 @@ function validateCurrentDocument(value: unknown): DocumentIssue[] {
   if (value.schema !== DOCUMENT_SCHEMA) issues.push({ path: 'schema', message: `必须为 ${DOCUMENT_SCHEMA}` });
   if (!isRecord(value.document)) issues.push({ path: 'document', message: '缺少文档元数据' });
   else {
+    Object.keys(value.document).forEach((key) => {
+      if (key !== 'title' && key !== 'description') {
+        issues.push({ path: `document.${key}`, message: '不属于共享语义元数据；时间由文件系统维护' });
+      }
+    });
     if (typeof value.document.title !== 'string') issues.push({ path: 'document.title', message: '必须是字符串' });
     if (typeof value.document.description !== 'string') issues.push({ path: 'document.description', message: '必须是字符串' });
-    if (typeof value.document.updatedAt !== 'string' || Number.isNaN(Date.parse(value.document.updatedAt))) issues.push({ path: 'document.updatedAt', message: '必须是 ISO 日期字符串' });
   }
   if (!isRecord(value.graph)) return [...issues, { path: 'graph', message: '缺少图数据' }];
 
@@ -163,18 +170,15 @@ function validateCurrentDocument(value: unknown): DocumentIssue[] {
     else validateDocumentReference(hyperedge.data, `${path}.data`, `超边 ${String(hyperedge.id)}`);
   });
 
-  if (!isRecord(value.view) || !isRecord(value.view.positions)) {
-    issues.push({ path: 'view.positions', message: '必须是位置映射对象' });
+  if (!isRecord(value.view)) {
+    issues.push({ path: 'view', message: '缺少共享视图数据' });
     return issues;
   }
-
-  const nodeIds = new Set([...pointIds, ...hyperedgeIds]);
-  for (const [id, position] of Object.entries(value.view.positions)) {
-    if (!nodeIds.has(id)) issues.push({ path: `view.positions.${id}`, message: '位置引用了未知节点' });
-    if (!isRecord(position) || typeof position.x !== 'number' || !Number.isFinite(position.x) || typeof position.y !== 'number' || !Number.isFinite(position.y)) {
-      issues.push({ path: `view.positions.${id}`, message: '位置必须包含有限数值 x 和 y' });
+  Object.keys(value.view).forEach((key) => {
+    if (key !== 'replacements') {
+      issues.push({ path: `view.${key}`, message: '不属于共享视图；坐标由运行时自动布局计算，不应写入 JSON' });
     }
-  }
+  });
 
   if (!Array.isArray(value.view.replacements)) {
     issues.push({ path: 'view.replacements', message: '必须是数组' });
@@ -227,11 +231,60 @@ export function validateDocument(value: unknown): DocumentIssue[] {
   return validateCurrentDocument(value);
 }
 
-export function parseDocument(text: string): AuthoringDocument {
-  const value: unknown = JSON.parse(text);
-  const issues = validateCurrentDocument(value);
+function migratePreviousDocument(value: Record<string, unknown>): {
+  value: Record<string, unknown>;
+  issues: DocumentIssue[];
+} {
+  const issues: DocumentIssue[] = [];
+  const metadata = isRecord(value.document) ? value.document : {};
+  const view = isRecord(value.view) ? value.view : {};
+  const rawPositions = view.positions;
+  const nodeIds = new Set<string>();
+  if (isRecord(value.graph)) {
+    if (Array.isArray(value.graph.points)) {
+      value.graph.points.forEach((point) => {
+        if (isRecord(point) && typeof point.id === 'string') nodeIds.add(point.id);
+      });
+    }
+    if (Array.isArray(value.graph.hyperedges)) {
+      value.graph.hyperedges.forEach((edge) => {
+        if (isRecord(edge) && typeof edge.id === 'string') nodeIds.add(edge.id);
+      });
+    }
+  }
+  if (!isRecord(rawPositions)) {
+    issues.push({ path: 'view.positions', message: 'v0.2 文档必须包含位置映射对象' });
+  } else {
+    for (const [id, position] of Object.entries(rawPositions)) {
+      if (!nodeIds.has(id)) issues.push({ path: `view.positions.${id}`, message: '位置引用了未知节点' });
+      if (!isRecord(position) || typeof position.x !== 'number' || !Number.isFinite(position.x) || typeof position.y !== 'number' || !Number.isFinite(position.y)) {
+        issues.push({ path: `view.positions.${id}`, message: '位置必须包含有限数值 x 和 y' });
+      }
+    }
+  }
+  return {
+    value: {
+      ...value,
+      schema: DOCUMENT_SCHEMA,
+      document: { title: metadata.title, description: metadata.description },
+      view: { replacements: view.replacements },
+    },
+    issues,
+  };
+}
+
+export function parseDocumentWithMigration(text: string): ParsedDocument {
+  const parsed: unknown = JSON.parse(text);
+  const migrated = isRecord(parsed) && parsed.schema === PREVIOUS_DOCUMENT_SCHEMA
+    ? migratePreviousDocument(parsed)
+    : { value: parsed, issues: [] };
+  const issues = [...migrated.issues, ...validateCurrentDocument(migrated.value)];
   if (issues.length) throw new Error(issues.slice(0, 4).map((issue) => `${issue.path}: ${issue.message}`).join('\n'));
-  return value as AuthoringDocument;
+  return { document: migrated.value as AuthoringDocument };
+}
+
+export function parseDocument(text: string): AuthoringDocument {
+  return parseDocumentWithMigration(text).document;
 }
 
 export function uniqueId(prefix: 'c' | 'h', existing: Iterable<string>): string {

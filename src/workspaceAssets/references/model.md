@@ -297,7 +297,7 @@ hyperedge with the enabling knowledge in its tail, not by a negative weight.
 
 ## 8. Mapping to `.derivon/workspace.json`
 
-The current manifest schema is `derivon.authoring/v0.2.0`.
+The current manifest schema is `derivon.authoring/v0.3.0`.
 
 | Manifest data | Layer | Meaning |
 | --- | --- | --- |
@@ -308,8 +308,11 @@ The current manifest schema is `derivon.authoring/v0.2.0`.
 | `graph.hyperedges[].head` | core | single conclusion point |
 | `graph.hyperedges[].weight` | core | non-negative whole-step cost |
 | `graph.hyperedges[].data` | authoring payload | document justifying the whole step |
-| `view.positions` | view | canvas coordinates only |
-| `view.replacements` | view | visual abstraction/projection only |
+| `view.replacements` | shared view | visual abstraction/projection only |
+
+Canvas coordinates, viewport, selection, hover, and local pins are runtime state.
+They exist only in memory for the current session and are not written to the
+manifest, a layout cache, or any other JSON artifact.
 
 A replacement does not add reachability, imply equivalence, contract a module,
 or preserve cost. Core algorithms ignore it.

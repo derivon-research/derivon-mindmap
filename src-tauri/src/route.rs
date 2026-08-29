@@ -315,7 +315,7 @@ mod tests {
 
     fn workspace(points: &[&str], edges: &[(&str, f64, &[&str], &str)]) -> WorkspaceDocument {
         WorkspaceDocument {
-            schema: "derivon.authoring/v0.2.0".to_owned(),
+            schema: "derivon.authoring/v0.3.0".to_owned(),
             document: serde_json::json!({}),
             graph: WorkspaceGraph {
                 points: points

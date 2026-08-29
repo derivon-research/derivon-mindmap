@@ -1,6 +1,6 @@
 # Derivon Mindmap
 
-Derivon 加权有向 B-超图的前端录入实验。React Flow 负责画布交互；领域协议、工作区读写、对象文档编辑、替换规则和可见性投影分别位于 `src/domain.ts`、`src/workspace.ts`、`src/DocumentEditor.tsx`、`src/replacements.ts` 与 `src/projection.ts`。
+Derivon 加权有向 B-超图的前端录入实验。AntV G6 Canvas 负责高性能画布交互，并通过 progressive LOD 支持千级概念图；领域协议、工作区读写、renderer-neutral scene、对象文档编辑、替换规则和可见性投影分别位于 `src/domain.ts`、`src/workspace.ts`、`src/graphScene.ts`、`src/DocumentEditor.tsx`、`src/replacements.ts` 与 `src/projection.ts`。
 
 ## 交流与反馈
 
@@ -107,12 +107,14 @@ npm install
 npm run dev
 ```
 
-构建与测试：
+构建、测试与 1,000-concept production G6 smoke：
 
 ```bash
 npm run build
 npm test
 npm run test:e2e
+npm run bench:graph
+npm run bench:replacement
 cd src-tauri
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
@@ -121,13 +123,15 @@ cargo test
 
 ## 初始页面与操作引导
 
-首次打开应用时使用空白工作区，并自动启动 8 步“第一次创建项目”教程。右上角问号打开教程目录；文档工具、“理解 Derivon 的基本图模型”、大型项目导航、本地版下载和 Agent Skills 分成独立短教程，可分别完成或重播。替换作为基本图模型的一部分讲解。生手流程不再介绍原始 JSON 编辑。
+首次打开应用时使用空白工作区，并自动启动 8 步“第一次创建项目”教程。右上角问号打开教程目录；文档工具、25 步“理解 Derivon 的基本图模型”、大型项目导航、本地版下载和 Agent Skills 分成独立短教程，可分别完成或重播。图模型教程先让用户从概念拖到概念创建推导，再追加前提、亲手建立平行推导、切换当前方案并验证端点编辑只影响当前方案，最后进入替换对照。生手流程不再介绍原始 JSON 编辑。
 
 引导实现位于 `src/onboarding.tsx`，定位、滚动、聚光区、键盘和焦点行为由 React Joyride 负责。业务控件通过 `data-tour-feature` 注册稳定目标，真实操作通过类型化的模块内事件通知当前步骤；应用不再维护自定义蒙版几何、浮窗定位、DOM Observer 或全局 `window` 事件。
 
 教程采用受控进度。输入、排版、布局、搜索和图操作只会启用“下一步”，不会在用户刚看到结果时强行跳走。自动推进仅用于创建成功以及旧目标会随界面切换消失的少数步骤。进度按 `derivon.onboarding/v2` 分教程保存；未完成教程从断点恢复，已完成教程重播时从头开始。
 
 大型项目导航教程会临时加载内置的 `math-reforged` 图。进入前保存当前 manifest、对象文档、目录句柄和修订号，退出或完成时恢复；临时示例不会写入当前文件夹或浏览器工作区。路线推导只在本地应用中提供，浏览器教程直接链接到 [最新本地版](https://github.com/derivon-research/derivon-mindmap/releases/latest)，不演示路线求解过程。新增步骤时应优先复用 `TOUR_FEATURES` 和 `notifyTourAction`，只有确实跨越业务界面的步骤才在 `App.tsx` 使用 `TourPreparation`。
+
+替换关系支持三种显示方式：`原概念`和`替换概念`是写入工作区历史的共享投影，`对照`只在当前会话同时显示两侧，不写入 JSON、history 或 autosave。概念卡右上角用不同标记区分替换成员与替换结果；hover 或选中后可通过附加三态控件切换。对照视图中的灰绿虚线箭头由直接成员汇聚后指向替换概念；它只是被动视图辅助，不是推导边，也不参与布局、路线或权重计算。切换对照不会移动节点、启动布局 Worker 或改变 viewport。
 
 仓库中的完整替换示例仍可通过 `?example=replace-with` 显式打开；如果浏览器已有本地工作区，本地内容始终优先，不会被示例覆盖。
 
@@ -262,22 +266,24 @@ node .derivon/agent/validate-workspace.mjs . --review h-1
 
 ## 图编辑
 
-- 工具栏 `+` 新建概念；右侧检查器编辑名称、权重与图关系。
-- 从概念拖到概念会创建单前提推导。
-- 从概念拖到已有推导会追加前提；从推导拖到概念会修改结论。
-- 头点和尾集相同的平行推导在数据中保持独立，在画布上堆叠为路径组。
-- 路径组默认展示 `weight` 最低的推导，可逐条查看和编辑。
-- 空前提合法；`weight` 是非负有限数值，最多保留一位小数。
-- 第一次点击节点选中它；再次点击同一节点进入一跳邻域布局。
-- 总览位置写入 `view.positions`；局部布局只存在于当前浏览器会话。
+- 工具栏 `+` 新建概念；相邻的推导按钮打开右侧搜索表单。前提使用模糊搜索多选，结论使用模糊搜索单选，选择过程保留在 draft，提交时才生成 ID、对象文档和一条 history 记录。空前提与自依赖环合法；结论提交前必填。
+- 概念卡是 `136 x 64` Canvas 矩形：左侧红色入口接收结论，右侧蓝色出口发出前提。推导菱形左侧为蓝色 premise input，右侧为红色 conclusion output，中央只显示一位小数成本。
+- 从 concept 蓝色 port 拖到 derivation 蓝色 port 会追加前提；从 derivation 红色 port 拖到 concept 红色 port 会修改结论。Concept 蓝色 port 拖到另一个 concept 的红色 port 时，预览临时 `1.0` 菱形和蓝/红两段曲线，提交后创建新推导。
+- 推导检查器的“编辑前提与结论”使用同一套搜索式 draft form，一次保存、一次 undo、一次自动布局，不使用全量 `<select>` 列表。
+- 头点和尾集相同的平行推导在数据中保持独立，在画布上用最多两层无文字菱形轮廓堆叠；检查器切换 active member，端点编辑只修改当前 member。
+- `Shift` 点击切换多选，`Shift` 从空白画布拖动使用 partial-overlap marquee；拖动任一 selected card 会一起移动当前全部 selected、非淡化节点。
+- 静态边不接收 pointer。Focus/route 中的淡化节点、菱形和 ports 不可点击、拖动、连接或框选；其区域按空白画布处理，hover 不会重新提亮背景关系。
+- 自动布局在独立 Worker 中运行：少于 400 个投影节点使用从左到右的 Dagre，达到阈值后切换到 cycle-safe deterministic bipartite force，并执行 card-aware separation。结构/投影修改约 120ms debounce，权重修改约 400ms debounce；新请求取消旧请求。
+- 坐标只存在于当前运行时内存。打开工作区、拓扑/投影/权重修改或显式自动布局会重新计算；手工拖动保留到下一次 full layout 或 workspace reload，不写入 workspace、browser localStorage、sidecar layout cache 或任何 JSON。
+- 超过 300 concepts 时，overview 始终保留矩形 card silhouettes，但 neutral labels、IDs、ports、普通 derivation junctions 和 edges 按 LOD 隐藏；selection、hover、search/focus 与 route materialize 当前上下文。编辑不可见或远距离推导使用右侧搜索 form。
 
 ## 替换
 
 建立替换关系：
 
-1. 用框选或按住 `Shift` 选择一个或多个概念点。
+1. 选择一个概念，或按住 `Shift` 继续点击以选择多个概念。
 2. 点击工具栏的“替换”图标。
-3. 点击已经存在的概念点作为替换点。
+3. 点击已经存在的概念点，或通过顶部搜索选择替换点。
 
 该操作只修改 `view.replacements`，不会创建父概念、容器、端口、超边或权重。解除关系也不会删除概念、推导或对象文档。
 
@@ -293,11 +299,10 @@ H_view = { h ∈ H | T(h) ∪ {head(h)} ⊆ P_view }
 
 ```json
 {
-  "schema": "derivon.authoring/v0.2.0",
+  "schema": "derivon.authoring/v0.3.0",
   "document": {
     "title": "A 到 B",
-    "description": "工作区示例",
-    "updatedAt": "2026-08-25T00:00:00.000Z"
+    "description": "工作区示例"
   },
   "graph": {
     "points": [
@@ -332,7 +337,6 @@ H_view = { h ∈ H | T(h) ∪ {head(h)} ⊆ P_view }
     ]
   },
   "view": {
-    "positions": {},
     "replacements": []
   }
 }
@@ -342,9 +346,11 @@ H_view = { h ∈ H | T(h) ∪ {head(h)} ⊆ P_view }
 
 - 点只允许 `id` 和 `data`；超边只允许 `id`、`weight`、`tails`、`head` 和 `data`。
 - `data.document` 是工作区内的文档目录相对路径，不是入口文件路径。
+- `document` 只保存共享语义元数据 `title` 和 `description`；不保存 `updatedAt` 等时间戳，写入时间由文件系统元数据和 Git 维护。
 - `data.format` 只接受 `markdown` 或兼容旧工作区的 `html`；新文档统一使用 `markdown`。
 - 每个文档目录只能由一个点或一条超边拥有。
 - 每个目录必须存在 `index.html`；Markdown 文档还必须存在 `document.md`。
-- React Flow 投影对象、选择状态和局部布局不持久化。
+- renderer 投影对象、坐标、viewport、选择状态和局部布局不写入 manifest，也不写入独立 layout cache；它们只存在于当前运行时内存。
+- `v0.2.0` manifest 仍可读取；其中的 `view.positions` 会在严格校验后直接丢弃，后续保存统一写为 `v0.3.0`。
 
 Rust 核心仍然只消费点、超边和权重，不读取对象文档或 `view.replacements`。

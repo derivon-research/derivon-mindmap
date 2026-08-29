@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   DOCUMENT_SCHEMA,
+  PREVIOUS_DOCUMENT_SCHEMA,
   formatWeight,
   normalizeWeight,
   parseDocument,
+  parseDocumentWithMigration,
   uniqueId,
   validateDocument,
 } from './domain';
@@ -97,13 +99,45 @@ describe('authoring document', () => {
     });
   });
 
-  it('rejects node id collisions and invalid view coordinates', () => {
-    const invalid = structuredClone(sampleDocument);
+  it('rejects node id collisions, timestamps, and runtime positions in the current schema', () => {
+    const invalid = structuredClone(sampleDocument) as unknown as Record<string, any>;
+    invalid.document.updatedAt = '2026-08-29T00:00:00.000Z';
     invalid.graph.hyperedges[0].id = 'A';
-    invalid.view.positions.A = { x: Number.NaN, y: 0 };
+    invalid.view.positions = { A: { x: 0, y: 0 } };
     const issues = validateDocument(invalid);
     expect(issues.some((issue) => issue.message.includes('不能与点 ID 相同'))).toBe(true);
-    expect(issues.some((issue) => issue.message.includes('有限数值'))).toBe(true);
+    expect(issues).toContainEqual({
+      path: 'document.updatedAt',
+      message: '不属于共享语义元数据；时间由文件系统维护',
+    });
+    expect(issues).toContainEqual({
+      path: 'view.positions',
+      message: '不属于共享视图；坐标由运行时自动布局计算，不应写入 JSON',
+    });
+  });
+
+  it('validates and discards v0.2 positions instead of carrying them into v0.3', () => {
+    const previous = {
+      ...structuredClone(sampleDocument),
+      schema: PREVIOUS_DOCUMENT_SCHEMA,
+      document: {
+        ...sampleDocument.document,
+        updatedAt: '2026-08-29T00:00:00.000Z',
+      },
+      view: {
+        ...sampleDocument.view,
+        positions: { A: { x: 12, y: 34 } },
+      },
+    };
+    const migrated = parseDocumentWithMigration(JSON.stringify(previous));
+
+    expect(migrated.document.schema).toBe(DOCUMENT_SCHEMA);
+    expect(migrated).not.toHaveProperty('migratedPositions');
+    expect(JSON.stringify(migrated.document)).not.toContain('positions');
+    expect(migrated.document.document).not.toHaveProperty('updatedAt');
+
+    previous.view.positions.A.x = Number.NaN;
+    expect(() => parseDocumentWithMigration(JSON.stringify(previous))).toThrow('有限数值');
   });
 
   it('accepts nested replacement relations without defining parent objects', () => {

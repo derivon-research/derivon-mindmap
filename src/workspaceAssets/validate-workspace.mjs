@@ -52,18 +52,17 @@ try {
   process.exit(1);
 }
 
-if (manifest.schema !== 'derivon.authoring/v0.2.0') report('schema', 'expected derivon.authoring/v0.2.0');
+if (manifest.schema !== 'derivon.authoring/v0.3.0') report('schema', 'expected derivon.authoring/v0.3.0');
 if (!isObject(manifest.document)) report('document', 'expected metadata object');
 else {
+  reportUnknownKeys(manifest.document, new Set(['title', 'description']), 'document');
   if (typeof manifest.document.title !== 'string') report('document.title', 'expected string');
   if (typeof manifest.document.description !== 'string') report('document.description', 'expected string');
-  if (typeof manifest.document.updatedAt !== 'string' || Number.isNaN(Date.parse(manifest.document.updatedAt))) {
-    report('document.updatedAt', 'expected ISO date string');
-  }
 }
 if (!isObject(manifest.graph)) report('graph', 'expected graph object');
 else reportUnknownKeys(manifest.graph, new Set(['points', 'hyperedges']), 'graph');
 if (!isObject(manifest.view)) report('view', 'expected view object');
+else reportUnknownKeys(manifest.view, new Set(['replacements']), 'view');
 
 const points = Array.isArray(manifest.graph?.points) ? manifest.graph.points : [];
 const hyperedges = Array.isArray(manifest.graph?.hyperedges) ? manifest.graph.hyperedges : [];
@@ -137,17 +136,6 @@ for (const [kind, objects] of [['points', points], ['hyperedges', hyperedges]]) 
     else documentOwners.set(directory, object.id);
     await requireFile(`${directory}/index.html`, location);
     if (data.format === 'markdown') await requireFile(`${directory}/document.md`, location);
-  }
-}
-
-const positions = manifest.view?.positions;
-if (!isObject(positions)) report('view.positions', 'expected object');
-else {
-  for (const [id, position] of Object.entries(positions)) {
-    if (!objectIds.has(id)) report(`view.positions.${id}`, 'references unknown object');
-    if (!isObject(position) || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
-      report(`view.positions.${id}`, 'expected finite x and y');
-    }
   }
 }
 

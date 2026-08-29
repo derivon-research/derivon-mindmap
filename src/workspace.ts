@@ -1,4 +1,10 @@
-import { DOCUMENT_SCHEMA, parseDocument, type AuthoringDocument, type DocumentFormat, type DocumentReference } from './domain';
+import {
+  DOCUMENT_SCHEMA,
+  parseDocumentWithMigration,
+  type AuthoringDocument,
+  type DocumentFormat,
+  type DocumentReference,
+} from './domain';
 import {
   conceptDocumentTemplate,
   derivationDocumentTemplate,
@@ -18,7 +24,8 @@ import {
 import { isTauriRuntime } from './route';
 
 export const WORKSPACE_MANIFEST = '.derivon/workspace.json';
-export const LOCAL_WORKSPACE_KEY = 'derivon.authoring.workspace/v0.2.0';
+export const LOCAL_WORKSPACE_KEY = 'derivon.authoring.workspace/v0.3.0';
+export const PREVIOUS_LOCAL_WORKSPACE_KEY = 'derivon.authoring.workspace/v0.2.0';
 const LEGACY_SCHEMA = 'derivon.authoring/v0.1.0';
 const LEGACY_STORAGE_KEY = 'derivon.authoring.demo/v0.1.0';
 
@@ -69,9 +76,9 @@ export function validateWorkspace(workspace: AuthoringWorkspace): void {
 export function parseWorkspaceSnapshot(text: string): AuthoringWorkspace {
   const value: unknown = JSON.parse(text);
   if (!isRecord(value) || !isRecord(value.files)) throw new Error('工作区快照无效');
-  const manifest = parseDocument(JSON.stringify(value.manifest));
+  const parsed = parseDocumentWithMigration(JSON.stringify(value.manifest));
   const files = Object.fromEntries(Object.entries(value.files).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
-  const workspace = { manifest, files };
+  const workspace: AuthoringWorkspace = { manifest: parsed.document, files };
   validateWorkspace(workspace);
   return workspace;
 }
@@ -146,12 +153,21 @@ export function migrateLegacyDocument(text: string): AuthoringWorkspace {
       data: { document: directory, format: 'markdown' as const },
     };
   });
+  const legacyDocument = isRecord(value.document) ? value.document : {};
+  const legacyView = isRecord(value.view) ? value.view : {};
   const migrated = {
     ...value,
     schema: DOCUMENT_SCHEMA,
+    document: {
+      title: legacyDocument.title,
+      description: legacyDocument.description,
+    },
     graph: { points, hyperedges },
+    view: {
+      replacements: Array.isArray(legacyView.replacements) ? legacyView.replacements : [],
+    },
   };
-  const manifest = parseDocument(JSON.stringify(migrated));
+  const manifest = parseDocumentWithMigration(JSON.stringify(migrated)).document;
   return { manifest, files };
 }
 
@@ -162,20 +178,32 @@ export function importManifest(
 ): AuthoringWorkspace {
   const parsed: unknown = JSON.parse(text);
   if (isRecord(parsed) && parsed.schema === LEGACY_SCHEMA) return migrateLegacyDocument(text);
-  const manifest = parseDocument(text);
-  const workspace = { manifest, files: currentFiles };
+  const parsedDocument = parseDocumentWithMigration(text);
+  const workspace: AuthoringWorkspace = {
+    manifest: parsedDocument.document,
+    files: currentFiles,
+  };
   if (!allowMissingFiles) validateWorkspace(workspace);
   return workspace;
 }
 
 export function loadLocalWorkspace(fallback: AuthoringWorkspace): AuthoringWorkspace {
   try {
+    localStorage.removeItem('derivon.layout-cache/v0.1.0');
+  } catch {
+    // Obsolete runtime layout data must not prevent loading a workspace.
+  }
+  try {
     const saved = localStorage.getItem(LOCAL_WORKSPACE_KEY);
     if (saved) return parseWorkspaceSnapshot(saved);
+    const previous = localStorage.getItem(PREVIOUS_LOCAL_WORKSPACE_KEY);
+    if (previous) return parseWorkspaceSnapshot(previous);
     const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
     if (legacy) return migrateLegacyDocument(legacy);
   } catch {
     localStorage.removeItem(LOCAL_WORKSPACE_KEY);
+    localStorage.removeItem(PREVIOUS_LOCAL_WORKSPACE_KEY);
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   }
   return structuredClone(fallback);
 }
@@ -377,12 +405,13 @@ export async function readWorkspaceDirectorySnapshot(
 ): Promise<WorkspaceDirectorySnapshot> {
   if (isNativeWorkspaceDirectory(root)) return readNativeWorkspace(root, loadFiles);
   const manifestText = await readTextFile(root, WORKSPACE_MANIFEST);
-  let manifest: AuthoringDocument;
+  let parsedManifest: ReturnType<typeof parseDocumentWithMigration>;
   try {
-    manifest = parseDocument(manifestText);
+    parsedManifest = parseDocumentWithMigration(manifestText);
   } catch (error) {
     throw new Error(`${WORKSPACE_MANIFEST} 无效`, { cause: error });
   }
+  const manifest = parsedManifest.document;
   const entries = await Promise.all(referencedDocumentFiles(manifest).sort().map(async (path) => {
     try {
       const file = await readFile(root, path);
@@ -397,7 +426,7 @@ export async function readWorkspaceDirectorySnapshot(
     }
   }));
   const files = loadFiles ? Object.fromEntries(entries as ReadonlyArray<readonly [string, string]>) : {};
-  const workspace = { manifest, files };
+  const workspace: AuthoringWorkspace = { manifest, files };
   const revision = await contentDigest(JSON.stringify([
     [WORKSPACE_MANIFEST, manifestText],
     ...entries,
