@@ -1,7 +1,9 @@
 import type { AuthoringDocument, Position } from './domain';
+import type { LayoutMode } from './layout';
 
 type DocumentLayoutTask = {
   kind: 'document';
+  mode: LayoutMode;
 };
 
 type NeighborhoodLayoutTask = {
@@ -47,8 +49,11 @@ export class LayoutService {
       new Worker(new URL('./layout.worker.ts', import.meta.url), { type: 'module' }),
   ) {}
 
-  layoutDocument(document: AuthoringDocument): Promise<Record<string, Position>> {
-    return this.request(document, { kind: 'document' });
+  layoutDocument(
+    document: AuthoringDocument,
+    mode: LayoutMode = 'auto',
+  ): Promise<Record<string, Position>> {
+    return this.request(document, { kind: 'document', mode });
   }
 
   layoutNeighborhood(

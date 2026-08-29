@@ -3,6 +3,8 @@ import {
   ArrowLeft,
   ArrowUpCircle,
   Braces,
+  Check,
+  ChevronDown,
   CircleHelp,
   Copy,
   Eye,
@@ -44,6 +46,7 @@ import { createGraphScene } from './graphScene';
 import { createGraphSceneRuntime } from './graphSceneRuntime';
 import type { G6GraphSurfaceHandle, G6PointerModifiers } from './G6GraphSurface';
 import { LayoutCancelledError, LayoutService } from './layoutService';
+import type { LayoutMode } from './layout';
 import { DocumentEditor } from './DocumentEditor';
 import { ConceptSearch } from './ConceptSearch';
 import { DerivationForm } from './DerivationForm';
@@ -156,6 +159,11 @@ type DeleteCandidate =
     };
 
 const HISTORY_LIMIT = 100;
+const LAYOUT_MODES: Array<{ mode: LayoutMode; label: string }> = [
+  { mode: 'auto', label: '自动' },
+  { mode: 'dagre', label: 'Dagre' },
+  { mode: 'force', label: 'Force' },
+];
 
 function formatWorkspaceError(operation: string, error: unknown): WorkspaceOperationError {
   const firstMessage = error instanceof Error ? error.message : String(error);
@@ -308,6 +316,8 @@ function AuthoringCanvas() {
   const [files, setFiles] = useState<Record<string, string>>(initial.current.files);
   const [layoutPositions, setLayoutPositions] = useState<Record<string, Position>>({});
   const [layoutEpoch, setLayoutEpoch] = useState(0);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('auto');
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
   const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectory | null>(null);
   const [pendingWorkspaceUpgrade, setPendingWorkspaceUpgrade] = useState<ChosenWorkspaceDirectory | null>(null);
   const [upgradingWorkspace, setUpgradingWorkspace] = useState(false);
@@ -351,10 +361,12 @@ function AuthoringCanvas() {
   const confirmDeleteButton = useRef<HTMLButtonElement>(null);
   const graphSurfaceRef = useRef<G6GraphSurfaceHandle>(null);
   const layoutServiceRef = useRef<LayoutService | null>(null);
+  const layoutControlRef = useRef<HTMLDivElement>(null);
   const canvasInteractionRef = useRef(false);
   const tutorialWorkspaceRef = useRef<TutorialWorkspaceSnapshot | null>(null);
   const previousLayoutStructureRef = useRef<string | null>(null);
   const previousLayoutWeightsRef = useRef<string | null>(null);
+  const previousLayoutModeRef = useRef<LayoutMode>(layoutMode);
   const fittedLayoutEpochRef = useRef(-1);
   const tutorialFitAfterLayoutRef = useRef(false);
 
@@ -367,6 +379,7 @@ function AuthoringCanvas() {
     graphSurfaceRef.current?.clientToGraph(position) ?? position, []);
 
   const reportWorkspaceError = useCallback((operation: string, error: unknown) => {
+    console.error(`[Derivon] ${operation}`, error);
     setWorkspaceError(formatWorkspaceError(operation, error));
     setWorkspaceErrorCopied(false);
   }, []);
@@ -379,6 +392,22 @@ function AuthoringCanvas() {
       service.dispose();
     };
   }, []);
+
+  useEffect(() => {
+    if (!layoutMenuOpen) return;
+    const close = (event: PointerEvent) => {
+      if (!layoutControlRef.current?.contains(event.target as Node)) setLayoutMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLayoutMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', escape);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', escape);
+    };
+  }, [layoutMenuOpen]);
 
   useEffect(() => {
     let active = true;
@@ -433,24 +462,27 @@ function AuthoringCanvas() {
     }
     const previousStructure = previousLayoutStructureRef.current;
     const previousWeights = previousLayoutWeightsRef.current;
+    const previousMode = previousLayoutModeRef.current;
     const structureChanged = previousStructure !== layoutStructure;
     const weightsChanged = previousWeights !== layoutWeights;
+    const modeChanged = previousMode !== layoutMode;
     const firstLayout = previousStructure === null || fittedLayoutEpochRef.current !== layoutEpoch;
     previousLayoutStructureRef.current = layoutStructure;
     previousLayoutWeightsRef.current = layoutWeights;
-    if (!firstLayout && !structureChanged && !weightsChanged) return;
+    previousLayoutModeRef.current = layoutMode;
+    if (!firstLayout && !structureChanged && !weightsChanged && !modeChanged) return;
     let acceptResult = true;
     const timeout = window.setTimeout(() => {
       if (!acceptResult) return;
       setLayoutRunning(true);
       setLayoutRequestCount((current) => current + 1);
-      setStatus('正在自动布局');
-      void service.layoutDocument(document).then((positions) => {
+      setStatus(modeChanged ? `正在切换为 ${LAYOUT_MODES.find((item) => item.mode === layoutMode)?.label} 布局` : '正在自动布局');
+      void service.layoutDocument(document, layoutMode).then((positions) => {
         if (!acceptResult) return;
         setLayoutPositions(positions);
         setFocusLayouts({});
-        setStatus('自动布局已就绪');
-        const fitAfterLayout = firstLayout || tutorialFitAfterLayoutRef.current;
+        setStatus(modeChanged ? '布局方式已切换' : '自动布局已就绪');
+        const fitAfterLayout = firstLayout || modeChanged || tutorialFitAfterLayoutRef.current;
         if (firstLayout) fittedLayoutEpochRef.current = layoutEpoch;
         tutorialFitAfterLayoutRef.current = false;
         if (fitAfterLayout) window.requestAnimationFrame(() => void fitGraph());
@@ -461,13 +493,13 @@ function AuthoringCanvas() {
       }).finally(() => {
         if (acceptResult) setLayoutRunning(false);
       });
-    }, firstLayout ? 0 : structureChanged ? 120 : 400);
+    }, firstLayout || modeChanged ? 0 : structureChanged ? 120 : 400);
     return () => {
       acceptResult = false;
       window.clearTimeout(timeout);
       service.cancel();
     };
-  }, [document, fitGraph, layoutEpoch, layoutStructure, layoutWeights, reportWorkspaceError]);
+  }, [document, fitGraph, layoutEpoch, layoutMode, layoutStructure, layoutWeights, reportWorkspaceError]);
 
   useEffect(() => {
     editingIdRef.current = editingId;
@@ -847,16 +879,20 @@ function AuthoringCanvas() {
     notifyTourAction('replacement-started');
   }, [document.graph.points, replacementDraft, selectedNodeIds]);
 
-  useEffect(() => {
-    if (!focusedId) return;
-    const frame = window.requestAnimationFrame(() => {
-      const visibleIds = graphScene.nodes.flatMap((node) =>
+  const focusedSceneNodeIds = useMemo(() => focusedId
+    ? graphScene.nodes.flatMap((node) =>
         activeIds.has(node.id) || (node.kind === 'derivation' && activeIds.has(node.semanticId)) ? [node.id] : [],
-      );
-      void fitGraph(visibleIds);
+      )
+    : undefined,
+  [activeIds, focusedId, graphScene.nodes]);
+
+  useEffect(() => {
+    if (!focusedSceneNodeIds) return;
+    const frame = window.requestAnimationFrame(() => {
+      void fitGraph(focusedSceneNodeIds);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [activeIds, fitGraph, focusPositions, focusedId, graphScene.nodes]);
+  }, [fitGraph, focusPositions, focusedSceneNodeIds]);
 
   const persistNodePositions = useCallback((draggedNodes: Array<{ id: string; position: Position }>) => {
     const movedPositions = draggedNodes.flatMap((node) => {
@@ -1116,7 +1152,7 @@ function AuthoringCanvas() {
     setFocusLayouts({});
     setStatus('正在重新计算自动布局');
     setLayoutRequestCount((current) => current + 1);
-    void service.layoutDocument(document).then((positions) => {
+    void service.layoutDocument(document, layoutMode).then((positions) => {
       setLayoutPositions(positions);
       setStatus('已重新计算自动布局');
       notifyTourAction('layout-applied');
@@ -1124,7 +1160,7 @@ function AuthoringCanvas() {
     }).catch((error: unknown) => {
       if (!(error instanceof LayoutCancelledError)) reportWorkspaceError('重新计算自动布局', error);
     }).finally(() => setLayoutRunning(false));
-  }, [document, fitGraph, layoutRunning, reportWorkspaceError]);
+  }, [document, fitGraph, layoutMode, layoutRunning, reportWorkspaceError]);
 
   const findConcept = useCallback((pointId?: string) => {
     const query = search.trim().toLocaleLowerCase();
@@ -1194,6 +1230,9 @@ function AuthoringCanvas() {
   const connectWorkspace = useCallback(async () => {
     try {
       const result = await chooseWorkspaceDirectory({ manifest: document, files });
+      setTourOpen(false);
+      setTourStart(null);
+      tutorialWorkspaceRef.current = null;
       if (result.migrationSource) {
         setPendingWorkspaceUpgrade(result);
         setStatus(`工作区 schema ${result.migrationSource} 需要升级`);
@@ -1922,9 +1961,19 @@ function AuthoringCanvas() {
     ...document.graph.points.map((point) => point.id),
     ...document.graph.hyperedges.map((edge) => edge.id),
   ].every((id) => !!layoutPositions[id]), [document.graph.hyperedges, document.graph.points, layoutPositions]);
+  const layoutModeLabel = LAYOUT_MODES.find((item) => item.mode === layoutMode)?.label ?? '自动';
+  const layoutActionLabel = layoutRunning
+    ? '正在自动布局'
+    : layoutMode === 'auto' ? '自动布局' : `使用 ${layoutModeLabel} 重新布局`;
 
   return (
-    <main className="app-shell" data-layout-ready={layoutReady ? 'true' : 'false'} data-layout-running={layoutRunning ? 'true' : 'false'} data-layout-requests={layoutRequestCount}>
+    <main
+      className="app-shell"
+      data-layout-ready={layoutReady ? 'true' : 'false'}
+      data-layout-running={layoutRunning ? 'true' : 'false'}
+      data-layout-requests={layoutRequestCount}
+      data-layout-mode={layoutMode}
+    >
       <header className="topbar">
         <div className="brand-block">
           <span className="brand-mark">D</span>
@@ -1989,7 +2038,51 @@ function AuthoringCanvas() {
               >
                 {replacementDraft ? <X size={17} /> : <Replace size={17} />}
               </button>
-              <button type="button" title={layoutRunning ? '正在自动布局' : '自动布局'} aria-label={layoutRunning ? '正在自动布局' : '自动布局'} disabled={layoutRunning || !!derivationForm} {...tourTarget(TOUR_FEATURES.autoLayout)} onClick={applyLayout}><LayoutGrid size={17} /></button>
+              <div className="layout-control" ref={layoutControlRef}>
+                <button
+                  type="button"
+                  className={layoutMode !== 'auto' ? 'is-active' : ''}
+                  title={layoutActionLabel}
+                  aria-label={layoutActionLabel}
+                  disabled={layoutRunning || !!derivationForm}
+                  {...tourTarget(TOUR_FEATURES.autoLayout)}
+                  onClick={applyLayout}
+                >
+                  <LayoutGrid size={17} />
+                </button>
+                <button
+                  type="button"
+                  className="layout-menu-trigger"
+                  title="选择布局算法"
+                  aria-label="选择布局算法"
+                  aria-haspopup="menu"
+                  aria-expanded={layoutMenuOpen}
+                  disabled={layoutRunning || !!derivationForm}
+                  onClick={() => setLayoutMenuOpen((open) => !open)}
+                >
+                  <ChevronDown size={12} />
+                </button>
+                {layoutMenuOpen && (
+                  <div className="layout-menu" role="menu" aria-label="布局算法">
+                    {LAYOUT_MODES.map((item) => (
+                      <button
+                        key={item.mode}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={layoutMode === item.mode}
+                        onClick={() => {
+                          setLayoutMenuOpen(false);
+                          if (layoutMode === item.mode) applyLayout();
+                          else setLayoutMode(item.mode);
+                        }}
+                      >
+                        <span className="layout-menu-check">{layoutMode === item.mode && <Check size={13} />}</span>
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
                 type="button"
                 className={focusedId ? 'is-active' : ''}
@@ -2093,6 +2186,7 @@ function AuthoringCanvas() {
               onInteractionChange={handleG6InteractionChange}
               onReplacementModeChange={setReplacementMode}
               replacementControlsDisabled={!!derivationForm || routeMode || !!replacementDraft}
+              fitViewIds={focusedSceneNodeIds}
               onError={(error) => reportWorkspaceError('渲染 G6 知识图', error)}
             />
           </Suspense>

@@ -80,6 +80,7 @@ export type G6GraphSurfaceProps = {
   onInteractionChange: (active: boolean) => void;
   onReplacementModeChange: (replaceWith: string, mode: ReplacementViewMode) => void;
   replacementControlsDisabled?: boolean;
+  fitViewIds?: string[];
   onError: (error: unknown) => void;
 };
 
@@ -113,6 +114,15 @@ function edgeDatum(edge: G6SceneEdge): EdgeData {
 
 function sameData(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function fitGraphElements(graph: Graph, ids: string[] | undefined, duration: number): Promise<void> {
+  const visibleIds = ids?.filter((id) => graph.hasNode(id)) ?? [];
+  if (visibleIds.length) {
+    await graph.focusElement(visibleIds, { duration });
+  } else if (graph.getNodeData().length) {
+    await graph.fitView({ when: 'always' }, { duration });
+  }
 }
 
 async function syncSnapshot(
@@ -218,7 +228,7 @@ async function syncSnapshot(
   if (changed) await graph.draw();
 }
 
-function modifiers(event: IElementEvent): G6PointerModifiers {
+function modifiers(event: Pick<IElementEvent, 'shiftKey' | 'ctrlKey' | 'metaKey'>): G6PointerModifiers {
   return {
     shiftKey: event.shiftKey,
     ctrlKey: event.ctrlKey,
@@ -406,14 +416,7 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       const graph = graphRef.current;
       if (!graph || graph.destroyed || !ready) return;
       setFitRequestCount((current) => current + 1);
-      const visibleIds = ids?.filter((id) => graph.hasNode(id)) ?? [];
-      if (visibleIds.length) {
-        await graph.focusElement(visibleIds, { duration: 260 });
-        return;
-      }
-      if (graph.getNodeData().length) {
-        await graph.fitView({ when: 'always' }, { duration: 260 });
-      }
+      await fitGraphElements(graph, ids, 260);
     },
     async focusElement(ids) {
       setReplacementPopover(null);
@@ -440,6 +443,10 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    snapshotRef.current = null;
+    syncQueueRef.current = Promise.resolve();
+    initialFitDoneRef.current = false;
+    setReady(false);
     let disposed = false;
     let initialized = false;
     const initialNodes = snapshot.nodes.slice(0, NODE_BATCH_SIZE);
@@ -607,6 +614,22 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
     let nodeDragging = false;
 
     const currentSnapshot = () => snapshotRef.current ?? snapshot;
+    let initialFitPromise: Promise<void> | null = null;
+    const fitInitialView = (): Promise<void> => {
+      if (initialFitDoneRef.current || initialFitPromise || graph.destroyed) {
+        return initialFitPromise ?? Promise.resolve();
+      }
+      const bounds = container.getBoundingClientRect();
+      const current = currentSnapshot();
+      if (bounds.width <= 0 || bounds.height <= 0 || !graph.getNodeData().length || !hasMeaningfulLayout(current)) {
+        return Promise.resolve();
+      }
+      graph.setSize(Math.floor(bounds.width), Math.floor(bounds.height));
+      initialFitPromise = graph.fitView({ when: 'always' }, false).then(() => {
+        if (!disposed && !graph.destroyed) initialFitDoneRef.current = true;
+      }).finally(() => { initialFitPromise = null; });
+      return initialFitPromise;
+    };
     const snapshotNode = (id: string) => {
       if (graph.destroyed || !graph.hasNode(id)) return undefined;
       return currentSnapshot().nodes.find((node) => node.id === id);
@@ -932,8 +955,26 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       }
     });
     graph.on(NodeEvent.DRAG_END, () => { nodeDragging = false; });
-    graph.on(CanvasEvent.CLICK, () => {
-      if (performance.now() >= suppressClickUntil) callbacksRef.current.onPaneClick();
+    graph.on(CanvasEvent.CLICK, (event: IPointerEvent) => {
+      if (performance.now() < suppressClickUntil) return;
+      const pointer = { x: event.canvas.x, y: event.canvas.y };
+      const zoomPadding = 2 / Math.max(0.08, graph.getZoom());
+      const hit = currentSnapshot().nodes
+        .filter((node) => node.data.interactive && graph.hasNode(node.id))
+        .map((node) => {
+          const position = graph.getElementPosition(node.id);
+          const center = { x: position[0], y: position[1] };
+          const bounds = nodeBounds(center, node.data.kind as GraphNodeKind);
+          const contains = pointer.x >= bounds.left - zoomPadding
+            && pointer.x <= bounds.right + zoomPadding
+            && pointer.y >= bounds.top - zoomPadding
+            && pointer.y <= bounds.bottom + zoomPadding;
+          return contains ? { node, distance: Math.hypot(pointer.x - center.x, pointer.y - center.y) } : null;
+        })
+        .filter((candidate): candidate is { node: G6SceneNode; distance: number } => !!candidate)
+        .sort((left, right) => right.node.data.zIndex - left.node.data.zIndex || left.distance - right.distance)[0]?.node;
+      if (hit) callbacksRef.current.onNodeClick(hit.id, modifiers(event));
+      else callbacksRef.current.onPaneClick();
     });
     graph.on(CanvasEvent.DRAG_START, () => {
       setReplacementPopover(null);
@@ -964,11 +1005,7 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       if (disposed) return;
       snapshotRef.current = snapshotRef.current ?? snapshot;
       syncReplacementAssistShapes(graph, snapshotRef.current, replacementAssistShapesRef.current);
-      const current = snapshotRef.current ?? snapshot;
-      if (graph.getNodeData().length && hasMeaningfulLayout(current)) {
-        await graph.fitView({ when: 'always' }, false);
-        initialFitDoneRef.current = true;
-      }
+      await fitInitialView();
       if (!disposed) {
         const sample = (snapshotRef.current ?? snapshot).nodes.slice(0, 16).flatMap((node) => {
           if (!graph.hasNode(node.id)) return [];
@@ -992,10 +1029,12 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
     });
 
     const resizeObserver = new ResizeObserver(([entry]) => {
-      if (disposed || !initialized) return;
+      if (disposed) return;
       const width = Math.floor(entry.contentRect.width);
       const height = Math.floor(entry.contentRect.height);
-      if (width > 0 && height > 0) graph.setSize(width, height);
+      if (width <= 0 || height <= 0) return;
+      graph.setSize(width, height);
+      if (initialized && !initialFitDoneRef.current) void fitInitialView();
     });
     resizeObserver.observe(container);
 
@@ -1026,9 +1065,15 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       await syncSnapshot(graph, snapshotRef.current, snapshot);
       snapshotRef.current = snapshot;
       syncReplacementAssistShapes(graph, snapshot, replacementAssistShapesRef.current);
-      if (!initialFitDoneRef.current && graph.getNodeData().length && hasMeaningfulLayout(snapshot)) {
-        await graph.fitView({ when: 'always' }, false);
-        initialFitDoneRef.current = true;
+      if (!initialFitDoneRef.current) {
+        const container = containerRef.current;
+        const bounds = container?.getBoundingClientRect();
+        if (container && bounds && bounds.width > 0 && bounds.height > 0
+          && graph.getNodeData().length && hasMeaningfulLayout(snapshot)) {
+          graph.setSize(Math.floor(bounds.width), Math.floor(bounds.height));
+          await graph.fitView({ when: 'always' }, false);
+          initialFitDoneRef.current = true;
+        }
       }
       const sample = snapshot.nodes.slice(0, 16).flatMap((node) => {
         if (!graph.hasNode(node.id)) return [];
@@ -1154,7 +1199,13 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       <div className="g6-viewport-controls" role="group" aria-label="画布缩放">
         <button type="button" title="放大" aria-label="放大" onClick={() => { setReplacementPopover(null); void graphRef.current?.zoomBy(1.2, { duration: 160 }); }}><Plus size={15} /></button>
         <button type="button" title="缩小" aria-label="缩小" onClick={() => { setReplacementPopover(null); void graphRef.current?.zoomBy(0.8, { duration: 160 }); }}><Minus size={15} /></button>
-        <button type="button" title="适应视图" aria-label="适应视图" onClick={() => { setReplacementPopover(null); void graphRef.current?.fitView({ when: 'always' }, { duration: 220 }); }}><Maximize size={15} /></button>
+        <button type="button" title="适应视图" aria-label="适应视图" onClick={() => {
+          setReplacementPopover(null);
+          const graph = graphRef.current;
+          if (!graph || graph.destroyed || !ready) return;
+          setFitRequestCount((current) => current + 1);
+          void fitGraphElements(graph, props.fitViewIds, 220);
+        }}><Maximize size={15} /></button>
       </div>
     </div>
   );

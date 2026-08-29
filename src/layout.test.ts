@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { FORCE_LAYOUT_THRESHOLD, layoutDocument, layoutNeighborhood } from './layout';
+import {
+  FORCE_LAYOUT_THRESHOLD,
+  layoutDocument,
+  layoutNeighborhood,
+  resolveLayoutAlgorithm,
+} from './layout';
 import { sampleDocument } from './sample';
 
 describe('view layouts', () => {
@@ -8,6 +13,17 @@ describe('view layouts', () => {
     const positions = layoutDocument(sampleDocument);
     expect(positions.A.x).toBeLessThan(positions['h-b'].x);
     expect(positions['h-b'].x).toBeLessThan(positions.B.x);
+  });
+
+  it('allows either layout algorithm to be selected independently of graph size', () => {
+    expect(resolveLayoutAlgorithm(sampleDocument, undefined, 'auto')).toBe('dagre');
+    expect(resolveLayoutAlgorithm(sampleDocument, undefined, 'dagre')).toBe('dagre');
+    expect(resolveLayoutAlgorithm(sampleDocument, undefined, 'force')).toBe('force');
+
+    const dagre = layoutDocument(sampleDocument, { mode: 'dagre' });
+    const force = layoutDocument(sampleDocument, { mode: 'force' });
+    expect(force).not.toEqual(dagre);
+    expect(Object.keys(force)).toEqual(expect.arrayContaining(Object.keys(dagre)));
   });
 
   it('lays out every semantic node in the source graph', () => {
@@ -63,6 +79,21 @@ describe('view layouts', () => {
       }
     }
   }, 30_000);
+
+  it('keeps large neighborhood views on compact Dagre when the global auto mode would use Force', () => {
+    const document = structuredClone(sampleDocument);
+    document.graph.points = Array.from({ length: FORCE_LAYOUT_THRESHOLD + 1 }, (_, index) => ({
+      id: `p-${index}`,
+      data: { label: `Point ${index}`, document: `docs/p-${index}`, format: 'markdown' },
+    }));
+    document.graph.hyperedges = [];
+    const ids = new Set(document.graph.points.map((point) => point.id));
+
+    expect(resolveLayoutAlgorithm(document, ids, 'auto')).toBe('force');
+    expect(layoutNeighborhood(document, ids)).toEqual(
+      layoutDocument(document, { nodeIds: ids, compact: true, mode: 'dagre' }),
+    );
+  });
 
   it('anchors a compact neighborhood at the node position from the overview', () => {
     const document = structuredClone(sampleDocument);

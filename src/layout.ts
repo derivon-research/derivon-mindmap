@@ -17,6 +17,9 @@ const CONCEPT_HEIGHT = 64;
 const DERIVATION_SIZE = 54;
 export const FORCE_LAYOUT_THRESHOLD = 400;
 
+export type LayoutMode = 'auto' | 'dagre' | 'force';
+export type LayoutAlgorithm = Exclude<LayoutMode, 'auto'>;
+
 type ForceNode = SimulationNodeDatum & {
   id: string;
   kind: 'concept' | 'derivation';
@@ -32,6 +35,7 @@ type ForceLink = SimulationLinkDatum<ForceNode> & {
 type LayoutOptions = {
   nodeIds?: ReadonlySet<string>;
   compact?: boolean;
+  mode?: LayoutMode;
 };
 
 const FORCE_NODE_GAP = 12;
@@ -241,15 +245,24 @@ function calculateDagreLayout(
   return positions;
 }
 
-export function layoutDocument(
+export function resolveLayoutAlgorithm(
   document: AuthoringDocument,
-  { nodeIds, compact = false }: LayoutOptions = {},
-): Record<string, Position> {
+  nodeIds?: ReadonlySet<string>,
+  mode: LayoutMode = 'auto',
+): LayoutAlgorithm {
+  if (mode !== 'auto') return mode;
   const visualNodeCount = nodeIds
     ? document.graph.points.filter((point) => nodeIds.has(point.id)).length
       + document.graph.hyperedges.filter((edge) => nodeIds.has(edge.id)).length
     : document.graph.points.length + document.graph.hyperedges.length;
-  return visualNodeCount >= FORCE_LAYOUT_THRESHOLD
+  return visualNodeCount >= FORCE_LAYOUT_THRESHOLD ? 'force' : 'dagre';
+}
+
+export function layoutDocument(
+  document: AuthoringDocument,
+  { nodeIds, compact = false, mode = 'auto' }: LayoutOptions = {},
+): Record<string, Position> {
+  return resolveLayoutAlgorithm(document, nodeIds, mode) === 'force'
     ? calculateForceLayout(document, nodeIds)
     : calculateDagreLayout(document, nodeIds, compact);
 }
@@ -260,7 +273,7 @@ export function layoutNeighborhood(
   anchorId?: string,
   overviewPositions: Record<string, Position> = {},
 ): Record<string, Position> {
-  const positions = layoutDocument(document, { nodeIds, compact: true });
+  const positions = layoutDocument(document, { nodeIds, compact: true, mode: 'dagre' });
   if (!anchorId || !positions[anchorId] || !overviewPositions[anchorId]) return positions;
 
   const offset = {
