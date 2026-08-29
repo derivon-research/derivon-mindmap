@@ -4,6 +4,7 @@ import {
   type AuthoringDocument,
   type DocumentFormat,
   type DocumentReference,
+  type ParsedDocument,
 } from './domain';
 import {
   conceptDocumentTemplate,
@@ -39,6 +40,12 @@ export type WorkspaceDirectory = FileSystemDirectoryHandle | NativeWorkspaceDire
 export type WorkspaceDirectorySnapshot = {
   workspace: AuthoringWorkspace;
   revision: string;
+  migrationSource: ParsedDocument['migratedFrom'];
+};
+
+export type ChosenWorkspaceDirectory = WorkspaceDirectorySnapshot & {
+  handle: WorkspaceDirectory;
+  created: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -431,7 +438,7 @@ export async function readWorkspaceDirectorySnapshot(
     [WORKSPACE_MANIFEST, manifestText],
     ...entries,
   ]));
-  return { workspace, revision };
+  return { workspace, revision, migrationSource: parsedManifest.migratedFrom };
 }
 
 export async function readWorkspaceDirectory(root: WorkspaceDirectory): Promise<AuthoringWorkspace> {
@@ -525,24 +532,31 @@ export async function saveWorkspaceAsDirectory(
   return handle;
 }
 
-export async function chooseWorkspaceDirectory(current: AuthoringWorkspace): Promise<{
-  handle: WorkspaceDirectory;
-  workspace: AuthoringWorkspace;
-  revision: string;
-  created: boolean;
-}> {
+export async function chooseWorkspaceDirectory(current: AuthoringWorkspace): Promise<ChosenWorkspaceDirectory> {
   if (isTauriRuntime()) return chooseNativeWorkspace();
   const picker = requireWorkspaceDirectoryPicker();
   const handle = await picker({ mode: 'readwrite' });
   await ensureWorkspaceDirectoryPermission(handle);
   try {
     const snapshot = await readWorkspaceDirectorySnapshot(handle, { loadFiles: false });
-    await attachWorkspaceAgentFiles(handle);
-    return { handle, workspace: snapshot.workspace, revision: snapshot.revision, created: false };
+    if (!snapshot.migrationSource) await attachWorkspaceAgentFiles(handle);
+    return { handle, ...snapshot, created: false };
   } catch (error) {
     if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error;
     await writeWorkspaceDirectory(handle, current);
     const snapshot = await readWorkspaceDirectorySnapshot(handle, { loadFiles: false });
-    return { handle, workspace: current, revision: snapshot.revision, created: true };
+    return { handle, ...snapshot, workspace: current, created: true };
   }
+}
+
+export async function upgradeWorkspaceDirectorySchema(
+  selection: ChosenWorkspaceDirectory,
+): Promise<ChosenWorkspaceDirectory> {
+  await writeWorkspaceDirectoryChanges(selection.handle, selection.workspace.manifest, {});
+  if (!isNativeWorkspaceDirectory(selection.handle)) await attachWorkspaceAgentFiles(selection.handle);
+  return {
+    ...selection,
+    revision: await readWorkspaceDirectoryRevision(selection.handle),
+    migrationSource: null,
+  };
 }

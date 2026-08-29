@@ -100,9 +100,11 @@ import {
   readWorkspaceDocumentSource,
   saveWorkspaceAsDirectory,
   storeDocumentFiles,
+  upgradeWorkspaceDirectorySchema,
   validateWorkspaceDirectoryFiles,
   writeWorkspaceDirectoryChanges,
   type AuthoringWorkspace,
+  type ChosenWorkspaceDirectory,
   type WorkspaceDirectory,
   type WorkspaceDirectorySnapshot,
 } from './workspace';
@@ -307,6 +309,8 @@ function AuthoringCanvas() {
   const [layoutPositions, setLayoutPositions] = useState<Record<string, Position>>({});
   const [layoutEpoch, setLayoutEpoch] = useState(0);
   const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectory | null>(null);
+  const [pendingWorkspaceUpgrade, setPendingWorkspaceUpgrade] = useState<ChosenWorkspaceDirectory | null>(null);
+  const [upgradingWorkspace, setUpgradingWorkspace] = useState(false);
   const [externalWorkspaceChange, setExternalWorkspaceChange] = useState<ExternalWorkspaceChange | null>(null);
   const [resolvingExternalChange, setResolvingExternalChange] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<WorkspaceOperationError | null>(null);
@@ -1166,30 +1170,59 @@ function AuthoringCanvas() {
     window.setTimeout(() => void graphSurfaceRef.current?.focusElement(concept.id), 30);
   }, [commit, document, replacementDraft, search]);
 
+  const adoptChosenWorkspace = useCallback((result: ChosenWorkspaceDirectory, statusMessage?: string) => {
+    const imported = result.workspace.manifest;
+    workspaceDirectoryRef.current = result.handle;
+    workspaceRevisionRef.current = result.revision;
+    externalWorkspaceChangeRef.current = null;
+    setExternalWorkspaceChange(null);
+    setFiles(result.created ? result.workspace.files : {});
+    if (!result.created) {
+      setLayoutPositions({});
+      setLayoutEpoch((current) => current + 1);
+    }
+    dispatchHistory({ type: 'replace', document: imported });
+    setWorkspaceDirectory(result.handle);
+    setEditingId(null);
+    clearTransientView();
+    setStatus(statusMessage ?? (result.created
+      ? `已在 ${result.handle.name} 创建工作区`
+      : `已打开工作区 ${result.handle.name}`));
+    window.setTimeout(() => void fitGraph(), 20);
+  }, [clearTransientView, fitGraph]);
+
   const connectWorkspace = useCallback(async () => {
     try {
       const result = await chooseWorkspaceDirectory({ manifest: document, files });
-      const imported = result.workspace.manifest;
-      workspaceDirectoryRef.current = result.handle;
-      workspaceRevisionRef.current = result.revision;
-      externalWorkspaceChangeRef.current = null;
-      setExternalWorkspaceChange(null);
-      setFiles(result.created ? result.workspace.files : {});
-      if (!result.created) {
-        setLayoutPositions({});
-        setLayoutEpoch((current) => current + 1);
+      if (result.migrationSource) {
+        setPendingWorkspaceUpgrade(result);
+        setStatus(`工作区 schema ${result.migrationSource} 需要升级`);
+        return;
       }
-      dispatchHistory({ type: 'replace', document: imported });
-      setWorkspaceDirectory(result.handle);
-      setEditingId(null);
-      clearTransientView();
-      setStatus(result.created ? `已在 ${result.handle.name} 创建工作区` : `已打开工作区 ${result.handle.name}`);
-      window.setTimeout(() => void fitGraph(), 20);
+      adoptChosenWorkspace(result);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       reportWorkspaceError('打开项目文件夹', error);
     }
-  }, [clearTransientView, document, files, fitGraph, reportWorkspaceError]);
+  }, [adoptChosenWorkspace, document, files, reportWorkspaceError]);
+
+  const confirmWorkspaceUpgrade = useCallback(async () => {
+    if (!pendingWorkspaceUpgrade?.migrationSource || upgradingWorkspace) return;
+    const source = pendingWorkspaceUpgrade.migrationSource;
+    setUpgradingWorkspace(true);
+    try {
+      const upgraded = await upgradeWorkspaceDirectorySchema(pendingWorkspaceUpgrade);
+      setPendingWorkspaceUpgrade(null);
+      adoptChosenWorkspace(
+        upgraded,
+        `已将 ${upgraded.handle.name} 从 ${source} 升级到 ${DOCUMENT_SCHEMA} 并打开`,
+      );
+    } catch (error) {
+      reportWorkspaceError('升级工作区 schema', error);
+    } finally {
+      setUpgradingWorkspace(false);
+    }
+  }, [adoptChosenWorkspace, pendingWorkspaceUpgrade, reportWorkspaceError, upgradingWorkspace]);
 
   const createWorkspaceInNewDirectory = useCallback(async () => {
     try {
@@ -2275,6 +2308,33 @@ function AuthoringCanvas() {
                   setStatus(error instanceof Error ? `复制失败：${error.message}` : '复制失败，请手动选择错误详情');
                 });
               }}><Copy size={14} />{workspaceErrorCopied ? '已复制' : '复制错误'}</button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {pendingWorkspaceUpgrade?.migrationSource && !workspaceError && !crashReport && (
+        <div className="modal-backdrop workspace-conflict-backdrop" role="presentation">
+          <section className="workspace-conflict-modal schema-upgrade-modal" role="alertdialog" aria-modal="true" aria-labelledby="schema-upgrade-title" aria-describedby="schema-upgrade-description">
+            <header>
+              <div>
+                <span className="eyebrow">工作区 schema 落后一个版本</span>
+                <strong id="schema-upgrade-title">{pendingWorkspaceUpgrade.handle.name}/</strong>
+              </div>
+            </header>
+            <p id="schema-upgrade-description">
+              当前为 <code>{pendingWorkspaceUpgrade.migrationSource}</code>，可自动升级到 <code>{DOCUMENT_SCHEMA}</code>。
+              升级会移除旧时间戳和运行时坐标；确认前不会修改 <code>{WORKSPACE_MANIFEST}</code>。
+            </p>
+            <footer>
+              <button type="button" className="text-button" disabled={upgradingWorkspace} onClick={() => {
+                setPendingWorkspaceUpgrade(null);
+                setStatus('已取消打开，工作区文件未更改');
+              }}>取消</button>
+              <button type="button" className="primary-button" disabled={upgradingWorkspace} onClick={() => void confirmWorkspaceUpgrade()}>
+                <ArrowUpCircle size={15} />
+                {upgradingWorkspace ? '正在升级' : '升级并打开'}
+              </button>
             </footer>
           </section>
         </div>

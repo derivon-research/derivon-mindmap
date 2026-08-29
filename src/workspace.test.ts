@@ -3,6 +3,7 @@ import { DOCUMENT_SCHEMA, PREVIOUS_DOCUMENT_SCHEMA, validateDocument } from './d
 import { WORKSPACE_AGENT_FILES, WORKSPACE_AGENT_REFERENCE_SET } from './agentSkill';
 import { sampleDocument, sampleWorkspace } from './sample';
 import {
+  WORKSPACE_MANIFEST,
   attachWorkspaceAgentFiles,
   createDocumentDirectory,
   ensureWorkspaceDirectoryPermission,
@@ -10,6 +11,7 @@ import {
   parseWorkspaceSnapshot,
   readWorkspaceDirectorySnapshot,
   readWorkspaceDocumentSource,
+  upgradeWorkspaceDirectorySchema,
   validateWorkspace,
   workspaceRevision,
   writeWorkspaceToNewDirectory,
@@ -322,6 +324,34 @@ describe('authoring workspace', () => {
 
     expect(changed.revision).not.toBe(initial.revision);
     expect(changed.workspace.files['docs/concept-a/document.md']).toBe('# Changed outside the WebUI\n');
+  });
+
+  it('reports a previous directory schema without rewriting it before confirmation', async () => {
+    const previousManifest = {
+      ...structuredClone(sampleDocument),
+      schema: PREVIOUS_DOCUMENT_SCHEMA,
+      document: { ...sampleDocument.document, updatedAt: 'not-a-date' },
+      view: { ...sampleDocument.view, positions: { missing: null } },
+    };
+    const originalText = `${JSON.stringify(previousManifest, null, 2)}\n`;
+    const directory = memoryDirectory({
+      ...sampleWorkspace.files,
+      [WORKSPACE_MANIFEST]: originalText,
+    });
+
+    const snapshot = await readWorkspaceDirectorySnapshot(directory.handle, { loadFiles: false });
+
+    expect(snapshot.migrationSource).toBe(PREVIOUS_DOCUMENT_SCHEMA);
+    expect(snapshot.workspace.manifest.schema).toBe(DOCUMENT_SCHEMA);
+    expect(directory.read(WORKSPACE_MANIFEST)).toBe(originalText);
+
+    const upgraded = await upgradeWorkspaceDirectorySchema({
+      handle: directory.handle,
+      ...snapshot,
+      created: false,
+    });
+    expect(upgraded.migrationSource).toBeNull();
+    expect(JSON.parse(directory.read(WORKSPACE_MANIFEST)!).schema).toBe(DOCUMENT_SCHEMA);
   });
 
   it('loads directory documents lazily and reads only the opened source', async () => {

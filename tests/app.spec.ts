@@ -71,6 +71,96 @@ test('offers and applies an automatic upgrade for the previous JSON schema', asy
   expect(upgraded.view).not.toHaveProperty('positions');
 });
 
+test('asks before upgrading a workspace directory and does not write on cancel', async ({ page }) => {
+  await openExample(page);
+  await page.getByTitle('编辑工作区 JSON').click();
+  const manifest = JSON.parse(await page.locator('.json-modal textarea').inputValue());
+  await page.getByTitle('关闭').click();
+  manifest.schema = 'derivon.authoring/v0.2.0';
+  manifest.document.updatedAt = 'not-a-date';
+  manifest.view.positions = { missing: null };
+
+  await page.evaluate((previousManifest) => {
+    const manifestPath = '.derivon/workspace.json';
+    const files = new Map<string, string>([[manifestPath, `${JSON.stringify(previousManifest, null, 2)}\n`]]);
+    for (const item of [...previousManifest.graph.points, ...previousManifest.graph.hyperedges]) {
+      files.set(`${item.data.document}/index.html`, '');
+      if (item.data.format === 'markdown') files.set(`${item.data.document}/document.md`, '');
+    }
+    let manifestWrites = 0;
+    const directoryHandle = (prefix: string, name: string): FileSystemDirectoryHandle => ({
+      kind: 'directory',
+      name,
+      async queryPermission() { return 'granted' as PermissionState; },
+      async requestPermission() { return 'granted' as PermissionState; },
+      async removeEntry(filename: string) {
+        files.delete([prefix, filename].filter(Boolean).join('/'));
+      },
+      async getDirectoryHandle(child: string) {
+        const childPath = [prefix, child].filter(Boolean).join('/');
+        return directoryHandle(childPath, child);
+      },
+      async getFileHandle(filename: string, options?: { create?: boolean }) {
+        const path = [prefix, filename].filter(Boolean).join('/');
+        if (!files.has(path) && !options?.create) throw new DOMException(`Missing ${path}`, 'NotFoundError');
+        if (!files.has(path)) files.set(path, '');
+        return {
+          kind: 'file',
+          name: filename,
+          async getFile() {
+            const content = files.get(path) ?? '';
+            return { size: content.length, lastModified: 0, text: async () => content } as File;
+          },
+          async createWritable() {
+            let content = '';
+            return {
+              async write(data: string | BufferSource | Blob) {
+                if (typeof data !== 'string') throw new TypeError('Expected text');
+                content = data;
+              },
+              async close() {
+                files.set(path, content);
+                if (path === manifestPath) manifestWrites += 1;
+              },
+            } as FileSystemWritableFileStream;
+          },
+        } as FileSystemFileHandle;
+      },
+    } as FileSystemDirectoryHandle);
+    Object.defineProperty(window, 'showDirectoryPicker', {
+      configurable: true,
+      value: async () => directoryHandle('', 'previous-workspace'),
+    });
+    (window as unknown as { __workspaceSchemaTest: unknown }).__workspaceSchemaTest = {
+      manifest: () => files.get(manifestPath),
+      writes: () => manifestWrites,
+    };
+  }, manifest);
+
+  const workspaceState = () => page.evaluate(() => {
+    const state = (window as unknown as {
+      __workspaceSchemaTest: { manifest: () => string; writes: () => number };
+    }).__workspaceSchemaTest;
+    return { manifest: JSON.parse(state.manifest()), writes: state.writes() };
+  });
+
+  await page.getByTitle('连接工作区文件夹').click();
+  const prompt = page.getByRole('alertdialog', { name: 'previous-workspace/' });
+  await expect(prompt).toContainText('工作区 schema 落后一个版本');
+  expect((await workspaceState()).writes).toBe(0);
+  expect((await workspaceState()).manifest.schema).toBe('derivon.authoring/v0.2.0');
+
+  await prompt.getByRole('button', { name: '取消' }).click();
+  expect((await workspaceState()).writes).toBe(0);
+  expect((await workspaceState()).manifest.schema).toBe('derivon.authoring/v0.2.0');
+
+  await page.getByTitle('连接工作区文件夹').click();
+  await page.getByRole('button', { name: '升级并打开' }).click();
+  await expect(prompt).toBeHidden();
+  await expect.poll(async () => (await workspaceState()).manifest.schema).toBe('derivon.authoring/v0.3.0');
+  expect((await workspaceState()).writes).toBeGreaterThanOrEqual(1);
+});
+
 test('selects and highlights a route on G6 before native solving', async ({ page }) => {
   await openExample(page);
   await page.getByTitle('打开路线模式').click();
