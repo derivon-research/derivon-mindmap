@@ -1,9 +1,8 @@
 {
-  "schema": "derivon.authoring/v0.2.0",
+  "schema": "derivon.authoring/v0.3.0",
   "document": {
     "title": "Complete symbolic workspace",
-    "description": "Stable in-repository fixture covering the complete Derivon workspace surface.",
-    "updatedAt": "2026-08-27T00:00:00.000Z"
+    "description": "Stable in-repository fixture covering the complete Derivon workspace surface."
   },
   "graph": {
     "points": [
@@ -26,22 +25,6 @@
     ]
   },
   "view": {
-    "positions": {
-      "given-a": { "x": 20, "y": 80 },
-      "A": { "x": 180, "y": 80 },
-      "given-b": { "x": 20, "y": 260 },
-      "B": { "x": 180, "y": 260 },
-      "a-to-c": { "x": 360, "y": 40 },
-      "C": { "x": 520, "y": 40 },
-      "ab-to-d": { "x": 360, "y": 200 },
-      "ab-to-d-alt": { "x": 360, "y": 320 },
-      "D": { "x": 520, "y": 240 },
-      "cd-to-x": { "x": 700, "y": 140 },
-      "X": { "x": 860, "y": 140 },
-      "a-to-y": { "x": 700, "y": 360 },
-      "x-to-y": { "x": 1020, "y": 140 },
-      "Y": { "x": 1180, "y": 200 }
-    },
     "replacements": [
       {
         "points": ["A", "B"],

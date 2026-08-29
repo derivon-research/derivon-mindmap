@@ -66,7 +66,7 @@ node .derivon/agent/validate-workspace.mjs . --review <hyperedge-id>
 
 This section is only a quick reminder. `references/model.md` is the complete
 operational definition and must be consulted when this summary is insufficient.
-The manifest schema is `derivon.authoring/v0.2.0`.
+The manifest schema is `derivon.authoring/v0.3.0`.
 
 - A point is a concept: `{ "id", "data": { "label", "document", "format" } }`.
 - A hyperedge is one atomic derivation step:
@@ -83,8 +83,9 @@ The manifest schema is `derivon.authoring/v0.2.0`.
   query-specific start set.
 - `weight` is a non-negative finite number with at most one decimal place,
   attached to the whole hyperedge. Do not distribute it among premise connections.
-- `view.positions` is presentation state. Preserve it unless layout is part of
-  the request. Every stored coordinate must be finite.
+- Runtime positions are not part of the manifest. Do not add `view.positions`
+  or a separate layout cache; automatic layout and local pins exist only in
+  memory for the current application session.
 - `view.replacements` controls visual abstraction only. It does not prove
   semantic equivalence and must not be used as a derivation relation.
 
@@ -172,9 +173,10 @@ from these storage rules.
 - When changing a head or tails, re-read the derivation document and rewrite any
   stale premise/conclusion language.
 - Remove an object only after checking incoming/outgoing hyperedges,
-  replacements, positions, and document ownership. Do not delete documents as
-  an incidental cleanup unless the user requested it and no object owns them.
-- Update `document.updatedAt` after a semantic or document change.
+  replacements and document ownership. Do not delete documents as an incidental
+  cleanup unless the user requested it and no object owns them.
+- Do not add timestamps to the manifest. File modification metadata tracks write
+  times without creating semantic Git diffs.
 
 ## Review a derivation
 

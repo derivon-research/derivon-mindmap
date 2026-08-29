@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { validateDocument } from './domain';
+import { DOCUMENT_SCHEMA, PREVIOUS_DOCUMENT_SCHEMA, validateDocument } from './domain';
 import { WORKSPACE_AGENT_FILES, WORKSPACE_AGENT_REFERENCE_SET } from './agentSkill';
 import { sampleDocument, sampleWorkspace } from './sample';
 import {
+  WORKSPACE_MANIFEST,
   attachWorkspaceAgentFiles,
   createDocumentDirectory,
   ensureWorkspaceDirectoryPermission,
@@ -10,6 +11,7 @@ import {
   parseWorkspaceSnapshot,
   readWorkspaceDirectorySnapshot,
   readWorkspaceDocumentSource,
+  upgradeWorkspaceDirectorySchema,
   validateWorkspace,
   workspaceRevision,
   writeWorkspaceToNewDirectory,
@@ -300,7 +302,9 @@ describe('authoring workspace', () => {
 
     await writeWorkspaceToNewDirectory(directory.handle, sampleWorkspace);
 
-    expect(JSON.parse(directory.read('.derivon/workspace.json')!).schema).toBe('derivon.authoring/v0.2.0');
+    const manifest = JSON.parse(directory.read('.derivon/workspace.json')!);
+    expect(manifest.schema).toBe('derivon.authoring/v0.3.0');
+    expect(manifest.view).not.toHaveProperty('positions');
     expect(directory.read('docs/concept-a/document.md')).toBe(sampleWorkspace.files['docs/concept-a/document.md']);
     expect(directory.read('.agents/skills/derivon-workspace/SKILL.md')).toBe(WORKSPACE_AGENT_FILES['.agents/skills/derivon-workspace/SKILL.md']);
     expect(directory.read(customPath)).toBe('team instructions\n');
@@ -320,6 +324,34 @@ describe('authoring workspace', () => {
 
     expect(changed.revision).not.toBe(initial.revision);
     expect(changed.workspace.files['docs/concept-a/document.md']).toBe('# Changed outside the WebUI\n');
+  });
+
+  it('reports a previous directory schema without rewriting it before confirmation', async () => {
+    const previousManifest = {
+      ...structuredClone(sampleDocument),
+      schema: PREVIOUS_DOCUMENT_SCHEMA,
+      document: { ...sampleDocument.document, updatedAt: 'not-a-date' },
+      view: { ...sampleDocument.view, positions: { missing: null } },
+    };
+    const originalText = `${JSON.stringify(previousManifest, null, 2)}\n`;
+    const directory = memoryDirectory({
+      ...sampleWorkspace.files,
+      [WORKSPACE_MANIFEST]: originalText,
+    });
+
+    const snapshot = await readWorkspaceDirectorySnapshot(directory.handle, { loadFiles: false });
+
+    expect(snapshot.migrationSource).toBe(PREVIOUS_DOCUMENT_SCHEMA);
+    expect(snapshot.workspace.manifest.schema).toBe(DOCUMENT_SCHEMA);
+    expect(directory.read(WORKSPACE_MANIFEST)).toBe(originalText);
+
+    const upgraded = await upgradeWorkspaceDirectorySchema({
+      handle: directory.handle,
+      ...snapshot,
+      created: false,
+    });
+    expect(upgraded.migrationSource).toBeNull();
+    expect(JSON.parse(directory.read(WORKSPACE_MANIFEST)!).schema).toBe(DOCUMENT_SCHEMA);
   });
 
   it('loads directory documents lazily and reads only the opened source', async () => {
@@ -349,6 +381,31 @@ describe('authoring workspace', () => {
       path: 'graph.points[1].data.document',
       message: 'docs/concept-a 已由 点 A 拥有',
     });
+  });
+
+  it('discards v0.2 workspace positions during migration', () => {
+    const previousManifest = {
+      ...structuredClone(sampleDocument),
+      schema: PREVIOUS_DOCUMENT_SCHEMA,
+      document: {
+        ...sampleDocument.document,
+        updatedAt: '2026-08-29T00:00:00.000Z',
+      },
+      view: {
+        ...sampleDocument.view,
+        positions: { A: { x: 12, y: 34 } },
+      },
+    };
+
+    const migrated = parseWorkspaceSnapshot(JSON.stringify({
+      manifest: previousManifest,
+      files: sampleWorkspace.files,
+    }));
+
+    expect(migrated.manifest.schema).toBe(DOCUMENT_SCHEMA);
+    expect(migrated).not.toHaveProperty('initialLayout');
+    expect(migrated.manifest.view).not.toHaveProperty('positions');
+    expect(migrated.manifest.document).not.toHaveProperty('updatedAt');
   });
 
   it('requires every referenced document to exist in the workspace', () => {
@@ -389,6 +446,7 @@ describe('authoring workspace', () => {
     const migrated = migrateLegacyDocument(JSON.stringify(legacy));
     expect(migrated.manifest.graph.points[0].data).toMatchObject({ document: 'docs/concept-a', format: 'markdown' });
     expect(migrated.manifest.graph.hyperedges[0].data).toEqual({ document: 'docs/derivation-h-1', format: 'markdown' });
+    expect(migrated.manifest.document).not.toHaveProperty('updatedAt');
     expect(migrated.files['docs/concept-a/document.md']).toContain('A 的定义。');
     expect(migrated.files['docs/concept-a/index.html']).toContain('A 的定义。');
     expect(migrated.files['docs/derivation-h-1/document.md']).toContain('由 A 得到 B。');

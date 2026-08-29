@@ -18,6 +18,7 @@ export const TOUR_FEATURES = {
   projectTitle: { id: 'project-title', label: '项目标题' },
   projectDescription: { id: 'project-description', label: '项目说明' },
   addConcept: { id: 'add-concept', label: '新建概念' },
+  newDerivation: { id: 'new-derivation', label: '新建推导' },
   conceptName: { id: 'concept-name', label: '概念名称' },
   openDocument: { id: 'open-document', label: '编辑文档' },
   documentWorkspace: { id: 'document-workspace', label: '文档编辑区' },
@@ -71,6 +72,11 @@ export type TourAction =
   | 'derivation-selected'
   | 'derivation-weight-edited'
   | 'derivation-updated'
+  | 'tutorial-invertible-created'
+  | 'tutorial-invertible-premise-added'
+  | 'tutorial-surjective-parallel-created'
+  | 'tutorial-surjective-original-selected'
+  | 'tutorial-null-space-premise-added'
   | 'focused-view-toggled'
   | 'route-mode-opened'
   | 'route-start-selected'
@@ -80,6 +86,7 @@ export type TourAction =
   | 'replacement-started'
   | 'replacement-created'
   | 'replacement-toggled'
+  | 'replacement-compared'
   | 'concept-found'
   | 'node-moved'
   | 'item-deleted'
@@ -100,6 +107,11 @@ export type TourPreparation =
   | 'open-graph-example-and-select-replacement-points'
   | 'open-graph-example-and-prepare-replacement'
   | 'open-graph-example-with-replacement'
+  | 'open-graph-example-stage-base'
+  | 'open-graph-example-stage-invertible-single'
+  | 'open-graph-example-stage-invertible-complete'
+  | 'open-graph-example-stage-surjective-parallel'
+  | 'open-graph-example-stage-null-space-updated'
   | 'show-canvas'
   | 'show-project-overview'
   | 'select-concept'
@@ -173,6 +185,11 @@ function expectedSurface(step: TourStepDefinition): TourCurrentSurface | null {
     case 'open-graph-example-and-select-replacement-points':
     case 'open-graph-example-and-prepare-replacement':
     case 'open-graph-example-with-replacement':
+    case 'open-graph-example-stage-base':
+    case 'open-graph-example-stage-invertible-single':
+    case 'open-graph-example-stage-invertible-complete':
+    case 'open-graph-example-stage-surjective-parallel':
+    case 'open-graph-example-stage-null-space-updated':
     case 'show-canvas':
     case 'show-project-overview':
     case 'select-concept':
@@ -380,37 +397,25 @@ const GRAPH_STEPS: readonly TourStepDefinition[] = [
   { id: 'open-linear-map-document', feature: TOUR_FEATURES.openDocument, title: '打开概念文档', description: '点击“编辑文档”，查看线性映射的定义。', prepare: 'open-graph-example-and-select-concept', requires: 'document-opened', autoAdvance: true, placement: 'left' },
   { id: 'understand-concept-document', feature: TOUR_FEATURES.documentWorkspace, title: '概念文档回答“它是什么”', description: '这里记录概念的精确定义、适用范围和例子。知识图保持简洁，详细内容留在文档中。', prepare: 'open-graph-example-and-open-concept-document', placement: 'right', surface: 'editor' },
   { id: 'return-from-concept', feature: TOUR_FEATURES.returnCanvas, title: '返回知识图', description: '点击返回按钮，继续观察概念之间的关系。', prepare: 'open-graph-example-and-open-concept-document', requires: 'canvas-returned', autoAdvance: true },
-  {
-    id: 'derivation-model',
-    feature: TOUR_FEATURES.canvas,
-    title: '推导说明概念之间为什么相关',
-    description: '菱形表示一条推导：掌握“线性映射”后，可以由定义理解“零空间”。推导本身也是独立对象，而不只是一条连线。',
-    prepare: 'open-graph-example-and-select-derivation',
-    placement: 'right',
-    surface: 'canvas',
-  },
+  { id: 'derivation-model', feature: TOUR_FEATURES.canvas, title: '推导说明概念之间为什么相关', description: '菱形表示一条推导：掌握“线性映射”后，可以由定义理解“零空间”。推导本身也是独立对象，而不只是一条连线。', prepare: 'open-graph-example-and-select-derivation', placement: 'right', surface: 'canvas' },
   { id: 'premise-and-conclusion', feature: TOUR_FEATURES.canvas, title: '蓝线连接前提，红线指向结论', description: '左侧蓝线表示这条推导需要先掌握“线性映射”；右侧红线指向推导得到的“零空间”。一条推导也可以同时拥有多个前提。', prepare: 'open-graph-example-and-select-derivation', placement: 'right', surface: 'canvas' },
-  { id: 'open-derivation-document', feature: TOUR_FEATURES.openDocument, title: '打开推导文档', description: '点击“编辑文档”，查看这条推导具体如何从线性映射得到零空间。', prepare: 'open-graph-example-and-select-derivation', requires: 'document-opened', autoAdvance: true, placement: 'left' },
-  { id: 'understand-derivation-document', feature: TOUR_FEATURES.documentWorkspace, title: '推导文档回答“为什么”', description: '概念文档写“它是什么”，推导文档则记录推导过程、依据和限制。两类文档共同构成可阅读的知识网络。', prepare: 'open-graph-example-and-open-derivation-document', placement: 'right', surface: 'editor' },
-  { id: 'return-from-derivation', feature: TOUR_FEATURES.returnCanvas, title: '返回画布比较学习路径', description: '点击返回按钮，查看同一组概念之间的不同推导方式。', prepare: 'open-graph-example-and-open-derivation-document', requires: 'canvas-returned', autoAdvance: true },
-  { id: 'parallel', target: '.derivation-alternatives', title: '同一关系可以有多种推导', description: '案例提供了两种理解零空间的方式：一种直接使用线性映射定义，另一种把问题转成齐次方程。它们拥有相同的前提和结论，但推导文档与学习成本各自独立。', prepare: 'open-graph-example-and-select-parallel-derivation', placement: 'left' },
-  { id: 'parallel-select', target: '.derivation-alternatives', title: '比较两种推导', description: '在右侧选择框中切换当前实现。下方“推导步骤”的 ID、文档和成本会随之切换；画布仍把它们显示为同一组前提和结论。', prepare: 'open-graph-example-and-select-parallel-derivation', requires: 'derivation-selected', placement: 'left' },
-  { id: 'weight', feature: TOUR_FEATURES.derivationWeight, title: '调整当前实现的学习成本', description: '这个权重数字代表：掌握所有前提后，完成当前推导还需要多少学习投入。权重越大，学习成本越高。多个推导拥有相同前提和结论时，会按权重从低到高排列，成本最低的默认置顶。', prepare: 'open-graph-example-and-select-parallel-derivation', requires: 'derivation-weight-edited', placement: 'left' },
-  {
-    id: 'more-premises',
-    feature: TOUR_FEATURES.canvas,
-    title: '为推导追加一个前提',
-    description: '把“子空间”的右侧连接点拖到零空间推导菱形的左侧连接点。这表示理解这条推导还需要先掌握“子空间”。',
-    prepare: 'open-graph-example-and-select-parallel-derivation',
-    requires: 'derivation-updated',
-    placement: 'right',
-    surface: 'canvas',
-  },
-  { id: 'replacement-intro', feature: TOUR_FEATURES.canvas, title: '在整体和细分视图间切换', description: '“单射”和“满射”共同刻画可逆线性映射。替换功能可以在两个细分条件与“可逆线性映射”这个整体概念之间切换，而不会删除任何内容。', prepare: 'open-graph-example', placement: 'right', surface: 'canvas' },
-  { id: 'select-replacement-points', feature: TOUR_FEATURES.canvas, title: '选择单射和满射', description: '先点击“单射”，再按住 Shift 点击“满射”，把它们选为一组细分条件。', prepare: 'open-graph-example', shortcut: 'Shift + 点击多选', requires: 'multiple-concepts-selected', autoAdvance: true, placement: 'right', surface: 'canvas' },
+  { id: 'create-derivation-drag', feature: TOUR_FEATURES.canvas, title: '拖拽概念创建推导', description: '把“单射”右侧的蓝色连接点拖到“可逆线性映射”左侧的红色连接点，创建一条新的推导。', prepare: 'open-graph-example-stage-base', requires: 'tutorial-invertible-created', autoAdvance: true, placement: 'right', surface: 'canvas' },
+  { id: 'create-derivation-form', feature: TOUR_FEATURES.newDerivation, title: '从右上角创建推导', description: '当然，你也可以在这里创建推导', prepare: 'open-graph-example-stage-invertible-single', placement: 'bottom' },
+  { id: 'open-derivation-document', feature: TOUR_FEATURES.openDocument, title: '打开推导文档', description: '点击“编辑文档”，查看这条推导具体如何从线性映射得到零空间。', prepare: 'open-graph-example-stage-invertible-single', requires: 'document-opened', autoAdvance: true, placement: 'left' },
+  { id: 'understand-derivation-document', feature: TOUR_FEATURES.documentWorkspace, title: '推导文档回答“为什么”', description: '概念文档写“它是什么”，推导文档则记录推导过程、依据和限制。两类文档共同构成可阅读的知识网络。', prepare: 'open-graph-example-stage-invertible-single', placement: 'right', surface: 'editor' },
+  { id: 'return-from-derivation', feature: TOUR_FEATURES.returnCanvas, title: '返回画布继续构造推导', description: '点击返回按钮，继续为刚才创建的推导补充前提。', prepare: 'open-graph-example-stage-invertible-single', requires: 'canvas-returned', autoAdvance: true },
+  { id: 'complete-invertible-premises', feature: TOUR_FEATURES.canvas, title: '为推导追加满射前提', description: '把“满射”右侧的蓝色连接点拖到“单射 → 可逆线性映射”推导菱形左侧，得到“满射，单射 → 可逆线性映射”。', prepare: 'open-graph-example-stage-invertible-single', requires: 'tutorial-invertible-premise-added', autoAdvance: true, placement: 'right', surface: 'canvas' },
+  { id: 'create-surjective-parallel', feature: TOUR_FEATURES.canvas, title: '亲手创建一条重叠推导', description: '把“线性映射”拖到“满射”，再创建一条相同前提和结论的推导。', prepare: 'open-graph-example-stage-invertible-complete', requires: 'tutorial-surjective-parallel-created', autoAdvance: true, placement: 'right', surface: 'canvas' },
+  { id: 'parallel', target: '.derivation-alternatives', title: '同一关系可以有多种推导', description: '你刚创建的推导与原有推导拥有相同前提和结论，因此叠放为一组；每个方案的文档和学习成本仍然独立。', prepare: 'open-graph-example-stage-surjective-parallel', placement: 'left' },
+  { id: 'parallel-select', target: '.derivation-alternatives', title: '切换当前推导方案', description: '在右侧选择原有的 surjective-def。下方推导 ID、文档和成本会随当前方案切换。', prepare: 'open-graph-example-stage-surjective-parallel', requires: 'tutorial-surjective-original-selected', autoAdvance: true, placement: 'left' },
+  { id: 'weight', feature: TOUR_FEATURES.derivationWeight, title: '调整当前实现的学习成本', description: '这个权重数字代表：掌握所有前提后，完成当前推导还需要多少学习投入。权重越大，学习成本越高。多个推导拥有相同前提和结论时，会按权重从低到高排列，成本最低的默认置顶。', prepare: 'open-graph-example-stage-surjective-parallel', requires: 'derivation-weight-edited', placement: 'left' },
+  { id: 'more-premises', feature: TOUR_FEATURES.canvas, title: '只修改当前置顶的推导', description: '把“子空间”的右侧连接点拖到“线性映射 → 零空间”推导菱形左侧。这个操作只会给当前置顶方案追加前提。', prepare: 'open-graph-example-stage-surjective-parallel', requires: 'tutorial-null-space-premise-added', autoAdvance: true, placement: 'right', surface: 'canvas' },
+  { id: 'active-member-result', feature: TOUR_FEATURES.canvas, title: '其他推导方案保持不变', description: '当前方案已经变成“线性映射，子空间 → 零空间”；另一种零空间推导仍只需要“线性映射”。端点编辑只作用于当前方案。', prepare: 'open-graph-example-stage-null-space-updated', placement: 'right', surface: 'canvas' },
+  { id: 'replacement-intro', feature: TOUR_FEATURES.canvas, title: '在整体和细分视图间切换', description: '“单射”和“满射”共同刻画可逆线性映射。替换功能可以在两个细分条件与“可逆线性映射”这个整体概念之间切换，而不会删除任何内容。', prepare: 'open-graph-example-stage-null-space-updated', placement: 'right', surface: 'canvas' },
+  { id: 'select-replacement-points', feature: TOUR_FEATURES.canvas, title: '选择单射和满射', description: '先点击“单射”，再按住 Shift 点击“满射”，把它们选为一组细分条件。', prepare: 'open-graph-example-stage-null-space-updated', shortcut: 'Shift + 点击多选', requires: 'multiple-concepts-selected', autoAdvance: true, placement: 'right', surface: 'canvas' },
   { id: 'replace-select', feature: TOUR_FEATURES.replaceWith, title: '开始建立替换', description: '两个概念已经选中。点击“替换”，然后选择能够代表它们的整体概念。', prepare: 'open-graph-example-and-select-replacement-points', requires: 'replacement-started', autoAdvance: true },
   { id: 'replace-target', feature: TOUR_FEATURES.canvas, title: '选择整体概念', description: '在画布中点击“可逆线性映射”，把它定义为“单射 + 满射”的整体表示。', prepare: 'open-graph-example-and-prepare-replacement', requires: 'replacement-created', placement: 'right', surface: 'canvas' },
-  { id: 'toggle-replacement', target: '.replacement-segment', title: '在整体和细分之间切换', description: '使用右侧的切换控件，在“单射 + 满射”和“可逆线性映射”之间来回查看。图中的概念、推导和文档始终保留，只改变当前展示方式。', prepare: 'open-graph-example-with-replacement', requires: 'replacement-toggled', placement: 'left' },
+  { id: 'toggle-replacement', target: '.replacement-segment', title: '对照整体与细分概念', description: '选择“对照”，同时查看“单射 + 满射”和“可逆线性映射”。所有概念、推导和文档始终保留，只改变当前展示方式。', prepare: 'open-graph-example-with-replacement', requires: 'replacement-compared', placement: 'left' },
 ] as const;
 
 const NAVIGATION_STEPS: readonly TourStepDefinition[] = [
@@ -617,13 +622,14 @@ function TourMenu({ completedTours, onClose, onSelect }: { completedTours: reado
   );
 }
 
-export function GuidedTour({ open, startTour, currentSurface, onClose, onTourStart, onTourEnd, onPrepareStep }: {
+export function GuidedTour({ open, startTour, currentSurface, onClose, onTourStart, onTourEnd, onStepComplete, onPrepareStep }: {
   open: boolean;
   startTour: TourId | null;
   currentSurface: TourCurrentSurface;
   onClose: () => void;
   onTourStart?: (tourId: TourId) => void;
   onTourEnd?: (tourId: TourId) => void;
+  onStepComplete?: (tourId: TourId, stepId: TourStepId) => void;
   onPrepareStep?: (preparation: TourPreparation, stepId: TourStepId) => void | Promise<void>;
 }) {
   const [stored, setStored] = useState(readStoredOnboarding);
@@ -636,6 +642,7 @@ export function GuidedTour({ open, startTour, currentSurface, onClose, onTourSta
   const [retryKey, setRetryKey] = useState(0);
   const [preparedStepKey, setPreparedStepKey] = useState<string | null>(null);
   const startedTour = useRef<TourId | null>(null);
+  const completedActionStep = useRef<string | null>(null);
   const autoAdvanceTimer = useRef<number | null>(null);
   const activeTour = activeTourId ? ONBOARDING_TOURS[activeTourId] : null;
   const definition = activeTour?.steps[index] ?? null;
@@ -693,6 +700,7 @@ export function GuidedTour({ open, startTour, currentSurface, onClose, onTourSta
   }, [activeTourId, onTourStart]);
 
   useEffect(() => {
+    completedActionStep.current = null;
     setActionSatisfied(stepAlreadyCompleted || !definition?.requires);
     setTargetMissing(false);
     setCompletedTargetFallback(false);
@@ -761,8 +769,12 @@ export function GuidedTour({ open, startTour, currentSurface, onClose, onTourSta
 
   useEffect(() => subscribeTourActions((action) => {
     if (isRecovering) return;
-    if (!definition?.requires || definition.requires !== action) return;
+    if (!activeTourId || !definition?.requires || definition.requires !== action) return;
     setActionSatisfied(true);
+    if (completedActionStep.current !== currentStepKey) {
+      completedActionStep.current = currentStepKey;
+      onStepComplete?.(activeTourId, definition.id);
+    }
     if (definition.autoAdvance) {
       if (autoAdvanceTimer.current !== null) window.clearTimeout(autoAdvanceTimer.current);
       autoAdvanceTimer.current = window.setTimeout(() => {
@@ -770,7 +782,7 @@ export function GuidedTour({ open, startTour, currentSurface, onClose, onTourSta
         advance();
       }, 350);
     }
-  }), [advance, definition, isRecovering]);
+  }), [activeTourId, advance, currentStepKey, definition, isRecovering, onStepComplete]);
 
   const joyrideSteps = useMemo<Step[]>(() => activeTour?.steps.map((stepDefinition) => {
     const stepKey = `${activeTour.id}:${stepDefinition.id}`;

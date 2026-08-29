@@ -1,24 +1,7 @@
-import { startTransition, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import {
-  Background,
-  BackgroundVariant,
-  ConnectionLineType,
-  Controls,
-  MarkerType,
-  MiniMap,
-  ReactFlow,
-  ReactFlowProvider,
-  SelectionMode,
-  type Connection,
-  type Edge,
-  type NodeChange,
-  type OnSelectionChangeParams,
-  useNodesState,
-  useReactFlow,
-  useStoreApi,
-} from '@xyflow/react';
+import { lazy, startTransition, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowUpCircle,
   Braces,
   CircleHelp,
   Copy,
@@ -29,6 +12,7 @@ import {
   FolderOpen,
   FolderPlus,
   Github,
+  GitBranch,
   LayoutGrid,
   Milestone,
   Plus,
@@ -40,10 +24,10 @@ import {
   Unlink,
   X,
 } from 'lucide-react';
-import '@xyflow/react/dist/style.css';
 import './styles.css';
-import { selectionDebugEnabled, traceSelection } from './selectionDebug';
 import {
+  DOCUMENT_SCHEMA,
+  documentMigrationSource,
   formatWeight,
   normalizeWeight,
   uniqueId,
@@ -54,18 +38,22 @@ import {
   type Position,
   type ViewReplacement,
 } from './domain';
-import { ConceptNode, DerivationNode, type AuthoringFlowNode } from './GraphNodes';
 import { activeHyperedge, groupHyperedges, hyperedgeGroupKey, type HyperedgeGroup } from './hyperedgeGroups';
-import { layoutDocument, layoutNeighborhood } from './layout';
+import { createGraphIndex } from './graphIndex';
+import { createGraphScene } from './graphScene';
+import { createGraphSceneRuntime } from './graphSceneRuntime';
+import type { G6GraphSurfaceHandle, G6PointerModifiers } from './G6GraphSurface';
+import { LayoutCancelledError, LayoutService } from './layoutService';
 import { DocumentEditor } from './DocumentEditor';
 import { ConceptSearch } from './ConceptSearch';
+import { DerivationForm } from './DerivationForm';
 import { convertDocumentContent } from './documentContent';
 import {
   CRASH_REPORT_EVENT,
   clearPendingCrashReports,
   readPendingCrashReport,
 } from './crashReport';
-import { projectDocument } from './projection';
+import { projectDocument, type ReplacementViewMode } from './projection';
 import { replacementFromSelection } from './replacements';
 import { RoutePanel } from './RoutePanel';
 import {
@@ -80,9 +68,11 @@ import {
 import {
   createEmptyWorkspace,
   graphTutorialWorkspace,
+  graphTutorialWorkspaceForStage,
   graphTutorialWorkspaceWithReplacement,
   navigationSampleWorkspace,
   sampleWorkspace,
+  type GraphTutorialStage,
 } from './sample';
 import {
   GuidedTour,
@@ -95,6 +85,7 @@ import {
 } from './onboarding';
 import {
   LOCAL_WORKSPACE_KEY,
+  PREVIOUS_LOCAL_WORKSPACE_KEY,
   WORKSPACE_MANIFEST,
   chooseWorkspaceDirectory,
   conceptTemplate,
@@ -109,21 +100,23 @@ import {
   readWorkspaceDocumentSource,
   saveWorkspaceAsDirectory,
   storeDocumentFiles,
+  upgradeWorkspaceDirectorySchema,
   validateWorkspaceDirectoryFiles,
   writeWorkspaceDirectoryChanges,
   type AuthoringWorkspace,
+  type ChosenWorkspaceDirectory,
   type WorkspaceDirectory,
   type WorkspaceDirectorySnapshot,
 } from './workspace';
-const nodeTypes = { concept: ConceptNode, derivation: DerivationNode };
+const G6GraphSurface = lazy(() => import('./G6GraphSurface'));
 
-type ProjectedEdgeData = {
-  kind: 'premise' | 'conclusion';
-  derivationId: string;
-  premiseId?: string;
+type GraphConnection = {
+  source: string;
+  target: string;
 };
-
-type ProjectedEdge = Edge<ProjectedEdgeData>;
+type DerivationFormState =
+  | { mode: 'create' }
+  | { mode: 'edit'; derivationId: string };
 type HyperedgePatch = Partial<Omit<Hyperedge, 'id' | 'data'>> & { data?: Partial<Hyperedge['data']> };
 type DocumentHistory = {
   past: AuthoringDocument[];
@@ -131,7 +124,7 @@ type DocumentHistory = {
   future: AuthoringDocument[];
 };
 type HistoryAction =
-  | { type: 'commit'; updater: (current: AuthoringDocument) => AuthoringDocument; updatedAt: string }
+  | { type: 'commit'; updater: (current: AuthoringDocument) => AuthoringDocument }
   | { type: 'replace'; document: AuthoringDocument }
   | { type: 'undo' }
   | { type: 'redo' };
@@ -220,13 +213,9 @@ function historyReducer(state: DocumentHistory, action: HistoryAction): Document
     };
   }
   const updated = action.updater(state.present);
-  const next = {
-    ...updated,
-    document: { ...updated.document, updatedAt: action.updatedAt },
-  };
   return {
     past: [...state.past, state.present].slice(-HISTORY_LIMIT),
-    present: next,
+    present: updated,
     future: [],
   };
 }
@@ -236,37 +225,14 @@ function isExampleMode(): boolean {
 }
 
 function initialWorkspace(): AuthoringWorkspace {
-  const workspace = loadLocalWorkspace(isExampleMode() ? sampleWorkspace : createEmptyWorkspace());
-  if (!Object.keys(workspace.manifest.view.positions).length && workspace.manifest.graph.points.length) {
-    workspace.manifest.view.positions = layoutDocument(workspace.manifest);
-  }
-  return workspace;
+  return loadLocalWorkspace(isExampleMode() ? sampleWorkspace : createEmptyWorkspace());
 }
 
 function shouldStartFirstTour(): boolean {
   return !isExampleMode()
     && !localStorage.getItem(LOCAL_WORKSPACE_KEY)
+    && !localStorage.getItem(PREVIOUS_LOCAL_WORKSPACE_KEY)
     && !localStorage.getItem(ONBOARDING_STORAGE_KEY);
-}
-
-function neighborhood(document: AuthoringDocument, selectedId: string | null): Set<string> {
-  if (!selectedId) return new Set();
-  const ids = new Set([selectedId]);
-  const selectedHyperedge = document.graph.hyperedges.find((item) => item.id === selectedId);
-  const selectedGroupKey = selectedHyperedge ? hyperedgeGroupKey(selectedHyperedge) : null;
-  for (const derivation of document.graph.hyperedges) {
-    if (
-      derivation.id === selectedId
-      || (selectedGroupKey && hyperedgeGroupKey(derivation) === selectedGroupKey)
-      || derivation.head === selectedId
-      || derivation.tails.includes(selectedId)
-    ) {
-      ids.add(derivation.id);
-      ids.add(derivation.head);
-      derivation.tails.forEach((id) => ids.add(id));
-    }
-  }
-  return ids;
 }
 
 function revealConcept(document: AuthoringDocument, conceptId: string): AuthoringDocument {
@@ -306,8 +272,32 @@ function firstVisiblePoint(document: AuthoringDocument, id: string): string {
   return id;
 }
 
+function hasExactEndpoints(edge: Hyperedge, tails: readonly string[], head: string): boolean {
+  return edge.head === head
+    && edge.tails.length === tails.length
+    && tails.every((id) => edge.tails.includes(id));
+}
+
+function graphTutorialStageSatisfied(document: AuthoringDocument, stage: GraphTutorialStage): boolean {
+  const edges = document.graph.hyperedges;
+  const singleInvertible = edges.some((edge) => hasExactEndpoints(edge, ['injective-surjective'], 'invertible'));
+  const completeInvertible = edges.some((edge) =>
+    hasExactEndpoints(edge, ['injective-surjective', 'surjective'], 'invertible'),
+  );
+  const surjectiveParallel = edges.filter((edge) => hasExactEndpoints(edge, ['linear-map'], 'surjective')).length >= 2;
+  const nullSpaceUpdated = edges.some((edge) =>
+    edge.id === 'null-space-def'
+    && hasExactEndpoints(edge, ['linear-map', 'subspace'], 'null-range'),
+  );
+  if (stage === 'base') return !singleInvertible && !completeInvertible;
+  if (stage === 'invertible-single') return singleInvertible && !completeInvertible;
+  if (stage === 'invertible-complete') return completeInvertible;
+  if (stage === 'surjective-parallel') return completeInvertible && surjectiveParallel;
+  return completeInvertible && surjectiveParallel && nullSpaceUpdated;
+}
+
 function AuthoringCanvas() {
-  const initial = useRef<AuthoringWorkspace | null>(null);
+  const initial = useRef<ReturnType<typeof initialWorkspace> | null>(null);
   if (!initial.current) initial.current = initialWorkspace();
   const [history, dispatchHistory] = useReducer(historyReducer, initial.current.manifest, (manifest) => ({
     past: [],
@@ -316,7 +306,11 @@ function AuthoringCanvas() {
   }));
   const document = history.present;
   const [files, setFiles] = useState<Record<string, string>>(initial.current.files);
+  const [layoutPositions, setLayoutPositions] = useState<Record<string, Position>>({});
+  const [layoutEpoch, setLayoutEpoch] = useState(0);
   const [workspaceDirectory, setWorkspaceDirectory] = useState<WorkspaceDirectory | null>(null);
+  const [pendingWorkspaceUpgrade, setPendingWorkspaceUpgrade] = useState<ChosenWorkspaceDirectory | null>(null);
+  const [upgradingWorkspace, setUpgradingWorkspace] = useState(false);
   const [externalWorkspaceChange, setExternalWorkspaceChange] = useState<ExternalWorkspaceChange | null>(null);
   const [resolvingExternalChange, setResolvingExternalChange] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<WorkspaceOperationError | null>(null);
@@ -333,12 +327,17 @@ function AuthoringCanvas() {
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusLayouts, setFocusLayouts] = useState<Record<string, Record<string, Position>>>({});
+  const [layoutRunning, setLayoutRunning] = useState(false);
+  const [layoutRequestCount, setLayoutRequestCount] = useState(0);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('已自动保存');
   const [jsonOpen, setJsonOpen] = useState(false);
   const [jsonText, setJsonText] = useState('');
+  const jsonMigrationSource = useMemo(() => documentMigrationSource(jsonText), [jsonText]);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [derivationForm, setDerivationForm] = useState<DerivationFormState | null>(null);
   const [replacementDraft, setReplacementDraft] = useState<string[] | null>(null);
+  const [detachedReplacementIds, setDetachedReplacementIds] = useState<string[]>([]);
   const [activeDerivationByGroup, setActiveDerivationByGroup] = useState<Record<string, string>>({});
   const [deleteCandidate, setDeleteCandidate] = useState<DeleteCandidate | null>(null);
   const [routeMode, setRouteMode] = useState(false);
@@ -350,14 +349,35 @@ function AuthoringCanvas() {
   const [canvasInteracting, setCanvasInteracting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const confirmDeleteButton = useRef<HTMLButtonElement>(null);
+  const graphSurfaceRef = useRef<G6GraphSurfaceHandle>(null);
+  const layoutServiceRef = useRef<LayoutService | null>(null);
   const canvasInteractionRef = useRef(false);
   const tutorialWorkspaceRef = useRef<TutorialWorkspaceSnapshot | null>(null);
-  const { fitView, screenToFlowPosition } = useReactFlow<AuthoringFlowNode, ProjectedEdge>();
-  const flowStore = useStoreApi<AuthoringFlowNode, ProjectedEdge>();
+  const previousLayoutStructureRef = useRef<string | null>(null);
+  const previousLayoutWeightsRef = useRef<string | null>(null);
+  const fittedLayoutEpochRef = useRef(-1);
+  const tutorialFitAfterLayoutRef = useRef(false);
+
+  const fitGraph = useCallback((ids?: Iterable<string>) => {
+    const visibleIds = ids ? [...ids] : undefined;
+    return graphSurfaceRef.current?.fitView(visibleIds) ?? Promise.resolve();
+  }, []);
+
+  const clientToGraph = useCallback((position: Position): Position =>
+    graphSurfaceRef.current?.clientToGraph(position) ?? position, []);
 
   const reportWorkspaceError = useCallback((operation: string, error: unknown) => {
     setWorkspaceError(formatWorkspaceError(operation, error));
     setWorkspaceErrorCopied(false);
+  }, []);
+
+  useEffect(() => {
+    const service = new LayoutService();
+    layoutServiceRef.current = service;
+    return () => {
+      layoutServiceRef.current = null;
+      service.dispose();
+    };
   }, []);
 
   useEffect(() => {
@@ -387,6 +407,67 @@ function AuthoringCanvas() {
       reportWorkspaceError('缓存浏览器工作区', error);
     }
   }, [document, files, reportWorkspaceError, workspaceDirectory]);
+
+  const detachedReplacementIdSet = useMemo(() => new Set(detachedReplacementIds), [detachedReplacementIds]);
+  const projection = useMemo(
+    () => projectDocument(document, { detachedReplacementIds: detachedReplacementIdSet }),
+    [detachedReplacementIdSet, document],
+  );
+  const layoutStructure = useMemo(() => JSON.stringify({
+    points: document.graph.points.map((point) => point.id),
+    hyperedges: document.graph.hyperedges.map((edge) => [edge.id, edge.tails, edge.head]),
+  }), [document.graph.hyperedges, document.graph.points]);
+  const layoutWeights = useMemo(
+    () => JSON.stringify(document.graph.hyperedges.map((edge) => [edge.id, edge.weight])),
+    [document.graph.hyperedges],
+  );
+
+  useEffect(() => {
+    const service = layoutServiceRef.current;
+    if (!service) return;
+    if (!document.graph.points.length && !document.graph.hyperedges.length) {
+      setLayoutPositions({});
+      setLayoutRunning(false);
+      previousLayoutStructureRef.current = layoutStructure;
+      return;
+    }
+    const previousStructure = previousLayoutStructureRef.current;
+    const previousWeights = previousLayoutWeightsRef.current;
+    const structureChanged = previousStructure !== layoutStructure;
+    const weightsChanged = previousWeights !== layoutWeights;
+    const firstLayout = previousStructure === null || fittedLayoutEpochRef.current !== layoutEpoch;
+    previousLayoutStructureRef.current = layoutStructure;
+    previousLayoutWeightsRef.current = layoutWeights;
+    if (!firstLayout && !structureChanged && !weightsChanged) return;
+    let acceptResult = true;
+    const timeout = window.setTimeout(() => {
+      if (!acceptResult) return;
+      setLayoutRunning(true);
+      setLayoutRequestCount((current) => current + 1);
+      setStatus('正在自动布局');
+      void service.layoutDocument(document).then((positions) => {
+        if (!acceptResult) return;
+        setLayoutPositions(positions);
+        setFocusLayouts({});
+        setStatus('自动布局已就绪');
+        const fitAfterLayout = firstLayout || tutorialFitAfterLayoutRef.current;
+        if (firstLayout) fittedLayoutEpochRef.current = layoutEpoch;
+        tutorialFitAfterLayoutRef.current = false;
+        if (fitAfterLayout) window.requestAnimationFrame(() => void fitGraph());
+      }).catch((error: unknown) => {
+        if (acceptResult && !(error instanceof LayoutCancelledError)) {
+          reportWorkspaceError('计算自动布局', error);
+        }
+      }).finally(() => {
+        if (acceptResult) setLayoutRunning(false);
+      });
+    }, firstLayout ? 0 : structureChanged ? 120 : 400);
+    return () => {
+      acceptResult = false;
+      window.clearTimeout(timeout);
+      service.cancel();
+    };
+  }, [document, fitGraph, layoutEpoch, layoutStructure, layoutWeights, reportWorkspaceError]);
 
   useEffect(() => {
     editingIdRef.current = editingId;
@@ -449,9 +530,17 @@ function AuthoringCanvas() {
   }, [status]);
 
   const commit = useCallback((updater: (current: AuthoringDocument) => AuthoringDocument) => {
-    dispatchHistory({ type: 'commit', updater, updatedAt: new Date().toISOString() });
+    dispatchHistory({ type: 'commit', updater });
     setStatus('已自动保存');
   }, []);
+
+  useEffect(() => {
+    const validTargets = new Set(document.view.replacements.map((replacement) => replacement.replaceWith));
+    setDetachedReplacementIds((current) => {
+      const next = current.filter((id) => validTargets.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [document.view.replacements]);
 
   useEffect(() => {
     const pointIds = new Set(document.graph.points.map((point) => point.id));
@@ -463,19 +552,21 @@ function AuthoringCanvas() {
     setRouteError(null);
   }, [document]);
 
-  const clearTransientView = useCallback(() => {
+  const clearTransientView = useCallback((clearDetached = true) => {
     setFocusLayouts({});
     setFocusedId(null);
+    setDerivationForm(null);
     setReplacementDraft(null);
     setSelectedNodeIds([]);
     setSelectedId(null);
     setActiveDerivationByGroup({});
+    if (clearDetached) setDetachedReplacementIds([]);
   }, []);
 
   const undo = useCallback(() => {
     if (!history.past.length) return;
     dispatchHistory({ type: 'undo' });
-    clearTransientView();
+    clearTransientView(false);
     setStatus('已撤回');
     notifyTourAction('undo-used');
   }, [clearTransientView, history.past.length]);
@@ -483,7 +574,7 @@ function AuthoringCanvas() {
   const redo = useCallback(() => {
     if (!history.future.length) return;
     dispatchHistory({ type: 'redo' });
-    clearTransientView();
+    clearTransientView(false);
     setStatus('已重做');
     notifyTourAction('redo-used');
   }, [clearTransientView, history.future.length]);
@@ -512,18 +603,18 @@ function AuthoringCanvas() {
   }, [deleteCandidate]);
 
   const deleteItem = useCallback((id: string) => {
-    commit((current) => {
-      const isConcept = current.graph.points.some((concept) => concept.id === id);
-      const removedDerivations = new Set(
-        isConcept
-          ? current.graph.hyperedges.filter((item) => item.head === id || item.tails.includes(id)).map((item) => item.id)
-          : [id],
-      );
-      const positions = { ...current.view.positions };
-      const removedHyperedge = isConcept ? null : current.graph.hyperedges.find((item) => item.id === id);
+    const isConcept = document.graph.points.some((concept) => concept.id === id);
+    const removedDerivations = new Set(
+      isConcept
+        ? document.graph.hyperedges.filter((item) => item.head === id || item.tails.includes(id)).map((item) => item.id)
+        : [id],
+    );
+    const removedHyperedge = isConcept ? null : document.graph.hyperedges.find((item) => item.id === id);
+    setLayoutPositions((current) => {
+      const positions = { ...current };
       const groupPosition = removedHyperedge ? positions[id] : null;
       if (removedHyperedge && groupPosition) {
-        current.graph.hyperedges.forEach((item) => {
+        document.graph.hyperedges.forEach((item) => {
           if (item.id !== id && hyperedgeGroupKey(item) === hyperedgeGroupKey(removedHyperedge)) {
             positions[item.id] = groupPosition;
           }
@@ -531,26 +622,27 @@ function AuthoringCanvas() {
       }
       delete positions[id];
       removedDerivations.forEach((derivationId) => delete positions[derivationId]);
-      return {
-        ...current,
-        graph: {
-          points: isConcept ? current.graph.points.filter((point) => point.id !== id) : current.graph.points,
-          hyperedges: current.graph.hyperedges.filter((item) => !removedDerivations.has(item.id)),
-        },
-        view: {
-          positions,
-          replacements: current.view.replacements.filter((replacement) =>
-            replacement.replaceWith !== id && !replacement.points.includes(id),
-          ),
-        },
-      };
+      return positions;
     });
+    commit((current) => ({
+      ...current,
+      graph: {
+        points: isConcept ? current.graph.points.filter((point) => point.id !== id) : current.graph.points,
+        hyperedges: current.graph.hyperedges.filter((item) => !removedDerivations.has(item.id)),
+      },
+      view: {
+        ...current.view,
+        replacements: current.view.replacements.filter((replacement) =>
+          replacement.replaceWith !== id && !replacement.points.includes(id),
+        ),
+      },
+    }));
     setFocusLayouts({});
     setFocusedId(null);
     setReplacementDraft(null);
     setSelectedNodeIds((current) => current.filter((item) => item !== id));
     setSelectedId((current) => (current === id ? null : current));
-  }, [commit]);
+  }, [commit, document.graph.hyperedges, document.graph.points]);
 
   const requestDelete = useCallback((id: string) => {
     const concept = document.graph.points.find((item) => item.id === id);
@@ -582,7 +674,8 @@ function AuthoringCanvas() {
   const toggleReplacement = useCallback((replaceWith: string, show: ViewReplacement['show']) => {
     const replacement = document.view.replacements.find((item) => item.replaceWith === replaceWith);
     if (!replacement) return;
-    const nextDocument: AuthoringDocument = {
+    setDetachedReplacementIds((current) => current.filter((id) => id !== replaceWith));
+    const nextDocument: AuthoringDocument = replacement.show === show ? document : {
       ...document,
       view: {
         ...document.view,
@@ -591,25 +684,30 @@ function AuthoringCanvas() {
         ),
       },
     };
-    commit(() => nextDocument);
+    if (nextDocument !== document) commit(() => nextDocument);
     setSelectedId(show === 'replacement'
       ? replaceWith
       : firstVisiblePoint(nextDocument, replacement.points[0]));
     setSelectedNodeIds([]);
     setFocusedId(null);
     setFocusLayouts({});
-    setStatus(show === 'replacement' ? `已替换为 ${replaceWith}` : '已显示原点集');
+    setStatus(show === 'replacement' ? `已显示替换概念 ${replaceWith}` : '已显示原概念');
     notifyTourAction('replacement-toggled');
-    const visibleIds = projectDocument(nextDocument).visibleIds;
-    window.setTimeout(() => void fitView({
-      nodes: [...visibleIds].map((id) => ({ id })),
-      padding: 0.18,
-      duration: 260,
-      maxZoom: 1.1,
-    }), 100);
-  }, [commit, document, fitView]);
+  }, [commit, document]);
+
+  const setReplacementMode = useCallback((replaceWith: string, mode: ReplacementViewMode) => {
+    if (mode !== 'compare') {
+      toggleReplacement(replaceWith, mode);
+      return;
+    }
+    if (!document.view.replacements.some((item) => item.replaceWith === replaceWith)) return;
+    setDetachedReplacementIds((current) => current.includes(replaceWith) ? current : [...current, replaceWith]);
+    setStatus('已打开替换对照');
+    notifyTourAction('replacement-compared');
+  }, [document.view.replacements, toggleReplacement]);
 
   const removeReplacement = useCallback((replaceWith: string) => {
+    setDetachedReplacementIds((current) => current.filter((id) => id !== replaceWith));
     commit((current) => ({
       ...current,
       view: {
@@ -621,7 +719,7 @@ function AuthoringCanvas() {
     setStatus('替换关系已解除，所有点与推导保持不变');
   }, [commit]);
 
-  const projection = useMemo(() => projectDocument(document), [document]);
+  const graphIndex = useMemo(() => createGraphIndex(document), [document.graph.hyperedges, document.graph.points]);
   const derivationGroups = useMemo(() => groupHyperedges(document.graph.hyperedges), [document.graph.hyperedges]);
   const groupByMemberId = useMemo(() => {
     const result = new Map<string, HyperedgeGroup>();
@@ -629,6 +727,13 @@ function AuthoringCanvas() {
     return result;
   }, [derivationGroups]);
   const visibleDerivationGroups = useMemo(() => groupHyperedges(projection.hyperedges), [projection.hyperedges]);
+  const graphScene = useMemo(
+    () => createGraphScene(document, activeDerivationByGroup, {
+      projection,
+      groups: visibleDerivationGroups,
+    }),
+    [activeDerivationByGroup, document, projection, visibleDerivationGroups],
+  );
   const visibleGroupByNodeId = useMemo(
     () => new Map(visibleDerivationGroups.map((group) => [group.nodeId, group])),
     [visibleDerivationGroups],
@@ -643,22 +748,73 @@ function AuthoringCanvas() {
   const routeIds = useMemo(() => routeHighlightIds(routeSelection.result), [routeSelection.result]);
   const routeEdgeIds = useMemo(() => new Set(routeSelection.result?.hyperedgeIds ?? []), [routeSelection.result]);
   const activeIds = useMemo(() => {
-    const candidates = neighborhood(document, focusedId);
+    const candidates = graphIndex.neighborhood(focusedId);
+    projection.replacementAssists.forEach((assist) => {
+      if (focusedId && [assist.targetId, ...assist.memberIds].includes(focusedId)) {
+        candidates.add(assist.targetId);
+        assist.memberIds.forEach((id) => candidates.add(id));
+      }
+    });
     return new Set([...candidates].filter((id) => projection.visibleIds.has(id)));
-  }, [document, focusedId, projection.visibleIds]);
-  const controlsFitViewOptions = useMemo(() => focusedId
-    ? { nodes: [...activeIds].map((id) => ({ id })), padding: 0.28, duration: 260, maxZoom: 1.25 }
-    : { padding: 0.12, duration: 260, maxZoom: 1.1 }, [activeIds, focusedId]);
+  }, [focusedId, graphIndex, projection.replacementAssists, projection.visibleIds]);
   const hoveredIds = useMemo(() => {
-    const candidates = neighborhood(document, hoveredId);
+    const candidates = graphIndex.neighborhood(hoveredId);
     return new Set([...candidates].filter((id) => projection.visibleIds.has(id)));
-  }, [document, hoveredId, projection.visibleIds]);
-  const focusPositions = useMemo(
-    () => focusedId
-      ? focusLayouts[focusedId] ?? layoutNeighborhood(document, activeIds, focusedId)
-      : null,
-    [activeIds, document, focusLayouts, focusedId],
-  );
+  }, [graphIndex, hoveredId, projection.visibleIds]);
+  useEffect(() => {
+    if (!focusedId || focusLayouts[focusedId] || detachedReplacementIds.length) return;
+    const service = layoutServiceRef.current;
+    if (!service) return;
+    let acceptResult = true;
+    setLayoutRequestCount((current) => current + 1);
+    void service.layoutNeighborhood(
+      document,
+      activeIds,
+      focusedId,
+      layoutPositions,
+    ).then((positions) => {
+      if (!acceptResult) return;
+      setFocusLayouts((current) => ({ ...current, [focusedId]: positions }));
+    }).catch((error: unknown) => {
+      if (acceptResult && !(error instanceof LayoutCancelledError)) {
+        reportWorkspaceError('计算局部布局', error);
+      }
+    });
+    return () => {
+      acceptResult = false;
+    };
+  }, [activeIds, detachedReplacementIds.length, document, focusLayouts, focusedId, layoutPositions, reportWorkspaceError]);
+  const focusPositions = focusedId ? focusLayouts[focusedId] ?? null : null;
+  const selectedSceneIds = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+  const routeStartIds = useMemo(() => new Set(routeSelection.startPointIds), [routeSelection.startPointIds]);
+  const routeTargetIds = useMemo(() => new Set(routeSelection.targetPointIds), [routeSelection.targetPointIds]);
+  const graphSceneRuntime = useMemo(() => createGraphSceneRuntime(graphScene, {
+    positions: layoutPositions,
+    positionOverrides: focusPositions ?? undefined,
+    selectedIds: selectedSceneIds,
+    activeIds,
+    hoveredIds,
+    hoveredId,
+    routeIds,
+    routeDerivationIds: routeEdgeIds,
+    routeStartIds,
+    routeTargetIds,
+    focusActive: !!focusedId,
+    hoverActive: !!hoveredId,
+    routeActive: !!routeSelection.result,
+    nodeInteractionsDisabled: !!derivationForm,
+    dragDisabled: !!derivationForm || routeMode || !!replacementDraft || layoutRunning,
+    connectionDisabled: !!derivationForm || routeMode || !!replacementDraft || layoutRunning,
+  }), [activeIds, derivationForm, focusPositions, focusedId, graphScene, hoveredId, hoveredIds, layoutPositions, layoutRunning, replacementDraft, routeEdgeIds, routeIds, routeMode, routeSelection.result, routeStartIds, routeTargetIds, selectedSceneIds]);
+
+  useEffect(() => {
+    if (!focusedId && !routeSelection.result) return;
+    const activeSelectionIds = new Set(graphSceneRuntime.nodes.filter((node) => !node.dimmed).map((node) => node.id));
+    setSelectedNodeIds((current) => {
+      const next = current.filter((id) => activeSelectionIds.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [focusedId, graphSceneRuntime.nodes, routeSelection.result]);
 
   const selectDerivation = useCallback((group: HyperedgeGroup, id: string) => {
     setActiveDerivationByGroup((current) => ({ ...current, [group.key]: id }));
@@ -669,140 +825,10 @@ function AuthoringCanvas() {
     });
     setStatus(`正在查看推导 ${id}`);
     notifyTourAction('derivation-selected');
+    if (id === 'surjective-def' && group.key === hyperedgeGroupKey({ tails: ['linear-map'], head: 'surjective' })) {
+      notifyTourAction('tutorial-surjective-original-selected');
+    }
   }, [groupByMemberId]);
-
-  const projectedNodes = useMemo<AuthoringFlowNode[]>(() => {
-    const conceptById = new Map(document.graph.points.map((concept) => [concept.id, concept]));
-    const dimmed = (id: string) => routeSelection.result
-      ? !routeIds.has(id)
-      : !!focusedId && !activeIds.has(id);
-    const position = (id: string) => focusPositions?.[id] ?? document.view.positions[id] ?? { x: 0, y: 0 };
-    return [
-      ...projection.points.map((item): AuthoringFlowNode => {
-        const concept = conceptById.get(item.id)!;
-        const isDimmed = dimmed(concept.id);
-        return {
-          id: concept.id,
-          type: 'concept',
-          className: [
-            'nokey',
-            routeSelection.startPointIds.includes(concept.id) ? 'is-route-start' : '',
-            routeSelection.targetPointIds.includes(concept.id) ? 'is-route-target' : '',
-            routeSelection.result && routeIds.has(concept.id) ? 'is-route-member' : '',
-          ].filter(Boolean).join(' ') || undefined,
-          position: position(concept.id),
-          zIndex: isDimmed ? 0 : focusedId || routeSelection.result ? 1 : 0,
-          draggable: !isDimmed,
-          selectable: !isDimmed,
-          connectable: !isDimmed,
-          focusable: !isDimmed,
-          style: { pointerEvents: isDimmed ? 'none' : 'auto' },
-          data: {
-            label: concept.data.label,
-            dimmed: isDimmed,
-            depth: item.depth,
-            replacements: item.controls.map((control) => ({ ...control, onToggle: toggleReplacement })),
-            onDelete: requestDelete,
-          },
-        };
-      }),
-      ...visibleDerivationGroups.map((group): AuthoringFlowNode => {
-        const derivation = activeHyperedge(group, activeDerivationByGroup[group.key]);
-        const isDimmed = routeSelection.result
-          ? !group.members.some((member) => routeEdgeIds.has(member.id))
-          : dimmed(group.nodeId);
-        return {
-          id: group.nodeId,
-          type: 'derivation',
-          className: ['nokey', group.members.some((member) => routeEdgeIds.has(member.id)) ? 'is-route-member' : ''].filter(Boolean).join(' '),
-          position: position(group.nodeId),
-          zIndex: isDimmed ? 0 : focusedId || routeSelection.result ? 1 : 0,
-          draggable: !isDimmed,
-          selectable: !isDimmed,
-          connectable: !isDimmed,
-          focusable: !isDimmed,
-          style: { pointerEvents: isDimmed ? 'none' : 'auto' },
-          data: {
-            activeId: derivation.id,
-            weight: derivation.weight,
-            premiseCount: derivation.tails.length,
-            dimmed: isDimmed,
-            alternatives: group.members.map((member) => ({ id: member.id, weight: member.weight })),
-            onSelect: (id) => selectDerivation(group, id),
-            onDelete: requestDelete,
-          },
-        };
-      }),
-    ];
-  }, [activeDerivationByGroup, activeIds, document.graph.points, document.view.positions, focusPositions, focusedId, projection.points, requestDelete, routeEdgeIds, routeIds, routeSelection.result, routeSelection.startPointIds, routeSelection.targetPointIds, selectDerivation, toggleReplacement, visibleDerivationGroups]);
-
-  const [nodes, setNodes, onNodesChange] = useNodesState<AuthoringFlowNode>([]);
-
-  const selectionSnapshot = useCallback(() => {
-    const state = flowStore.getState();
-    return {
-      storeMultiSelectionActive: state.multiSelectionActive,
-      storeSelectedIds: state.nodes.filter((node) => node.selected).map((node) => node.id).sort(),
-      controlledSelectedIds: nodes.filter((node) => node.selected).map((node) => node.id).sort(),
-      appSelectedNodeIds: [...selectedNodeIds],
-      selectedId,
-      focusedId,
-      replacementActive: !!replacementDraft,
-      routeMode,
-    };
-  }, [flowStore, focusedId, nodes, replacementDraft, routeMode, selectedId, selectedNodeIds]);
-  const selectionSnapshotRef = useRef(selectionSnapshot);
-  useEffect(() => {
-    selectionSnapshotRef.current = selectionSnapshot;
-  }, [selectionSnapshot]);
-
-  const handleNodesChange = useCallback((changes: NodeChange<AuthoringFlowNode>[]) => {
-    traceSelection('nodes-change', {
-      changes: changes.map((change) => change.type === 'select'
-        ? { type: change.type, id: change.id, selected: change.selected }
-        : { type: change.type, id: 'id' in change ? change.id : undefined }),
-      before: selectionSnapshotRef.current(),
-    });
-    onNodesChange(changes);
-    queueMicrotask(() => traceSelection('nodes-change-microtask', { state: selectionSnapshotRef.current() }));
-  }, [onNodesChange]);
-
-  useEffect(() => {
-    if (!selectionDebugEnabled) return;
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Shift') {
-        traceSelection(event.type, {
-          key: event.key,
-          code: event.code,
-          shiftKey: event.shiftKey,
-          repeat: event.repeat,
-          target: event.target instanceof Element ? `${event.target.tagName}.${event.target.className}` : String(event.target),
-          state: selectionSnapshotRef.current(),
-        });
-      }
-    };
-    const handleBlur = () => traceSelection('window-blur', { state: selectionSnapshotRef.current() });
-    window.addEventListener('keydown', handleKey, true);
-    window.addEventListener('keyup', handleKey, true);
-    window.addEventListener('blur', handleBlur, true);
-    traceSelection('debug-started', { userAgent: navigator.userAgent, state: selectionSnapshotRef.current() });
-    return () => {
-      window.removeEventListener('keydown', handleKey, true);
-      window.removeEventListener('keyup', handleKey, true);
-      window.removeEventListener('blur', handleBlur, true);
-    };
-  }, []);
-
-  useEffect(() => {
-    setNodes((current) => {
-      const previous = new Map(current.map((node) => [node.id, node]));
-      return projectedNodes.map((node) => ({
-        ...node,
-        selected: previous.get(node.id)?.selected ?? false,
-        measured: previous.get(node.id)?.measured,
-      }));
-    });
-  }, [projectedNodes, setNodes]);
 
   const beginReplacement = useCallback(() => {
     if (replacementDraft) {
@@ -824,60 +850,15 @@ function AuthoringCanvas() {
   useEffect(() => {
     if (!focusedId) return;
     const frame = window.requestAnimationFrame(() => {
-      void fitView({ nodes: [...activeIds].map((id) => ({ id })), padding: 0.28, duration: 260, maxZoom: 1.25 });
+      const visibleIds = graphScene.nodes.flatMap((node) =>
+        activeIds.has(node.id) || (node.kind === 'derivation' && activeIds.has(node.semanticId)) ? [node.id] : [],
+      );
+      void fitGraph(visibleIds);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [activeIds, fitView, focusedId]);
+  }, [activeIds, fitGraph, focusPositions, focusedId, graphScene.nodes]);
 
-  const edges = useMemo<ProjectedEdge[]>(() => {
-    const result: ProjectedEdge[] = [];
-    for (const group of visibleDerivationGroups) {
-      const derivation = activeHyperedge(group, activeDerivationByGroup[group.key]);
-      const derivationActive = routeSelection.result
-        ? routeEdgeIds.has(derivation.id)
-        : focusedId
-          ? activeIds.has(group.nodeId)
-          : hoveredId
-            ? hoveredIds.has(group.nodeId)
-            : false;
-      const inactiveOpacity = focusedId || routeSelection.result ? 0.08 : 0.18;
-      for (const premise of derivation.tails) {
-        result.push({
-          id: `premise:${group.nodeId}:${premise}`,
-          source: premise,
-          target: group.nodeId,
-          sourceHandle: 'concept-out',
-          targetHandle: 'premise-in',
-          type: 'default',
-          deletable: false,
-          selectable: false,
-          focusable: false,
-          interactionWidth: 0,
-          data: { kind: 'premise', derivationId: derivation.id, premiseId: premise },
-          style: { stroke: '#2f7087', strokeWidth: derivationActive ? 1.8 : 1.1, opacity: derivationActive ? 1 : inactiveOpacity, pointerEvents: 'none' },
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#2f7087', width: 14, height: 14 },
-        });
-      }
-      result.push({
-        id: `head:${group.nodeId}`,
-        source: group.nodeId,
-        target: derivation.head,
-        sourceHandle: 'conclusion-out',
-        targetHandle: 'concept-in',
-        type: 'default',
-        deletable: false,
-        selectable: false,
-        focusable: false,
-        interactionWidth: 0,
-        data: { kind: 'conclusion', derivationId: derivation.id },
-        style: { stroke: '#a44f3f', strokeWidth: derivationActive ? 2 : 1.2, opacity: derivationActive ? 1 : inactiveOpacity, pointerEvents: 'none' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#a44f3f', width: 15, height: 15 },
-      });
-    }
-    return result;
-  }, [activeDerivationByGroup, activeIds, focusedId, hoveredId, hoveredIds, routeEdgeIds, routeSelection.result, visibleDerivationGroups]);
-
-  const persistNodePositions = useCallback((draggedNodes: AuthoringFlowNode[]) => {
+  const persistNodePositions = useCallback((draggedNodes: Array<{ id: string; position: Position }>) => {
     const movedPositions = draggedNodes.flatMap((node) => {
       const group = visibleGroupByNodeId.get(node.id);
       return group
@@ -891,26 +872,23 @@ function AuthoringCanvas() {
       setFocusLayouts((current) => ({
         ...current,
         [focusedId]: {
-          ...(current[focusedId] ?? layoutNeighborhood(document, activeIds, focusedId)),
+          ...(current[focusedId] ?? Object.fromEntries(
+            [...activeIds].flatMap((id) => layoutPositions[id] ? [[id, layoutPositions[id]]] : []),
+          )),
           ...Object.fromEntries(localNodes.map((node) => [node.id, node.position])),
         },
       }));
       setStatus('局部视图布局已更新');
     }
     if (overviewNodes.length) {
-      commit((current) => ({
+      setLayoutPositions((current) => ({
         ...current,
-        view: {
-          ...current.view,
-          positions: {
-            ...current.view.positions,
-            ...Object.fromEntries(overviewNodes.map((node) => [node.id, node.position])),
-          },
-        },
+        ...Object.fromEntries(overviewNodes.map((node) => [node.id, node.position])),
       }));
+      setStatus('整体布局已在本次会话更新');
     }
     if (draggedNodes.length) notifyTourAction('node-moved');
-  }, [activeIds, commit, document, focusedId, visibleGroupByNodeId]);
+  }, [activeIds, focusedId, layoutPositions, visibleGroupByNodeId]);
 
   const addConcept = useCallback((position?: Position) => {
     const id = uniqueId('c', document.graph.points.map((concept) => concept.id));
@@ -921,26 +899,78 @@ function AuthoringCanvas() {
     const format: DocumentFormat = 'markdown';
     const source = conceptTemplate('新概念', format);
     const conceptIndex = document.graph.points.length;
-    const nextPosition = position ?? screenToFlowPosition({
+    const nextPosition = position ?? clientToGraph({
       x: window.innerWidth / 2 + (conceptIndex % 3 - 1) * 170,
       y: window.innerHeight / 2 + Math.floor(conceptIndex / 3) * 100,
     });
     setFiles((current) => storeDocumentFiles(current, directory, format, source, '新概念'));
+    setLayoutPositions((current) => ({ ...current, [id]: nextPosition }));
     commit((current) => ({
       ...current,
       graph: {
         ...current.graph,
         points: [...current.graph.points, { id, data: { label: '新概念', document: directory, format } }],
       },
-      view: { ...current.view, positions: { ...current.view.positions, [id]: nextPosition } },
     }));
     setFocusLayouts({});
     setFocusedId(null);
+    setSelectedNodeIds([id]);
     setSelectedId(id);
     notifyTourAction('concept-added');
-  }, [commit, document.graph.hyperedges, document.graph.points, screenToFlowPosition]);
+  }, [clientToGraph, commit, document.graph.hyperedges, document.graph.points]);
 
-  const onConnect = useCallback((connection: Connection) => {
+  const createDerivation = useCallback((tails: string[], head: string, weight = 1): string => {
+    const id = uniqueId('h', document.graph.hyperedges.map((item) => item.id));
+    const directory = createDocumentDirectory('derivation', id, [
+      ...document.graph.points.map((item) => item.data.document),
+      ...document.graph.hyperedges.map((item) => item.data.document),
+    ]);
+    const format: DocumentFormat = 'markdown';
+    const source = derivationTemplate(id, format);
+    const nextHyperedge: Hyperedge = {
+      id,
+      weight: normalizeWeight(weight),
+      tails: [...new Set(tails)],
+      head,
+      data: { document: directory, format },
+    };
+    const matchingGroup = derivationGroups.find((group) => group.key === hyperedgeGroupKey(nextHyperedge));
+    const endpointPositions = [...nextHyperedge.tails, head]
+      .map((endpointId) => layoutPositions[endpointId])
+      .filter((position): position is Position => !!position);
+    const temporaryPosition = matchingGroup
+      ? layoutPositions[matchingGroup.nodeId]
+      : endpointPositions.length
+        ? {
+            x: endpointPositions.reduce((sum, position) => sum + position.x, 0) / endpointPositions.length + 41,
+            y: endpointPositions.reduce((sum, position) => sum + position.y, 0) / endpointPositions.length + 5,
+          }
+        : { x: 40, y: 40 };
+    setFiles((current) => storeDocumentFiles(current, directory, format, source, `推导 ${id}`));
+    setLayoutPositions((current) => ({ ...current, [id]: temporaryPosition }));
+    commit((current) => ({
+      ...current,
+      graph: {
+        ...current.graph,
+        hyperedges: [...current.graph.hyperedges, nextHyperedge],
+      },
+    }));
+    setActiveDerivationByGroup((current) => ({ ...current, [hyperedgeGroupKey(nextHyperedge)]: id }));
+    setSelectedNodeIds([matchingGroup?.nodeId ?? id]);
+    setSelectedId(id);
+    setFocusLayouts({});
+    setFocusedId(null);
+    notifyTourAction('derivation-created');
+    if (hasExactEndpoints(nextHyperedge, ['injective-surjective'], 'invertible')) {
+      notifyTourAction('tutorial-invertible-created');
+    }
+    if (hasExactEndpoints(nextHyperedge, ['linear-map'], 'surjective')) {
+      notifyTourAction('tutorial-surjective-parallel-created');
+    }
+    return id;
+  }, [commit, derivationGroups, document.graph.hyperedges, document.graph.points, layoutPositions]);
+
+  const connectNodes = useCallback((connection: GraphConnection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return;
     const sourceConcept = document.graph.points.some((item) => item.id === connection.source);
     const targetConcept = document.graph.points.some((item) => item.id === connection.target);
@@ -955,48 +985,15 @@ function AuthoringCanvas() {
     }
 
     if (sourceConcept && targetConcept) {
-      const id = uniqueId('h', document.graph.hyperedges.map((item) => item.id));
-      const directory = createDocumentDirectory('derivation', id, [
-        ...document.graph.points.map((item) => item.data.document),
-        ...document.graph.hyperedges.map((item) => item.data.document),
-      ]);
-      const format: DocumentFormat = 'markdown';
-      const source = derivationTemplate(id, format);
-      const nextHyperedge: Hyperedge = {
-        id,
-        weight: 1,
-        tails: [connection.source],
-        head: connection.target,
-        data: { document: directory, format },
-      };
-      setFiles((current) => storeDocumentFiles(current, directory, format, source, `推导 ${id}`));
-      const sourcePosition = document.view.positions[connection.source] ?? { x: 0, y: 0 };
-      const targetPosition = document.view.positions[connection.target] ?? { x: sourcePosition.x + 240, y: sourcePosition.y };
-      const matchingGroup = derivationGroups.find((group) => group.key === hyperedgeGroupKey(nextHyperedge));
-      const nextPosition = matchingGroup
-        ? document.view.positions[matchingGroup.nodeId]
-          ?? { x: (sourcePosition.x + targetPosition.x) / 2 + 44, y: (sourcePosition.y + targetPosition.y) / 2 }
-        : { x: (sourcePosition.x + targetPosition.x) / 2 + 44, y: (sourcePosition.y + targetPosition.y) / 2 };
-      commit((current) => ({
-        ...current,
-        graph: {
-          ...current.graph,
-          hyperedges: [...current.graph.hyperedges, nextHyperedge],
-        },
-        view: {
-          ...current.view,
-          positions: { ...current.view.positions, [id]: nextPosition },
-        },
-      }));
-      setActiveDerivationByGroup((current) => ({ ...current, [hyperedgeGroupKey(nextHyperedge)]: id }));
-      setSelectedId(id);
-      notifyTourAction('derivation-created');
+      createDerivation([connection.source], connection.target, 1);
       return;
     }
     if (sourceConcept && targetDerivation) {
-      const nextHyperedge = targetDerivation.tails.includes(connection.source)
-        ? targetDerivation
-        : { ...targetDerivation, tails: [...targetDerivation.tails, connection.source] };
+      if (targetDerivation.tails.includes(connection.source)) {
+        setStatus('该概念已经是当前推导的前提');
+        return;
+      }
+      const nextHyperedge = { ...targetDerivation, tails: [...targetDerivation.tails, connection.source] };
       commit((current) => ({
         ...current,
         graph: {
@@ -1005,11 +1002,23 @@ function AuthoringCanvas() {
         },
       }));
       setActiveDerivationByGroup((current) => ({ ...current, [hyperedgeGroupKey(nextHyperedge)]: nextHyperedge.id }));
+      setSelectedNodeIds([connection.target]);
       setSelectedId(targetDerivation.id);
       notifyTourAction('derivation-updated');
+      if (hasExactEndpoints(nextHyperedge, ['injective-surjective', 'surjective'], 'invertible')) {
+        notifyTourAction('tutorial-invertible-premise-added');
+      }
+      if (targetDerivation.id === 'null-space-def'
+        && hasExactEndpoints(nextHyperedge, ['linear-map', 'subspace'], 'null-range')) {
+        notifyTourAction('tutorial-null-space-premise-added');
+      }
       return;
     }
     if (sourceDerivation && targetConcept) {
+      if (sourceDerivation.head === connection.target) {
+        setStatus('该概念已经是当前推导的结论');
+        return;
+      }
       const nextHyperedge = { ...sourceDerivation, head: connection.target };
       commit((current) => ({
         ...current,
@@ -1019,12 +1028,21 @@ function AuthoringCanvas() {
         },
       }));
       setActiveDerivationByGroup((current) => ({ ...current, [hyperedgeGroupKey(nextHyperedge)]: nextHyperedge.id }));
+      setSelectedNodeIds([connection.source]);
       setSelectedId(sourceDerivation.id);
       notifyTourAction('derivation-updated');
       return;
     }
     setStatus('只能连接“概念 → 概念 / 推导”或“推导 → 概念”');
-  }, [commit, derivationGroups, displayedDerivationByNodeId, document]);
+  }, [commit, createDerivation, displayedDerivationByNodeId, document.graph.hyperedges, document.graph.points]);
+
+  const openCreateDerivationForm = useCallback(() => {
+    setRouteMode(false);
+    setReplacementDraft(null);
+    setDerivationForm({ mode: 'create' });
+  }, []);
+
+  const closeDerivationForm = useCallback(() => setDerivationForm(null), []);
 
   const updatePointData = useCallback((id: string, patch: Partial<Point['data']>) => {
     commit((current) => ({
@@ -1068,14 +1086,45 @@ function AuthoringCanvas() {
     if (value.trim() && Number.isFinite(parsed) && parsed >= 0) notifyTourAction('derivation-weight-edited');
   }, [updateHyperedge]);
 
+  const openEditDerivationForm = useCallback((derivationId: string) => {
+    setRouteMode(false);
+    setReplacementDraft(null);
+    setDerivationForm({ mode: 'edit', derivationId });
+  }, []);
+
+  const submitDerivationForm = useCallback((draft: { tails: string[]; head: string; weight: number }) => {
+    if (!derivationForm) return;
+    if (derivationForm.mode === 'create') {
+      createDerivation(draft.tails, draft.head, draft.weight);
+      setStatus('已创建推导');
+    } else {
+      updateHyperedge(derivationForm.derivationId, { tails: [...new Set(draft.tails)], head: draft.head });
+      setSelectedId(derivationForm.derivationId);
+      setSelectedNodeIds([groupByMemberId.get(derivationForm.derivationId)?.nodeId ?? derivationForm.derivationId]);
+      setFocusedId(null);
+      setStatus('已更新推导前提与结论');
+      notifyTourAction('derivation-updated');
+    }
+    setDerivationForm(null);
+  }, [createDerivation, derivationForm, groupByMemberId, updateHyperedge]);
+
   const applyLayout = useCallback(() => {
-    const positions = layoutDocument(document);
+    const service = layoutServiceRef.current;
+    if (!service || layoutRunning) return;
+    setLayoutRunning(true);
     setFocusedId(null);
     setFocusLayouts({});
-    commit((current) => ({ ...current, view: { ...current.view, positions } }));
-    notifyTourAction('layout-applied');
-    window.setTimeout(() => void fitView({ padding: 0.12, duration: 350 }), 40);
-  }, [commit, document, fitView]);
+    setStatus('正在重新计算自动布局');
+    setLayoutRequestCount((current) => current + 1);
+    void service.layoutDocument(document).then((positions) => {
+      setLayoutPositions(positions);
+      setStatus('已重新计算自动布局');
+      notifyTourAction('layout-applied');
+      window.setTimeout(() => void fitGraph(), 100);
+    }).catch((error: unknown) => {
+      if (!(error instanceof LayoutCancelledError)) reportWorkspaceError('重新计算自动布局', error);
+    }).finally(() => setLayoutRunning(false));
+  }, [document, fitGraph, layoutRunning, reportWorkspaceError]);
 
   const findConcept = useCallback((pointId?: string) => {
     const query = search.trim().toLocaleLowerCase();
@@ -1088,35 +1137,92 @@ function AuthoringCanvas() {
       setStatus('没有匹配的概念');
       return;
     }
+    if (replacementDraft) {
+      const candidate = replacementFromSelection(document, replacementDraft, concept.id);
+      if (!candidate.replacement) {
+        setStatus(candidate.analysis.issues[0]?.message ?? '无法建立替换关系');
+        return;
+      }
+      commit((current) => ({
+        ...current,
+        view: {
+          ...current.view,
+          replacements: [...current.view.replacements, candidate.replacement!],
+        },
+      }));
+      setReplacementDraft(null);
+      setSelectedNodeIds([]);
+      setSelectedId(candidate.replacement.points[0]);
+      setSearch('');
+      setStatus(`已定义 ${candidate.replacement.points.join(' + ')} → ${concept.id}`);
+      notifyTourAction('replacement-created');
+      return;
+    }
     const revealed = revealConcept(document, concept.id);
-    commit(() => revealed);
+    const projectionChanged = revealed.view.replacements.some((replacement, index) =>
+      replacement.show !== document.view.replacements[index]?.show,
+    );
+    if (projectionChanged) commit(() => revealed);
     setFocusedId(null);
+    setSelectedNodeIds([concept.id]);
     setSelectedId(concept.id);
     notifyTourAction('concept-found');
-    window.setTimeout(() => void fitView({ nodes: [{ id: concept.id }], padding: 2, duration: 300, maxZoom: 1.4 }), 30);
-  }, [commit, document, fitView, search]);
+    window.setTimeout(() => void graphSurfaceRef.current?.focusElement(concept.id), 30);
+  }, [commit, document, replacementDraft, search]);
+
+  const adoptChosenWorkspace = useCallback((result: ChosenWorkspaceDirectory, statusMessage?: string) => {
+    const imported = result.workspace.manifest;
+    workspaceDirectoryRef.current = result.handle;
+    workspaceRevisionRef.current = result.revision;
+    externalWorkspaceChangeRef.current = null;
+    setExternalWorkspaceChange(null);
+    setFiles(result.created ? result.workspace.files : {});
+    if (!result.created) {
+      setLayoutPositions({});
+      setLayoutEpoch((current) => current + 1);
+    }
+    dispatchHistory({ type: 'replace', document: imported });
+    setWorkspaceDirectory(result.handle);
+    setEditingId(null);
+    clearTransientView();
+    setStatus(statusMessage ?? (result.created
+      ? `已在 ${result.handle.name} 创建工作区`
+      : `已打开工作区 ${result.handle.name}`));
+    window.setTimeout(() => void fitGraph(), 20);
+  }, [clearTransientView, fitGraph]);
 
   const connectWorkspace = useCallback(async () => {
     try {
       const result = await chooseWorkspaceDirectory({ manifest: document, files });
-      const imported = result.workspace.manifest;
-      const positions = Object.keys(imported.view.positions).length ? imported.view.positions : layoutDocument(imported);
-      workspaceDirectoryRef.current = result.handle;
-      workspaceRevisionRef.current = result.revision;
-      externalWorkspaceChangeRef.current = null;
-      setExternalWorkspaceChange(null);
-      setFiles(result.created ? result.workspace.files : {});
-      dispatchHistory({ type: 'replace', document: { ...imported, view: { ...imported.view, positions } } });
-      setWorkspaceDirectory(result.handle);
-      setEditingId(null);
-      clearTransientView();
-      setStatus(result.created ? `已在 ${result.handle.name} 创建工作区` : `已打开工作区 ${result.handle.name}`);
-      window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
+      if (result.migrationSource) {
+        setPendingWorkspaceUpgrade(result);
+        setStatus(`工作区 schema ${result.migrationSource} 需要升级`);
+        return;
+      }
+      adoptChosenWorkspace(result);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       reportWorkspaceError('打开项目文件夹', error);
     }
-  }, [clearTransientView, document, files, fitView, reportWorkspaceError]);
+  }, [adoptChosenWorkspace, document, files, reportWorkspaceError]);
+
+  const confirmWorkspaceUpgrade = useCallback(async () => {
+    if (!pendingWorkspaceUpgrade?.migrationSource || upgradingWorkspace) return;
+    const source = pendingWorkspaceUpgrade.migrationSource;
+    setUpgradingWorkspace(true);
+    try {
+      const upgraded = await upgradeWorkspaceDirectorySchema(pendingWorkspaceUpgrade);
+      setPendingWorkspaceUpgrade(null);
+      adoptChosenWorkspace(
+        upgraded,
+        `已将 ${upgraded.handle.name} 从 ${source} 升级到 ${DOCUMENT_SCHEMA} 并打开`,
+      );
+    } catch (error) {
+      reportWorkspaceError('升级工作区 schema', error);
+    } finally {
+      setUpgradingWorkspace(false);
+    }
+  }, [adoptChosenWorkspace, pendingWorkspaceUpgrade, reportWorkspaceError, upgradingWorkspace]);
 
   const createWorkspaceInNewDirectory = useCallback(async () => {
     try {
@@ -1127,18 +1233,20 @@ function AuthoringCanvas() {
       externalWorkspaceChangeRef.current = null;
       setExternalWorkspaceChange(null);
       setFiles(workspace.files);
+      setLayoutPositions({});
+      setLayoutEpoch((current) => current + 1);
       dispatchHistory({ type: 'replace', document: workspace.manifest });
       setWorkspaceDirectory(handle);
       setEditingId(null);
       clearTransientView();
       setStatus(`已在 ${handle.name} 创建空项目`);
       notifyTourAction('workspace-created');
-      window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
+      window.setTimeout(() => void fitGraph(), 20);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       reportWorkspaceError('创建空项目', error);
     }
-  }, [clearTransientView, fitView, reportWorkspaceError]);
+  }, [clearTransientView, fitGraph, reportWorkspaceError]);
 
   const saveWorkspaceAs = useCallback(async () => {
     try {
@@ -1160,22 +1268,23 @@ function AuthoringCanvas() {
     try {
       const importedWorkspace = importManifest(await file.text(), files);
       const imported = importedWorkspace.manifest;
-      const positions = Object.keys(imported.view.positions).length ? imported.view.positions : layoutDocument(imported);
       workspaceDirectoryRef.current = null;
       workspaceRevisionRef.current = null;
       externalWorkspaceChangeRef.current = null;
       setExternalWorkspaceChange(null);
       setFiles(importedWorkspace.files);
+      setLayoutPositions({});
+      setLayoutEpoch((current) => current + 1);
       setWorkspaceDirectory(null);
-      commit(() => ({ ...imported, view: { ...imported.view, positions } }));
+      commit(() => imported);
       setEditingId(null);
       clearTransientView();
       setStatus('JSON 已迁移到本地工作区');
-      window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
+      window.setTimeout(() => void fitGraph(), 20);
     } catch (error) {
       setStatus(error instanceof Error ? error.message.split('\n')[0] : '无法导入 JSON');
     }
-  }, [clearTransientView, commit, files, fitView]);
+  }, [clearTransientView, commit, files, fitGraph]);
 
   const openJsonEditor = useCallback(() => {
     setJsonText(JSON.stringify(document, null, 2));
@@ -1185,36 +1294,43 @@ function AuthoringCanvas() {
 
   const applyJson = useCallback(async () => {
     try {
-      const parsed = importManifest(jsonText, files, { allowMissingFiles: !!workspaceDirectory }).manifest;
+      const importedWorkspace = importManifest(jsonText, files, { allowMissingFiles: !!workspaceDirectory });
+      const parsed = importedWorkspace.manifest;
       if (workspaceDirectory) await validateWorkspaceDirectoryFiles(workspaceDirectory, parsed, files);
-      const positions = Object.keys(parsed.view.positions).length ? parsed.view.positions : layoutDocument(parsed);
-      commit(() => ({ ...parsed, view: { ...parsed.view, positions } }));
+      setLayoutPositions({});
+      setLayoutEpoch((current) => current + 1);
+      commit(() => parsed);
       setFocusLayouts({});
       setFocusedId(null);
       setSelectedId(null);
       setReplacementDraft(null);
+      setDetachedReplacementIds([]);
       setJsonOpen(false);
-      setStatus('JSON 已应用');
+      setStatus(jsonMigrationSource
+        ? `JSON schema 已从 ${jsonMigrationSource} 自动升级到 ${DOCUMENT_SCHEMA}`
+        : 'JSON 已应用');
       notifyTourAction('json-applied');
     } catch (error) {
       setStatus(error instanceof Error ? error.message.split('\n')[0] : 'JSON 无效');
     }
-  }, [commit, files, jsonText, workspaceDirectory]);
+  }, [commit, files, jsonMigrationSource, jsonText, workspaceDirectory]);
 
   const adoptExternalWorkspaceChange = useCallback(() => {
     if (!externalWorkspaceChange) return;
-    const imported = externalWorkspaceChange.snapshot.workspace.manifest;
-    const positions = Object.keys(imported.view.positions).length ? imported.view.positions : layoutDocument(imported);
+    const importedWorkspace = externalWorkspaceChange.snapshot.workspace;
+    const imported = importedWorkspace.manifest;
     workspaceRevisionRef.current = externalWorkspaceChange.snapshot.revision;
     externalWorkspaceChangeRef.current = null;
     setFiles({});
-    dispatchHistory({ type: 'replace', document: { ...imported, view: { ...imported.view, positions } } });
+    setLayoutPositions({});
+    setLayoutEpoch((current) => current + 1);
+    dispatchHistory({ type: 'replace', document: imported });
     setExternalWorkspaceChange(null);
     setEditingId(null);
     clearTransientView();
     setStatus('已采用项目文件夹中的更改');
-    window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
-  }, [clearTransientView, externalWorkspaceChange, fitView]);
+    window.setTimeout(() => void fitGraph(), 20);
+  }, [clearTransientView, externalWorkspaceChange, fitGraph]);
 
   const keepWebUiWorkspaceChange = useCallback(() => {
     if (!externalWorkspaceChange || !workspaceDirectory || resolvingExternalChange) return;
@@ -1237,6 +1353,7 @@ function AuthoringCanvas() {
     });
     setRouteError(null);
     setFocusedId(null);
+    setSelectedNodeIds([]);
     setSelectedId(null);
   }, []);
 
@@ -1323,22 +1440,16 @@ function AuthoringCanvas() {
       return;
     }
     if (selectedId === semanticId && !shiftKey) {
+      if (layoutRunning) {
+        setStatus('自动布局完成后可进入局部视图');
+        return;
+      }
       setFocusedId(semanticId);
       notifyTourAction('focused-view-toggled');
       return;
     }
     setSelectedId(semanticId);
-  }, [commit, displayedDerivationByNodeId, document, replacementDraft, routeMode, selectedId, toggleStartPoint, visibleGroupByNodeId]);
-
-  const handleSelectionChange = useCallback((selection: OnSelectionChangeParams<AuthoringFlowNode, ProjectedEdge>) => {
-    const ids = selection.nodes.map((node) => node.id).sort();
-    traceSelection('selection-change', { ids, state: selectionSnapshotRef.current() });
-    const conceptIds = new Set(document.graph.points.map((concept) => concept.id));
-    if (ids.filter((id) => conceptIds.has(id)).length >= 2) notifyTourAction('multiple-concepts-selected');
-    setSelectedNodeIds((current) =>
-      current.length === ids.length && current.every((id, index) => id === ids[index]) ? current : ids,
-    );
-  }, [document.graph.points]);
+  }, [commit, displayedDerivationByNodeId, document, layoutRunning, replacementDraft, routeMode, selectedId, toggleStartPoint, visibleGroupByNodeId]);
 
   const toggleFocusedView = useCallback(() => {
     setFocusedId((current) => current ? null : selectedId);
@@ -1366,6 +1477,79 @@ function AuthoringCanvas() {
     }).catch((error: unknown) => reportWorkspaceError(`读取 ${sourcePath}`, error));
   }, [document.graph.hyperedges, document.graph.points, enqueueDirectoryOperation, files, reportWorkspaceError, workspaceDirectory]);
 
+  const clearCanvasSelection = useCallback(() => {
+    if (derivationForm) return;
+    setHoveredId(null);
+    setFocusedId(null);
+    setSelectedId(null);
+    setSelectedNodeIds([]);
+    if (replacementDraft) {
+      setReplacementDraft(null);
+      setStatus('已取消替换');
+    }
+  }, [derivationForm, replacementDraft]);
+
+  const handleG6NodeHover = useCallback((id: string | null) => {
+    if (!id) {
+      setHoveredId(null);
+      return;
+    }
+    setHoveredId(displayedDerivationByNodeId.get(id)?.id ?? id);
+  }, [displayedDerivationByNodeId]);
+
+  const handleG6NodeClick = useCallback((id: string, pointer: G6PointerModifiers) => {
+    const semanticId = displayedDerivationByNodeId.get(id)?.id ?? id;
+    if (pointer.ctrlKey || pointer.metaKey) {
+      openDocument(semanticId);
+      return;
+    }
+    setSelectedNodeIds((current) => {
+      const next = pointer.shiftKey
+        ? current.includes(id) ? current.filter((item) => item !== id) : [...current, id].sort()
+        : [id];
+      const conceptIds = new Set(document.graph.points.map((concept) => concept.id));
+      if (next.filter((item) => conceptIds.has(item)).length >= 2) {
+        notifyTourAction('multiple-concepts-selected');
+      }
+      return next;
+    });
+    selectNode(id, pointer.shiftKey);
+  }, [displayedDerivationByNodeId, document.graph.points, openDocument, selectNode]);
+
+  const handleG6NodeContextMenu = useCallback((id: string, pointer: G6PointerModifiers) => {
+    const semanticId = displayedDerivationByNodeId.get(id)?.id ?? id;
+    if (pointer.ctrlKey || pointer.metaKey) {
+      openDocument(semanticId);
+      return;
+    }
+    if (routeMode && document.graph.points.some((concept) => concept.id === semanticId)) {
+      toggleTargetPoint(semanticId);
+    }
+  }, [displayedDerivationByNodeId, document.graph.points, openDocument, routeMode, toggleTargetPoint]);
+
+  const handleG6NodeDragEnd = useCallback((nodes: Array<{ id: string; position: Position }>) => {
+    persistNodePositions(nodes);
+  }, [persistNodePositions]);
+
+  const handleG6Connect = useCallback((source: string, target: string) => {
+    connectNodes({ source, target });
+  }, [connectNodes]);
+
+  const handleG6MarqueeSelect = useCallback((ids: string[]) => {
+    setSelectedNodeIds((current) => [...new Set([...current, ...ids])].sort());
+    if (ids.length) {
+      const first = ids[0];
+      setSelectedId(displayedDerivationByNodeId.get(first)?.id ?? first);
+    }
+    const conceptIds = new Set(document.graph.points.map((concept) => concept.id));
+    if (ids.filter((id) => conceptIds.has(id)).length >= 2) notifyTourAction('multiple-concepts-selected');
+  }, [displayedDerivationByNodeId, document.graph.points]);
+
+  const handleG6InteractionChange = useCallback((active: boolean) => {
+    canvasInteractionRef.current = active;
+    setCanvasInteracting(active);
+  }, []);
+
   const returnToCanvas = useCallback(() => {
     const id = editingId;
     setEditingId(null);
@@ -1391,8 +1575,13 @@ function AuthoringCanvas() {
   const selectedConcept = document.graph.points.find((item) => item.id === selectedId);
   const selectedDerivation = document.graph.hyperedges.find((item) => item.id === selectedId);
   const selectedDerivationGroup = selectedDerivation ? groupByMemberId.get(selectedDerivation.id) : null;
+  const formDerivation = derivationForm?.mode === 'edit'
+    ? document.graph.hyperedges.find((item) => item.id === derivationForm.derivationId) ?? null
+    : null;
   const selectedReplacements = selectedConcept
-    ? document.view.replacements.filter((item) => item.replaceWith === selectedConcept.id || item.points.includes(selectedConcept.id))
+    ? document.view.replacements
+      .filter((item) => item.replaceWith === selectedConcept.id || item.points.includes(selectedConcept.id))
+      .sort((left, right) => Number(right.replaceWith === selectedConcept.id) - Number(left.replaceWith === selectedConcept.id))
     : [];
   const labelById = useMemo(
     () => new Map(document.graph.points.map((item) => [item.id, item.data.label])),
@@ -1448,14 +1637,16 @@ function AuthoringCanvas() {
     externalWorkspaceChangeRef.current = null;
     setExternalWorkspaceChange(null);
     setFiles(snapshot.files);
+    setLayoutPositions({});
+    setLayoutEpoch((current) => current + 1);
     dispatchHistory({ type: 'replace', document: snapshot.manifest });
     setWorkspaceDirectory(snapshot.directory);
     setEditingId(null);
     setRouteMode(false);
     setRouteSelection(createRouteSelection());
     clearTransientView();
-    window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
-  }, [clearTransientView, fitView]);
+    window.setTimeout(() => void fitGraph(), 20);
+  }, [clearTransientView, fitGraph]);
 
   const openBundledTutorialWorkspace = useCallback((workspace: AuthoringWorkspace, message: string, initialSelectedId: string | null) => {
     if (tutorialWorkspaceRef.current) return;
@@ -1466,22 +1657,23 @@ function AuthoringCanvas() {
       revision: workspaceRevisionRef.current,
     };
     const example = workspace.manifest;
-    const positions = Object.keys(example.view.positions).length ? example.view.positions : layoutDocument(example);
     workspaceDirectoryRef.current = null;
     workspaceRevisionRef.current = null;
     externalWorkspaceChangeRef.current = null;
     setExternalWorkspaceChange(null);
     setWorkspaceDirectory(null);
     setFiles(workspace.files);
-    dispatchHistory({ type: 'replace', document: { ...example, view: { ...example.view, positions } } });
+    setLayoutPositions({});
+    setLayoutEpoch((current) => current + 1);
+    dispatchHistory({ type: 'replace', document: example });
     setEditingId(null);
     setRouteMode(false);
     setRouteSelection(createRouteSelection());
     clearTransientView();
     setSelectedId(initialSelectedId);
     setStatus(message);
-    window.setTimeout(() => void fitView({ padding: 0.12, duration: 300 }), 20);
-  }, [clearTransientView, document, files, fitView, workspaceDirectory]);
+    window.setTimeout(() => void fitGraph(), 20);
+  }, [clearTransientView, document, files, fitGraph, workspaceDirectory]);
 
   const openTutorialExample = useCallback(() => {
     openBundledTutorialWorkspace(
@@ -1499,7 +1691,27 @@ function AuthoringCanvas() {
     );
   }, [openBundledTutorialWorkspace]);
 
-  const prepareTourStep = useCallback(async (preparation: TourPreparation) => {
+  const ensureGraphTutorialStage = useCallback((stage: GraphTutorialStage): AuthoringDocument => {
+    if (tutorialWorkspaceRef.current && graphTutorialStageSatisfied(document, stage)) return document;
+    const workspace = graphTutorialWorkspaceForStage(stage);
+    if (!tutorialWorkspaceRef.current) {
+      openBundledTutorialWorkspace(workspace, '已临时打开线性代数图模型案例', 'linear-map');
+      return workspace.manifest;
+    }
+    setFiles(workspace.files);
+    setLayoutPositions({});
+    setLayoutEpoch((current) => current + 1);
+    dispatchHistory({ type: 'replace', document: workspace.manifest });
+    setEditingId(null);
+    setRouteMode(false);
+    setRouteSelection(createRouteSelection());
+    clearTransientView();
+    setSelectedId('linear-map');
+    setStatus('已恢复当前教程步骤');
+    return workspace.manifest;
+  }, [clearTransientView, document, openBundledTutorialWorkspace]);
+
+  const prepareTourStep = useCallback(async (preparation: TourPreparation, stepId?: string) => {
     const selectedConcept = document.graph.points.find((point) => point.id === selectedId);
     const selectedDerivation = document.graph.hyperedges.find((item) => item.id === selectedId);
     const concept = selectedConcept ?? document.graph.points.at(-1) ?? document.graph.points[0];
@@ -1545,8 +1757,17 @@ function AuthoringCanvas() {
     }
 
     if (preparation.startsWith('open-graph-example')) {
-      const withReplacement = preparation === 'open-graph-example-with-replacement';
-      openGraphTutorialExample(withReplacement);
+      const stageByPreparation: Partial<Record<TourPreparation, GraphTutorialStage>> = {
+        'open-graph-example-stage-base': 'base',
+        'open-graph-example-stage-invertible-single': 'invertible-single',
+        'open-graph-example-stage-invertible-complete': 'invertible-complete',
+        'open-graph-example-stage-surjective-parallel': 'surjective-parallel',
+        'open-graph-example-stage-null-space-updated': 'null-space-updated',
+      };
+      const stage = stageByPreparation[preparation];
+      const preparedDocument = stage
+        ? ensureGraphTutorialStage(stage)
+        : (openGraphTutorialExample(preparation === 'open-graph-example-with-replacement'), document);
       setEditingId(null);
       setRouteMode(false);
       setFocusedId(null);
@@ -1577,9 +1798,6 @@ function AuthoringCanvas() {
         const points = ['injective-surjective', 'surjective'];
         setSelectedNodeIds(points);
         setSelectedId(points[0]);
-        window.setTimeout(() => {
-          setNodes((current) => current.map((node) => ({ ...node, selected: points.includes(node.id) })));
-        }, 30);
         setReplacementDraft(null);
       } else if (preparation === 'open-graph-example-and-prepare-replacement') {
         const points = ['injective-surjective', 'surjective'];
@@ -1590,6 +1808,51 @@ function AuthoringCanvas() {
         setSelectedNodeIds([]);
         setSelectedId('injective-surjective');
         setReplacementDraft(null);
+      } else if (stage) {
+        if (stepId === 'open-derivation-document') {
+          setSelectedId('null-space-def');
+          setActiveDerivationByGroup((current) => ({
+            ...current,
+            [hyperedgeGroupKey({ tails: ['linear-map'], head: 'null-range' })]: 'null-space-def',
+          }));
+        } else if (stepId === 'understand-derivation-document' || stepId === 'return-from-derivation') {
+          setSelectedId('null-space-def');
+          setEditingId('null-space-def');
+        } else if (stepId === 'complete-invertible-premises') {
+          const edge = preparedDocument.graph.hyperedges.find((item) =>
+            hasExactEndpoints(item, ['injective-surjective'], 'invertible'),
+          );
+          if (edge) {
+            setSelectedId(edge.id);
+            setActiveDerivationByGroup((current) => ({
+              ...current,
+              [hyperedgeGroupKey(edge)]: edge.id,
+            }));
+          }
+        } else if (stepId === 'parallel' || stepId === 'parallel-select') {
+          const edge = [...preparedDocument.graph.hyperedges].reverse().find((item) =>
+            item.id !== 'surjective-def' && hasExactEndpoints(item, ['linear-map'], 'surjective'),
+          ) ?? preparedDocument.graph.hyperedges.find((item) => item.id === 'surjective-def');
+          if (edge) {
+            setSelectedId(edge.id);
+            setActiveDerivationByGroup((current) => ({
+              ...current,
+              [hyperedgeGroupKey(edge)]: edge.id,
+            }));
+          }
+        } else if (stepId === 'weight') {
+          setSelectedId('surjective-def');
+          setActiveDerivationByGroup((current) => ({
+            ...current,
+            [hyperedgeGroupKey({ tails: ['linear-map'], head: 'surjective' })]: 'surjective-def',
+          }));
+        } else if (stepId === 'more-premises' || stepId === 'active-member-result') {
+          setSelectedId('null-space-def');
+          setActiveDerivationByGroup((current) => ({
+            ...current,
+            [hyperedgeGroupKey({ tails: stepId === 'more-premises' ? ['linear-map'] : ['linear-map', 'subspace'], head: 'null-range' })]: 'null-space-def',
+          }));
+        }
       }
       return;
     }
@@ -1653,10 +1916,15 @@ function AuthoringCanvas() {
     if (preparation === 'open-navigation-example-and-select-concept') {
       setSelectedId(navigationSampleWorkspace.manifest.graph.points[0]?.id ?? null);
     }
-  }, [derivationGroups, document.graph.hyperedges, document.graph.points, openDocument, openGraphTutorialExample, openTutorialExample, selectedId, setNodes]);
+  }, [derivationGroups, document, ensureGraphTutorialStage, openDocument, openGraphTutorialExample, openTutorialExample, selectedId]);
+
+  const layoutReady = useMemo(() => [
+    ...document.graph.points.map((point) => point.id),
+    ...document.graph.hyperedges.map((edge) => edge.id),
+  ].every((id) => !!layoutPositions[id]), [document.graph.hyperedges, document.graph.points, layoutPositions]);
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-layout-ready={layoutReady ? 'true' : 'false'} data-layout-running={layoutRunning ? 'true' : 'false'} data-layout-requests={layoutRequestCount}>
       <header className="topbar">
         <div className="brand-block">
           <span className="brand-mark">D</span>
@@ -1700,24 +1968,34 @@ function AuthoringCanvas() {
             </>
           ) : (
             <>
-              <button type="button" title="新建概念" {...tourTarget(TOUR_FEATURES.addConcept)} onClick={() => addConcept()}><Plus size={18} /></button>
+              <button type="button" title="新建概念" disabled={!!derivationForm} {...tourTarget(TOUR_FEATURES.addConcept)} onClick={() => addConcept()}><Plus size={18} /></button>
+              <button
+                type="button"
+                title="新建推导"
+                aria-label="新建推导"
+                disabled={!!derivationForm}
+                {...tourTarget(TOUR_FEATURES.newDerivation)}
+                onClick={openCreateDerivationForm}
+              >
+                <GitBranch size={17} />
+              </button>
               <button
                 type="button"
                 className={replacementDraft ? 'is-active' : ''}
                 {...tourTarget(TOUR_FEATURES.replaceWith)}
                 title={replacementDraft ? '取消替换' : '替换'}
-                disabled={!replacementDraft && selectedNodeIds.length === 0}
+                disabled={!!derivationForm || (!replacementDraft && selectedNodeIds.length === 0)}
                 onClick={beginReplacement}
               >
                 {replacementDraft ? <X size={17} /> : <Replace size={17} />}
               </button>
-              <button type="button" title="自动布局" {...tourTarget(TOUR_FEATURES.autoLayout)} onClick={applyLayout}><LayoutGrid size={17} /></button>
+              <button type="button" title={layoutRunning ? '正在自动布局' : '自动布局'} aria-label={layoutRunning ? '正在自动布局' : '自动布局'} disabled={layoutRunning || !!derivationForm} {...tourTarget(TOUR_FEATURES.autoLayout)} onClick={applyLayout}><LayoutGrid size={17} /></button>
               <button
                 type="button"
                 className={focusedId ? 'is-active' : ''}
                 {...tourTarget(TOUR_FEATURES.focusedView)}
                 title={focusedId ? '关闭局部视图' : '开启局部视图'}
-                disabled={!selectedId || !!replacementDraft}
+                disabled={!selectedId || !!replacementDraft || layoutRunning || !!derivationForm}
                 onClick={toggleFocusedView}
               >
                 {focusedId ? <Eye size={17} /> : <EyeOff size={17} />}
@@ -1728,17 +2006,18 @@ function AuthoringCanvas() {
                 {...tourTarget(TOUR_FEATURES.routeMode)}
                 title={routeMode ? '关闭路线模式' : '打开路线模式'}
                 aria-label={routeMode ? '关闭路线模式' : '打开路线模式'}
+                disabled={!!derivationForm}
                 onClick={toggleRouteMode}
               >
                 <Milestone size={17} />
               </button>
               <span className="toolbar-divider" />
-              <button type="button" title="连接工作区文件夹" {...tourTarget(TOUR_FEATURES.openWorkspace)} onClick={() => void connectWorkspace()}><FolderOpen size={17} /></button>
-              <button type="button" title="在新文件夹创建空项目" {...tourTarget(TOUR_FEATURES.newWorkspace)} onClick={() => void createWorkspaceInNewDirectory()}><FolderPlus size={17} /></button>
-              <button type="button" title="另存到新文件夹" onClick={() => void saveWorkspaceAs()}><Save size={17} /></button>
-              <button type="button" title="编辑工作区 JSON" {...tourTarget(TOUR_FEATURES.workspaceJson)} onClick={openJsonEditor}><Braces size={17} /></button>
-              <button type="button" title="导入旧版 JSON" onClick={() => fileInput.current?.click()}><FileUp size={17} /></button>
-              <button type="button" title="操作引导" aria-label="操作引导" {...tourTarget(TOUR_FEATURES.help)} onClick={() => { setTourStart(null); setTourOpen(true); }}><CircleHelp size={17} /></button>
+              <button type="button" title="连接工作区文件夹" disabled={!!derivationForm} {...tourTarget(TOUR_FEATURES.openWorkspace)} onClick={() => void connectWorkspace()}><FolderOpen size={17} /></button>
+              <button type="button" title="在新文件夹创建空项目" disabled={!!derivationForm} {...tourTarget(TOUR_FEATURES.newWorkspace)} onClick={() => void createWorkspaceInNewDirectory()}><FolderPlus size={17} /></button>
+              <button type="button" title="另存到新文件夹" disabled={!!derivationForm} onClick={() => void saveWorkspaceAs()}><Save size={17} /></button>
+              <button type="button" title="编辑工作区 JSON" disabled={!!derivationForm} {...tourTarget(TOUR_FEATURES.workspaceJson)} onClick={openJsonEditor}><Braces size={17} /></button>
+              <button type="button" title="导入旧版 JSON" disabled={!!derivationForm} onClick={() => fileInput.current?.click()}><FileUp size={17} /></button>
+              <button type="button" title="操作引导" aria-label="操作引导" disabled={!!derivationForm} {...tourTarget(TOUR_FEATURES.help)} onClick={() => { setTourStart(null); setTourOpen(true); }}><CircleHelp size={17} /></button>
             </>
           )}
           <input ref={fileInput} hidden type="file" accept=".json,.derivon.json,application/json" onChange={(event) => {
@@ -1748,8 +2027,6 @@ function AuthoringCanvas() {
           }} />
         </div>
       </header>
-
-      {selectionDebugEnabled && <div className="selection-debug-badge">选择诊断已开启</div>}
 
       {editingId && editingReference && editingSourcePath && editingEntryPath ? (
         <section className="document-workspace">
@@ -1799,145 +2076,27 @@ function AuthoringCanvas() {
       ) : (
       <section className="workspace">
         <div
-          className={`canvas-wrap ${replacementDraft ? 'is-replacing' : ''} ${canvasInteracting ? 'is-interacting' : ''}`}
-          onPointerDownCapture={(event) => {
-            const target = event.target as Element;
-            const node = target.closest<HTMLElement>('.react-flow__node');
-            traceSelection('pointer-down-capture', {
-              nodeId: node?.dataset.id ?? null,
-              shiftKey: event.shiftKey,
-              button: event.button,
-              target: `${target.tagName}.${target.getAttribute('class') ?? ''}`,
-              before: selectionSnapshotRef.current(),
-            });
-            if (node) {
-              flowStore.setState({ multiSelectionActive: event.shiftKey });
-              traceSelection('pointer-down-synced', { nodeId: node.dataset.id, state: selectionSnapshotRef.current() });
-            }
-          }}
-          onPointerUpCapture={(event) => {
-            const target = event.target as Element;
-            traceSelection('pointer-up-capture', {
-              nodeId: target.closest<HTMLElement>('.react-flow__node')?.dataset.id ?? null,
-              shiftKey: event.shiftKey,
-              target: `${target.tagName}.${target.getAttribute('class') ?? ''}`,
-              state: selectionSnapshotRef.current(),
-            });
-          }}
+          className={`canvas-wrap ${replacementDraft ? 'is-replacing' : ''} ${derivationForm ? 'is-authoring-derivation' : ''} ${canvasInteracting ? 'is-interacting' : ''}`}
           {...tourTarget(TOUR_FEATURES.canvas)}
         >
-          <ReactFlow<AuthoringFlowNode, ProjectedEdge>
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            onNodesChange={handleNodesChange}
-            onSelectionChange={handleSelectionChange}
-            onConnect={onConnect}
-            onConnectStart={() => {
-              canvasInteractionRef.current = true;
-              setCanvasInteracting(true);
-            }}
-            onConnectEnd={() => {
-              canvasInteractionRef.current = false;
-              setCanvasInteracting(false);
-            }}
-            onNodeDragStart={(_, node, draggedNodes) => {
-              traceSelection('node-drag-start', { nodeId: node.id, draggedNodeIds: draggedNodes.map((item) => item.id), state: selectionSnapshotRef.current() });
-              canvasInteractionRef.current = true;
-              setCanvasInteracting(true);
-            }}
-            onNodeDragStop={(_, node, draggedNodes) => {
-              traceSelection('node-drag-stop', { nodeId: node.id, draggedNodeIds: draggedNodes.map((item) => item.id), state: selectionSnapshotRef.current() });
-              canvasInteractionRef.current = false;
-              setCanvasInteracting(false);
-              persistNodePositions(draggedNodes.length ? draggedNodes : [node]);
-            }}
-            onMoveStart={() => {
-              canvasInteractionRef.current = true;
-              setCanvasInteracting(true);
-            }}
-            onMoveEnd={() => {
-              canvasInteractionRef.current = false;
-              setCanvasInteracting(false);
-            }}
-            onNodeMouseEnter={(_, node) => {
-              traceSelection('node-mouse-enter', { nodeId: node.id, state: selectionSnapshotRef.current() });
-              setHoveredId(displayedDerivationByNodeId.get(node.id)?.id ?? node.id);
-            }}
-            onNodeMouseLeave={(_, node) => {
-              traceSelection('node-mouse-leave', { nodeId: node.id, state: selectionSnapshotRef.current() });
-              const semanticId = displayedDerivationByNodeId.get(node.id)?.id ?? node.id;
-              setHoveredId((current) => current === semanticId ? null : current);
-            }}
-            onNodeClick={(event, node) => {
-              const semanticId = displayedDerivationByNodeId.get(node.id)?.id ?? node.id;
-              traceSelection('node-click', {
-                nodeId: node.id,
-                shiftKey: event.shiftKey,
-                ctrlKey: event.ctrlKey,
-                metaKey: event.metaKey,
-                state: selectionSnapshotRef.current(),
-              });
-              if (event.ctrlKey || event.metaKey) {
-                openDocument(semanticId);
-                return;
-              }
-              selectNode(node.id, event.shiftKey);
-            }}
-            onNodeContextMenu={(event, node) => {
-              const semanticId = displayedDerivationByNodeId.get(node.id)?.id ?? node.id;
-              if (event.ctrlKey || event.metaKey) {
-                event.preventDefault();
-                openDocument(semanticId);
-                return;
-              }
-              if (!routeMode) return;
-              event.preventDefault();
-              if (document.graph.points.some((concept) => concept.id === semanticId)) {
-                toggleTargetPoint(semanticId);
-              }
-            }}
-            onPaneClick={() => {
-              traceSelection('pane-click', { state: selectionSnapshotRef.current() });
-              setHoveredId(null);
-              setFocusedId(null);
-              setSelectedId(null);
-              setSelectedNodeIds([]);
-              if (replacementDraft) {
-                setReplacementDraft(null);
-                setStatus('已取消替换');
-              }
-            }}
-            deleteKeyCode={null}
-            onlyRenderVisibleElements
-            fitView
-            fitViewOptions={{ padding: 0.12, maxZoom: 1.1 }}
-            minZoom={0.08}
-            maxZoom={2}
-            multiSelectionKeyCode="Shift"
-            selectionMode={SelectionMode.Partial}
-            connectionLineStyle={{ stroke: '#4f5961', strokeWidth: 1.5 }}
-            connectionLineType={ConnectionLineType.Bezier}
-            defaultEdgeOptions={{ type: 'default' }}
-            elevateEdgesOnSelect={false}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#d7d8d4" />
-            <Controls
-              showInteractive={false}
-              position="bottom-left"
-              fitViewOptions={controlsFitViewOptions}
-              {...tourTarget(TOUR_FEATURES.zoom)}
+          <Suspense fallback={<div className="graph-renderer-loading" role="status" aria-label="正在加载图画布" />}>
+            <G6GraphSurface
+              ref={graphSurfaceRef}
+              runtime={graphSceneRuntime}
+              onNodeHover={handleG6NodeHover}
+              onNodeClick={handleG6NodeClick}
+              onNodeContextMenu={handleG6NodeContextMenu}
+              onNodeDragEnd={handleG6NodeDragEnd}
+              onConnect={handleG6Connect}
+              onMarqueeSelect={handleG6MarqueeSelect}
+              onPaneClick={clearCanvasSelection}
+              onInteractionChange={handleG6InteractionChange}
+              onReplacementModeChange={setReplacementMode}
+              replacementControlsDisabled={!!derivationForm || routeMode || !!replacementDraft}
+              onError={(error) => reportWorkspaceError('渲染 G6 知识图', error)}
             />
-            <MiniMap
-              position="bottom-right"
-              pannable
-              zoomable
-              nodeColor={(node) => node.type === 'derivation' ? '#a44f3f' : '#d9ddd9'}
-              nodeStrokeColor={(node) => node.type === 'derivation' ? '#a44f3f' : '#59625e'}
-              maskColor="rgba(247,247,245,0.76)"
-            />
-          </ReactFlow>
+          </Suspense>
+          {!layoutReady && <div className="graph-renderer-loading" role="status" aria-label="正在自动布局" />}
           <div className="history-controls" role="group" aria-label="历史操作" {...tourTarget(TOUR_FEATURES.history)}>
             <button type="button" aria-label="撤回" title="撤回 (Ctrl/Cmd+Z)" disabled={!history.past.length} onClick={undo}>
               <RotateCcw size={16} />
@@ -1948,7 +2107,8 @@ function AuthoringCanvas() {
           </div>
           <div className="legend" aria-label="图例">
             <span><i className="legend-concept" />概念</span>
-            <span><i className="legend-replacement" />可替换</span>
+            <span><i className="legend-replacement-member" />替换成员</span>
+            <span><i className="legend-replacement-result" />替换结果</span>
             <span><i className="legend-derivation" />推导</span>
             <span><i className="legend-premise" />前提</span>
             <span><i className="legend-conclusion" />结论</span>
@@ -1956,7 +2116,20 @@ function AuthoringCanvas() {
           {status && <div className="status-toast" role="status">{status}</div>}
         </div>
 
-        {routeMode ? (
+        {derivationForm ? (
+          <DerivationForm
+            key={derivationForm.mode === 'create' ? 'create-derivation' : `edit-${derivationForm.derivationId}`}
+            mode={derivationForm.mode}
+            derivationId={formDerivation?.id}
+            points={document.graph.points}
+            visibleIds={projection.visibleIds}
+            initial={formDerivation
+              ? { tails: formDerivation.tails, head: formDerivation.head, weight: formDerivation.weight }
+              : { tails: [], head: null, weight: 1 }}
+            onSubmit={submitDerivationForm}
+            onCancel={closeDerivationForm}
+          />
+        ) : routeMode ? (
           <RoutePanel
             document={document}
             selection={routeSelection}
@@ -1981,28 +2154,30 @@ function AuthoringCanvas() {
                 <span>编辑文档</span>
               </button>
               <code className="document-path">{selectedConcept.data.document}/index.html</code>
-              {selectedReplacements.map((replacement) => (
-                <div className="replacement-definition" key={replacement.replaceWith}>
-                  <div className="replacement-expression">
-                    <span>{replacement.points.join(' + ')}</span>
-                    <strong>→</strong>
-                    <span>{replacement.replaceWith}</span>
+              {selectedReplacements.map((replacement) => {
+                const mode: ReplacementViewMode = detachedReplacementIdSet.has(replacement.replaceWith)
+                  ? 'compare'
+                  : replacement.show;
+                const role = replacement.replaceWith === selectedConcept.id ? '作为替换结果' : '作为替换成员';
+                return (
+                  <div className="replacement-definition" key={replacement.replaceWith}>
+                    <div className="replacement-definition-heading">
+                      <span>{role}</span>
+                      <button className="replacement-unlink" type="button" title="解除替换关系" aria-label={`解除 ${replacement.replaceWith} 替换关系`} onClick={() => removeReplacement(replacement.replaceWith)}><Unlink size={13} /></button>
+                    </div>
+                    <div className="replacement-expression">
+                      <span>{replacement.points.join(' + ')}</span>
+                      <strong>→</strong>
+                      <span>{replacement.replaceWith}</span>
+                    </div>
+                    <div className="replacement-segment" role="group" aria-label={`${replacement.replaceWith} 显示方式`} {...tourTarget(TOUR_FEATURES.replacementToggle)}>
+                      <button type="button" className={mode === 'points' ? 'is-active' : ''} onClick={() => setReplacementMode(replacement.replaceWith, 'points')}>原概念</button>
+                      <button type="button" className={mode === 'replacement' ? 'is-active' : ''} onClick={() => setReplacementMode(replacement.replaceWith, 'replacement')}>替换概念</button>
+                      <button type="button" className={mode === 'compare' ? 'is-active' : ''} onClick={() => setReplacementMode(replacement.replaceWith, 'compare')}>对照</button>
+                    </div>
                   </div>
-                  <div className="replacement-segment" role="group" aria-label={`${replacement.replaceWith} 显示方式`} {...tourTarget(TOUR_FEATURES.replacementToggle)}>
-                    <button
-                      type="button"
-                      className={replacement.show === 'points' ? 'is-active' : ''}
-                      onClick={() => toggleReplacement(replacement.replaceWith, 'points')}
-                    >点集</button>
-                    <button
-                      type="button"
-                      className={replacement.show === 'replacement' ? 'is-active' : ''}
-                      onClick={() => toggleReplacement(replacement.replaceWith, 'replacement')}
-                    >{replacement.replaceWith}</button>
-                    <button className="replacement-unlink" type="button" title="解除替换关系" onClick={() => removeReplacement(replacement.replaceWith)}><Unlink size={13} /></button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               <div className="relation-summary">
                 <span>作为前提 {document.graph.hyperedges.filter((item) => item.tails.includes(selectedConcept.id)).length}</span>
                 <span>作为结论 {document.graph.hyperedges.filter((item) => item.head === selectedConcept.id).length}</span>
@@ -2035,11 +2210,15 @@ function AuthoringCanvas() {
                 <div className="chips">
                   {selectedDerivation.tails.length === 0 && <span className="empty-tail">空集 ∅</span>}
                   {selectedDerivation.tails.map((id) => (
-                    <span className="chip" key={id}>{labelById.get(id) ?? id}<button type="button" title="移除此前提" onClick={() => updateHyperedge(selectedDerivation.id, { tails: selectedDerivation.tails.filter((item) => item !== id) })}><X size={12} /></button></span>
+                    <span className="chip is-static" key={id}>{labelById.get(id) ?? id}</span>
                   ))}
                 </div>
                 <span className="field-title">结论</span>
                 <span className="conclusion-label">{labelById.get(selectedDerivation.head) ?? selectedDerivation.head}</span>
+                <button className="edit-endpoints-button" type="button" onClick={() => openEditDerivationForm(selectedDerivation.id)}>
+                  <GitBranch size={14} />
+                  <span>编辑前提与结论</span>
+                </button>
               </div>
               <button className="open-document-button" type="button" {...tourTarget(TOUR_FEATURES.openDocument)} onClick={() => openDocument(selectedDerivation.id)}>
                 <FileText size={16} />
@@ -2134,6 +2313,33 @@ function AuthoringCanvas() {
         </div>
       )}
 
+      {pendingWorkspaceUpgrade?.migrationSource && !workspaceError && !crashReport && (
+        <div className="modal-backdrop workspace-conflict-backdrop" role="presentation">
+          <section className="workspace-conflict-modal schema-upgrade-modal" role="alertdialog" aria-modal="true" aria-labelledby="schema-upgrade-title" aria-describedby="schema-upgrade-description">
+            <header>
+              <div>
+                <span className="eyebrow">工作区 schema 落后一个版本</span>
+                <strong id="schema-upgrade-title">{pendingWorkspaceUpgrade.handle.name}/</strong>
+              </div>
+            </header>
+            <p id="schema-upgrade-description">
+              当前为 <code>{pendingWorkspaceUpgrade.migrationSource}</code>，可自动升级到 <code>{DOCUMENT_SCHEMA}</code>。
+              升级会移除旧时间戳和运行时坐标；确认前不会修改 <code>{WORKSPACE_MANIFEST}</code>。
+            </p>
+            <footer>
+              <button type="button" className="text-button" disabled={upgradingWorkspace} onClick={() => {
+                setPendingWorkspaceUpgrade(null);
+                setStatus('已取消打开，工作区文件未更改');
+              }}>取消</button>
+              <button type="button" className="primary-button" disabled={upgradingWorkspace} onClick={() => void confirmWorkspaceUpgrade()}>
+                <ArrowUpCircle size={15} />
+                {upgradingWorkspace ? '正在升级' : '升级并打开'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
       {externalWorkspaceChange && workspaceDirectory && (
         <div className="modal-backdrop workspace-conflict-backdrop" role="presentation">
           <section className="workspace-conflict-modal" role="alertdialog" aria-modal="true" aria-labelledby="workspace-conflict-title" aria-describedby="workspace-conflict-description">
@@ -2178,8 +2384,14 @@ function AuthoringCanvas() {
 
       {jsonOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setJsonOpen(false)}>
-          <section className="json-modal" role="dialog" aria-modal="true" aria-label="原始 JSON 编辑器" {...tourTarget(TOUR_FEATURES.jsonEditor)}>
+          <section className={`json-modal${jsonMigrationSource ? ' has-schema-upgrade' : ''}`} role="dialog" aria-modal="true" aria-label="原始 JSON 编辑器" {...tourTarget(TOUR_FEATURES.jsonEditor)}>
             <header><div><span className="eyebrow">{WORKSPACE_MANIFEST}</span><strong>{document.schema}</strong></div><button type="button" title="关闭" onClick={() => setJsonOpen(false)}><X size={18} /></button></header>
+            {jsonMigrationSource && (
+              <div className="schema-upgrade-notice" role="status">
+                <ArrowUpCircle size={17} />
+                <span><strong>{jsonMigrationSource}</strong> 落后一个版本，应用时会自动升级到 <strong>{DOCUMENT_SCHEMA}</strong>，并移除旧时间戳和运行时坐标。</span>
+              </div>
+            )}
             <textarea spellCheck={false} value={jsonText} onChange={(event) => setJsonText(event.target.value)} />
             <footer><button type="button" className="text-button" onClick={() => {
               try {
@@ -2187,7 +2399,7 @@ function AuthoringCanvas() {
               } catch {
                 setStatus('JSON 语法无效');
               }
-            }}>格式化</button><button type="button" className="primary-button" onClick={() => void applyJson()}>检查并应用</button></footer>
+            }}>格式化</button><button type="button" className="primary-button" onClick={() => void applyJson()}>{jsonMigrationSource ? '升级并应用' : '检查并应用'}</button></footer>
           </section>
         </div>
       )}
@@ -2202,6 +2414,11 @@ function AuthoringCanvas() {
           if (tourId === 'navigation') openTutorialExample();
         }}
         onTourEnd={restoreTutorialWorkspace}
+        onStepComplete={(tourId, stepId) => {
+          if (tourId === 'graph' && stepId === 'create-derivation-drag') {
+            tutorialFitAfterLayoutRef.current = true;
+          }
+        }}
         onPrepareStep={prepareTourStep}
       />
     </main>
@@ -2209,5 +2426,5 @@ function AuthoringCanvas() {
 }
 
 export default function App() {
-  return <ReactFlowProvider><AuthoringCanvas /></ReactFlowProvider>;
+  return <AuthoringCanvas />;
 }

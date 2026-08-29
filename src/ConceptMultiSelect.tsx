@@ -8,8 +8,9 @@ type ConceptMultiSelectProps = {
   label: string;
   points: Point[];
   selectedIds: string[];
-  tone: 'start' | 'target';
+  tone: 'start' | 'target' | 'premise';
   tourFeatureId?: string;
+  visibleIds?: ReadonlySet<string>;
   onToggle: (pointId: string) => void;
 };
 
@@ -20,6 +21,7 @@ export function ConceptMultiSelect({
   selectedIds,
   tone,
   tourFeatureId,
+  visibleIds,
   onToggle,
 }: ConceptMultiSelectProps) {
   const [query, setQuery] = useState('');
@@ -88,7 +90,7 @@ export function ConceptMultiSelect({
                   checked={selected.has(point.id)}
                   onChange={() => onToggle(point.id)}
                 />
-                <span>{point.data.label}<small>{point.id}</small></span>
+                <span>{point.data.label}<small>{point.id}{visibleIds && !visibleIds.has(point.id) ? ' · 当前视图未显示' : ''}</small></span>
               </label>
             )) : <span className="route-search-empty">没有匹配概念</span>}
           </div>
@@ -101,7 +103,7 @@ export function ConceptMultiSelect({
           if (!point) return null;
           return (
             <div key={pointId}>
-              <span>{point.data.label}<small>{point.id}</small></span>
+              <span>{point.data.label}<small>{point.id}{visibleIds && !visibleIds.has(point.id) ? ' · 当前视图未显示' : ''}</small></span>
               <button type="button" title={`移除 ${point.data.label}`} aria-label={`移除 ${point.data.label}`} onClick={() => onToggle(pointId)}>
                 <X size={13} />
               </button>

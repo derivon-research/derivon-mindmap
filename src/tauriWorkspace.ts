@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { parseDocument, type DocumentReference } from './domain';
-import type { AuthoringWorkspace, WorkspaceDirectorySnapshot } from './workspace';
+import { parseDocumentWithMigration, type DocumentReference } from './domain';
+import type { AuthoringWorkspace, ChosenWorkspaceDirectory, WorkspaceDirectorySnapshot } from './workspace';
 
 export type NativeWorkspaceDirectory = {
   kind: 'tauri';
@@ -25,19 +25,16 @@ export function isNativeWorkspaceDirectory(value: unknown): value is NativeWorks
   return typeof value === 'object' && value !== null && (value as NativeWorkspaceDirectory).kind === 'tauri';
 }
 
-export async function chooseNativeWorkspace(): Promise<{
-  handle: NativeWorkspaceDirectory;
-  workspace: AuthoringWorkspace;
-  revision: string;
-  created: false;
-}> {
+export async function chooseNativeWorkspace(): Promise<ChosenWorkspaceDirectory> {
   const result = await invoke<NativeChosenWorkspace | null>('choose_workspace');
   if (!result) throw new DOMException('Folder selection cancelled', 'AbortError');
-  result.workspace.manifest = parseDocument(JSON.stringify(result.workspace.manifest));
+  const parsed = parseDocumentWithMigration(JSON.stringify(result.workspace.manifest));
+  result.workspace.manifest = parsed.document;
   return {
     handle: { kind: 'tauri', name: result.name, path: result.path },
     workspace: result.workspace,
     revision: result.revision,
+    migrationSource: parsed.migratedFrom,
     created: false,
   };
 }
@@ -57,9 +54,10 @@ export async function readNativeWorkspace(
   root: NativeWorkspaceDirectory,
   loadFiles: boolean,
 ): Promise<WorkspaceDirectorySnapshot> {
-  const snapshot = await invoke<WorkspaceDirectorySnapshot>('read_workspace', { rootPath: root.path, loadFiles });
-  snapshot.workspace.manifest = parseDocument(JSON.stringify(snapshot.workspace.manifest));
-  return snapshot;
+  const snapshot = await invoke<Omit<WorkspaceDirectorySnapshot, 'migrationSource'>>('read_workspace', { rootPath: root.path, loadFiles });
+  const parsed = parseDocumentWithMigration(JSON.stringify(snapshot.workspace.manifest));
+  snapshot.workspace.manifest = parsed.document;
+  return { ...snapshot, migrationSource: parsed.migratedFrom };
 }
 
 export function readNativeWorkspaceRevision(root: NativeWorkspaceDirectory): Promise<string> {
