@@ -65,6 +65,7 @@ export type AuthoringDocument = {
 
 export type ParsedDocument = {
   document: AuthoringDocument;
+  migratedFrom: typeof PREVIOUS_DOCUMENT_SCHEMA | null;
 };
 
 export type DocumentIssue = { path: string; message: string };
@@ -231,56 +232,36 @@ export function validateDocument(value: unknown): DocumentIssue[] {
   return validateCurrentDocument(value);
 }
 
-function migratePreviousDocument(value: Record<string, unknown>): {
-  value: Record<string, unknown>;
-  issues: DocumentIssue[];
-} {
-  const issues: DocumentIssue[] = [];
+function migratePreviousDocument(value: Record<string, unknown>): Record<string, unknown> {
   const metadata = isRecord(value.document) ? value.document : {};
   const view = isRecord(value.view) ? value.view : {};
-  const rawPositions = view.positions;
-  const nodeIds = new Set<string>();
-  if (isRecord(value.graph)) {
-    if (Array.isArray(value.graph.points)) {
-      value.graph.points.forEach((point) => {
-        if (isRecord(point) && typeof point.id === 'string') nodeIds.add(point.id);
-      });
-    }
-    if (Array.isArray(value.graph.hyperedges)) {
-      value.graph.hyperedges.forEach((edge) => {
-        if (isRecord(edge) && typeof edge.id === 'string') nodeIds.add(edge.id);
-      });
-    }
-  }
-  if (!isRecord(rawPositions)) {
-    issues.push({ path: 'view.positions', message: 'v0.2 文档必须包含位置映射对象' });
-  } else {
-    for (const [id, position] of Object.entries(rawPositions)) {
-      if (!nodeIds.has(id)) issues.push({ path: `view.positions.${id}`, message: '位置引用了未知节点' });
-      if (!isRecord(position) || typeof position.x !== 'number' || !Number.isFinite(position.x) || typeof position.y !== 'number' || !Number.isFinite(position.y)) {
-        issues.push({ path: `view.positions.${id}`, message: '位置必须包含有限数值 x 和 y' });
-      }
-    }
-  }
   return {
-    value: {
-      ...value,
-      schema: DOCUMENT_SCHEMA,
-      document: { title: metadata.title, description: metadata.description },
-      view: { replacements: view.replacements },
-    },
-    issues,
+    ...value,
+    schema: DOCUMENT_SCHEMA,
+    document: { title: metadata.title, description: metadata.description },
+    view: { replacements: view.replacements },
   };
+}
+
+export function documentMigrationSource(text: string): typeof PREVIOUS_DOCUMENT_SCHEMA | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    return isRecord(value) && value.schema === PREVIOUS_DOCUMENT_SCHEMA
+      ? PREVIOUS_DOCUMENT_SCHEMA
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export function parseDocumentWithMigration(text: string): ParsedDocument {
   const parsed: unknown = JSON.parse(text);
-  const migrated = isRecord(parsed) && parsed.schema === PREVIOUS_DOCUMENT_SCHEMA
-    ? migratePreviousDocument(parsed)
-    : { value: parsed, issues: [] };
-  const issues = [...migrated.issues, ...validateCurrentDocument(migrated.value)];
+  const needsMigration = isRecord(parsed) && parsed.schema === PREVIOUS_DOCUMENT_SCHEMA;
+  const migratedFrom = needsMigration ? PREVIOUS_DOCUMENT_SCHEMA : null;
+  const value = needsMigration ? migratePreviousDocument(parsed) : parsed;
+  const issues = validateCurrentDocument(value);
   if (issues.length) throw new Error(issues.slice(0, 4).map((issue) => `${issue.path}: ${issue.message}`).join('\n'));
-  return { document: migrated.value as AuthoringDocument };
+  return { document: value as AuthoringDocument, migratedFrom };
 }
 
 export function parseDocument(text: string): AuthoringDocument {

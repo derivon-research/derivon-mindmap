@@ -1,6 +1,7 @@
 import { lazy, startTransition, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowUpCircle,
   Braces,
   CircleHelp,
   Copy,
@@ -25,6 +26,8 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import {
+  DOCUMENT_SCHEMA,
+  documentMigrationSource,
   formatWeight,
   normalizeWeight,
   uniqueId,
@@ -326,6 +329,7 @@ function AuthoringCanvas() {
   const [status, setStatus] = useState('已自动保存');
   const [jsonOpen, setJsonOpen] = useState(false);
   const [jsonText, setJsonText] = useState('');
+  const jsonMigrationSource = useMemo(() => documentMigrationSource(jsonText), [jsonText]);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [derivationForm, setDerivationForm] = useState<DerivationFormState | null>(null);
   const [replacementDraft, setReplacementDraft] = useState<string[] | null>(null);
@@ -1269,12 +1273,14 @@ function AuthoringCanvas() {
       setReplacementDraft(null);
       setDetachedReplacementIds([]);
       setJsonOpen(false);
-      setStatus('JSON 已应用');
+      setStatus(jsonMigrationSource
+        ? `JSON schema 已从 ${jsonMigrationSource} 自动升级到 ${DOCUMENT_SCHEMA}`
+        : 'JSON 已应用');
       notifyTourAction('json-applied');
     } catch (error) {
       setStatus(error instanceof Error ? error.message.split('\n')[0] : 'JSON 无效');
     }
-  }, [commit, files, jsonText, workspaceDirectory]);
+  }, [commit, files, jsonMigrationSource, jsonText, workspaceDirectory]);
 
   const adoptExternalWorkspaceChange = useCallback(() => {
     if (!externalWorkspaceChange) return;
@@ -2318,8 +2324,14 @@ function AuthoringCanvas() {
 
       {jsonOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setJsonOpen(false)}>
-          <section className="json-modal" role="dialog" aria-modal="true" aria-label="原始 JSON 编辑器" {...tourTarget(TOUR_FEATURES.jsonEditor)}>
+          <section className={`json-modal${jsonMigrationSource ? ' has-schema-upgrade' : ''}`} role="dialog" aria-modal="true" aria-label="原始 JSON 编辑器" {...tourTarget(TOUR_FEATURES.jsonEditor)}>
             <header><div><span className="eyebrow">{WORKSPACE_MANIFEST}</span><strong>{document.schema}</strong></div><button type="button" title="关闭" onClick={() => setJsonOpen(false)}><X size={18} /></button></header>
+            {jsonMigrationSource && (
+              <div className="schema-upgrade-notice" role="status">
+                <ArrowUpCircle size={17} />
+                <span><strong>{jsonMigrationSource}</strong> 落后一个版本，应用时会自动升级到 <strong>{DOCUMENT_SCHEMA}</strong>，并移除旧时间戳和运行时坐标。</span>
+              </div>
+            )}
             <textarea spellCheck={false} value={jsonText} onChange={(event) => setJsonText(event.target.value)} />
             <footer><button type="button" className="text-button" onClick={() => {
               try {
@@ -2327,7 +2339,7 @@ function AuthoringCanvas() {
               } catch {
                 setStatus('JSON 语法无效');
               }
-            }}>格式化</button><button type="button" className="primary-button" onClick={() => void applyJson()}>检查并应用</button></footer>
+            }}>格式化</button><button type="button" className="primary-button" onClick={() => void applyJson()}>{jsonMigrationSource ? '升级并应用' : '检查并应用'}</button></footer>
           </section>
         </div>
       )}

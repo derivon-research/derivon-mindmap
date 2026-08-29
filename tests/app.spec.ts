@@ -51,6 +51,26 @@ test('defines and toggles a replacement through search', async ({ page }) => {
   expect(manifest.view.replacements).toEqual([{ points: ['A'], replaceWith: 'X', show: 'replacement' }]);
 });
 
+test('offers and applies an automatic upgrade for the previous JSON schema', async ({ page }) => {
+  await openExample(page);
+  await page.getByTitle('编辑工作区 JSON').click();
+  const editor = page.locator('.json-modal textarea');
+  const manifest = JSON.parse(await editor.inputValue());
+  manifest.schema = 'derivon.authoring/v0.2.0';
+  manifest.document.updatedAt = 'not-a-date';
+  manifest.view.positions = { missing: { x: null, y: 'invalid' } };
+  await editor.fill(JSON.stringify(manifest, null, 2));
+
+  await expect(page.locator('.schema-upgrade-notice')).toContainText('落后一个版本');
+  await page.getByRole('button', { name: '升级并应用' }).click();
+  await expect(page.locator('.json-modal')).toBeHidden();
+  await page.getByTitle('编辑工作区 JSON').click();
+  const upgraded = JSON.parse(await editor.inputValue());
+  expect(upgraded.schema).toBe('derivon.authoring/v0.3.0');
+  expect(upgraded.document).not.toHaveProperty('updatedAt');
+  expect(upgraded.view).not.toHaveProperty('positions');
+});
+
 test('selects and highlights a route on G6 before native solving', async ({ page }) => {
   await openExample(page);
   await page.getByTitle('打开路线模式').click();

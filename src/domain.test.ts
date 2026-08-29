@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DOCUMENT_SCHEMA,
   PREVIOUS_DOCUMENT_SCHEMA,
+  documentMigrationSource,
   formatWeight,
   normalizeWeight,
   parseDocument,
@@ -116,28 +117,32 @@ describe('authoring document', () => {
     });
   });
 
-  it('validates and discards v0.2 positions instead of carrying them into v0.3', () => {
+  it('detects and upgrades v0.2 without validating discarded runtime metadata', () => {
     const previous = {
       ...structuredClone(sampleDocument),
       schema: PREVIOUS_DOCUMENT_SCHEMA,
       document: {
         ...sampleDocument.document,
-        updatedAt: '2026-08-29T00:00:00.000Z',
+        updatedAt: 'not-a-date',
       },
       view: {
         ...sampleDocument.view,
-        positions: { A: { x: 12, y: 34 } },
+        positions: { missing: { x: null, y: 'invalid' } },
       },
     };
-    const migrated = parseDocumentWithMigration(JSON.stringify(previous));
+    const text = JSON.stringify(previous);
+    const migrated = parseDocumentWithMigration(text);
 
+    expect(documentMigrationSource(text)).toBe(PREVIOUS_DOCUMENT_SCHEMA);
+    expect(migrated.migratedFrom).toBe(PREVIOUS_DOCUMENT_SCHEMA);
     expect(migrated.document.schema).toBe(DOCUMENT_SCHEMA);
-    expect(migrated).not.toHaveProperty('migratedPositions');
     expect(JSON.stringify(migrated.document)).not.toContain('positions');
     expect(migrated.document.document).not.toHaveProperty('updatedAt');
 
-    previous.view.positions.A.x = Number.NaN;
-    expect(() => parseDocumentWithMigration(JSON.stringify(previous))).toThrow('有限数值');
+    Reflect.deleteProperty(previous.view, 'positions');
+    expect(parseDocumentWithMigration(JSON.stringify(previous)).document.schema).toBe(DOCUMENT_SCHEMA);
+    expect(documentMigrationSource(JSON.stringify(sampleDocument))).toBeNull();
+    expect(documentMigrationSource('{')).toBeNull();
   });
 
   it('accepts nested replacement relations without defining parent objects', () => {

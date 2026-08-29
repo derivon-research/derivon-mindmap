@@ -391,9 +391,14 @@ button { color: inherit; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgba(30, 34, 32, 0.36); }
 .json-modal { width: min(880px, 100%); height: min(760px, 90vh); display: grid; grid-template-rows: 55px minmax(0, 1fr) 54px; border: 1px solid #939994; background: #fbfbfa; box-shadow: 0 16px 45px rgba(23, 27, 25, 0.2); }
+.json-modal.has-schema-upgrade { grid-template-rows: 55px auto minmax(0, 1fr) 54px; }
 .json-modal header, .json-modal footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px; }
 .json-modal header { border-bottom: 1px solid #d9dbd7; }
 .json-modal footer { justify-content: flex-end; border-top: 1px solid #d9dbd7; }
+.schema-upgrade-notice { min-width: 0; display: flex; align-items: center; gap: 9px; padding: 9px 14px; border-bottom: 1px solid #d7ddd7; background: #eef4ef; color: #344b3e; font-size: 11px; line-height: 1.5; }
+.schema-upgrade-notice svg { flex: 0 0 auto; color: #3e6c54; }
+.schema-upgrade-notice span { min-width: 0; overflow-wrap: anywhere; }
+.schema-upgrade-notice strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .json-modal textarea { width: 100%; height: 100%; resize: none; border: 0; outline: 0; padding: 16px; background: #f5f6f3; color: #26312b; font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2; }
 .json-modal .text-button, .json-modal .primary-button { width: auto; min-width: 78px; height: 31px; padding: 0 12px; border: 1px solid #bbc0bb; }
 .json-modal .text-button { background: #fff; }
