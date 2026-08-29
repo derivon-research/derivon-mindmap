@@ -1,5 +1,12 @@
 # Next Demo Release
 
+## Agent integration
+
+- Agent Skills now live in the independent `derivon-research/skills` repository and install through `npx skills`; Mindmap no longer embeds, installs, upgrades, detects, or removes Agent files when workspaces are opened or saved.
+- The external package provides six focused skills for the CLI/model, Mindmap Unix workflows and route textbook export, chapter-by-chapter book import, read-only understanding assessment, personal knowledge exploration, and expert-led graph creation.
+- Existing private-test workspace bundles are left untouched so user modifications cannot be removed. Users may delete old generated `.agents`, `.claude`, `.github/skills`, and `.derivon/agent` content manually after review.
+- The in-app Agent tutorial and README now point to the external installer and repository. Historical coding-plan files were removed from the repository.
+
 ## G6 Canvas renderer
 
 - G6 Canvas is now the only production graph renderer; the XYFlow runtime and dependency were removed.

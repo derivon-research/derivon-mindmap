@@ -21,6 +21,16 @@ test('opens the basics tour on the G6 canvas', async ({ page }) => {
   await expect(page.locator('.g6-graph-surface')).toHaveAttribute('data-renderer', 'g6');
 });
 
+test('points the Agent Skills tour to the external installer', async ({ page }) => {
+  await openExample(page);
+  await page.getByRole('button', { name: '操作引导' }).click();
+  await page.getByRole('button', { name: /Agent Skills/ }).click();
+  const tour = page.getByLabel('操作引导：安装独立 Agent Skills');
+  await expect(tour).toContainText('npx skills add derivon-research/skills --all -g');
+  await expect(tour).toContainText('https://github.com/derivon-research/skills');
+  await expect(tour).toContainText('应用不会再向项目目录写入或更新 Agent 文件');
+});
+
 test('selects a concept through search and edits its document', async ({ page }) => {
   await openExample(page);
   await selectConcept(page, 'A');

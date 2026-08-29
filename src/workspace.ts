@@ -11,7 +11,6 @@ import {
   derivationDocumentTemplate,
   markdownToHtml,
 } from './documentContent';
-import { WORKSPACE_AGENT_FILES, WORKSPACE_AGENT_REFERENCE_SET } from './agentSkill';
 import {
   chooseNativeWorkspace,
   isNativeWorkspaceDirectory,
@@ -275,33 +274,9 @@ async function writeTextFile(root: FileSystemDirectoryHandle, path: string, cont
   await writable.close();
 }
 
-async function removeTextFile(root: FileSystemDirectoryHandle, path: string): Promise<void> {
-  const parts = path.split('/');
-  const filename = parts.pop()!;
-  const directory = await getDirectory(root, parts, false);
-  await directory.removeEntry(filename);
-}
-
 function isNotFoundError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'NotFoundError';
 }
-
-const MANAGED_AGENT_FILE_MARKER = 'managed-by: derivon-mindmap-demo';
-const WORKSPACE_AGENT_BUNDLE_MANIFEST = '.derivon/agent/bundle.json';
-const WORKSPACE_AGENT_BUNDLE_SCHEMA = 'derivon.agent-bundle/v0.1.0';
-
-type AgentBundleManifest = {
-  schema: typeof WORKSPACE_AGENT_BUNDLE_SCHEMA;
-  referenceSet: string;
-  files: Record<string, string>;
-  protectedFiles: string[];
-};
-
-type StoredAgentBundle = {
-  exists: boolean;
-  text: string | null;
-  manifest: AgentBundleManifest | null;
-};
 
 async function contentDigest(content: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content));
@@ -316,94 +291,6 @@ export async function workspaceRevision(workspace: AuthoringWorkspace): Promise<
     [WORKSPACE_MANIFEST, `${JSON.stringify(workspace.manifest, null, 2)}\n`],
     ...files,
   ]));
-}
-
-function parseAgentBundleManifest(text: string): AgentBundleManifest | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    if (
-      !isRecord(value)
-      || value.schema !== WORKSPACE_AGENT_BUNDLE_SCHEMA
-      || typeof value.referenceSet !== 'string'
-      || !isRecord(value.files)
-      || !Array.isArray(value.protectedFiles)
-    ) return null;
-    const files = Object.fromEntries(Object.entries(value.files).filter((entry): entry is [string, string] =>
-      typeof entry[1] === 'string',
-    ));
-    const protectedFiles = value.protectedFiles.filter((path): path is string => typeof path === 'string');
-    return { schema: WORKSPACE_AGENT_BUNDLE_SCHEMA, referenceSet: value.referenceSet, files, protectedFiles };
-  } catch {
-    return null;
-  }
-}
-
-async function readStoredAgentBundle(root: FileSystemDirectoryHandle): Promise<StoredAgentBundle> {
-  try {
-    const text = await readTextFile(root, WORKSPACE_AGENT_BUNDLE_MANIFEST);
-    return { exists: true, text, manifest: parseAgentBundleManifest(text) };
-  } catch (error) {
-    if (!isNotFoundError(error)) throw error;
-    return { exists: false, text: null, manifest: null };
-  }
-}
-
-export async function attachWorkspaceAgentFiles(root: FileSystemDirectoryHandle): Promise<void> {
-  const stored = await readStoredAgentBundle(root);
-  const nextFiles: Record<string, string> = {};
-  const protectedFiles = new Set(stored.manifest?.protectedFiles ?? []);
-
-  for (const [path, content] of Object.entries(WORKSPACE_AGENT_FILES)) {
-    const desiredDigest = await contentDigest(content);
-    try {
-      const existing = await readTextFile(root, path);
-      const existingDigest = await contentDigest(existing);
-      const previousDigest = stored.manifest?.files[path];
-      const isUnmodifiedManagedFile = previousDigest !== undefined && previousDigest === existingDigest;
-      const isLegacyManagedFile = !stored.exists && existing.includes(MANAGED_AGENT_FILE_MARKER);
-
-      if (existing === content) {
-        nextFiles[path] = desiredDigest;
-        protectedFiles.delete(path);
-      } else if (isUnmodifiedManagedFile || isLegacyManagedFile) {
-        await writeTextFile(root, path, content);
-        nextFiles[path] = desiredDigest;
-        protectedFiles.delete(path);
-      } else {
-        protectedFiles.add(path);
-      }
-    } catch (error) {
-      if (!isNotFoundError(error)) throw error;
-      await writeTextFile(root, path, content);
-      nextFiles[path] = desiredDigest;
-      protectedFiles.delete(path);
-    }
-  }
-
-  for (const [path, previousDigest] of Object.entries(stored.manifest?.files ?? {})) {
-    if (Object.hasOwn(WORKSPACE_AGENT_FILES, path)) continue;
-    try {
-      const existingDigest = await contentDigest(await readTextFile(root, path));
-      if (existingDigest === previousDigest) {
-        await removeTextFile(root, path);
-        protectedFiles.delete(path);
-      } else {
-        protectedFiles.add(path);
-      }
-    } catch (error) {
-      if (!isNotFoundError(error)) throw error;
-      protectedFiles.delete(path);
-    }
-  }
-
-  const manifest: AgentBundleManifest = {
-    schema: WORKSPACE_AGENT_BUNDLE_SCHEMA,
-    referenceSet: WORKSPACE_AGENT_REFERENCE_SET,
-    files: nextFiles,
-    protectedFiles: [...protectedFiles].sort(),
-  };
-  const text = `${JSON.stringify(manifest, null, 2)}\n`;
-  if (stored.text !== text) await writeTextFile(root, WORKSPACE_AGENT_BUNDLE_MANIFEST, text);
 }
 
 export async function readWorkspaceDirectorySnapshot(
@@ -468,7 +355,6 @@ export async function writeWorkspaceDirectoryChanges(
 export async function writeWorkspaceDirectory(root: FileSystemDirectoryHandle, workspace: AuthoringWorkspace): Promise<void> {
   validateWorkspace(workspace);
   await writeWorkspaceDirectoryChanges(root, workspace.manifest, workspace.files);
-  await attachWorkspaceAgentFiles(root);
 }
 
 export function supportsWorkspaceDirectory(): boolean {
@@ -539,7 +425,6 @@ export async function chooseWorkspaceDirectory(current: AuthoringWorkspace): Pro
   await ensureWorkspaceDirectoryPermission(handle);
   try {
     const snapshot = await readWorkspaceDirectorySnapshot(handle, { loadFiles: false });
-    if (!snapshot.migrationSource) await attachWorkspaceAgentFiles(handle);
     return { handle, ...snapshot, created: false };
   } catch (error) {
     if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error;
@@ -553,7 +438,6 @@ export async function upgradeWorkspaceDirectorySchema(
   selection: ChosenWorkspaceDirectory,
 ): Promise<ChosenWorkspaceDirectory> {
   await writeWorkspaceDirectoryChanges(selection.handle, selection.workspace.manifest, {});
-  if (!isNativeWorkspaceDirectory(selection.handle)) await attachWorkspaceAgentFiles(selection.handle);
   return {
     ...selection,
     revision: await readWorkspaceDirectoryRevision(selection.handle),
