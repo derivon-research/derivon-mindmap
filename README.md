@@ -141,26 +141,7 @@ Derivon 使用普通文件夹作为工作区：
 
 ```text
 my-workspace/
-├── .agents/skills/
-│   ├── derivon-workspace/SKILL.md
-│   ├── derivon-learning-graph/
-│   │   ├── SKILL.md
-│   │   └── references/{source-import,weight-calibration}.md
-│   ├── derivon-document-authoring/
-│   │   ├── SKILL.md
-│   │   └── references/large-scale-authoring.md
-│   └── derivon-math-authoring/SKILL.md
-├── .claude/skills/…
-├── .github/skills/…
 ├── .derivon/
-│   ├── agent/
-│   │   ├── bundle.json
-│   │   ├── references/
-│   │   │   ├── README.md
-│   │   │   ├── model.md
-│   │   │   ├── derivon-paper.md
-│   │   │   └── learning-route-hypergraph.md
-│   │   └── validate-workspace.mjs
 │   └── workspace.json
 └── docs/
     ├── concept-a/
@@ -171,74 +152,39 @@ my-workspace/
         └── document.md
 ```
 
-每个点和超边独占一个文档目录。不同对象不能引用同一目录。`document.md` 是主源文件，`index.html` 是始终可直接访问的发布入口；每次编辑都会由 Markdown 同步生成完整 HTML 文档。
+每个点和超边独占一个文档目录。不同对象不能引用同一目录。`document.md` 是 Markdown
+源文件，`index.html` 是始终可直接访问的发布入口。Markdown 正文可以嵌入样式、表单、
+脚本和交互组件；编辑器在隔离 iframe 中预览 raw HTML，并同步生成完整 HTML 文档。
+协议仍兼容旧工作区的 `format: html`。
 
-Markdown 正文可以直接嵌入 HTML 块。样式、表单、脚本和交互组件会作为 Tiptap `rawHtml` 节点原样保留，并在隔离 iframe 中运行；iframe 会随普通内容、响应式重排和交互产生的高度变化自动伸缩，不在组件外层形成独立的纵向滚动区。协议仍接受旧工作区的 `format: html`；这类文档首次打开时会自动迁移为包含原 HTML 的 Markdown，不会删除脚本或样式。
+工具栏中的文件夹按钮用于连接工作区目录：已有 `.derivon/workspace.json` 时打开项目，
+否则把当前浏览器项目写入该目录。自动保存会检查磁盘版本并检测外部修改；发生冲突时暂停
+写盘，由用户选择采用文件夹版本或保留 WebUI 修改。File System Access API 需要 Chromium
+系浏览器和 HTTPS 安全上下文；线上使用 `https://mindmap.derivon.net/`。
 
-工具栏中的文件夹按钮用于连接工作区目录：
+### Agent Skills
 
-- 目录已有 `.derivon/workspace.json` 时打开该工作区；
-- 目录还不是工作区时写入当前浏览器工作区；
-- 连接后，manifest 和对象目录会自动回写；
-- 自动保存会在写入前检查磁盘版本，并定时检测 Agent、编辑器或其他程序的外部修改；
-- 发现外部修改后会暂停写盘，由用户选择采用文件夹版本，或忽视该版本并保留 WebUI 修改；
-- File System Access API 需要 Chromium 系浏览器和 HTTPS 安全上下文；线上请使用 `https://mindmap.derivon.net/`，其他浏览器仍可使用浏览器本地工作区。
-
-浏览器基于隐私限制只提供授权目录的名称，不提供系统绝对路径。未选中点或推导时，右侧 `Graph` 总览会显示当前打开的项目文件夹；尚未连接目录时显示“未打开项目文件夹”。
-
-连接目录时会附加四层 Agent Skills。相同内容写入 `.agents/skills/`、`.claude/skills/`
-与 `.github/skills/`，供 Codex、Cursor、Claude Code、GitHub Copilot 等支持 `SKILL.md`
-的 Agent 发现：
-
-- `derivon-workspace` 只负责 manifest、对象所有权、HTML 发布、核心超边语义和校验；
-- `derivon-learning-graph` 负责从书本、课程和笔记建立或合并学习图，优先检查概念身份、
-  点和超边的粒度、平行路线、来源与学习成本；
-- `derivon-document-authoring` 只在用户明确要求实现文档时启用，负责正文、HTML、发布
-  审计和大规模 SubAgent 编排；
-- `derivon-math-authoring` 只补充数学特有的精确定义、推导叙述、例子与数学视觉标准，
-  不再承担教材导入或通用文档工程。
-
-快速导入默认产生可审计的准确占位文档，而不是把每个节点扩写成教材章节。概念占位记录
-规范陈述、范围、别名、来源和身份疑问；超边占位记录联合前提如何支持结论、来源以及权重
-理由。学习权重统一解释为“所有 tails 已掌握后，理解并验证当前步骤的边际认知成本”。
-应用层以 `0–5` 作为连续 float 标尺的语义锚点，而不是整数枚举：初次估计可使用 `0.5`
-步长，有相邻边比较依据时可细化到 schema 支持的 `0.1`，再通过路线行为和人工比较校准。
-
-通用导入规则不会把任意关系伪装成超边。特别是在哲学、历史和文学中，历史影响、时间
-顺序、引文、对立和主题相似本身不表示 tails 推出 head；这些证据保留在来源记录中，
-确有导航需求时应推动单独的关系或视图设计。学习依赖或论证依赖只有在联合前提和步骤都
-能准确说明时才进入 Derivon 超边。
-
-工作区 Skill 提供确定性的 Markdown 渲染；学习图 Skill 提供权重、tails、平行路线、
-重复标签和孤立点报告，并要求 Agent 对概念原子性进行语义审查。通用文档 Skill 提供静态
-及 Playwright 窄屏审计。脚本只做确定性
-渲染和审计，不批量编写正文。显式的大规模文档任务在平台支持时必须主动使用 SubAgent；
-没有委派能力时，Agent 必须在开始长时间串行写作前告知用户。
-
-应用会在连接、另存和后续自动保存时同步最新参考集；`.derivon/agent/bundle.json` 记录
-托管内容的 SHA-256。仍与旧 bundle 哈希一致的文件会自动升级；Skill 重构后退役且未经
-修改的托管文件会安全删除。用户修改过的旧文件进入 `protectedFiles` 并保持原样，没有
-托管记录的用户自建 Skill 也不会被覆盖。
-
-`.derivon/agent/references/` 会随 Skill 一起附加当前临时模型文档：`model.md` 明确
-核心数学对象与 authoring manifest 的映射，`derivon-paper.md` 是当前 paper 工作草案
-快照，`learning-route-hypergraph.md` 是
-[《学习效率的矛盾分析与学习路线的数学建模》](https://v3n0.top/post/2026/learning-route-hypergraph/)
-正文快照。Agent 在首次调整图结构或对 Point、Hyperedge、Closure、Derivation、
-AND/OR、空尾、环、成本与折叠等定义不确定时，必须主动读取这些材料，不能退回普通
-有向图直觉。`references/README.md` 记录了临时来源优先级，以及正式文档发布后需要
-同步迁移 Skill、模型指南、材料快照、README、schema 描述和测试的检查表。
-
-工作区同时附带零依赖校验工具：
+Agent Skills 已从 Mindmap 前端独立发布。应用不会在打开、创建、另存或自动保存项目时
+安装、更新、检测、删除 `.agents/`、`.claude/`、`.github/skills/` 或
+`.derivon/agent/bundle.json`。个人使用推荐全局安装：
 
 ```bash
-node .derivon/agent/validate-workspace.mjs .
-node .derivon/agent/validate-workspace.mjs . --inventory
-node .derivon/agent/validate-workspace.mjs . --review h-1
+npx skills add derivon-research/skills --all -g
 ```
 
-校验工具检查 ID、文档所有权、关系引用、权重、位置及必需文件；`--review` 会列出
-审阅一条推导时必须一起阅读的前提、推导和结论文档。
+查看六个可用 skills 或执行项目级选择安装：
+
+```bash
+npx skills add derivon-research/skills --list
+npx skills add derivon-research/skills \
+  --skill derivon-cli derivon-mindmap derivon-exploration \
+  --agent '*' -y
+```
+
+独立仓库位于 <https://github.com/derivon-research/skills>，包含 CLI/数学模型、Mindmap
+Unix 管道与文档工具、逐章教材导入、理解拷打、个人知识探索和专家建图六类能力。
+旧内测工作区若仍保留由应用生成的 Agent 文件，请在确认没有需要保留的个人修改后手动删除；
+新版应用会原样保留它们，不执行自动迁移或清理。
 
 右上角“连接工作区文件夹”用于打开已有工作区或在非工作区目录中创建。文件夹加号
 “在新文件夹创建空项目”会新建空白 Graph、写入所选目录并切换到该项目；软盘

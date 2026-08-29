@@ -513,7 +513,7 @@ const NATIVE_ROUTE_STEPS: readonly TourStepDefinition[] = [
 ] as const;
 
 const AGENT_STEPS: readonly TourStepDefinition[] = [
-  { id: 'agent', target: 'body', title: '让 Agent 与你协作', description: '项目目录已经包含四类 Skills：derivon-workspace 维护工作区协议；derivon-learning-graph 建图和校准成本；derivon-document-authoring 编写通用文档；derivon-math-authoring 补充数学表达。让 Codex 打开同一文件夹后，它会按任务读取相应说明。', placement: 'center', surface: 'dialog' },
+  { id: 'agent', target: 'body', title: '安装独立 Agent Skills', description: '在终端运行 npx skills add derivon-research/skills --all -g，即可安装 CLI、Mindmap、教材导入、理解拷打、知识探索和专家建图六类 Skills。应用不会再向项目目录写入或更新 Agent 文件；旧内测项目中的生成文件请确认无个人修改后手动删除。仓库：https://github.com/derivon-research/skills', placement: 'center', surface: 'dialog' },
 ] as const;
 
 export function createOnboardingTours(nativeRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window): Record<TourId, TourDefinition> {
@@ -525,7 +525,7 @@ export function createOnboardingTours(nativeRuntime = typeof window !== 'undefin
     routes: nativeRuntime
       ? { id: 'routes', title: '推导学习路线', summary: '从已有知识到目标概念', icon: Route, steps: NATIVE_ROUTE_STEPS }
       : { id: 'routes', title: '下载 Derivon 本地版', summary: '路线推导仅在本地应用中提供', icon: Route, steps: WEB_ROUTE_STEPS },
-    agent: { id: 'agent', title: 'Agent Skills', summary: '让 Codex 读取项目能力说明', icon: BrainCircuit, steps: AGENT_STEPS },
+    agent: { id: 'agent', title: 'Agent Skills', summary: '从独立仓库安装六类协作能力', icon: BrainCircuit, steps: AGENT_STEPS },
   };
 }
 
