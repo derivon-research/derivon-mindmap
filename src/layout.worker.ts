@@ -1,10 +1,11 @@
 /// <reference lib="webworker" />
 
 import type { AuthoringDocument, Position } from './domain';
-import { layoutDocument, layoutNeighborhood } from './layout';
+import { layoutDocument, layoutNeighborhood, type LayoutMode } from './layout';
 
 type LayoutTask = {
   kind: 'document';
+  mode: LayoutMode;
 } | {
   kind: 'neighborhood';
   nodeIds: string[];
@@ -28,7 +29,7 @@ self.onmessage = (event: MessageEvent<LayoutWorkerRequest>) => {
   const { requestId, document, task } = event.data;
   try {
     const positions = task.kind === 'document'
-      ? layoutDocument(document)
+      ? layoutDocument(document, { mode: task.mode })
       : layoutNeighborhood(
           document,
           new Set(task.nodeIds),

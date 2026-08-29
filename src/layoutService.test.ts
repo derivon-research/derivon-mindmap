@@ -32,14 +32,34 @@ describe('LayoutService', () => {
 
     const first = service.layoutDocument(sampleDocument);
     const firstResult = expect(first).rejects.toBeInstanceOf(LayoutCancelledError);
-    const second = service.layoutDocument(sampleDocument);
+    const second = service.layoutDocument(sampleDocument, 'force');
 
-    expect(secondWorker.message?.task).toEqual({ kind: 'document' });
+    expect(secondWorker.message?.task).toEqual({ kind: 'document', mode: 'force' });
     await firstResult;
     expect(firstWorker.terminated).toBe(true);
     secondWorker.respond({ A: { x: 10, y: 20 } });
     await expect(second).resolves.toEqual({ A: { x: 10, y: 20 } });
     expect(secondWorker.terminated).toBe(true);
+  });
+
+  it('keeps neighborhood requests independent of the global layout mode', async () => {
+    const worker = new FakeWorker();
+    const service = new LayoutService(() => worker as unknown as Worker);
+    const request = service.layoutNeighborhood(
+      sampleDocument,
+      new Set(['A', 'h-b', 'B']),
+      'A',
+      { A: { x: 10, y: 20 } },
+    );
+
+    expect(worker.message?.task).toEqual({
+      kind: 'neighborhood',
+      nodeIds: ['A', 'h-b', 'B'],
+      anchorId: 'A',
+      overviewPositions: { A: { x: 10, y: 20 } },
+    });
+    worker.respond({ A: { x: 10, y: 20 } });
+    await expect(request).resolves.toEqual({ A: { x: 10, y: 20 } });
   });
 
   it('disposes the active request and worker', async () => {

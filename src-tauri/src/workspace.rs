@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -98,11 +99,19 @@ fn read_snapshot(root: &Path, load_files: bool) -> Result<WorkspaceSnapshot, Str
     let mut files = HashMap::new();
     for relative in referenced_files(&manifest)? {
         let path = root.join(safe_relative_path(&relative)?);
-        let bytes = fs::read(&path)
+        let metadata = fs::metadata(&path)
             .map_err(|error| format!("workspace is missing `{relative}`: {error}"))?;
+        let modified_nanos = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map_or(0, |duration| duration.as_nanos());
         hasher.update(relative.as_bytes());
-        hasher.update(&bytes);
+        hasher.update(metadata.len().to_le_bytes());
+        hasher.update(modified_nanos.to_le_bytes());
         if load_files {
+            let bytes = fs::read(&path)
+                .map_err(|error| format!("cannot read workspace file `{relative}`: {error}"))?;
             let content = String::from_utf8(bytes)
                 .map_err(|error| format!("workspace file `{relative}` is not UTF-8: {error}"))?;
             files.insert(relative, content);
@@ -116,12 +125,33 @@ fn read_snapshot(root: &Path, load_files: bool) -> Result<WorkspaceSnapshot, Str
 
 #[tauri::command]
 pub async fn choose_workspace() -> Result<Option<ChosenWorkspace>, String> {
+    #[cfg(debug_assertions)]
+    eprintln!("[Derivon workspace] opening native folder picker");
     let Some(root) = rfd::AsyncFileDialog::new().pick_folder().await else {
+        #[cfg(debug_assertions)]
+        eprintln!("[Derivon workspace] native folder picker cancelled");
         return Ok(None);
     };
     let root = root.path().to_owned();
+    #[cfg(debug_assertions)]
+    eprintln!("[Derivon workspace] selected {}", root.display());
     tauri::async_runtime::spawn_blocking(move || {
-        let snapshot = read_snapshot(&root, true)?;
+        let snapshot = read_snapshot(&root, false).map_err(|error| {
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "[Derivon workspace] failed to read {}: {error}",
+                root.display()
+            );
+            error
+        })?;
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "[Derivon workspace] loaded {} points, {} hyperedges, and {} files from {}",
+            snapshot.workspace.manifest.graph.points.len(),
+            snapshot.workspace.manifest.graph.hyperedges.len(),
+            snapshot.workspace.files.len(),
+            root.display()
+        );
         Ok(Some(ChosenWorkspace {
             name: root
                 .file_name()
@@ -284,6 +314,20 @@ mod tests {
         let error = write_new_workspace_files(destination.path(), source.manifest, source.files)
             .unwrap_err();
         assert!(error.contains("已经是 Derivon 工作区"));
+    }
+
+    #[test]
+    fn metadata_only_snapshot_validates_documents_without_loading_their_contents() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
+        let metadata_only = read_snapshot(&root, false).unwrap();
+        let complete = read_snapshot(&root, true).unwrap();
+
+        assert!(metadata_only.workspace.files.is_empty());
+        assert_eq!(
+            serde_json::to_value(metadata_only.workspace.manifest).unwrap(),
+            serde_json::to_value(complete.workspace.manifest).unwrap()
+        );
+        assert_eq!(metadata_only.revision, complete.revision);
     }
 
     #[test]

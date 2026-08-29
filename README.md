@@ -218,9 +218,9 @@ Unix 管道与文档工具、逐章教材导入、理解拷打、个人知识探
 - 推导检查器的“编辑前提与结论”使用同一套搜索式 draft form，一次保存、一次 undo、一次自动布局，不使用全量 `<select>` 列表。
 - 头点和尾集相同的平行推导在数据中保持独立，在画布上用最多两层无文字菱形轮廓堆叠；检查器切换 active member，端点编辑只修改当前 member。
 - `Shift` 点击切换多选，`Shift` 从空白画布拖动使用 partial-overlap marquee；拖动任一 selected card 会一起移动当前全部 selected、非淡化节点。
-- 静态边不接收 pointer。Focus/route 中的淡化节点、菱形和 ports 不可点击、拖动、连接或框选；其区域按空白画布处理，hover 不会重新提亮背景关系。
-- 自动布局在独立 Worker 中运行：少于 400 个投影节点使用从左到右的 Dagre，达到阈值后切换到 cycle-safe deterministic bipartite force，并执行 card-aware separation。结构/投影修改约 120ms debounce，权重修改约 400ms debounce；新请求取消旧请求。
-- 坐标只存在于当前运行时内存。打开工作区、拓扑/投影/权重修改或显式自动布局会重新计算；手工拖动保留到下一次 full layout 或 workspace reload，不写入 workspace、browser localStorage、sidecar layout cache 或任何 JSON。
+- 静态边不接收 pointer。Focus/route 中的淡化节点、菱形和 ports 不可点击、拖动、连接或框选；其区域按空白画布处理，hover 不会重新提亮背景关系。低缩放 Canvas 命中遗漏会按当前可交互节点的实际边界回退检测。
+- 自动布局在独立 Worker 中运行。工具栏布局菜单只控制全局视图，提供 `自动 / Dagre / Force`：自动模式在少于 400 个投影节点时使用从左到右的 Dagre，达到阈值后使用 cycle-safe deterministic bipartite force 和 card-aware separation；另两个模式忽略规模并强制使用所选全局算法。关联视图始终使用紧凑 Dagre。结构/投影修改约 120ms debounce，权重修改约 400ms debounce；新请求取消旧请求。
+- 布局模式和坐标只存在于当前运行时内存。打开工作区、拓扑/投影/权重修改、切换算法或显式重新布局会重新计算；手工拖动保留到下一次 full layout 或 workspace reload，不写入 workspace、browser localStorage、sidecar layout cache 或任何 JSON。
 - 超过 300 concepts 时，overview 始终保留矩形 card silhouettes，但 neutral labels、IDs、ports、普通 derivation junctions 和 edges 按 LOD 隐藏；selection、hover、search/focus 与 route materialize 当前上下文。编辑不可见或远距离推导使用右侧搜索 form。
 
 ## 替换

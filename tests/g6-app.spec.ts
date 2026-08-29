@@ -288,6 +288,9 @@ test('opens a derivation focused view without a render-effect loop', async ({ pa
   });
   const surface = page.locator('.g6-graph-surface');
   await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
+  await surface.getByRole('button', { name: '适应视图' }).click();
+  await page.waitForTimeout(260);
+  const globalViewport = await surface.getAttribute('data-viewport-sample');
   const left = await graphPort(page, 'h-a', 'left');
   const right = await graphPort(page, 'h-a', 'right');
   await page.mouse.click((left.x + right.x) / 2, left.y);
@@ -296,6 +299,18 @@ test('opens a derivation focused view without a render-effect loop', async ({ pa
   await page.getByTitle('开启局部视图').click();
   await expect(page.getByTitle('关闭局部视图')).toBeVisible();
   await expect(surface).toHaveAttribute('data-dimmed-nodes', /D/);
+  await expect.poll(async () => await surface.getAttribute('data-viewport-sample')).not.toBe(globalViewport);
+  await page.waitForTimeout(300);
+  const focusedViewport = await surface.getAttribute('data-viewport-sample');
+  await surface.getByRole('button', { name: '放大' }).click();
+  await expect.poll(async () => await surface.getAttribute('data-viewport-sample')).not.toBe(focusedViewport);
+  await page.waitForTimeout(200);
+  const zoomedViewport = await surface.getAttribute('data-viewport-sample');
+  const fitRequests = Number(await surface.getAttribute('data-fit-requests'));
+  await surface.getByRole('button', { name: '适应视图' }).click();
+  await expect(surface).toHaveAttribute('data-fit-requests', String(fitRequests + 1));
+  await expect.poll(async () => await surface.getAttribute('data-viewport-sample')).not.toBe(zoomedViewport);
+  await expect.poll(async () => await surface.getAttribute('data-viewport-sample')).not.toBe(globalViewport);
   await expect.poll(() => page.evaluate(() => new Promise<string>((resolve) => {
     window.setTimeout(() => resolve('alive'), 50);
   }))).toBe('alive');
@@ -409,7 +424,34 @@ test('creates a self-dependent derivation through canonical search selectors', a
   expect(created).toMatchObject({ tails: ['A'], head: 'A', weight: 1 });
 });
 
+test('switches layout algorithms at runtime and resets the choice after reload', async ({ page }) => {
+  const app = page.locator('main');
+  const surface = page.locator('.g6-graph-surface');
+  await expect(app).toHaveAttribute('data-layout-ready', 'true', { timeout: 30_000 });
+  await expect(app).toHaveAttribute('data-layout-mode', 'auto');
+  const automaticLayout = await surface.getAttribute('data-layout-sample');
+
+  await page.getByRole('button', { name: '选择布局算法' }).click();
+  await expect(page.getByRole('menuitemradio', { name: '自动' })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('menuitemradio', { name: 'Force' }).click();
+  await expect(app).toHaveAttribute('data-layout-mode', 'force');
+  await expect(app).toHaveAttribute('data-layout-running', 'false');
+  await expect(surface).not.toHaveAttribute('data-layout-sample', automaticLayout ?? '');
+  const forceLayout = await surface.getAttribute('data-layout-sample');
+
+  await page.getByRole('button', { name: '选择布局算法' }).click();
+  await page.getByRole('menuitemradio', { name: 'Dagre' }).click();
+  await expect(app).toHaveAttribute('data-layout-mode', 'dagre');
+  await expect(app).toHaveAttribute('data-layout-running', 'false');
+  await expect(surface).not.toHaveAttribute('data-layout-sample', forceLayout ?? '');
+
+  await page.reload();
+  await expect(app).toHaveAttribute('data-layout-ready', 'true', { timeout: 30_000 });
+  await expect(app).toHaveAttribute('data-layout-mode', 'auto');
+});
+
 test('uses concept-only overview LOD above the production detail threshold', async ({ page }) => {
+  test.setTimeout(60_000);
   await page.addInitScript(() => {
     const concepts = 301;
     const points = Array.from({ length: concepts }, (_, index) => ({
@@ -444,11 +486,35 @@ test('uses concept-only overview LOD above the production detail threshold', asy
   const surface = page.locator('.g6-graph-surface');
 
   await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
+  await expect(page.locator('main')).toHaveAttribute('data-layout-ready', 'true', { timeout: 30_000 });
+  await expect(page.locator('main')).toHaveAttribute('data-layout-running', 'false');
   await expect(surface).toHaveAttribute('data-overview-lod', 'true');
   await expect(surface).toHaveAttribute('data-rendered-nodes', '301');
   await expect(surface).toHaveAttribute('data-rendered-edges', '0');
   await expect(surface.locator('canvas').first()).toBeVisible();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(page.locator('main')).toHaveAttribute('data-layout-mode', 'auto');
+
+  const paintedPixels = await surface.locator('canvas').evaluateAll((canvases) => canvases.reduce((total, canvas) => {
+    const context = canvas.getContext('2d');
+    if (!context) return total;
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let painted = 0;
+    for (let offset = 3; offset < pixels.length; offset += 16) {
+      if (pixels[offset] > 0) painted += 1;
+    }
+    return total + painted;
+  }, 0));
+  expect(paintedPixels).toBeGreaterThan(0);
+
+  for (const id of ['p-0', 'p-7', 'p-15']) {
+    const left = await graphPort(page, id, 'left');
+    const right = await graphPort(page, id, 'right');
+    await page.mouse.click((left.x + right.x) / 2, left.y);
+    const heading = page.locator('.inspector > .inspector-heading');
+    await expect(heading.locator('.eyebrow')).toHaveText('概念');
+    await expect(heading.locator('strong')).toHaveText(id);
+  }
 
   const search = page.getByRole('combobox', { name: '搜索概念' });
   await search.fill('p-0');
