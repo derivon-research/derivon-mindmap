@@ -80,6 +80,67 @@ test('round-trips images and task lists without selection errors', async ({ page
   expect(pageErrors).toEqual([]);
 });
 
+test('inserts portable object references and opens them inside the app', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await openConceptDocument(page, 'A');
+
+  await page.getByRole('button', { name: '引用对象' }).click();
+  const picker = page.getByRole('dialog', { name: '引用概念或推导' });
+  await expect(picker).toBeVisible();
+  await picker.getByRole('combobox', { name: '搜索引用对象' }).fill('B');
+  await picker.getByRole('option', { name: /^B/ }).click();
+
+  await expect.poll(() => activeDocumentMarkdown(page, 'A')).toContain('[B](../concept-b/index.html)');
+  const reference = page.locator('.tiptap-content a[href="../concept-b/index.html"]');
+  await expect(reference).toHaveText('B');
+  await reference.click();
+  await page.getByRole('button', { name: '修改对象引用' }).click();
+  await picker.getByRole('combobox', { name: '搜索引用对象' }).fill('X');
+  await picker.getByRole('option', { name: /^X/ }).click();
+  const redirectedReference = page.locator('.tiptap-content a[href="../concept-x/index.html"]');
+  await expect(redirectedReference).toHaveText('B');
+  await expect.poll(() => activeDocumentMarkdown(page, 'A')).toContain('[B](../concept-x/index.html)');
+
+  await redirectedReference.click({ modifiers: ['Meta'] });
+  await expect(page.getByRole('region', { name: 'X 文档编辑器' })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test('keeps a cancelled reference trigger and edits ordinary links without prompts', async ({ page }) => {
+  await openConceptDocument(page, 'A');
+  const body = page.locator('.tiptap-content');
+  const lastParagraph = body.locator('p').last();
+  await lastParagraph.click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('[[');
+  const picker = page.getByRole('dialog', { name: '引用概念或推导' });
+  await expect(picker).toBeVisible();
+  await picker.getByRole('combobox', { name: '搜索引用对象' }).press('Escape');
+  await expect(picker).toBeHidden();
+  await expect(lastParagraph).toContainText('[[');
+  await expect.poll(() => activeDocumentMarkdown(page, 'A')).toContain('\\[\\[');
+
+  await lastParagraph.click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' [[');
+  await expect(picker).toBeVisible();
+  await picker.getByRole('combobox', { name: '搜索引用对象' }).fill('X');
+  await picker.getByRole('option', { name: /^X/ }).click();
+  await expect.poll(() => activeDocumentMarkdown(page, 'A')).toContain('[X](../concept-x/index.html)');
+
+  await body.locator('h1').click();
+  await page.keyboard.press('End');
+  await page.getByRole('button', { name: '插入链接' }).click();
+  const settings = page.getByRole('form', { name: '链接设置' });
+  await settings.getByRole('textbox', { name: '链接地址' }).fill('javascript:alert(1)');
+  await settings.getByRole('button', { name: '应用链接设置' }).click();
+  await expect(settings.getByRole('alert')).toContainText('只允许');
+  await settings.getByRole('textbox', { name: '链接地址' }).fill('https://example.com/reference');
+  await settings.getByRole('button', { name: '应用链接设置' }).click();
+  await expect(page.locator('.tiptap-content a[href="https://example.com/reference"]')).toHaveText('https://example.com/reference');
+});
+
 test('exposes complete heading and code block controls', async ({ page }) => {
   await openConceptDocument(page, 'A');
 

@@ -48,6 +48,7 @@ import type { G6GraphSurfaceHandle, G6PointerModifiers } from './G6GraphSurface'
 import { LayoutCancelledError, LayoutService } from './layoutService';
 import type { LayoutMode } from './layout';
 import { DocumentEditor } from './DocumentEditor';
+import type { EditorReferenceTarget } from './editorReferences';
 import { ConceptSearch } from './ConceptSearch';
 import { DerivationForm } from './DerivationForm';
 import { convertDocumentContent } from './documentContent';
@@ -1640,6 +1641,34 @@ function AuthoringCanvas() {
   const editingSourcePath = editingReference ? documentSourcePath(editingReference) : null;
   const editingEntryPath = editingReference ? documentEntryPath(editingReference.document) : null;
   const editingLabel = editingConcept?.data.label ?? (editingDerivation ? `推导 ${editingDerivation.id}` : '');
+  const editingReferenceTargets = useMemo<EditorReferenceTarget[]>(() => [
+    ...document.graph.points.map((point) => ({
+      kind: 'concept' as const,
+      id: point.id,
+      label: point.data.label,
+      detail: point.id,
+      document: point.data.document,
+      searchTerms: [point.id, point.data.label],
+    })),
+    ...document.graph.hyperedges.map((edge) => {
+      const tailLabels = edge.tails.map((id) => labelById.get(id) ?? id);
+      const headLabel = labelById.get(edge.head) ?? edge.head;
+      return {
+        kind: 'derivation' as const,
+        id: edge.id,
+        label: `推导 ${edge.id}`,
+        detail: `${tailLabels.length ? tailLabels.join(' + ') : '∅'} → ${headLabel}`,
+        document: edge.data.document,
+        searchTerms: [
+          edge.id,
+          ...edge.tails,
+          ...tailLabels,
+          edge.head,
+          headLabel,
+        ],
+      };
+    }),
+  ], [document.graph.hyperedges, document.graph.points, labelById]);
   const resolveEditingImage = useCallback((source: string) => {
     if (!editingSourcePath) return Promise.reject(new Error('当前没有正在编辑的文档'));
     return resolveWorkspaceImage(workspaceDirectory, editingSourcePath, source);
@@ -2149,6 +2178,10 @@ function AuthoringCanvas() {
               key={editingId}
               label={editingLabel}
               value={files[editingSourcePath] ?? ''}
+              currentId={editingId}
+              documentPath={editingSourcePath}
+              referenceTargets={editingReferenceTargets}
+              onOpenReference={openDocument}
               resolveImage={resolveEditingImage}
               storeImage={storeEditingImage}
               onImageError={reportEditingImageError}
