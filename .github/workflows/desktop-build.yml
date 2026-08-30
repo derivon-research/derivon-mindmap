@@ -81,16 +81,25 @@ jobs:
             target: universal-apple-darwin
             rustTargets: aarch64-apple-darwin,x86_64-apple-darwin
             bundles: dmg
+            artifact: ci-macos-universal
+            paths: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           - name: Windows x64 NSIS
             platform: windows-latest
             target: x86_64-pc-windows-msvc
             rustTargets: x86_64-pc-windows-msvc
             bundles: nsis
+            artifact: ci-windows-x86_64
+            paths: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
           - name: Linux x64 packages
             platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             rustTargets: x86_64-unknown-linux-gnu
             bundles: deb,rpm
+            artifact: ci-linux-x86_64
+            paths: |
+              src-tauri/target/x86_64-unknown-linux-gnu/release/derivon-app
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -140,29 +149,199 @@ jobs:
           scripts/ci/verify-linux-package.sh deb "$deb" "$RELEASE_VERSION"
           scripts/ci/verify-linux-package.sh rpm "$rpm" "$RELEASE_VERSION"
 
-      - name: Upload Linux packages
-        if: runner.os == 'Linux'
+      - name: Upload build output
+        if: runner.os == 'Linux' || github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: pr-linux-x86_64
+          name: ${{ matrix.artifact }}
           if-no-files-found: error
           retention-days: 7
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/derivon-app
-            src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
-            src-tauri/target/${{ matrix.target }}/release/bundle/rpm/*.rpm
+          path: ${{ matrix.paths }}
+
+  distro-canary:
+    name: ${{ matrix.name }}
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Fedora latest RPM
+            image: fedora:latest
+            kind: rpm
+          - name: Debian 12 DEB
+            image: debian:12
+            kind: deb
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download Linux packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ci-linux-x86_64
+          path: artifacts/linux
+
+      - name: Install and launch package
+        env:
+          IMAGE: ${{ matrix.image }}
+          KIND: ${{ matrix.kind }}
+        run: |
+          docker run --rm \
+            --env KIND \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            "$IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              case "$KIND" in
+                rpm) dnf install -y rpm findutils util-linux dbus-x11 xorg-x11-server-Xvfb ;;
+                deb) apt-get update && apt-get install -y ca-certificates findutils util-linux dbus-x11 xvfb ;;
+              esac
+              package=$(find artifacts/linux -type f -name "*.$KIND" -print -quit)
+              package=$(realpath "$package")
+              version=$(case "$KIND" in rpm) rpm -qp --queryformat "%{VERSION}" "$package";; deb) dpkg-deb -f "$package" Version;; esac)
+              scripts/ci/verify-linux-package.sh "$KIND" "$package" "$version"
+              case "$KIND" in
+                rpm) dnf install -y "$package" ;;
+                deb) apt-get install -y "$package" ;;
+              esac
+              scripts/ci/smoke-linux-app.sh derivon-app
+            '
+
+  arch-source:
+    name: Arch source build
+    if: github.event_name != 'pull_request'
+    needs: quality
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Render source recipe
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          mkdir -p dist/arch-ci
+          git archive --format=tar --prefix="derivon-mindmap-$version/" HEAD | gzip -n > "dist/arch-ci/derivon-mindmap-$version-source.tar.gz"
+          checksum=$(sha256sum "dist/arch-ci/derivon-mindmap-$version-source.tar.gz" | cut -d ' ' -f 1)
+          node scripts/render-arch-package.mjs \
+            "$version" \
+            "file:///build/derivon-mindmap-$version-source.tar.gz" \
+            "$checksum" \
+            dist/arch-ci
+
+      - name: Build in clean Arch container
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE/dist/arch-ci:/input:ro" \
+            archlinux:base-devel \
+            bash -lc '
+              set -euo pipefail
+              pacman -Syu --needed --noconfirm cargo nodejs npm gtk3 webkit2gtk-4.1 openssl hicolor-icon-theme
+              useradd --create-home builder
+              mkdir /build
+              cp -a /input/. /build/
+              chown -R builder:builder /build
+              cd /build
+              runuser -u builder -- makepkg --nodeps --noconfirm --cleanbuild
+            '
+
+  build-flatpak:
+    name: Build Flatpak bundle
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download Linux packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ci-linux-x86_64
+          path: artifacts/linux
+
+      - name: Stage Flatpak binary
+        run: |
+          binary=$(find artifacts/linux -type f -name derivon-app -print -quit)
+          install -Dm755 "$binary" packaging/flatpak/files/derivon-app
+
+      - name: Build Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
+        with:
+          bundle: Derivon-ci-x86_64.flatpak
+          manifest-path: packaging/flatpak/net.derivon.mindmap.yml
+          upload-artifact: false
+
+      - name: Upload Flatpak
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ci-flatpak-x86_64
+          path: Derivon-ci-x86_64.flatpak
+          if-no-files-found: error
+          retention-days: 7
+
+  rocky-flatpak:
+    name: Rocky Linux 9 Flatpak
+    if: github.event_name != 'pull_request'
+    needs: build-flatpak
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download Flatpak
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ci-flatpak-x86_64
+          path: artifacts/flatpak
+
+      - name: Install and launch on Rocky Linux 9
+        run: |
+          docker run --rm --privileged \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            rockylinux:9 \
+            bash -lc '
+              set -euo pipefail
+              dnf install -y flatpak dbus-x11 xorg-x11-server-Xvfb util-linux
+              bundle=$(find artifacts/flatpak -type f -name "*.flatpak" -print -quit)
+              flatpak install --system --noninteractive -y "$bundle"
+              scripts/ci/smoke-linux-app.sh flatpak run net.derivon.mindmap
+            '
 
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [quality, build]
+    needs: [quality, build, distro-canary, arch-source, build-flatpak, rocky-flatpak]
     runs-on: ubuntu-22.04
     steps:
       - name: Confirm required checks passed
         env:
           QUALITY: ${{ needs.quality.result }}
           BUILD: ${{ needs.build.result }}
+          DISTRO_CANARY: ${{ needs.distro-canary.result }}
+          ARCH_SOURCE: ${{ needs.arch-source.result }}
+          BUILD_FLATPAK: ${{ needs.build-flatpak.result }}
+          ROCKY_FLATPAK: ${{ needs.rocky-flatpak.result }}
         run: |
           test "$QUALITY" = success
           test "$BUILD" = success
-          echo "Quality checks and all desktop bundles passed."
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+            test "$DISTRO_CANARY" = success
+            test "$ARCH_SOURCE" = success
+            test "$BUILD_FLATPAK" = success
+            test "$ROCKY_FLATPAK" = success
+          fi
+          echo "Required quality, desktop, and distribution checks passed."
