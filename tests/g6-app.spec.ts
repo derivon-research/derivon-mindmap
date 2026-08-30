@@ -89,6 +89,32 @@ test('loads G6 as the default renderer without an XYFlow surface', async ({ page
   await surface.getByRole('button', { name: '适应视图' }).click();
 });
 
+test('tears down an active element drag without calling G6 after context disposal', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  const surface = page.locator('.g6-graph-surface');
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
+    const search = page.getByRole('combobox', { name: '搜索概念' });
+    await search.fill('A');
+    await page.getByRole('option', { name: /^A/ }).click();
+    const left = await graphPort(page, 'A', 'left');
+    const right = await graphPort(page, 'A', 'right');
+    const center = { x: (left.x + right.x) / 2, y: (left.y + right.y) / 2 };
+    await page.mouse.move(center.x, center.y);
+    await page.mouse.down();
+    await page.mouse.move(center.x + 18, center.y + 12, { steps: 3 });
+    await page.getByRole('button', { name: '编辑文档' }).evaluate((button) => (button as HTMLButtonElement).click());
+    await page.mouse.up();
+    await expect(page.locator('.markdown-editor')).toBeVisible();
+    await page.getByTitle('返回画布').first().click();
+  }
+
+  await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
+  expect(pageErrors.filter((message) => /context\.model|hasNode/.test(message))).toEqual([]);
+});
+
 test('creates a compound derivation by dragging a blue concept port to a red concept port', async ({ page }) => {
   const surface = page.locator('.g6-graph-surface');
   await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
