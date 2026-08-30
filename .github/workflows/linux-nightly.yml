@@ -51,13 +51,13 @@ jobs:
             patchelf \
             rpm
 
-      - name: Build packages
+      - name: Build required packages
         env:
           NO_STRIP: "true"
         run: |
           npm ci
           npm run check:release-version
-          npm run tauri:build -- --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage -- --locked
+          npm run tauri:build -- --target x86_64-unknown-linux-gnu --bundles deb,rpm -- --locked
 
       - name: Upload Linux packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -69,7 +69,6 @@ jobs:
             src-tauri/target/x86_64-unknown-linux-gnu/release/derivon-app
             src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
             src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
-            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
 
   distro-canary:
     name: ${{ matrix.name }}
