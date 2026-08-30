@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphScene } from './graphScene';
 import { createGraphSceneRuntime } from './graphSceneRuntime';
-import { createG6SceneSnapshot, G6_DETAIL_CONCEPT_LIMIT } from './g6SceneSnapshot';
+import { createG6SceneSnapshot } from './g6SceneSnapshot';
 
 function largeScene(concepts: number): GraphScene {
   return {
@@ -37,34 +37,40 @@ function largeScene(concepts: number): GraphScene {
 }
 
 describe('G6 scene snapshot', () => {
-  it('keeps complete native graph detail for small workspaces', () => {
-    const scene = largeScene(G6_DETAIL_CONCEPT_LIMIT);
+  it('keeps card text, derivations, and edges at production workspace scale', () => {
+    const concepts = 1_682;
+    const scene = largeScene(concepts);
     const snapshot = createG6SceneSnapshot(createGraphSceneRuntime(scene, { positions: {} }));
 
     expect(snapshot.overviewLod).toBe(false);
-    expect(snapshot.nodes).toHaveLength(G6_DETAIL_CONCEPT_LIMIT * 2);
-    expect(snapshot.edges).toHaveLength(G6_DETAIL_CONCEPT_LIMIT);
-    expect(snapshot.nodes.filter((node) => node.data.kind === 'concept').every((node) => node.data.showIdentity)).toBe(true);
-    expect(snapshot.nodes.every((node) => node.data.showPorts)).toBe(true);
+    expect(snapshot.nodes).toHaveLength(concepts * 2);
+    expect(snapshot.edges).toHaveLength(concepts);
+    expect(snapshot.nodes.filter((node) => node.data.kind === 'concept').every((node) =>
+      node.data.showLabel && node.data.showIdentity && node.data.showPorts,
+    )).toBe(true);
+    expect(snapshot.nodes.filter((node) => node.data.kind === 'derivation')).toHaveLength(concepts);
   });
 
-  it('materializes only emphasized derivations and edges in large overview mode', () => {
-    const scene = largeScene(G6_DETAIL_CONCEPT_LIMIT + 1);
-    const runtime = createGraphSceneRuntime(scene, {
+  it('keeps card text and dimmed edges when a large graph enters focused view', () => {
+    const concepts = 301;
+    const scene = largeScene(concepts);
+    const snapshot = createG6SceneSnapshot(createGraphSceneRuntime(scene, {
       positions: {},
       activeIds: new Set(['p-4', 'h-4']),
       focusActive: true,
-    });
-    const snapshot = createG6SceneSnapshot(runtime);
+    }));
 
-    expect(snapshot.overviewLod).toBe(true);
-    expect(snapshot.visualNodeCount).toBe((G6_DETAIL_CONCEPT_LIMIT + 1) * 2);
-    expect(snapshot.nodes.filter((node) => node.data.kind === 'derivation').map((node) => node.id)).toEqual(['h-4']);
-    expect(snapshot.edges.map((edge) => edge.id)).toEqual(['head:h-4']);
-    expect(snapshot.nodes.find((node) => node.id === 'p-4')?.data.showIdentity).toBe(true);
-    expect(snapshot.nodes.find((node) => node.id === 'p-5')?.data.showIdentity).toBe(false);
-    expect(snapshot.nodes.find((node) => node.id === 'p-5')?.data.showLabel).toBe(false);
-    expect(snapshot.nodes.find((node) => node.id === 'p-5')?.data.label).toBe('Concept 5');
+    expect(snapshot.overviewLod).toBe(false);
+    expect(snapshot.nodes).toHaveLength(concepts * 2);
+    expect(snapshot.edges).toHaveLength(concepts);
+    expect(snapshot.nodes.find((node) => node.id === 'p-5')?.data).toMatchObject({
+      label: 'Concept 5',
+      showLabel: true,
+      showIdentity: true,
+      opacity: 0.16,
+    });
+    expect(snapshot.nodes.find((node) => node.id === 'h-5')).toBeDefined();
+    expect(snapshot.edges.find((edge) => edge.id === 'head:h-5')?.data.opacity).toBe(0.08);
   });
 
   it('updates a passive replacement arrow from runtime positions without layout metadata', () => {

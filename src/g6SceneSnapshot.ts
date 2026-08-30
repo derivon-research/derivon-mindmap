@@ -3,8 +3,6 @@ import type { GraphSceneRuntime, RuntimeSceneEdge, RuntimeSceneNode } from './gr
 import { replacementAssistPath, type PathCommand } from './graphGeometry';
 import type { ProjectedReplacementRole, ReplacementControl } from './projection';
 
-export const G6_DETAIL_CONCEPT_LIMIT = 300;
-
 export type G6SceneNodeData = {
   kind: RuntimeSceneNode['kind'];
   label: string;
@@ -90,23 +88,9 @@ function nodeCenter(node: RuntimeSceneNode): { x: number; y: number } {
 }
 
 export function createG6SceneSnapshot(runtime: GraphSceneRuntime): G6SceneSnapshot {
-  const conceptCount = runtime.nodes.filter((node) => node.kind === 'concept').length;
-  const overviewLod = conceptCount > G6_DETAIL_CONCEPT_LIMIT;
-  const visibleDerivations = new Set(runtime.nodes.flatMap((node) => {
-    if (node.kind !== 'derivation') return [];
-    return !overviewLod || node.selected || node.hovered || node.emphasized || node.routeRole !== 'none'
-      ? [node.id]
-      : [];
-  }));
-  const visibleNodeIds = new Set(runtime.nodes.flatMap((node) =>
-    node.kind === 'concept' || visibleDerivations.has(node.id) ? [node.id] : [],
-  ));
-  const activeContext = (node: RuntimeSceneNode) =>
-    node.selected || node.hovered || node.emphasized || node.routeRole !== 'none';
-  const nodes = runtime.nodes.flatMap((node): G6SceneNode[] => {
-    if (!visibleNodeIds.has(node.id)) return [];
-    const active = activeContext(node);
-    return [{
+  const nodes = runtime.nodes.map((node): G6SceneNode => {
+    const active = node.selected || node.hovered || node.emphasized || node.routeRole !== 'none';
+    return {
       id: node.id,
       data: {
         kind: node.kind,
@@ -114,13 +98,13 @@ export function createG6SceneSnapshot(runtime: GraphSceneRuntime): G6SceneSnapsh
         semanticId: node.kind === 'concept' ? node.id : node.semanticId,
         identity: node.kind === 'concept' ? node.id : node.semanticId,
         weight: node.kind === 'derivation' ? node.weight : undefined,
-        showLabel: node.kind === 'derivation' || !overviewLod || active,
+        showLabel: true,
         replacementDepth: node.kind === 'concept' ? node.depth : 0,
         replacementRoles: node.kind === 'concept' ? node.replacementRoles : [],
         replacementControls: node.kind === 'concept' ? node.replacementControls : [],
         stackDepth: node.kind === 'derivation' ? Math.min(2, Math.max(0, node.alternatives.length - 1)) : 0,
-        showIdentity: node.kind === 'concept' && (!overviewLod || active),
-        showPorts: !node.dimmed && (!overviewLod || active),
+        showIdentity: node.kind === 'concept',
+        showPorts: !node.dimmed,
         portsEnabled: node.connectable,
         interactive: node.interactive,
         draggable: node.draggable,
@@ -129,17 +113,13 @@ export function createG6SceneSnapshot(runtime: GraphSceneRuntime): G6SceneSnapsh
       },
       style: nodeCenter(node),
       states: statesForNode(node),
-    }];
+    };
   });
   const centerById = new Map(nodes.map((node) => [node.id, node.style]));
-  const edges = runtime.edges.flatMap((edge): G6SceneEdge[] => {
-    const derivationId = edge.kind === 'premise' ? edge.target : edge.source;
-    if (!visibleDerivations.has(derivationId)
-      || !visibleNodeIds.has(edge.source)
-      || !visibleNodeIds.has(edge.target)) return [];
+  const edges = runtime.edges.map((edge): G6SceneEdge => {
     const source = centerById.get(edge.source);
     const target = centerById.get(edge.target);
-    return [{
+    return {
       id: edge.id,
       source: edge.source,
       target: edge.target,
@@ -152,7 +132,7 @@ export function createG6SceneSnapshot(runtime: GraphSceneRuntime): G6SceneSnapsh
         opacity: edge.routeMember || edge.emphasized ? 1 : edge.dimmed ? 0.08 : 0.18,
       },
       states: statesForEdge(edge),
-    }];
+    };
   });
   const runtimeCenterById = new Map(runtime.nodes.map((node) => [node.id, nodeCenter(node)]));
   const replacementAssists = runtime.replacementAssists.flatMap((assist): G6ReplacementAssist[] => {
@@ -175,7 +155,7 @@ export function createG6SceneSnapshot(runtime: GraphSceneRuntime): G6SceneSnapsh
     nodes,
     edges,
     replacementAssists,
-    overviewLod,
+    overviewLod: false,
     visualNodeCount: runtime.nodes.length,
     visualEdgeCount: runtime.edges.length,
   };

@@ -137,6 +137,7 @@ async function runSample(browser: Browser, concepts: number, run: number): Promi
   await expect(app).toHaveAttribute('data-layout-ready', 'true', { timeout: 120_000 });
   const layoutReadyMs = await page.evaluate(() => performance.now() - ((window as PerfWindow).__derivonStartedAt ?? 0));
   await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 120_000 });
+  await expect(surface).toHaveAttribute('data-render-style-sample', /head:/, { timeout: 120_000 });
   const readyMs = await page.evaluate(async () => {
     await new Promise(requestAnimationFrame);
     await new Promise(requestAnimationFrame);
@@ -201,7 +202,7 @@ test.describe('production G6 graph performance', () => {
         samples.push(await runSample(browser, concepts, run));
       }
       const result = {
-        surface: 'production-g6-canvas-lod-hybrid-worker',
+        surface: 'production-g6-canvas-full-detail-worker',
         summary: summarize(samples),
         samples,
       };
@@ -211,11 +212,11 @@ test.describe('production G6 graph performance', () => {
         contentType: 'application/json',
       });
 
-      expect(samples.every((sample) => sample.renderedNodes === concepts)).toBe(true);
-      expect(samples.every((sample) => sample.renderedEdges === 0)).toBe(true);
+      expect(samples.every((sample) => sample.renderedNodes === concepts * 2)).toBe(true);
+      expect(samples.every((sample) => sample.renderedEdges === concepts * 3)).toBe(true);
       expect(samples.every((sample) => sample.canvasElements > 0)).toBe(true);
-      expect(samples.every((sample) => sample.focusedRenderedNodes > concepts)).toBe(true);
-      expect(samples.every((sample) => sample.focusedRenderedEdges > 0)).toBe(true);
+      expect(samples.every((sample) => sample.focusedRenderedNodes === concepts * 2)).toBe(true);
+      expect(samples.every((sample) => sample.focusedRenderedEdges === concepts * 3)).toBe(true);
     });
   }
 });
