@@ -144,7 +144,6 @@ jobs:
               src-tauri/target/x86_64-unknown-linux-gnu/release/derivon-app
               src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
               src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
-              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
 
     steps:
       - name: Checkout
@@ -186,18 +185,6 @@ jobs:
         env:
           NO_STRIP: ${{ runner.os == 'Linux' && 'true' || '' }}
         run: npm run tauri:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
-
-      - name: Build optional AppImage
-        id: appimage
-        if: runner.os == 'Linux'
-        continue-on-error: true
-        env:
-          NO_STRIP: "true"
-        run: npm run tauri:build -- --target ${{ matrix.target }} --bundles appimage -- --locked
-
-      - name: Report AppImage bundler failure
-        if: runner.os == 'Linux' && steps.appimage.outcome == 'failure'
-        run: echo "::warning::The optional AppImage failed to build; required release packages continue."
 
       - name: Upload build output
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -419,7 +406,6 @@ jobs:
             -name '*.exe' -o \
             -name '*.deb' -o \
             -name '*.rpm' -o \
-            -name '*.AppImage' -o \
             -name '*.flatpak' -o \
             -name '*-source.tar.gz' -o \
             -name '*-arch-recipe.tar.gz' \

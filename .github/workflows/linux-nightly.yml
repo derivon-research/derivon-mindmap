@@ -59,17 +59,6 @@ jobs:
           npm run check:release-version
           npm run tauri:build -- --target x86_64-unknown-linux-gnu --bundles deb,rpm -- --locked
 
-      - name: Build optional AppImage
-        id: appimage
-        continue-on-error: true
-        env:
-          NO_STRIP: "true"
-        run: npm run tauri:build -- --target x86_64-unknown-linux-gnu --bundles appimage -- --locked
-
-      - name: Report AppImage bundler failure
-        if: steps.appimage.outcome == 'failure'
-        run: echo "::warning::The optional AppImage failed to build; required distro packages continue."
-
       - name: Upload Linux packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -80,7 +69,6 @@ jobs:
             src-tauri/target/x86_64-unknown-linux-gnu/release/derivon-app
             src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
             src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
-            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
 
   distro-canary:
     name: ${{ matrix.name }}

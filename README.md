@@ -82,7 +82,6 @@ Mindmap 应用不会在工作区中安装、升级或删除 Agent 文件。Skill
 | Debian | DEB | Debian 12 及以上 |
 | RHEL/Rocky Linux | Flatpak bundle | RHEL 9 / Rocky Linux 9 兼容环境 |
 | Arch Linux | 源码 recipe | 当前滚动版本；尚未发布到 AUR |
-| 其他现代 Linux | AppImage | 尽力支持，不作为发行版兼容承诺 |
 
 Fedora 43 及以上安装 RPM：
 
@@ -110,13 +109,6 @@ Arch Linux 当前提供 Release 源码包和 `PKGBUILD` recipe，不发布到 AU
 ```bash
 tar -xzf derivon-mindmap-<version>-arch-recipe.tar.gz
 makepkg -si
-```
-
-如果该 Release 附带尽力构建的 AppImage，也可以直接运行：
-
-```bash
-chmod +x Derivon_<version>_amd64.AppImage
-./Derivon_<version>_amd64.AppImage
 ```
 
 每个 Release 都包含 `SHA256SUMS`，并由 GitHub Actions 生成 build provenance。下载后可以验证：
