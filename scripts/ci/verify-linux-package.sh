@@ -5,29 +5,58 @@ kind="${1:?usage: verify-linux-package.sh <deb|rpm> <package> <version>}"
 package="${2:?usage: verify-linux-package.sh <deb|rpm> <package> <version>}"
 expected_version="${3:?usage: verify-linux-package.sh <deb|rpm> <package> <version>}"
 
-test -s "$package"
+tmp_dir=$(mktemp -d)
+trap 'rm -rf "$tmp_dir"' EXIT
+
+fail() {
+  echo "Package verification failed: $*" >&2
+  exit 1
+}
+
+require_equal() {
+  local label="$1"
+  local actual="$2"
+  local expected="$3"
+  [[ "$actual" == "$expected" ]] || fail "$label is '$actual', expected '$expected'"
+}
+
+require_match() {
+  local label="$1"
+  local pattern="$2"
+  local file="$3"
+  grep -Eq "$pattern" "$file" || fail "$label did not match '$pattern'"
+}
+
+[[ -s "$package" ]] || fail "package is missing or empty: $package"
+
 case "$kind" in
   deb)
-    test "$(dpkg-deb -f "$package" Version)" = "$expected_version"
-    test "$(dpkg-deb -f "$package" Architecture)" = "amd64"
-    dpkg-deb -c "$package" > /tmp/derivon-package-files
-    grep -q 'usr/bin/derivon-app$' /tmp/derivon-package-files
-    grep -q 'net.derivon.mindmap.desktop$' /tmp/derivon-package-files
-    dpkg-deb -f "$package" Depends > /tmp/derivon-package-requires
-    grep -q 'webkit2gtk-4.1' /tmp/derivon-package-requires
+    require_equal "DEB version" "$(dpkg-deb -f "$package" Version)" "$expected_version"
+    require_equal "DEB architecture" "$(dpkg-deb -f "$package" Architecture)" "amd64"
+    dpkg-deb -c "$package" > "$tmp_dir/files"
+    dpkg-deb -f "$package" Depends > "$tmp_dir/requires"
     ;;
   rpm)
-    test "$(rpm -qp --queryformat '%{VERSION}' "$package")" = "$expected_version"
-    test "$(rpm -qp --queryformat '%{ARCH}' "$package")" = "x86_64"
-    rpm -qlp "$package" > /tmp/derivon-package-files
-    grep -q '/usr/bin/derivon-app$' /tmp/derivon-package-files
-    grep -q 'net.derivon.mindmap.desktop$' /tmp/derivon-package-files
-    rpm -qpR "$package" > /tmp/derivon-package-requires
-    grep -q 'libwebkit2gtk-4.1.so.0' /tmp/derivon-package-requires
+    require_equal "RPM version" "$(rpm -qp --queryformat '%{VERSION}' "$package")" "$expected_version"
+    require_equal "RPM architecture" "$(rpm -qp --queryformat '%{ARCH}' "$package")" "x86_64"
+    rpm -qlp "$package" > "$tmp_dir/files"
+    rpm -qpR "$package" > "$tmp_dir/requires"
     ;;
   *)
-    echo "Unsupported package kind: $kind" >&2
-    exit 1
+    fail "unsupported package kind: $kind"
+    ;;
+esac
+
+require_match "installed binary" '/usr/bin/derivon-app$' "$tmp_dir/files"
+require_match "desktop entry" '/usr/share/applications/[^/]+\.desktop$' "$tmp_dir/files"
+require_match "AppStream metadata" '/usr/share/metainfo/net\.derivon\.mindmap\.metainfo\.xml$' "$tmp_dir/files"
+
+case "$kind" in
+  deb)
+    require_match "WebKitGTK dependency" 'webkit2gtk-4\.1' "$tmp_dir/requires"
+    ;;
+  rpm)
+    require_match "WebKitGTK dependency" 'libwebkit2gtk-4\.1\.so\.0' "$tmp_dir/requires"
     ;;
 esac
 
