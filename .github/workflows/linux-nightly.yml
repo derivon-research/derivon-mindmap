@@ -51,13 +51,24 @@ jobs:
             patchelf \
             rpm
 
-      - name: Build packages
+      - name: Build required packages
         env:
           NO_STRIP: "true"
         run: |
           npm ci
           npm run check:release-version
-          npm run tauri:build -- --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage -- --locked
+          npm run tauri:build -- --target x86_64-unknown-linux-gnu --bundles deb,rpm -- --locked
+
+      - name: Build optional AppImage
+        id: appimage
+        continue-on-error: true
+        env:
+          NO_STRIP: "true"
+        run: npm run tauri:build -- --target x86_64-unknown-linux-gnu --bundles appimage -- --locked
+
+      - name: Report AppImage bundler failure
+        if: steps.appimage.outcome == 'failure'
+        run: echo "::warning::The optional AppImage failed to build; required distro packages continue."
 
       - name: Upload Linux packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

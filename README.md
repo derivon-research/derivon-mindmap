@@ -112,7 +112,7 @@ tar -xzf derivon-mindmap-<version>-arch-recipe.tar.gz
 makepkg -si
 ```
 
-也可以直接运行 AppImage：
+如果该 Release 附带尽力构建的 AppImage，也可以直接运行：
 
 ```bash
 chmod +x Derivon_<version>_amd64.AppImage
