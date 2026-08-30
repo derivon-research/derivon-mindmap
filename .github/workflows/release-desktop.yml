@@ -205,18 +205,12 @@ jobs:
           - name: Ubuntu 22.04 DEB
             image: ubuntu:22.04
             kind: deb
-            setup: apt-get update && apt-get install -y ca-certificates findutils util-linux dbus-x11 xvfb
-            install: apt-get install -y
           - name: Debian 12 DEB
             image: debian:12
             kind: deb
-            setup: apt-get update && apt-get install -y ca-certificates findutils util-linux dbus-x11 xvfb
-            install: apt-get install -y
           - name: Fedora 43 RPM
             image: fedora:43
             kind: rpm
-            setup: dnf install -y rpm findutils util-linux dbus-x11 xorg-x11-server-Xvfb
-            install: dnf install -y
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -231,21 +225,26 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
           KIND: ${{ matrix.kind }}
-          SETUP: ${{ matrix.setup }}
-          INSTALL: ${{ matrix.install }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           docker run --rm \
-            --env KIND --env SETUP --env INSTALL --env VERSION \
+            --env KIND --env VERSION \
             --volume "$GITHUB_WORKSPACE:/work" \
             --workdir /work \
             "$IMAGE" \
             bash -lc '
               set -euo pipefail
-              eval "$SETUP"
+              case "$KIND" in
+                rpm) dnf install -y rpm findutils util-linux dbus-x11 xorg-x11-server-Xvfb ;;
+                deb) apt-get update && apt-get install -y ca-certificates findutils util-linux dbus-x11 xvfb ;;
+              esac
               package=$(find artifacts/linux -type f -name "*.$KIND" -print -quit)
+              package=$(realpath "$package")
               scripts/ci/verify-linux-package.sh "$KIND" "$package" "$VERSION"
-              eval "$INSTALL \"$package\""
+              case "$KIND" in
+                rpm) dnf install -y "$package" ;;
+                deb) apt-get install -y "$package" ;;
+              esac
               scripts/ci/smoke-linux-app.sh derivon-app
             '
 
@@ -253,6 +252,9 @@ jobs:
     name: Build Flatpak
     needs: [validate, build]
     runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -263,23 +265,23 @@ jobs:
           name: release-linux-x86_64
           path: artifacts/linux
 
-      - name: Install Flatpak tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder appstream
-
-      - name: Build Flatpak bundle
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
+      - name: Stage Flatpak binary
         run: |
           binary=$(find artifacts/linux -type f -name derivon-app -print -quit)
-          scripts/ci/build-flatpak.sh "$binary" "artifacts/Derivon_${VERSION}_x86_64.flatpak"
+          install -Dm755 "$binary" packaging/flatpak/files/derivon-app
+
+      - name: Build Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
+        with:
+          bundle: Derivon_${{ needs.validate.outputs.version }}_x86_64.flatpak
+          manifest-path: packaging/flatpak/net.derivon.mindmap.yml
+          upload-artifact: false
 
       - name: Upload Flatpak bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-flatpak-x86_64
-          path: artifacts/*.flatpak
+          path: '*.flatpak'
           if-no-files-found: error
           retention-days: 7
 

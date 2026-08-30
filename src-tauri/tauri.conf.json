@@ -30,13 +30,11 @@
     "licenseFile": "../LICENSE",
     "linux": {
       "deb": {
-        "desktopTemplate": "../packaging/linux/net.derivon.mindmap.desktop",
         "files": {
           "/usr/share/metainfo/net.derivon.mindmap.metainfo.xml": "../packaging/linux/net.derivon.mindmap.metainfo.xml"
         }
       },
       "rpm": {
-        "desktopTemplate": "../packaging/linux/net.derivon.mindmap.desktop",
         "files": {
           "/usr/share/metainfo/net.derivon.mindmap.metainfo.xml": "../packaging/linux/net.derivon.mindmap.metainfo.xml"
         }
