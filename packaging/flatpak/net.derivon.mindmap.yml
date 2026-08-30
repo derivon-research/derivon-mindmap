@@ -1,4 +1,4 @@
-app-id: net.derivon.mindmap
+id: net.derivon.mindmap
 runtime: org.gnome.Platform
 runtime-version: "48"
 sdk: org.gnome.Sdk

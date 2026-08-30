@@ -6,20 +6,18 @@ output="${2:?usage: build-flatpak.sh <binary> <output.flatpak>}"
 root=$(git rev-parse --show-toplevel)
 work="$root/packaging/flatpak"
 
-test -x "$binary"
+test -s "$binary"
 mkdir -p "$work/files" "$(dirname "$output")"
 install -m755 "$binary" "$work/files/derivon-app"
 rm -rf "$work/build-dir" "$work/repo" "$work/.flatpak-builder"
 
 flatpak remote-add --user --if-not-exists flathub \
   https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user --noninteractive -y flathub \
-  org.gnome.Platform//48 \
-  org.gnome.Sdk//48
 
 flatpak-builder \
   --user \
   --force-clean \
+  --install-deps-from=flathub \
   --repo="$work/repo" \
   "$work/build-dir" \
   "$work/net.derivon.mindmap.yml"
