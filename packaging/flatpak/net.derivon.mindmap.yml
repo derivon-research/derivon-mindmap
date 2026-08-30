@@ -1,0 +1,31 @@
+app-id: net.derivon.mindmap
+runtime: org.gnome.Platform
+runtime-version: "48"
+sdk: org.gnome.Sdk
+command: derivon-app
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=host
+modules:
+  - name: derivon-mindmap
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 derivon-app /app/bin/derivon-app
+      - install -Dm644 net.derivon.mindmap.desktop /app/share/applications/net.derivon.mindmap.desktop
+      - install -Dm644 net.derivon.mindmap.metainfo.xml /app/share/metainfo/net.derivon.mindmap.metainfo.xml
+      - install -Dm644 128x128.png /app/share/icons/hicolor/128x128/apps/net.derivon.mindmap.png
+      - install -Dm644 32x32.png /app/share/icons/hicolor/32x32/apps/net.derivon.mindmap.png
+    sources:
+      - type: file
+        path: files/derivon-app
+      - type: file
+        path: ../linux/net.derivon.mindmap.desktop
+      - type: file
+        path: ../linux/net.derivon.mindmap.metainfo.xml
+      - type: file
+        path: ../../src-tauri/icons/128x128.png
+      - type: file
+        path: ../../src-tauri/icons/32x32.png

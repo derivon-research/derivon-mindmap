@@ -1,7 +1,8 @@
 {
   "name": "derivon-mindmap",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.4.2",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,7 +16,8 @@
     "typecheck:perf": "tsc --noEmit -p tsconfig.performance.json",
     "bench:graph": "playwright test --config playwright.performance.config.ts benchmarks/graph-performance.spec.ts",
     "bench:replacement": "playwright test --config playwright.performance.config.ts benchmarks/replacement-performance.spec.ts",
-    "bench:g6-isolated": "playwright test --config playwright.performance.config.ts benchmarks/g6-performance.spec.ts"
+    "bench:g6-isolated": "playwright test --config playwright.performance.config.ts benchmarks/g6-performance.spec.ts",
+    "check:release-version": "node scripts/check-release-version.mjs"
   },
   "dependencies": {
     "@antv/g6": "^5.1.1",

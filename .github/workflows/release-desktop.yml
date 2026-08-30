@@ -2,48 +2,49 @@ name: Release Desktop App
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: desktop-release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  NODE_VERSION: "22"
+
 jobs:
   validate:
-    name: Validate release tag
-    runs-on: ubuntu-latest
+    name: Validate release
+    runs-on: ubuntu-22.04
     outputs:
       prerelease: ${{ steps.version.outputs.prerelease }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Require a tagged main commit
-        shell: bash
         run: |
           git fetch origin main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
             echo "Release tag $GITHUB_REF_NAME does not point to a commit on main." >&2
             exit 1
-          fi
+          }
 
-      - name: Validate release version
+      - name: Validate tagged version
         id: version
-        shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Release tag must use a SemVer-like vX.Y.Z format: $GITHUB_REF_NAME" >&2
-            exit 1
-          fi
-
+          node scripts/check-release-version.mjs "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if [[ "$version" == *-* ]]; then
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
@@ -51,9 +52,69 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
+  quality:
+    name: Release quality gate
+    needs: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: release-quality
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+
+      - name: Test source
+        run: |
+          npm ci
+          npm test
+          npm run build
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+  draft:
+    name: Create draft release
+    needs: [validate, quality]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Create or validate draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft >/tmp/release.json 2>/dev/null; then
+            test "$(jq -r .isDraft /tmp/release.json)" = "true" || {
+              echo "Release $GITHUB_REF_NAME is already public." >&2
+              exit 1
+            }
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --draft \
+              --generate-notes \
+              --title "Derivon Mindmap $GITHUB_REF_NAME"
+          fi
+
   build:
     name: Release ${{ matrix.name }}
-    needs: validate
+    needs: [validate, draft]
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -64,56 +125,309 @@ jobs:
             target: universal-apple-darwin
             rustTargets: aarch64-apple-darwin,x86_64-apple-darwin
             bundles: dmg
+            artifact: release-macos-universal
+            paths: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           - name: Windows x64 NSIS
             platform: windows-latest
             target: x86_64-pc-windows-msvc
             rustTargets: x86_64-pc-windows-msvc
             bundles: nsis
+            artifact: release-windows-x86_64
+            paths: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          - name: Linux x64 packages
+            platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            rustTargets: x86_64-unknown-linux-gnu
+            bundles: deb,rpm,appimage
+            artifact: release-linux-x86_64
+            paths: |
+              src-tauri/target/x86_64-unknown-linux-gnu/release/derivon-app
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           targets: ${{ matrix.rustTargets }}
 
       - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: src-tauri -> target
+          shared-key: release-${{ matrix.target }}
 
-      - name: Install dependencies
+      - name: Install Linux bundle dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf \
+            rpm
+
+      - name: Install JavaScript dependencies
         run: npm ci
 
-      - name: Configure tagged app version
-        shell: bash
+      - name: Build bundles
         env:
-          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
-        run: |
-          node -e "require('node:fs').writeFileSync('src-tauri/tauri.release.conf.json', JSON.stringify({ version: process.env.RELEASE_VERSION }))"
+          NO_STRIP: ${{ runner.os == 'Linux' && 'true' || '' }}
+        run: npm run tauri:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
 
-      - name: Test frontend
-        run: npm test
-
-      - name: Test Rust bridge
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-
-      - name: Build and publish release
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload build output
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Derivon Mindmap ${{ github.ref_name }}
-          generateReleaseNotes: true
-          releaseDraft: false
-          prerelease: ${{ needs.validate.outputs.prerelease }}
-          args: --config src-tauri/tauri.release.conf.json --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.paths }}
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-linux:
+    name: ${{ matrix.name }}
+    needs: [validate, build]
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 22.04 DEB
+            image: ubuntu:22.04
+            kind: deb
+            setup: apt-get update && apt-get install -y ca-certificates findutils util-linux dbus-x11 xvfb
+            install: apt-get install -y
+          - name: Debian 12 DEB
+            image: debian:12
+            kind: deb
+            setup: apt-get update && apt-get install -y ca-certificates findutils util-linux dbus-x11 xvfb
+            install: apt-get install -y
+          - name: Fedora 43 RPM
+            image: fedora:43
+            kind: rpm
+            setup: dnf install -y rpm findutils util-linux dbus-x11 xorg-x11-server-Xvfb
+            install: dnf install -y
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download Linux packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-linux-x86_64
+          path: artifacts/linux
+
+      - name: Install and launch package
+        env:
+          IMAGE: ${{ matrix.image }}
+          KIND: ${{ matrix.kind }}
+          SETUP: ${{ matrix.setup }}
+          INSTALL: ${{ matrix.install }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          docker run --rm \
+            --env KIND --env SETUP --env INSTALL --env VERSION \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            "$IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              eval "$SETUP"
+              package=$(find artifacts/linux -type f -name "*.$KIND" -print -quit)
+              scripts/ci/verify-linux-package.sh "$KIND" "$package" "$VERSION"
+              eval "$INSTALL \"$package\""
+              scripts/ci/smoke-linux-app.sh derivon-app
+            '
+
+  flatpak:
+    name: Build Flatpak
+    needs: [validate, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download Linux build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-linux-x86_64
+          path: artifacts/linux
+
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder appstream
+
+      - name: Build Flatpak bundle
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          binary=$(find artifacts/linux -type f -name derivon-app -print -quit)
+          scripts/ci/build-flatpak.sh "$binary" "artifacts/Derivon_${VERSION}_x86_64.flatpak"
+
+      - name: Upload Flatpak bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-flatpak-x86_64
+          path: artifacts/*.flatpak
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-flatpak:
+    name: Rocky Linux 9 Flatpak
+    needs: flatpak
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download Flatpak
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-flatpak-x86_64
+          path: artifacts/flatpak
+
+      - name: Install and launch on Rocky Linux 9
+        run: |
+          docker run --rm --privileged \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            rockylinux:9 \
+            bash -lc '
+              set -euo pipefail
+              dnf install -y flatpak dbus-x11 xorg-x11-server-Xvfb util-linux
+              bundle=$(find artifacts/flatpak -type f -name "*.flatpak" -print -quit)
+              flatpak install --system --noninteractive -y "$bundle"
+              scripts/ci/smoke-linux-app.sh flatpak run net.derivon.mindmap
+            '
+
+  arch-source:
+    name: Arch source recipe
+    needs: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Create deterministic source archive and test recipe
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          mkdir -p dist/arch-test dist/arch-release
+          source_name="derivon-mindmap-${VERSION}-source.tar.gz"
+          git archive --format=tar --prefix="derivon-mindmap-$VERSION/" "$GITHUB_SHA" | gzip -n > "dist/arch-test/$source_name"
+          checksum=$(sha256sum "dist/arch-test/$source_name" | cut -d ' ' -f 1)
+          node scripts/render-arch-package.mjs \
+            "$VERSION" \
+            "file:///build/$source_name" \
+            "$checksum" \
+            dist/arch-test
+          node scripts/render-arch-package.mjs \
+            "$VERSION" \
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$source_name" \
+            "$checksum" \
+            dist/arch-release
+
+      - name: Build source in clean Arch container
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE/dist/arch-test:/input:ro" \
+            archlinux:base-devel \
+            bash -lc '
+              set -euo pipefail
+              pacman -Syu --needed --noconfirm cargo nodejs npm gtk3 webkit2gtk-4.1 openssl hicolor-icon-theme
+              useradd --create-home builder
+              mkdir /build
+              cp -a /input/. /build/
+              chown -R builder:builder /build
+              cd /build
+              runuser -u builder -- makepkg --nodeps --noconfirm --cleanbuild
+            '
+
+      - name: Generate SRCINFO and recipe archive
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE/dist/arch-release:/work" \
+            --workdir /work \
+            archlinux:base-devel \
+            bash -lc 'useradd --create-home builder && chown -R builder:builder /work && runuser -u builder -- makepkg --printsrcinfo > .SRCINFO'
+          cp "dist/arch-test/derivon-mindmap-${VERSION}-source.tar.gz" dist/arch-release/
+          tar -C dist/arch-release -czf "dist/derivon-mindmap-${VERSION}-arch-recipe.tar.gz" PKGBUILD .SRCINFO
+
+      - name: Upload source and Arch recipe
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-arch-source
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/arch-release/*-source.tar.gz
+            dist/*-arch-recipe.tar.gz
+
+  publish:
+    name: Publish verified release
+    needs: [validate, draft, build, verify-linux, flatpak, verify-flatpak, arch-source]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: release-*
+          path: downloaded
+
+      - name: Stage public assets and checksums
+        run: |
+          mkdir staging
+          find downloaded -type f \( \
+            -name '*.dmg' -o \
+            -name '*.exe' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' -o \
+            -name '*.AppImage' -o \
+            -name '*.flatpak' -o \
+            -name '*-source.tar.gz' -o \
+            -name '*-arch-recipe.tar.gz' \
+          \) -exec cp {} staging/ \;
+          test "$(find staging -maxdepth 1 -type f | wc -l)" -ge 8
+          (cd staging && find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum) > staging/SHA256SUMS
+
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: staging/*
+
+      - name: Upload and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" staging/* --repo "$GITHUB_REPOSITORY" --clobber
+          if [[ "$PRERELEASE" == "true" ]]; then
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          else
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          fi

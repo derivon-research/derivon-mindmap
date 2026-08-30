@@ -9,3 +9,7 @@ test-results/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+packaging/flatpak/files/derivon-app
+packaging/flatpak/.flatpak-builder/
+packaging/flatpak/build-dir/
+packaging/flatpak/repo/

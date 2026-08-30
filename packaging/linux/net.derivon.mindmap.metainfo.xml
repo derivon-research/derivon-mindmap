@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>net.derivon.mindmap</id>
+  <name>Derivon</name>
+  <summary>Edit local-first weighted directed B-hypergraphs</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      Derivon combines visual graph editing, object-level Markdown documents,
+      route solving, and static publication in a portable folder workspace.
+    </p>
+  </description>
+  <launchable type="desktop-id">net.derivon.mindmap.desktop</launchable>
+  <url type="homepage">https://mindmap.derivon.net/</url>
+  <url type="bugtracker">https://github.com/derivon-research/derivon-mindmap/issues</url>
+  <provides>
+    <binary>derivon-app</binary>
+  </provides>
+</component>

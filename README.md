@@ -71,7 +71,61 @@ Mindmap 应用不会在工作区中安装、升级或删除 Agent 文件。Skill
 
 ### 桌面应用
 
-从 [Releases](https://github.com/derivon-research/derivon-mindmap/releases/latest) 下载 macOS universal DMG 或 Windows x64 安装程序。桌面版提供完整的本地文件系统访问和原生路线求解。
+从 [GitHub Releases](https://github.com/derivon-research/derivon-mindmap/releases/latest) 下载对应平台的安装包。桌面版提供完整的本地文件系统访问和原生路线求解。
+
+| 系统 | 安装包 | 支持范围 |
+| --- | --- | --- |
+| macOS | universal DMG | Apple Silicon 与 Intel Mac |
+| Windows | x64 NSIS | 64 位 Windows |
+| Fedora | RPM | Fedora 43 及以上 |
+| Ubuntu | DEB | Ubuntu 22.04 LTS 及以上 |
+| Debian | DEB | Debian 12 及以上 |
+| RHEL/Rocky Linux | Flatpak bundle | RHEL 9 / Rocky Linux 9 兼容环境 |
+| Arch Linux | 源码 recipe | 当前滚动版本；尚未发布到 AUR |
+| 其他现代 Linux | AppImage | 尽力支持，不作为发行版兼容承诺 |
+
+Fedora 43 及以上安装 RPM：
+
+```bash
+sudo dnf install ./Derivon-<version>-1.x86_64.rpm
+```
+
+Ubuntu 22.04+ 或 Debian 12+ 安装 DEB：
+
+```bash
+sudo apt install ./Derivon_<version>_amd64.deb
+```
+
+RHEL 9 或 Rocky Linux 9 使用 Flatpak bundle。首次使用需先安装 Flatpak，然后安装 Release 中的 bundle：
+
+```bash
+flatpak install --user ./Derivon_<version>_x86_64.flatpak
+flatpak run net.derivon.mindmap
+```
+
+Tauri 2 依赖 WebKitGTK 4.1，而 RHEL 9 官方仓库只提供 WebKitGTK 4.0 系列。因此 RPM 不支持 RHEL 9；Flatpak runtime 是 RHEL 9 的受支持交付方式。该路径在 Rocky Linux 9 用户空间中进行自动安装和启动测试，但不代表 Red Hat 官方认证。
+
+Arch Linux 当前提供 Release 源码包和 `PKGBUILD` recipe，不发布到 AUR：
+
+```bash
+tar -xzf derivon-mindmap-<version>-arch-recipe.tar.gz
+makepkg -si
+```
+
+也可以直接运行 AppImage：
+
+```bash
+chmod +x Derivon_<version>_amd64.AppImage
+./Derivon_<version>_amd64.AppImage
+```
+
+每个 Release 都包含 `SHA256SUMS`，并由 GitHub Actions 生成 build provenance。下载后可以验证：
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+gh attestation verify ./Derivon_<version>_amd64.deb \
+  --repo derivon-research/derivon-mindmap
+```
 
 打开应用后可以：
 
@@ -80,7 +134,7 @@ Mindmap 应用不会在工作区中安装、升级或删除 Agent 文件。Skill
 3. 为每个概念或推导编辑独立的 Markdown 文档。
 4. 选择已掌握概念与目标概念，求解可执行学习路线。
 
-当前安装包未进行 Apple Developer ID 或 Windows 代码签名，首次启动时操作系统可能显示未验证开发者提示。
+当前安装包未进行 Apple Developer ID 或 Windows Authenticode 代码签名，首次启动时操作系统可能显示未验证开发者提示。
 
 ### 在线版
 
@@ -95,7 +149,7 @@ Mindmap 应用不会在工作区中安装、升级或删除 Agent 文件。Skill
 ```bash
 git clone https://github.com/derivon-research/derivon-mindmap.git
 cd derivon-mindmap
-npm install
+npm ci
 npm run tauri:dev
 ```
 
@@ -287,6 +341,10 @@ npm run bench:g6-isolated
 - `derivon-core` Rust 路线求解器。
 
 生产构建不会包含 debug 菜单或 tracing 开销。`npm run tauri:debug` 产生的 Chrome Trace Event 文件会写入 `src-tauri/target/perf/`，可使用 [Perfetto](https://ui.perfetto.dev/) 分析。
+
+## 许可证
+
+Derivon Mindmap 使用 [MIT License](LICENSE)。
 
 ## 交流与反馈
 
