@@ -450,9 +450,24 @@ test('switches layout algorithms at runtime and resets the choice after reload',
   await expect(app).toHaveAttribute('data-layout-mode', 'auto');
 });
 
-test('uses concept-only overview LOD above the production detail threshold', async ({ page }) => {
+test('keeps card text and edges visible in a large global overview', async ({ page }) => {
   test.setTimeout(60_000);
   await page.addInitScript(() => {
+    const diagnostics = window as Window & { __derivonSawUnlaidPaint?: boolean };
+    diagnostics.__derivonSawUnlaidPaint = false;
+    window.addEventListener('DOMContentLoaded', () => {
+      const observeSurface = () => {
+        const graph = document.querySelector<HTMLElement>('.g6-graph-surface');
+        if (!graph?.dataset.renderStyleSample || !graph.dataset.layoutSample) return;
+        const positions = graph.dataset.layoutSample.split('|').filter(Boolean).map((entry) => entry.slice(entry.lastIndexOf(':') + 1));
+        if (positions.length > 1 && new Set(positions).size === 1) diagnostics.__derivonSawUnlaidPaint = true;
+      };
+      new MutationObserver(observeSurface).observe(document.body, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ['data-render-style-sample', 'data-layout-sample'],
+      });
+    });
     const concepts = 301;
     const points = Array.from({ length: concepts }, (_, index) => ({
       id: `p-${index}`,
@@ -488,9 +503,15 @@ test('uses concept-only overview LOD above the production detail threshold', asy
   await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
   await expect(page.locator('main')).toHaveAttribute('data-layout-ready', 'true', { timeout: 30_000 });
   await expect(page.locator('main')).toHaveAttribute('data-layout-running', 'false');
-  await expect(surface).toHaveAttribute('data-overview-lod', 'true');
-  await expect(surface).toHaveAttribute('data-rendered-nodes', '301');
-  await expect(surface).toHaveAttribute('data-rendered-edges', '0');
+  await expect(surface).toHaveAttribute('data-overview-lod', 'false');
+  await expect(surface).toHaveAttribute('data-rendered-nodes', '602');
+  await expect(surface).toHaveAttribute('data-rendered-edges', '602');
+  await expect(surface).toHaveAttribute('data-labeled-nodes', '602');
+  await expect(surface).toHaveAttribute('data-render-style-sample', /head:h-0/);
+  await expect.poll(async () => Number((await surface.getAttribute('data-viewport-sample'))?.split(':')[0] ?? 0))
+    .toBeGreaterThanOrEqual(0.279);
+  expect(await page.evaluate(() =>
+    (window as Window & { __derivonSawUnlaidPaint?: boolean }).__derivonSawUnlaidPaint)).toBe(false);
   await expect(surface.locator('canvas').first()).toBeVisible();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(page.locator('main')).toHaveAttribute('data-layout-mode', 'auto');
@@ -516,12 +537,25 @@ test('uses concept-only overview LOD above the production detail threshold', asy
     await expect(heading.locator('strong')).toHaveText(id);
   }
 
+  const overviewViewport = await surface.getAttribute('data-viewport-sample');
   const search = page.getByRole('combobox', { name: '搜索概念' });
   await search.fill('p-0');
   await page.getByRole('option', { name: /p-0/ }).first().click();
   await page.getByTitle('开启局部视图').click();
-  await expect.poll(async () => Number(await surface.getAttribute('data-rendered-nodes'))).toBeGreaterThan(301);
-  await expect.poll(async () => Number(await surface.getAttribute('data-rendered-edges'))).toBeGreaterThan(0);
+  await expect(surface).toHaveAttribute('data-overview-lod', 'false');
+  await expect(surface).toHaveAttribute('data-rendered-nodes', '602');
+  await expect(surface).toHaveAttribute('data-rendered-edges', '602');
+  await expect(surface).toHaveAttribute('data-labeled-nodes', '602');
+  await expect.poll(async () => await surface.getAttribute('data-viewport-sample')).not.toBe(overviewViewport);
+  await page.waitForTimeout(300);
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+
+  await page.getByTitle('关闭局部视图').click();
+  await expect(surface).toHaveAttribute('data-overview-lod', 'false');
+  await expect(surface).toHaveAttribute('data-rendered-nodes', '602');
+  await expect(surface).toHaveAttribute('data-rendered-edges', '602');
+  await expect(surface).toHaveAttribute('data-labeled-nodes', '602');
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
 });
 
 test('renders an empty workspace and incrementally adds its first concept', async ({ page }) => {
@@ -566,15 +600,21 @@ test('creates and edits a derivation through the G6 authoring workflow', async (
   const editConclusion = page.getByRole('combobox', { name: '结论', exact: true });
   await editConclusion.fill('D');
   await page.getByRole('listbox', { name: '结论搜索结果' }).getByRole('option').click();
+  const app = page.locator('main');
+  const requestsBeforeEdit = Number(await app.getAttribute('data-layout-requests'));
   await page.getByRole('button', { name: '保存更改' }).click();
   await expect(page.locator('.inspector .chips')).toContainText('C');
   await expect(page.locator('.conclusion-label')).toContainText('D');
+  await expect.poll(async () => Number(await app.getAttribute('data-layout-requests'))).toBeGreaterThan(requestsBeforeEdit);
+  await expect(app).toHaveAttribute('data-layout-running', 'false');
 
-  const layoutBefore = await surface.getAttribute('data-layout-sample');
+  const layoutRequestsBefore = Number(await app.getAttribute('data-layout-requests'));
+  const fitRequestsBefore = Number(await surface.getAttribute('data-fit-requests'));
   await page.getByRole('button', { name: '自动布局' }).click();
-  await expect(page.getByRole('button', { name: '正在自动布局' })).toBeDisabled();
+  await expect.poll(async () => Number(await app.getAttribute('data-layout-requests'))).toBe(layoutRequestsBefore + 1);
+  await expect(app).toHaveAttribute('data-layout-running', 'false');
+  await expect.poll(async () => Number(await surface.getAttribute('data-fit-requests'))).toBeGreaterThan(fitRequestsBefore);
   await expect(page.getByRole('button', { name: '自动布局' })).toBeEnabled();
-  await expect(surface).not.toHaveAttribute('data-layout-sample', layoutBefore ?? '');
 
   await page.getByRole('button', { name: '撤回' }).click();
   await page.getByTitle('编辑工作区 JSON').click();

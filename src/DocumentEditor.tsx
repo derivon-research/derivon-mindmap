@@ -25,6 +25,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import 'katex/dist/katex.min.css';
 import { prepareMarkdownForEditor } from './editorMarkdown';
+import { EditorSchemaGuard } from './editorSchemaGuard';
 import { RawHtmlBlock } from './RawHtmlBlock';
 import { TOUR_FEATURES, notifyTourAction, tourTarget } from './onboarding';
 
@@ -133,10 +134,8 @@ const MarkdownBlockMath = BlockMath.extend({
           && range.to === $from.end();
         const canReplaceTextblock = consumesTextblock
           && $from.node(-1).canReplaceWith($from.index(-1), $from.indexAfter(-1), this.type);
-        const replacement = canReplaceTextblock
-          ? { from: $from.before(), to: $from.after() }
-          : range;
-        tr.replaceWith(replacement.from, replacement.to, node);
+        if (!canReplaceTextblock) return;
+        tr.replaceWith($from.before(), $from.after(), node);
       },
     })];
   },
@@ -144,6 +143,7 @@ const MarkdownBlockMath = BlockMath.extend({
 
 function createExtensions(onEditMath: (formula: FormulaSelection) => void) {
   return [
+    EditorSchemaGuard,
     TourEditorShortcuts,
     StarterKit,
     TableKit.configure({ table: { resizable: true } }),

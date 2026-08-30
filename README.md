@@ -1,6 +1,6 @@
 # Derivon Mindmap
 
-Derivon 加权有向 B-超图的前端录入实验。AntV G6 Canvas 负责高性能画布交互，并通过 progressive LOD 支持千级概念图；领域协议、工作区读写、renderer-neutral scene、对象文档编辑、替换规则和可见性投影分别位于 `src/domain.ts`、`src/workspace.ts`、`src/graphScene.ts`、`src/DocumentEditor.tsx`、`src/replacements.ts` 与 `src/projection.ts`。
+Derivon 加权有向 B-超图的前端录入实验。AntV G6 Canvas 负责高性能画布交互，并通过 Worker 布局和批量同步支持千级概念图；领域协议、工作区读写、renderer-neutral scene、对象文档编辑、替换规则和可见性投影分别位于 `src/domain.ts`、`src/workspace.ts`、`src/graphScene.ts`、`src/DocumentEditor.tsx`、`src/replacements.ts` 与 `src/projection.ts`。
 
 ## 交流与反馈
 
@@ -219,9 +219,9 @@ Unix 管道与文档工具、逐章教材导入、理解拷打、个人知识探
 - 头点和尾集相同的平行推导在数据中保持独立，在画布上用最多两层无文字菱形轮廓堆叠；检查器切换 active member，端点编辑只修改当前 member。
 - `Shift` 点击切换多选，`Shift` 从空白画布拖动使用 partial-overlap marquee；拖动任一 selected card 会一起移动当前全部 selected、非淡化节点。
 - 静态边不接收 pointer。Focus/route 中的淡化节点、菱形和 ports 不可点击、拖动、连接或框选；其区域按空白画布处理，hover 不会重新提亮背景关系。低缩放 Canvas 命中遗漏会按当前可交互节点的实际边界回退检测。
-- 自动布局在独立 Worker 中运行。工具栏布局菜单只控制全局视图，提供 `自动 / Dagre / Force`：自动模式在少于 400 个投影节点时使用从左到右的 Dagre，达到阈值后使用 cycle-safe deterministic bipartite force 和 card-aware separation；另两个模式忽略规模并强制使用所选全局算法。关联视图始终使用紧凑 Dagre。结构/投影修改约 120ms debounce，权重修改约 400ms debounce；新请求取消旧请求。
+- 自动布局在独立 Worker 中运行。工具栏布局菜单只控制全局视图，提供 `自动 / Dagre / Force`：自动模式在少于 400 个投影节点时使用从左到右的 Dagre，达到阈值后使用 cycle-safe deterministic bipartite force 和 card-aware separation；另两个模式忽略规模并强制使用所选全局算法。关联视图始终使用紧凑 Dagre。结构/投影修改约 120ms debounce，权重修改约 400ms debounce；新请求取消旧请求。首次打开时，Canvas 等待有效布局坐标再提交节点；大图初始视口保留最低可辨识缩放，工具栏“适应视图”仍可查看完整全图。
 - 布局模式和坐标只存在于当前运行时内存。打开工作区、拓扑/投影/权重修改、切换算法或显式重新布局会重新计算；手工拖动保留到下一次 full layout 或 workspace reload，不写入 workspace、browser localStorage、sidecar layout cache 或任何 JSON。
-- 超过 300 concepts 时，overview 始终保留矩形 card silhouettes，但 neutral labels、IDs、ports、普通 derivation junctions 和 edges 按 LOD 隐藏；selection、hover、search/focus 与 route materialize 当前上下文。编辑不可见或远距离推导使用右侧搜索 form。
+- 所有图规模都保留完整 Canvas 语义：全局视图持续显示 card labels、IDs、ports、derivation junctions 和普通 edges，不因概念数超过 300 而退化为无文字轮廓。关联视图继续显示完整背景图并用 opacity 淡化非关联 card 与 edge，同时背景元素仍不可交互。大图通过 Canvas 批量同步和 Worker 布局控制开销。
 
 ## 替换
 

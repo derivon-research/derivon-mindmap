@@ -375,6 +375,9 @@ function AuthoringCanvas() {
     return graphSurfaceRef.current?.fitView(visibleIds) ?? Promise.resolve();
   }, []);
 
+  const fitInitialGraph = useCallback(() =>
+    graphSurfaceRef.current?.fitInitialView() ?? Promise.resolve(), []);
+
   const clientToGraph = useCallback((position: Position): Position =>
     graphSurfaceRef.current?.clientToGraph(position) ?? position, []);
 
@@ -485,7 +488,10 @@ function AuthoringCanvas() {
         const fitAfterLayout = firstLayout || modeChanged || tutorialFitAfterLayoutRef.current;
         if (firstLayout) fittedLayoutEpochRef.current = layoutEpoch;
         tutorialFitAfterLayoutRef.current = false;
-        if (fitAfterLayout) window.requestAnimationFrame(() => void fitGraph());
+        if (fitAfterLayout) window.requestAnimationFrame(() => {
+          if (firstLayout) void fitInitialGraph();
+          else void fitGraph();
+        });
       }).catch((error: unknown) => {
         if (acceptResult && !(error instanceof LayoutCancelledError)) {
           reportWorkspaceError('计算自动布局', error);
@@ -499,7 +505,7 @@ function AuthoringCanvas() {
       window.clearTimeout(timeout);
       service.cancel();
     };
-  }, [document, fitGraph, layoutEpoch, layoutMode, layoutStructure, layoutWeights, reportWorkspaceError]);
+  }, [document, fitGraph, fitInitialGraph, layoutEpoch, layoutMode, layoutStructure, layoutWeights, reportWorkspaceError]);
 
   useEffect(() => {
     editingIdRef.current = editingId;
@@ -2125,6 +2131,7 @@ function AuthoringCanvas() {
         <section className="document-workspace">
           <div className="document-editor-main" {...tourTarget(TOUR_FEATURES.documentWorkspace)}>
             <DocumentEditor
+              key={editingId}
               label={editingLabel}
               value={files[editingSourcePath] ?? ''}
               onChange={(content) => updateDocumentSource(editingReference, content, editingLabel)}

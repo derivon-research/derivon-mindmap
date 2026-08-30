@@ -63,6 +63,7 @@ export type G6PointerModifiers = {
 
 export type G6GraphSurfaceHandle = {
   fitView: (ids?: string[]) => Promise<void>;
+  fitInitialView: () => Promise<void>;
   focusElement: (ids: string | string[]) => Promise<void>;
   clientToGraph: (position: Position) => Position;
   zoomBy: (ratio: number) => Promise<void>;
@@ -94,6 +95,7 @@ type ReplacementPopoverState = {
 const NODE_BATCH_SIZE = 300;
 const EDGE_BATCH_SIZE = 96;
 const STATE_BATCH_SIZE = 240;
+const INITIAL_OVERVIEW_MIN_ZOOM = 0.28;
 const REPLACEMENT_MODES: Array<{ mode: ReplacementViewMode; label: string }> = [
   { mode: 'points', label: '原概念' },
   { mode: 'replacement', label: '替换概念' },
@@ -116,12 +118,20 @@ function sameData(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-async function fitGraphElements(graph: Graph, ids: string[] | undefined, duration: number): Promise<void> {
+async function fitGraphElements(
+  graph: Graph,
+  ids: string[] | undefined,
+  duration: number,
+  minimumZoom = 0,
+): Promise<void> {
   const visibleIds = ids?.filter((id) => graph.hasNode(id)) ?? [];
   if (visibleIds.length) {
     await graph.focusElement(visibleIds, { duration });
   } else if (graph.getNodeData().length) {
     await graph.fitView({ when: 'always' }, { duration });
+    if (minimumZoom > 0 && graph.getZoom() < minimumZoom) {
+      await graph.zoomTo(minimumZoom, false);
+    }
   }
 }
 
@@ -173,8 +183,7 @@ async function syncSnapshot(
       if (offset > 0) await nextFrame();
       if (graph.destroyed) return;
       graph.addNodeData(addedNodes.slice(offset, offset + NODE_BATCH_SIZE).map(nodeDatum));
-      await graph.draw();
-      changed = false;
+      changed = true;
     }
   }
   if (updatedEdges.length) {
@@ -191,8 +200,7 @@ async function syncSnapshot(
       await nextFrame();
       if (graph.destroyed) return;
       graph.addEdgeData(addedEdges.slice(offset, offset + EDGE_BATCH_SIZE).map(edgeDatum));
-      await graph.draw();
-      changed = false;
+      changed = true;
     }
   }
 
@@ -410,21 +418,55 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
     };
   }, [replacementPopover]);
 
+  const synchronizedGraph = useCallback(async (): Promise<Graph | null> => {
+    let pending = syncQueueRef.current;
+    await pending;
+    while (pending !== syncQueueRef.current) {
+      pending = syncQueueRef.current;
+      await pending;
+    }
+    const graph = graphRef.current;
+    return !graph || graph.destroyed || !ready ? null : graph;
+  }, [ready]);
+
+  const fitSynchronizedGraph = useCallback(async (
+    ids: string[] | undefined,
+    duration: number,
+    minimumZoom = 0,
+  ) => {
+    try {
+      const graph = await synchronizedGraph();
+      if (graph) {
+        await fitGraphElements(graph, ids, duration, minimumZoom);
+        const position = graph.getPosition();
+        setViewportSample(`${graph.getZoom().toFixed(6)}:${position[0].toFixed(3)},${position[1].toFixed(3)}`);
+      }
+    } catch (error) {
+      callbacksRef.current.onError(error);
+    }
+  }, [synchronizedGraph]);
+
   useImperativeHandle(ref, () => ({
     async fitView(ids) {
       setReplacementPopover(null);
-      const graph = graphRef.current;
-      if (!graph || graph.destroyed || !ready) return;
       setFitRequestCount((current) => current + 1);
-      await fitGraphElements(graph, ids, 260);
+      await fitSynchronizedGraph(ids, 260);
+    },
+    async fitInitialView() {
+      setReplacementPopover(null);
+      setFitRequestCount((current) => current + 1);
+      await fitSynchronizedGraph(undefined, 0, INITIAL_OVERVIEW_MIN_ZOOM);
     },
     async focusElement(ids) {
       setReplacementPopover(null);
-      const graph = graphRef.current;
-      if (!graph || graph.destroyed || !ready) return;
-      const visibleIds = (Array.isArray(ids) ? ids : [ids]).filter((id) => graph.hasNode(id));
-      if (!visibleIds.length) return;
-      await graph.focusElement(visibleIds, { duration: 260 });
+      try {
+        const graph = await synchronizedGraph();
+        if (!graph) return;
+        const visibleIds = (Array.isArray(ids) ? ids : [ids]).filter((id) => graph.hasNode(id));
+        if (visibleIds.length) await graph.focusElement(visibleIds, { duration: 260 });
+      } catch (error) {
+        callbacksRef.current.onError(error);
+      }
     },
     clientToGraph(position) {
       const graph = graphRef.current;
@@ -438,7 +480,7 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       if (!graph || graph.destroyed || !ready) return;
       await graph.zoomBy(ratio, { duration: 160 });
     },
-  }), [ready]);
+  }), [fitSynchronizedGraph, ready, synchronizedGraph]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -449,13 +491,16 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
     setReady(false);
     let disposed = false;
     let initialized = false;
-    const initialNodes = snapshot.nodes.slice(0, NODE_BATCH_SIZE);
+    const renderableSnapshot: G6SceneSnapshot = hasMeaningfulLayout(snapshot)
+      ? snapshot
+      : { ...snapshot, nodes: [], edges: [], replacementAssists: [] };
+    const initialNodes = renderableSnapshot.nodes.slice(0, NODE_BATCH_SIZE);
     const initialNodeIds = new Set(initialNodes.map((node) => node.id));
-    const initialEdges = snapshot.edges.filter((edge) =>
+    const initialEdges = renderableSnapshot.edges.filter((edge) =>
       initialNodeIds.has(edge.source) && initialNodeIds.has(edge.target),
     );
     const initialSnapshot: G6SceneSnapshot = {
-      ...snapshot,
+      ...renderableSnapshot,
       nodes: initialNodes,
       edges: initialEdges,
     };
@@ -625,7 +670,7 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
         return Promise.resolve();
       }
       graph.setSize(Math.floor(bounds.width), Math.floor(bounds.height));
-      initialFitPromise = graph.fitView({ when: 'always' }, false).then(() => {
+      initialFitPromise = fitGraphElements(graph, undefined, 0, INITIAL_OVERVIEW_MIN_ZOOM).then(() => {
         if (!disposed && !graph.destroyed) initialFitDoneRef.current = true;
       }).finally(() => { initialFitPromise = null; });
       return initialFitPromise;
@@ -1001,9 +1046,9 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       nodes: initialSnapshot.nodes.map((node) => ({ ...node, states: [] })),
       edges: initialSnapshot.edges.map((edge) => ({ ...edge, states: [] })),
     };
-    void graph.draw().then(() => syncSnapshot(graph, initialWithoutStates, snapshotRef.current ?? snapshot)).then(async () => {
+    void graph.draw().then(() => syncSnapshot(graph, initialWithoutStates, snapshotRef.current ?? renderableSnapshot)).then(async () => {
       if (disposed) return;
-      snapshotRef.current = snapshotRef.current ?? snapshot;
+      snapshotRef.current = snapshotRef.current ?? renderableSnapshot;
       syncReplacementAssistShapes(graph, snapshotRef.current, replacementAssistShapesRef.current);
       await fitInitialView();
       if (!disposed) {
@@ -1060,6 +1105,11 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph || !ready || snapshotRef.current === snapshot) return;
+    const waitingForInitialLayout = !initialFitDoneRef.current
+      && !graph.getNodeData().length
+      && snapshot.nodes.length > 1
+      && !hasMeaningfulLayout(snapshot);
+    if (waitingForInitialLayout) return;
     syncQueueRef.current = syncQueueRef.current.then(async () => {
       if (graph.destroyed) return;
       await syncSnapshot(graph, snapshotRef.current, snapshot);
@@ -1071,7 +1121,7 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
         if (container && bounds && bounds.width > 0 && bounds.height > 0
           && graph.getNodeData().length && hasMeaningfulLayout(snapshot)) {
           graph.setSize(Math.floor(bounds.width), Math.floor(bounds.height));
-          await graph.fitView({ when: 'always' }, false);
+          await fitGraphElements(graph, undefined, 0, INITIAL_OVERVIEW_MIN_ZOOM);
           initialFitDoneRef.current = true;
         }
       }
@@ -1100,6 +1150,7 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       data-overview-lod={snapshot.overviewLod ? 'true' : 'false'}
       data-rendered-nodes={snapshot.nodes.length}
       data-rendered-edges={snapshot.edges.length}
+      data-labeled-nodes={snapshot.nodes.filter((node) => node.data.showLabel).length}
       data-replacement-assists={snapshot.replacementAssists.length}
       data-replacement-assist-arrow={snapshot.replacementAssists.length ? 'true' : 'false'}
       data-replacement-assist-path={snapshot.replacementAssists.map((assist) => `${assist.id}:${assist.path.map((command) => command.join(',')).join(';')}`).join('|')}
@@ -1201,10 +1252,8 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
         <button type="button" title="缩小" aria-label="缩小" onClick={() => { setReplacementPopover(null); void graphRef.current?.zoomBy(0.8, { duration: 160 }); }}><Minus size={15} /></button>
         <button type="button" title="适应视图" aria-label="适应视图" onClick={() => {
           setReplacementPopover(null);
-          const graph = graphRef.current;
-          if (!graph || graph.destroyed || !ready) return;
           setFitRequestCount((current) => current + 1);
-          void fitGraphElements(graph, props.fitViewIds, 220);
+          void fitSynchronizedGraph(props.fitViewIds, 220);
         }}><Maximize size={15} /></button>
       </div>
     </div>
