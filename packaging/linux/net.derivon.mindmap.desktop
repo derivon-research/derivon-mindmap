@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Derivon
+Comment=Local-first weighted directed B-hypergraph editor
+Exec=derivon-app
+Icon=net.derivon.mindmap
+Terminal=false
+Type=Application
+Categories=Education;Utility;
+StartupNotify=true

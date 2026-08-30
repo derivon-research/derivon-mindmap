@@ -2,11 +2,9 @@ name: Desktop CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -16,53 +14,67 @@ concurrency:
   group: desktop-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-jobs:
-  build:
-    name: Build ${{ matrix.name }}
-    runs-on: ${{ matrix.platform }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macOS universal DMG
-            platform: macos-latest
-            target: universal-apple-darwin
-            rustTargets: aarch64-apple-darwin,x86_64-apple-darwin
-            bundles: dmg
-          - name: Windows x64 NSIS
-            platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            rustTargets: x86_64-pc-windows-msvc
-            bundles: nsis
+env:
+  NODE_VERSION: "22"
+  RELEASE_VERSION: "0.4.2"
 
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
-          targets: ${{ matrix.rustTargets }}
+          components: clippy
 
       - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: src-tauri -> target
+          shared-key: desktop-quality
 
-      - name: Install dependencies
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev
+
+      - name: Install JavaScript dependencies
         run: npm ci
 
-      - name: Test frontend
-        run: npm test
+      - name: Validate release metadata
+        run: npm run check:release-version -- "$RELEASE_VERSION"
 
-      - name: Test Rust bridge
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Test and build frontend
+        run: |
+          npm test
+          npm run build
 
-      - name: Build desktop bundle
-        run: npm run tauri:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Check and test Rust
+        run: |
+          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Compile integrated desktop app without packaging
+        run: npm run tauri:build -- --debug --no-bundle -- --locked
+
+  ci-gate:
+    name: CI Gate
+    needs: quality
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Confirm required checks passed
+        run: echo "Desktop quality checks passed."

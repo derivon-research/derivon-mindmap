@@ -1,0 +1,226 @@
+name: Linux Distribution Nightly
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-distribution-nightly
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  build-linux:
+    name: Build Linux packages
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: linux-nightly
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf \
+            rpm
+
+      - name: Build packages
+        env:
+          NO_STRIP: "true"
+        run: |
+          npm ci
+          npm run check:release-version
+          npm run tauri:build -- --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage -- --locked
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nightly-linux-x86_64
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            src-tauri/target/x86_64-unknown-linux-gnu/release/derivon-app
+            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
+            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
+
+  distro-canary:
+    name: ${{ matrix.name }}
+    needs: build-linux
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Fedora latest RPM
+            image: fedora:latest
+            kind: rpm
+            setup: dnf install -y rpm findutils util-linux dbus-x11 xorg-x11-server-Xvfb
+            install: dnf install -y
+          - name: Debian 12 DEB
+            image: debian:12
+            kind: deb
+            setup: apt-get update && apt-get install -y ca-certificates findutils util-linux dbus-x11 xvfb
+            install: apt-get install -y
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download Linux packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: nightly-linux-x86_64
+          path: artifacts/linux
+
+      - name: Install and launch package
+        env:
+          IMAGE: ${{ matrix.image }}
+          KIND: ${{ matrix.kind }}
+          SETUP: ${{ matrix.setup }}
+          INSTALL: ${{ matrix.install }}
+        run: |
+          docker run --rm \
+            --env KIND \
+            --env SETUP \
+            --env INSTALL \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            "$IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              eval "$SETUP"
+              package=$(find artifacts/linux -type f -name "*.$KIND" -print -quit)
+              version=$(node_version=""; case "$KIND" in rpm) rpm -qp --queryformat "%{VERSION}" "$package";; deb) dpkg-deb -f "$package" Version;; esac)
+              scripts/ci/verify-linux-package.sh "$KIND" "$package" "$version"
+              eval "$INSTALL \"$package\""
+              scripts/ci/smoke-linux-app.sh derivon-app
+            '
+
+  arch-source:
+    name: Arch source build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Render source recipe
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          mkdir -p dist/arch-nightly
+          git archive --format=tar --prefix="derivon-mindmap-$version/" HEAD | gzip -n > "dist/arch-nightly/derivon-mindmap-$version-source.tar.gz"
+          checksum=$(sha256sum "dist/arch-nightly/derivon-mindmap-$version-source.tar.gz" | cut -d ' ' -f 1)
+          node scripts/render-arch-package.mjs \
+            "$version" \
+            "file:///build/derivon-mindmap-$version-source.tar.gz" \
+            "$checksum" \
+            dist/arch-nightly
+
+      - name: Build in clean Arch container
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE/dist/arch-nightly:/input:ro" \
+            archlinux:base-devel \
+            bash -lc '
+              set -euo pipefail
+              pacman -Syu --needed --noconfirm cargo nodejs npm gtk3 webkit2gtk-4.1 openssl hicolor-icon-theme
+              useradd --create-home builder
+              mkdir /build
+              cp -a /input/. /build/
+              chown -R builder:builder /build
+              cd /build
+              runuser -u builder -- makepkg --nodeps --noconfirm --cleanbuild
+            '
+
+  build-flatpak:
+    name: Build Flatpak bundle
+    needs: build-linux
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download Linux packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: nightly-linux-x86_64
+          path: artifacts/linux
+
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder appstream
+
+      - name: Build Flatpak
+        run: |
+          binary=$(find artifacts/linux -type f -name derivon-app -print -quit)
+          scripts/ci/build-flatpak.sh "$binary" artifacts/Derivon-nightly-x86_64.flatpak
+
+      - name: Upload Flatpak
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nightly-flatpak-x86_64
+          path: artifacts/Derivon-nightly-x86_64.flatpak
+          if-no-files-found: error
+          retention-days: 7
+
+  rocky-flatpak:
+    name: Rocky Linux 9 Flatpak
+    needs: build-flatpak
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download Flatpak
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: nightly-flatpak-x86_64
+          path: artifacts/flatpak
+
+      - name: Install and launch on Rocky Linux 9
+        run: |
+          docker run --rm --privileged \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            rockylinux:9 \
+            bash -lc '
+              set -euo pipefail
+              dnf install -y flatpak dbus-x11 xorg-x11-server-Xvfb util-linux
+              bundle=$(find artifacts/flatpak -type f -name "*.flatpak" -print -quit)
+              flatpak install --system --noninteractive -y "$bundle"
+              scripts/ci/smoke-linux-app.sh flatpak run net.derivon.mindmap
+            '

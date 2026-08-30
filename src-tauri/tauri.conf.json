@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Derivon",
-  "version": "0.2.1",
+  "version": "0.4.2",
   "identifier": "net.derivon.mindmap",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -26,6 +26,22 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "linux": {
+      "deb": {
+        "desktopTemplate": "../packaging/linux/net.derivon.mindmap.desktop",
+        "files": {
+          "/usr/share/metainfo/net.derivon.mindmap.metainfo.xml": "../packaging/linux/net.derivon.mindmap.metainfo.xml"
+        }
+      },
+      "rpm": {
+        "desktopTemplate": "../packaging/linux/net.derivon.mindmap.desktop",
+        "files": {
+          "/usr/share/metainfo/net.derivon.mindmap.metainfo.xml": "../packaging/linux/net.derivon.mindmap.metainfo.xml"
+        }
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

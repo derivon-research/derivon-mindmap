@@ -1,0 +1,50 @@
+# Maintainer: Derivon Research contributors <happ1less1917 at gmail dot com>
+pkgname=derivon-mindmap
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Local-first weighted directed B-hypergraph editor"
+arch=('x86_64')
+url="https://github.com/derivon-research/derivon-mindmap"
+license=('MIT')
+depends=('gtk3' 'webkit2gtk-4.1' 'openssl' 'hicolor-icon-theme')
+makedepends=('cargo' 'nodejs' 'npm' 'pkgconf')
+source=("$pkgname-$pkgver.tar.gz::@SOURCE_URL@")
+sha256sums=('@SOURCE_SHA256@')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  npm ci --cache "$srcdir/npm-cache"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --manifest-path src-tauri/Cargo.toml --locked --target x86_64-unknown-linux-gnu
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  npm run build
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=src-tauri/target
+  export CARGO_NET_OFFLINE=true
+  cargo build --manifest-path src-tauri/Cargo.toml --frozen --release
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=src-tauri/target
+  export CARGO_NET_OFFLINE=true
+  cargo test --manifest-path src-tauri/Cargo.toml --frozen
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 src-tauri/target/release/derivon-app "$pkgdir/usr/bin/derivon-app"
+  install -Dm644 packaging/linux/net.derivon.mindmap.desktop \
+    "$pkgdir/usr/share/applications/net.derivon.mindmap.desktop"
+  install -Dm644 packaging/linux/net.derivon.mindmap.metainfo.xml \
+    "$pkgdir/usr/share/metainfo/net.derivon.mindmap.metainfo.xml"
+  install -Dm644 src-tauri/icons/128x128.png \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/net.derivon.mindmap.png"
+  install -Dm644 src-tauri/icons/32x32.png \
+    "$pkgdir/usr/share/icons/hicolor/32x32/apps/net.derivon.mindmap.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
