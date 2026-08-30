@@ -368,10 +368,18 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           docker run --rm \
-            --volume "$GITHUB_WORKSPACE/dist/arch-release:/work" \
-            --workdir /work \
+            --volume "$GITHUB_WORKSPACE/dist/arch-release:/input:ro" \
             archlinux:base-devel \
-            bash -lc 'useradd --create-home builder && chown -R builder:builder /work && runuser -u builder -- makepkg --printsrcinfo > .SRCINFO'
+            bash -lc '
+              set -euo pipefail
+              useradd --create-home builder
+              mkdir /build
+              cp /input/PKGBUILD /build/
+              chown -R builder:builder /build
+              cd /build
+              runuser -u builder -- makepkg --printsrcinfo
+            ' \
+            > dist/arch-release/.SRCINFO
           cp "dist/arch-test/derivon-mindmap-${VERSION}-source.tar.gz" dist/arch-release/
           tar -C dist/arch-release -czf "dist/derivon-mindmap-${VERSION}-arch-recipe.tar.gz" PKGBUILD .SRCINFO
 
