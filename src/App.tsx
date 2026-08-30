@@ -101,8 +101,10 @@ import {
   readWorkspaceDirectoryRevision,
   readWorkspaceDirectorySnapshot,
   readWorkspaceDocumentSource,
+  resolveWorkspaceImage,
   saveWorkspaceAsDirectory,
   storeDocumentFiles,
+  storeWorkspaceImage,
   upgradeWorkspaceDirectorySchema,
   validateWorkspaceDirectoryFiles,
   writeWorkspaceDirectoryChanges,
@@ -1638,6 +1640,19 @@ function AuthoringCanvas() {
   const editingSourcePath = editingReference ? documentSourcePath(editingReference) : null;
   const editingEntryPath = editingReference ? documentEntryPath(editingReference.document) : null;
   const editingLabel = editingConcept?.data.label ?? (editingDerivation ? `推导 ${editingDerivation.id}` : '');
+  const resolveEditingImage = useCallback((source: string) => {
+    if (!editingSourcePath) return Promise.reject(new Error('当前没有正在编辑的文档'));
+    return resolveWorkspaceImage(workspaceDirectory, editingSourcePath, source);
+  }, [editingSourcePath, workspaceDirectory]);
+  const storeEditingImage = useCallback(async (file: File) => {
+    if (!editingReference) throw new Error('当前没有正在编辑的文档');
+    const stored = await storeWorkspaceImage(workspaceDirectory, editingReference.document, file);
+    setStatus(`图片已保存到 ${editingReference.document}/${stored.source}`);
+    return stored;
+  }, [editingReference, workspaceDirectory]);
+  const reportEditingImageError = useCallback((error: unknown) => {
+    setStatus(error instanceof Error ? `图片粘贴失败：${error.message}` : '图片粘贴失败');
+  }, []);
   const updateDocumentSource = useCallback((reference: { document: string; format: DocumentFormat }, content: string, title: string) => {
     setFiles((current) => storeDocumentFiles(current, reference.document, reference.format, content, title));
     commit((current) => current);
@@ -2134,6 +2149,9 @@ function AuthoringCanvas() {
               key={editingId}
               label={editingLabel}
               value={files[editingSourcePath] ?? ''}
+              resolveImage={resolveEditingImage}
+              storeImage={storeEditingImage}
+              onImageError={reportEditingImageError}
               onChange={(content) => updateDocumentSource(editingReference, content, editingLabel)}
             />
           </div>

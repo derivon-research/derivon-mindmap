@@ -38,6 +38,8 @@ pub fn run() {
             workspace::read_workspace,
             workspace::workspace_revision,
             workspace::read_workspace_file,
+            workspace::read_workspace_asset,
+            workspace::write_workspace_asset,
             workspace::write_workspace,
         ])
         .build(tauri::generate_context!())

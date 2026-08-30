@@ -64,6 +64,26 @@ export function readNativeWorkspaceRevision(root: NativeWorkspaceDirectory): Pro
   return invoke('workspace_revision', { rootPath: root.path });
 }
 
+export function readNativeWorkspaceAsset(
+  root: NativeWorkspaceDirectory,
+  relativePath: string,
+): Promise<ArrayBuffer> {
+  return invoke('read_workspace_asset', { rootPath: root.path, relativePath });
+}
+
+export async function writeNativeWorkspaceAsset(
+  root: NativeWorkspaceDirectory,
+  relativePath: string,
+  file: File,
+): Promise<void> {
+  await invoke('write_workspace_asset', await file.arrayBuffer(), {
+    headers: {
+      'x-derivon-workspace-root': encodeURIComponent(root.path),
+      'x-derivon-relative-path': encodeURIComponent(relativePath),
+    },
+  });
+}
+
 export function writeNativeWorkspace(
   root: NativeWorkspaceDirectory,
   workspace: AuthoringWorkspace,

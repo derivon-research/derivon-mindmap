@@ -9,6 +9,9 @@ import {
   parseWorkspaceSnapshot,
   readWorkspaceDirectorySnapshot,
   readWorkspaceDocumentSource,
+  resolveWorkspaceImage,
+  resolveWorkspaceImageReference,
+  storeWorkspaceImage,
   upgradeWorkspaceDirectorySchema,
   validateWorkspace,
   workspaceRevision,
@@ -183,6 +186,106 @@ describe('authoring workspace', () => {
     });
     expect(upgraded.migrationSource).toBeNull();
     expect(JSON.parse(directory.read(WORKSPACE_MANIFEST)!).schema).toBe(DOCUMENT_SCHEMA);
+  });
+
+  it('resolves document-relative images without allowing workspace escape', () => {
+    const documentPath = 'docs/concept-cmfb-control-injection/document.md';
+
+    expect(resolveWorkspaceImageReference(
+      documentPath,
+      '../../assets/book-pages/book-page-0241.jpg',
+    )).toEqual({
+      kind: 'workspace',
+      path: 'assets/book-pages/book-page-0241.jpg',
+    });
+    expect(resolveWorkspaceImageReference(documentPath, 'https://example.com/diagram.png')).toEqual({
+      kind: 'remote',
+      url: 'https://example.com/diagram.png',
+    });
+    expect(resolveWorkspaceImageReference(documentPath, '../../../outside.png')).toEqual({
+      kind: 'invalid',
+      reason: '图片路径超出工作区范围',
+    });
+    expect(resolveWorkspaceImageReference(documentPath, 'file:///tmp/diagram.png').kind).toBe('invalid');
+    expect(resolveWorkspaceImageReference(documentPath, 'data:image/png;base64,AAAA').kind).toBe('invalid');
+  });
+
+  it('creates and releases a browser URL for a workspace image', async () => {
+    const imageFile = new File(['image bytes'], 'book-page-0241.jpg', { type: 'image/jpeg' });
+    const bookPages = {
+      async getFileHandle(filename: string) {
+        expect(filename).toBe('book-page-0241.jpg');
+        return { getFile: async () => imageFile };
+      },
+    };
+    const assets = {
+      async getDirectoryHandle(name: string) {
+        expect(name).toBe('book-pages');
+        return bookPages;
+      },
+    };
+    const root = {
+      async getDirectoryHandle(name: string) {
+        expect(name).toBe('assets');
+        return assets;
+      },
+    } as unknown as FileSystemDirectoryHandle;
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:workspace-image');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    try {
+      const resolved = await resolveWorkspaceImage(
+        root,
+        'docs/concept-cmfb-control-injection/document.md',
+        '../../assets/book-pages/book-page-0241.jpg',
+      );
+
+      expect(resolved.url).toBe('blob:workspace-image');
+      expect(createObjectUrl).toHaveBeenCalledWith(imageFile);
+      resolved.release?.();
+      expect(revokeObjectUrl).toHaveBeenCalledWith('blob:workspace-image');
+    } finally {
+      createObjectUrl.mockRestore();
+      revokeObjectUrl.mockRestore();
+    }
+  });
+
+  it('stores pasted images in the current object assets directory', async () => {
+    let writtenPath = '';
+    let writtenContent: Blob | null = null;
+    const directoryHandle = (prefix: string): FileSystemDirectoryHandle => ({
+      kind: 'directory',
+      name: prefix.split('/').at(-1) ?? 'workspace',
+      async getDirectoryHandle(name: string) {
+        return directoryHandle([prefix, name].filter(Boolean).join('/'));
+      },
+      async getFileHandle(name: string) {
+        writtenPath = [prefix, name].filter(Boolean).join('/');
+        return {
+          kind: 'file',
+          name,
+          async getFile() { throw new Error('not used'); },
+          async createWritable() {
+            return {
+              async write(content: string | BufferSource | Blob) {
+                if (!(content instanceof Blob)) throw new TypeError('Expected image Blob');
+                writtenContent = content;
+              },
+              async close() {},
+            } as FileSystemWritableFileStream;
+          },
+        };
+      },
+    } as unknown as FileSystemDirectoryHandle);
+    const sourceFile = new File(['image bytes'], 'clipboard.png', { type: 'image/png' });
+
+    const stored = await storeWorkspaceImage(directoryHandle(''), 'docs/concept-a', sourceFile);
+
+    expect(stored.source).toMatch(/^assets\/image-\d{14}-[\da-f-]{8}\.png$/);
+    expect(stored.alt).toBe('clipboard');
+    expect(writtenPath).toBe(`docs/concept-a/${stored.source}`);
+    expect(writtenContent).toBe(sourceFile);
+    await expect(storeWorkspaceImage(null, 'docs/concept-a', sourceFile)).rejects.toThrow('连接工作区');
   });
 
   it('loads directory documents lazily and reads only the opened source', async () => {

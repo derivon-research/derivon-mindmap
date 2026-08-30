@@ -15,10 +15,12 @@ import {
   chooseNativeWorkspace,
   isNativeWorkspaceDirectory,
   readNativeWorkspace,
+  readNativeWorkspaceAsset,
   readNativeWorkspaceDocument,
   readNativeWorkspaceRevision,
   saveNativeWorkspaceAs,
   writeNativeWorkspace,
+  writeNativeWorkspaceAsset,
   type NativeWorkspaceDirectory,
 } from './tauriWorkspace';
 import { isTauriRuntime } from './route';
@@ -72,6 +74,54 @@ export function referencedDocumentFiles(manifest: AuthoringDocument): string[] {
   return documentReferences(manifest).flatMap((reference) => reference.format === 'markdown'
     ? [documentEntryPath(reference.document), documentSourcePath(reference)]
     : [documentEntryPath(reference.document)]);
+}
+
+const IMAGE_FILE_EXTENSIONS: Record<string, string> = {
+  'image/avif': 'avif',
+  'image/gif': 'gif',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/svg+xml': 'svg',
+  'image/webp': 'webp',
+};
+
+export const EDITOR_IMAGE_MIME_TYPES = Object.keys(IMAGE_FILE_EXTENSIONS);
+
+export type WorkspaceImageReference =
+  | { kind: 'remote'; url: string }
+  | { kind: 'workspace'; path: string }
+  | { kind: 'invalid'; reason: string };
+
+export function resolveWorkspaceImageReference(documentPath: string, source: string): WorkspaceImageReference {
+  const value = source.trim();
+  if (/^https?:\/\//i.test(value)) return { kind: 'remote', url: value };
+  if (!value) return { kind: 'invalid', reason: '图片地址为空' };
+  if (/^[a-z][a-z\d+.-]*:/i.test(value) || value.startsWith('/') || value.startsWith('\\')) {
+    return { kind: 'invalid', reason: '只允许 HTTP(S) 或工作区相对图片路径' };
+  }
+
+  const pathOnly = value.split(/[?#]/, 1)[0];
+  const parts = documentPath.split('/').slice(0, -1).filter(Boolean);
+  for (const encodedSegment of pathOnly.split('/')) {
+    let segment: string;
+    try {
+      segment = decodeURIComponent(encodedSegment);
+    } catch {
+      return { kind: 'invalid', reason: '图片路径包含无效的 URL 编码' };
+    }
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      if (!parts.length) return { kind: 'invalid', reason: '图片路径超出工作区范围' };
+      parts.pop();
+      continue;
+    }
+    if (segment.includes('/') || segment.includes('\\') || segment.includes('\0')) {
+      return { kind: 'invalid', reason: '图片路径包含无效字符' };
+    }
+    parts.push(segment);
+  }
+  if (!parts.length) return { kind: 'invalid', reason: '图片路径没有指向文件' };
+  return { kind: 'workspace', path: parts.join('/') };
 }
 
 export function validateWorkspace(workspace: AuthoringWorkspace): void {
@@ -232,6 +282,49 @@ async function readTextFile(root: FileSystemDirectoryHandle, path: string): Prom
   return (await readFile(root, path)).text();
 }
 
+function imageMimeType(path: string): string {
+  const extension = path.split('.').pop()?.toLocaleLowerCase();
+  return Object.entries(IMAGE_FILE_EXTENSIONS)
+    .find(([, candidate]) => candidate === extension)?.[0]
+    ?? (extension === 'jpeg' ? 'image/jpeg' : 'application/octet-stream');
+}
+
+export async function resolveWorkspaceImage(
+  root: WorkspaceDirectory | null,
+  documentPath: string,
+  source: string,
+): Promise<{ url: string; release?: () => void }> {
+  const reference = resolveWorkspaceImageReference(documentPath, source);
+  if (reference.kind === 'remote') return { url: reference.url };
+  if (reference.kind === 'invalid') throw new Error(reference.reason);
+  if (!root) throw new Error('当前文档没有连接工作区文件夹');
+
+  const blob = isNativeWorkspaceDirectory(root)
+    ? new Blob([await readNativeWorkspaceAsset(root, reference.path)], { type: imageMimeType(reference.path) })
+    : await readFile(root, reference.path);
+  const url = URL.createObjectURL(blob);
+  return { url, release: () => URL.revokeObjectURL(url) };
+}
+
+export async function storeWorkspaceImage(
+  root: WorkspaceDirectory | null,
+  documentDirectory: string,
+  file: File,
+): Promise<{ source: string; alt: string }> {
+  if (!root) throw new Error('粘贴图片前需要先连接工作区文件夹');
+  const extension = IMAGE_FILE_EXTENSIONS[file.type];
+  if (!extension) throw new Error(`不支持的图片格式：${file.type || '未知格式'}`);
+
+  const timestamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+  const filename = `image-${timestamp}-${crypto.randomUUID().slice(0, 8)}.${extension}`;
+  const relativePath = `${documentDirectory}/assets/${filename}`;
+  if (isNativeWorkspaceDirectory(root)) await writeNativeWorkspaceAsset(root, relativePath, file);
+  else await writeBinaryFile(root, relativePath, file);
+
+  const originalName = file.name.replace(/\.[^.]+$/, '').trim();
+  return { source: `assets/${filename}`, alt: originalName || '粘贴图片' };
+}
+
 export async function readWorkspaceDocumentSource(
   root: WorkspaceDirectory,
   reference: DocumentReference,
@@ -265,6 +358,16 @@ export async function validateWorkspaceDirectoryFiles(
 }
 
 async function writeTextFile(root: FileSystemDirectoryHandle, path: string, content: string): Promise<void> {
+  const parts = path.split('/');
+  const filename = parts.pop()!;
+  const directory = await getDirectory(root, parts, true);
+  const handle = await directory.getFileHandle(filename, { create: true });
+  const writable = await handle.createWritable();
+  await writable.write(content);
+  await writable.close();
+}
+
+async function writeBinaryFile(root: FileSystemDirectoryHandle, path: string, content: Blob): Promise<void> {
   const parts = path.split('/');
   const filename = parts.pop()!;
   const directory = await getDirectory(root, parts, true);

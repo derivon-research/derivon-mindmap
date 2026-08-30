@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -224,6 +225,132 @@ pub async fn read_workspace_file(
     .map_err(|error| format!("workspace file reader task failed: {error}"))?
 }
 
+fn read_workspace_asset_bytes(root: &Path, relative_path: &str) -> Result<Vec<u8>, String> {
+    let canonical_root = fs::canonicalize(root)
+        .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
+    let requested_path = root.join(safe_relative_path(relative_path)?);
+    let canonical_path = fs::canonicalize(&requested_path)
+        .map_err(|error| format!("cannot resolve {}: {error}", requested_path.display()))?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(format!(
+            "workspace asset path `{relative_path}` resolves outside the workspace"
+        ));
+    }
+    fs::read(&canonical_path)
+        .map_err(|error| format!("cannot read {}: {error}", canonical_path.display()))
+}
+
+#[tauri::command]
+pub async fn read_workspace_asset(
+    root_path: String,
+    relative_path: String,
+) -> Result<tauri::ipc::Response, String> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        read_workspace_asset_bytes(Path::new(&root_path), &relative_path)
+    })
+    .await
+    .map_err(|error| format!("workspace asset reader task failed: {error}"))??;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+fn decode_request_header(request: &tauri::ipc::Request<'_>, name: &str) -> Result<String, String> {
+    let value = request
+        .headers()
+        .get(name)
+        .ok_or_else(|| format!("missing `{name}` header"))?
+        .to_str()
+        .map_err(|error| format!("invalid `{name}` header: {error}"))?;
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = bytes
+                .get(index + 1..index + 3)
+                .ok_or_else(|| format!("invalid percent encoding in `{name}` header"))?;
+            let text = std::str::from_utf8(hex)
+                .map_err(|error| format!("invalid percent encoding in `{name}` header: {error}"))?;
+            decoded.push(u8::from_str_radix(text, 16)
+                .map_err(|error| format!("invalid percent encoding in `{name}` header: {error}"))?);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).map_err(|error| format!("`{name}` header is not UTF-8: {error}"))
+}
+
+fn write_workspace_asset_bytes(root: &Path, relative_path: &str, bytes: &[u8]) -> Result<(), String> {
+    const MAX_ASSET_BYTES: usize = 32 * 1024 * 1024;
+    if bytes.is_empty() || bytes.len() > MAX_ASSET_BYTES {
+        return Err("workspace image must be between 1 byte and 32 MiB".to_owned());
+    }
+    let relative = safe_relative_path(relative_path)?;
+    let parent = relative
+        .parent()
+        .ok_or_else(|| "workspace image path has no parent".to_owned())?;
+    if parent.components().count() < 3
+        || parent.file_name().and_then(|name| name.to_str()) != Some("assets")
+    {
+        return Err("workspace images must be written inside an object assets directory".to_owned());
+    }
+    let extension = relative
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    if !matches!(extension.as_str(), "avif" | "gif" | "jpg" | "jpeg" | "png" | "svg" | "webp") {
+        return Err(format!("unsupported workspace image extension `{extension}`"));
+    }
+
+    let canonical_root = fs::canonicalize(root)
+        .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
+    let target_parent = root.join(parent);
+    let mut existing_ancestor = target_parent.as_path();
+    while !existing_ancestor.exists() {
+        existing_ancestor = existing_ancestor
+            .parent()
+            .ok_or_else(|| "workspace image path has no existing ancestor".to_owned())?;
+    }
+    let canonical_ancestor = fs::canonicalize(existing_ancestor)
+        .map_err(|error| format!("cannot resolve {}: {error}", existing_ancestor.display()))?;
+    if !canonical_ancestor.starts_with(&canonical_root) {
+        return Err("workspace image directory resolves outside the workspace".to_owned());
+    }
+    fs::create_dir_all(&target_parent)
+        .map_err(|error| format!("cannot create {}: {error}", target_parent.display()))?;
+    let canonical_parent = fs::canonicalize(&target_parent)
+        .map_err(|error| format!("cannot resolve {}: {error}", target_parent.display()))?;
+    if !canonical_parent.starts_with(&canonical_root) {
+        return Err("workspace image directory resolves outside the workspace".to_owned());
+    }
+
+    let target = canonical_parent.join(relative.file_name().unwrap());
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)
+        .map_err(|error| format!("cannot create {}: {error}", target.display()))?;
+    file.write_all(bytes)
+        .map_err(|error| format!("cannot write {}: {error}", target.display()))
+}
+
+#[tauri::command]
+pub async fn write_workspace_asset(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let root_path = decode_request_header(&request, "x-derivon-workspace-root")?;
+    let relative_path = decode_request_header(&request, "x-derivon-relative-path")?;
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        tauri::ipc::InvokeBody::Json(_) => return Err("workspace image body must be raw bytes".to_owned()),
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        write_workspace_asset_bytes(Path::new(&root_path), &relative_path, &bytes)
+    })
+    .await
+    .map_err(|error| format!("workspace asset writer task failed: {error}"))?
+}
+
 #[tauri::command]
 pub async fn write_workspace(
     root_path: String,
@@ -292,6 +419,46 @@ mod tests {
         assert!(safe_relative_path("../secret").is_err());
         assert!(safe_relative_path("/tmp/secret").is_err());
         assert!(safe_relative_path("docs/concept/document.md").is_ok());
+    }
+
+    #[test]
+    fn reads_binary_assets_without_allowing_workspace_escape() {
+        let root = tempfile::tempdir().unwrap();
+        let asset_directory = root.path().join("assets");
+        fs::create_dir_all(&asset_directory).unwrap();
+        fs::write(asset_directory.join("diagram.png"), [0_u8, 159, 255]).unwrap();
+
+        assert_eq!(
+            read_workspace_asset_bytes(root.path(), "assets/diagram.png").unwrap(),
+            vec![0, 159, 255]
+        );
+        assert!(read_workspace_asset_bytes(root.path(), "../diagram.png").is_err());
+
+        write_workspace_asset_bytes(
+            root.path(),
+            "docs/concept-a/assets/image-1.png",
+            &[1, 2, 3],
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(root.path().join("docs/concept-a/assets/image-1.png")).unwrap(),
+            vec![1, 2, 3]
+        );
+        assert!(write_workspace_asset_bytes(
+            root.path(),
+            "docs/concept-a/assets/image-1.png",
+            &[4],
+        )
+        .is_err());
+        assert!(write_workspace_asset_bytes(root.path(), "assets/image.png", &[1]).is_err());
+
+        #[cfg(unix)]
+        {
+            let outside = tempfile::NamedTempFile::new().unwrap();
+            std::os::unix::fs::symlink(outside.path(), asset_directory.join("outside.png"))
+                .unwrap();
+            assert!(read_workspace_asset_bytes(root.path(), "assets/outside.png").is_err());
+        }
     }
 
     #[test]
