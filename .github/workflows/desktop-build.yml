@@ -210,6 +210,7 @@ jobs:
       - name: Verify, install, and launch RPM in Fedora 43
         run: |
           docker run --rm \
+            --env RELEASE_VERSION \
             --volume "$GITHUB_WORKSPACE:/work" \
             --workdir /work \
             fedora:43 \
