@@ -49,6 +49,12 @@ button { font: inherit; cursor: pointer; }
 }
 .switcher-note { font-size: 12px; color: #94a3b8; border-left: 1px solid #334155; padding-left: 10px; }
 
+.provenance {
+  position: fixed; left: 14px; bottom: 10px; margin: 0; max-width: 300px;
+  font-size: 11px; line-height: 1.5; color: #94a3b8; z-index: 99; pointer-events: auto;
+}
+.provenance a { color: #94a3b8; }
+
 /* ------------------------------------------------------------------ 0 现状 */
 .now-root { display: flex; flex-direction: column; height: 100vh; }
 .now-toolbar {

@@ -61,6 +61,11 @@ function Prototype() {
         <button type="button" onClick={() => cycle(1)} aria-label="下一个变体">→</button>
         <span className="switcher-note">原型 · 数据是真的 math-reforged（293 概念）· 方向键可切</span>
       </div>
+      <p className="provenance">
+        一次性原型，不是产品。图与文档取自公开仓库{' '}
+        <a href="https://github.com/derivon-research/math-reforged" target="_blank" rel="noreferrer">derivon-research/math-reforged</a>
+        ；其中为对 Strang、Axler 等教材的衍生笔记，逐篇标有出处。
+      </p>
     </>
   );
 }

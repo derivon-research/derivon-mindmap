@@ -13,3 +13,4 @@ packaging/flatpak/files/derivon-app
 packaging/flatpak/.flatpak-builder/
 packaging/flatpak/build-dir/
 packaging/flatpak/repo/
+dist-prototype/

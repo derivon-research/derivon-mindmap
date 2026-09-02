@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "prototype:entry": "vite --open /prototypes/entry-orientation/index.html",
+    "prototype:build": "vite build --config vite.prototype.config.ts",
+    "prototype:deploy": "npm run prototype:build && wrangler pages deploy dist-prototype --project-name derivon-prototype --commit-dirty=true",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:debug": "tauri dev --features debug-tools -- -- --debug",
