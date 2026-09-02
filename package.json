@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prototype:entry": "vite --open /prototypes/entry-orientation/index.html",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:debug": "tauri dev --features debug-tools -- -- --debug",
