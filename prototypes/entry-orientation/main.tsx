@@ -7,17 +7,19 @@ import NowForce, { name as nowName } from './variants/NowForce';
 import SearchFirst, { name as searchName } from './variants/SearchFirst';
 import Atlas, { name as atlasName } from './variants/Atlas';
 import Dialogue, { name as dialogueName } from './variants/Dialogue';
+import Fusion, { name as fusionName } from './variants/Fusion';
 
 const VARIANTS = [
   { key: '0', name: nowName, Component: NowForce },
   { key: 'A', name: searchName, Component: SearchFirst },
   { key: 'B', name: atlasName, Component: Atlas },
   { key: 'C', name: dialogueName, Component: Dialogue },
+  { key: 'D', name: fusionName, Component: Fusion },
 ];
 
 function readVariant(): string {
   const value = new URLSearchParams(window.location.search).get('variant')?.toUpperCase();
-  return VARIANTS.some((item) => item.key === value) ? value! : 'A';
+  return VARIANTS.some((item) => item.key === value) ? value! : 'D';
 }
 
 function Prototype() {
