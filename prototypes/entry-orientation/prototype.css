@@ -275,7 +275,8 @@ button { font: inherit; cursor: pointer; }
 .fusion-tutor { flex: 0 0 340px; transition: flex-basis 180ms ease; }
 .fusion-rail { flex: 0 0 300px; transition: flex-basis 180ms ease; }
 .fusion-text { flex: 1 1 auto; min-width: 0; }
-.fusion-learn.tutor-expanded .fusion-tutor { flex-basis: 46%; min-width: 520px; }
+/* 展开的对话要占到教材那么宽，不是稍微宽一点 */
+.fusion-learn.tutor-expanded .fusion-tutor { flex-basis: 64%; min-width: 640px; }
 .fusion-learn.rail-expanded .fusion-rail { flex-basis: 44%; min-width: 480px; }
 .fusion-tutor header { display: flex; align-items: center; gap: 8px; }
 .panel-controls { margin-left: auto; display: flex; gap: 4px; }
@@ -306,8 +307,13 @@ button { font: inherit; cursor: pointer; }
 
 /* --------------------------------------------- 会话条与路线预览 */
 .session-bar { display: flex; gap: 6px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); overflow-x: auto; background: var(--paper); }
+.session-chip { display: inline-flex; align-items: center; flex: none; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.session-chip.is-active { border-color: var(--accent); background: #eef2ff; }
+.session-chip.is-active button { color: var(--accent); }
+.session-chip button { border: none; background: none; }
+.session-drop { padding-left: 2px !important; opacity: 0.55; }
 .session-bar button { flex: none; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 12px; color: var(--muted); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-bar button.is-active { border-color: var(--accent); color: var(--accent); background: #eef2ff; }
+
 .session-bar .session-new { margin-left: auto; border-style: dashed; }
 
 .fusion-preview { display: grid; grid-template-columns: minmax(520px, 1fr) minmax(360px, 40%); flex: 1; min-height: 0; }
