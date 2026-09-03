@@ -205,7 +205,7 @@ button { font: inherit; cursor: pointer; }
 .fusion-composer form { display: flex; gap: 8px; }
 .fusion-composer input { flex: 1; padding: 13px 16px; font-size: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
 .fusion-composer input:focus { outline: 2px solid var(--accent); }
-.fusion-composer button { border: none; background: var(--accent); color: #fff; border-radius: 12px; padding: 0 20px; }
+.fusion-composer button { border: none; background: var(--accent); color: #fff; border-radius: 12px; padding: 0 16px; white-space: nowrap; flex: none; }
 .fusion-suggest { display: flex; flex-direction: column; margin-bottom: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .fusion-suggest button { display: flex; align-items: center; gap: 10px; background: none; border: none; border-bottom: 1px solid var(--line); padding: 9px 14px; text-align: left; }
 .fusion-suggest button:last-child { border-bottom: none; }
@@ -386,3 +386,20 @@ button { font: inherit; cursor: pointer; }
 .teach-log-delta.up { color: #b45309; }
 .teach-log-delta.down { color: #15803d; }
 .teach-log-reason { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --------------------------------------------- F 定稿：推导在前、定义在后、定义后带任务 */
+.fusion-definition { margin-top: 26px; border-top: 2px solid var(--line); padding-top: 16px; }
+.fusion-definition h3 { margin: 0 0 8px; font-size: 17px; }
+.fusion-task { margin-top: 22px; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: var(--paper); }
+.fusion-task.is-done { border-color: #86efac; background: #f0fdf4; }
+.fusion-task h3 { margin: 0 0 8px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.fusion-task h3 span { font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.fusion-task p { margin: 0; font-size: 14px; }
+.fusion-task textarea { width: 100%; min-height: 72px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; resize: vertical; }
+.fusion-task-actions { display: flex; gap: 8px; margin-top: 10px; }
+.fusion-task-actions button { border: 1px solid var(--line); background: none; border-radius: 10px; padding: 8px 14px; color: var(--muted); }
+.fusion-task-actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fusion-task-actions .primary:disabled { opacity: 0.45; }
+.fusion-task-done { color: #15803d; font-size: 13px; }
+.fusion-text-actions button:disabled { opacity: 0.45; cursor: default; }
+.tutor-guard { margin: 0 0 6px; font-size: 12px; color: var(--muted); background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 7px 9px; }

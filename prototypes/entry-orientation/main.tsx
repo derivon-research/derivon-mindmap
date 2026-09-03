@@ -9,6 +9,7 @@ import Atlas, { name as atlasName } from './variants/Atlas';
 import Dialogue, { name as dialogueName } from './variants/Dialogue';
 import Fusion, { name as fusionName } from './variants/Fusion';
 import Teaching, { name as teachingName } from './variants/Teaching';
+import Final, { name as finalName } from './variants/Final';
 
 const VARIANTS = [
   { key: '0', name: nowName, Component: NowForce },
@@ -17,11 +18,12 @@ const VARIANTS = [
   { key: 'C', name: dialogueName, Component: Dialogue },
   { key: 'D', name: fusionName, Component: Fusion },
   { key: 'E', name: teachingName, Component: Teaching },
+  { key: 'F', name: finalName, Component: Final },
 ];
 
 function readVariant(): string {
   const value = new URLSearchParams(window.location.search).get('variant')?.toUpperCase();
-  return VARIANTS.some((item) => item.key === value) ? value! : 'D';
+  return VARIANTS.some((item) => item.key === value) ? value! : 'F';
 }
 
 function Prototype() {
