@@ -138,8 +138,8 @@ function probeCandidates(steps: Step[], known: Set<string>, asked: Set<string>, 
 export default function Fusion() {
   const nodes = forceLayout();
   const [mode, setMode] = useState<Mode>('navigate');
-  const [sessions, setSessions] = useState<Session[]>(() => [newSession('找路线', OPENING)]);
-  const [activeId, setActiveId] = useState<string>(() => sessions[0].id);
+  // 一段对话，没有历史列表。新建就是真的新建，旧的丢掉。
+  const [session, setSession] = useState<Session>(() => newSession('找路线', OPENING));
   const [draft, setDraft] = useState('');
   // 应用的状态，不属于任何一段对话：目标、进度、学习者会什么
   const [targets, setTargets] = useState<string[]>([]);
@@ -154,7 +154,6 @@ export default function Fusion() {
   const threadEnd = useRef<HTMLDivElement>(null);
   const activeNode = useRef<SVGGElement>(null);
 
-  const session = sessions.find((item) => item.id === activeId) ?? sessions[0];
   const turns = session.turns;
 
   const route = useMemo(() => (targets.length ? solveRoute(known, targets) : null), [targets, known]);
@@ -162,52 +161,37 @@ export default function Fusion() {
   const routePoints = useMemo(() => new Set(steps.map((step) => step.pointId)), [steps]);
   const current = steps[cursor];
 
-  useEffect(() => { threadEnd.current?.scrollIntoView({ block: 'end' }); }, [turns, mode, tutorPanel, activeId]);
+  useEffect(() => { threadEnd.current?.scrollIntoView({ block: 'end' }); }, [turns, mode, tutorPanel]);
   useEffect(() => { activeNode.current?.scrollIntoView({ block: 'center', inline: 'center' }); }, [cursor, mode, railPanel]);
 
   /** 说话。带富文本的自动把对话栏撑开，不需要用户先去点展开。 */
   const say = (...items: Turn[]) => {
-    setSessions((value) => value.map((item) => (item.id === activeId
-      ? { ...item, turns: [...item.turns, ...items] }
-      : item)));
+    setSession((value) => ({ ...value, turns: [...value.turns, ...items] }));
     if (mode === 'learn' && items.some(isRich)) {
       setTutorPanel('expanded');
       setRailPanel('hidden');
     }
   };
 
-  /** 随建随弃：只开一段新对话，不动目标也不动进度，当前在哪个模式就留在哪个模式。 */
+  /** 随建随弃：丢掉这段对话，开一段新的。目标、进度、已知一样不动。 */
   const startSession = () => {
-    const fresh = newSession(
+    setSession(newSession(
       steps.length ? '新对话' : '找路线',
       steps.length
-        ? [{ kind: 'agent', text: `新开一段。你现在在学「${targets.map((id) => labelOf(id)).join('、')}」的第 ${Math.min(cursor + 1, steps.length)} 步，路线和进度都不会因为换一段对话而变。要问什么？` }]
+        ? [{ kind: 'agent', text: `新开一段。你在学「${targets.map((id) => labelOf(id)).join('、')}」的第 ${Math.min(cursor + 1, steps.length)} 步 —— 路线和进度不会因为换一段对话而变。要问什么？` }]
         : OPENING,
-    );
-    setSessions((value) => [...value, fresh]);
-    setActiveId(fresh.id);
+    ));
     setDraft('');
   };
 
-  const dropSession = (id: string) => {
-    setSessions((value) => {
-      const rest = value.filter((item) => item.id !== id);
-      const next = rest.length ? rest : [newSession(steps.length ? '新对话' : '找路线', OPENING)];
-      if (id === activeId) setActiveId(next[next.length - 1].id);
-      return next;
-    });
-  };
-
-  /** 确认路线后开讲。也是新开一段对话 —— 但路线本身是应用状态，不属于它。 */
+  /** 确认路线后开讲。 */
   const startLearning = () => {
     const title = targets.map((id) => labelOf(id)).join('、');
-    const learn = newSession(`讲课：${title}`, [{
+    setSession(newSession(`讲课：${title}`, [{
       kind: 'agent',
       text: `开讲「${title}」，${steps.length} 步。卡住就问，我只按图上的前置回答。`,
-    }]);
+    }]));
     setCursor(0);
-    setSessions((value) => [...value, learn]);
-    setActiveId(learn.id);
     setMode('learn');
   };
 
@@ -410,22 +394,6 @@ export default function Fusion() {
     );
   }
 
-  function SessionBar() {
-    return (
-      <div className="session-bar">
-        {sessions.map((item) => (
-          <span key={item.id} className={`session-chip ${item.id === activeId ? 'is-active' : ''}`}>
-            <button type="button" onClick={() => setActiveId(item.id)} title={item.title}>{item.title}</button>
-            {sessions.length > 1 && (
-              <button type="button" className="session-drop" title="丢掉这段对话" onClick={() => dropSession(item.id)}>×</button>
-            )}
-          </span>
-        ))}
-        <button type="button" className="session-new" onClick={startSession}>+ 新对话</button>
-      </div>
-    );
-  }
-
   function Composer({ placeholder }: { placeholder: string }) {
     return (
       <div className="fusion-composer">
@@ -495,7 +463,10 @@ export default function Fusion() {
       {mode === 'navigate' && (
         <div className="fusion-navigate">
           <section className="fusion-chat">
-            <SessionBar />
+            <div className="fusion-chat-head">
+              <span>Agent</span>
+              <button type="button" className="session-new" onClick={startSession}>+ 新对话</button>
+            </div>
             <div className="fusion-chat-thread">
               {turns.map(renderTurn)}
               <div ref={threadEnd} />
@@ -615,10 +586,10 @@ export default function Fusion() {
           {tutorPanel !== 'hidden' && (
             <aside className="fusion-tutor">
               <header>
-                <span>Agent · 随建随弃</span>
+                <span>Agent</span>
+                <button type="button" className="session-new" onClick={startSession}>+ 新对话</button>
                 <PanelControls state={tutorPanel} onChange={(state) => openPanel('tutor', state)} expandLabel="展开对话" />
               </header>
-              <SessionBar />
               <div className="fusion-tutor-thread">
                 {turns.map(renderTurn)}
                 {current && (

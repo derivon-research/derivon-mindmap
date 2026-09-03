@@ -272,13 +272,14 @@ button { font: inherit; cursor: pointer; }
 
 /* --------------------------------------------- D 学习态的三态面板（展开 / 折叠 / 隐藏） */
 /* flex, not grid: 隐藏一侧时列数会变，grid 的列宽会错位 */
-.fusion-tutor { flex: 0 0 340px; transition: flex-basis 180ms ease; }
+.fusion-tutor { flex: 0 0 300px; transition: flex-basis 180ms ease; }
 .fusion-rail { flex: 0 0 300px; transition: flex-basis 180ms ease; }
 .fusion-text { flex: 1 1 auto; min-width: 0; }
 /* 展开的对话要占到教材那么宽，不是稍微宽一点 */
 .fusion-learn.tutor-expanded .fusion-tutor { flex-basis: 64%; min-width: 640px; }
 .fusion-learn.rail-expanded .fusion-rail { flex-basis: 44%; min-width: 480px; }
-.fusion-tutor header { display: flex; align-items: center; gap: 8px; }
+.fusion-tutor header { display: flex; align-items: center; gap: 6px; }
+.fusion-tutor header .panel-controls { margin-left: 0; }
 .panel-controls { margin-left: auto; display: flex; gap: 4px; }
 .panel-controls button { background: none; border: 1px solid var(--line); border-radius: 6px; width: 22px; height: 22px; line-height: 1; color: var(--muted); padding: 0; }
 .fusion-rail-head .panel-controls { margin-left: 6px; }
@@ -305,16 +306,11 @@ button { font: inherit; cursor: pointer; }
 .tutor-widget input[type="range"] { width: 100%; }
 .tutor-widget-read { margin: 6px 0 0; font-size: 12px; color: var(--ink); }
 
-/* --------------------------------------------- 会话条与路线预览 */
-.session-bar { display: flex; gap: 6px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); overflow-x: auto; background: var(--paper); }
-.session-chip { display: inline-flex; align-items: center; flex: none; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
-.session-chip.is-active { border-color: var(--accent); background: #eef2ff; }
-.session-chip.is-active button { color: var(--accent); }
-.session-chip button { border: none; background: none; }
-.session-drop { padding-left: 2px !important; opacity: 0.55; }
-.session-bar button { flex: none; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 12px; color: var(--muted); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.session-bar .session-new { margin-left: auto; border-style: dashed; }
+/* --------------------------------------------- 新对话按钮与路线预览 */
+.session-new { background: none; border: 1px dashed var(--line); border-radius: 999px; padding: 4px 11px; font-size: 12px; color: var(--muted); }
+.fusion-chat-head { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--paper); font-size: 12px; color: var(--muted); }
+.fusion-chat-head .session-new { margin-left: auto; }
+.fusion-tutor header .session-new { margin-left: auto; }
 
 .fusion-preview { display: grid; grid-template-columns: minmax(520px, 1fr) minmax(360px, 40%); flex: 1; min-height: 0; }
 .fusion-preview-main { overflow-y: auto; padding: 32px 40px 96px; }
@@ -332,3 +328,61 @@ button { font: inherit; cursor: pointer; }
 .fusion-preview-actions button { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 11px 18px; color: var(--muted); }
 .fusion-preview-actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .fusion-preview-graph { display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); padding: 14px 12px 84px; min-height: 0; }
+
+/* ------------------------------------------------------------------ E 教学流程 */
+.teach-start { max-width: 720px; margin: 0 auto; padding: 8vh 24px 40px; }
+.teach-start h1 { font-size: 28px; margin: 0 0 10px; }
+.teach-start p { color: var(--muted); }
+.teach-start-known { margin-top: 22px; color: var(--ink); font-size: 14px; }
+.teach-start-targets { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.teach-start-targets button { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; }
+.teach-start-targets button:hover { border-color: var(--accent); color: var(--accent); }
+
+.teach-root { display: grid; grid-template-columns: 330px 1fr 250px; height: 100vh; }
+.teach-agent { display: flex; flex-direction: column; background: var(--paper); border-right: 1px solid var(--line); min-height: 0; }
+.teach-agent > header { padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.teach-agent-thread { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.teach-agent-thread .bubble { max-width: 100%; }
+.teach-agent-thread em { color: var(--ink); font-style: normal; background: #fef3c7; padding: 0 4px; }
+.teach-standin { margin-top: 8px !important; font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
+
+.teach-stage { overflow-y: auto; padding: 22px 40px 96px; display: flex; flex-direction: column; align-items: center; }
+.teach-stage-head { display: flex; align-items: center; gap: 16px; width: 100%; max-width: 760px; margin-bottom: 14px; font-size: 12px; color: var(--muted); }
+.teach-phases { margin-left: auto; display: flex; gap: 6px; }
+.teach-phases i { font-style: normal; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; }
+.teach-phases i.is-active { border-color: var(--accent); color: var(--accent); background: #eef2ff; }
+.teach-card { width: 100%; max-width: 760px; background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 22px 26px; }
+.teach-card h2 { margin: 0 0 12px; font-size: 20px; }
+.teach-card-note { color: var(--muted); font-size: 13px; }
+.teach-card textarea { width: 100%; min-height: 90px; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; font: inherit; resize: vertical; }
+.teach-actions { display: flex; gap: 10px; margin-top: 18px; }
+.teach-actions button { background: none; border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; color: var(--muted); }
+.teach-actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.teach-standin-tag { margin-left: 10px; font-size: 11px; font-weight: 400; padding: 2px 8px; border-radius: 999px; background: #fef3c7; color: #92400e; }
+.teach-verdicts { display: flex; flex-direction: column; gap: 8px; }
+.teach-verdicts button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; background: none; border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; text-align: left; }
+.teach-verdicts button:hover { border-color: var(--accent); }
+.teach-verdicts span { font-size: 12px; color: var(--muted); }
+.teach-toolcall { background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 14px 16px; font-size: 12.5px; overflow-x: auto; }
+.teach-diff { margin: 12px 0 0; padding-left: 18px; font-size: 14px; }
+.teach-diff .muted { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+.teach-rail { background: var(--paper); border-left: 1px solid var(--line); padding: 12px 10px 84px; overflow-y: auto; }
+.teach-rail-head { font-size: 12px; color: var(--muted); padding: 0 6px 8px; }
+.teach-rail ol { list-style: none; margin: 0; padding: 0; }
+.teach-rail li { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-radius: 8px; font-size: 13px; }
+.teach-rail li.is-active { background: #eef2ff; color: var(--accent); }
+.teach-rail-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.teach-rail-weight { margin-left: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.teach-rail-weight.is-changed { color: #b45309; font-weight: 600; }
+
+.teach-log { border-top: 1px solid var(--line); padding: 12px 16px 84px; }
+.teach-log.is-compact { max-height: 34%; overflow-y: auto; }
+.teach-log header { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.teach-log ul { list-style: none; margin: 0; padding: 0; }
+.teach-log li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; padding: 3px 0; }
+.teach-log-label { font-weight: 600; }
+.teach-log-delta { font-variant-numeric: tabular-nums; }
+.teach-log-delta.up { color: #b45309; }
+.teach-log-delta.down { color: #15803d; }
+.teach-log-reason { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

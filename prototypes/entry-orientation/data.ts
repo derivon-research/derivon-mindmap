@@ -69,29 +69,65 @@ function samePointSet(a: Iterable<string>, b: Iterable<string>): boolean {
  * The presets hit precomputed answers from the real derivon CLI; this one is a
  * cheap upper bound so the prototype stays clickable. Marked in the UI as 近似.
  */
-function approximateRoute(baseKnown: Set<string>, targets: string[]): Route {
+export type Weights = Record<string, number>;
+export const weightOf = (edgeId: string, overrides?: Weights) =>
+  overrides?.[edgeId] ?? edgeById.get(edgeId)?.weight ?? 0;
+
+function approximateRoute(baseKnown: Set<string>, targets: string[], overrides?: Weights): Route {
   let known = new Set(baseKnown);
-  const memo = new Map<string, { cost: number; edges: Set<string> } | null>();
-  const inProgress = new Set<string>();
+  /**
+   * Bellman-Ford style relaxation over the hypergraph: cost(p) = 0 when known,
+   * else min over incoming hyperedges of weight + sum of tail costs. Cycles simply
+   * never improve, which is why this replaced the recursive version: that one
+   * memoised a null computed under an in-progress ancestor and lost whole targets.
+   */
+  function solveFrom(startKnown: Set<string>) {
+    const cost = new Map<string, number>();
+    const via = new Map<string, string>();
+    for (const id of startKnown) cost.set(id, 0);
+    for (let round = 0; round < points.length; round += 1) {
+      let changed = false;
+      for (const edge of edges) {
+        let tailCost = 0;
+        let reachable = true;
+        for (const tail of edge.tails) {
+          const value = cost.get(tail);
+          if (value === undefined) { reachable = false; break; }
+          tailCost += value;
+        }
+        if (!reachable) continue;
+        const candidate = tailCost + weightOf(edge.id, overrides);
+        const currentCost = cost.get(edge.head);
+        if (currentCost === undefined || candidate < currentCost - 1e-9) {
+          cost.set(edge.head, candidate);
+          via.set(edge.head, edge.id);
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    return { cost, via };
+  }
 
   function best(pointId: string): { cost: number; edges: Set<string> } | null {
     if (known.has(pointId)) return { cost: 0, edges: new Set() };
-    if (memo.has(pointId)) return memo.get(pointId)!;
-    if (inProgress.has(pointId)) return null;
-    inProgress.add(pointId);
-    let winner: { cost: number; edges: Set<string> } | null = null;
-    for (const edge of edgesByHead.get(pointId) ?? []) {
-      const parts = edge.tails.map((tail) => best(tail));
-      if (parts.some((part) => part === null)) continue;
-      const selected = new Set<string>([edge.id]);
-      for (const part of parts) part!.edges.forEach((id) => selected.add(id));
-      let cost = 0;
-      for (const id of selected) cost += edgeById.get(id)?.weight ?? 0;
-      if (!winner || cost < winner.cost) winner = { cost, edges: selected };
+    const { cost, via } = solveFrom(known);
+    if (!cost.has(pointId)) return null;
+    const selected = new Set<string>();
+    const stack = [pointId];
+    const seen = new Set<string>();
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (known.has(id) || seen.has(id)) continue;
+      seen.add(id);
+      const edgeId = via.get(id);
+      if (!edgeId) continue;
+      selected.add(edgeId);
+      edgeById.get(edgeId)!.tails.forEach((tail) => stack.push(tail));
     }
-    inProgress.delete(pointId);
-    memo.set(pointId, winner);
-    return winner;
+    let total = 0;
+    for (const id of selected) total += weightOf(id, overrides);
+    return { cost: total, edges: selected };
   }
 
   // Multi-target: take the targets in turn, letting later ones reuse what earlier
@@ -102,10 +138,9 @@ function approximateRoute(baseKnown: Set<string>, targets: string[]): Route {
     if (!solution) return { reachable: false, cost: null, order: [], pointIds: [], exact: false };
     solution.edges.forEach((id) => selected.add(id));
     known = new Set([...known, ...pointsOf(solution.edges)]);
-    memo.clear();
   }
   let total = 0;
-  for (const id of selected) total += edgeById.get(id)?.weight ?? 0;
+  for (const id of selected) total += weightOf(id, overrides);
 
   const derived = new Set(baseKnown);
   const order: string[] = [];
@@ -142,18 +177,18 @@ function approximateRoute(baseKnown: Set<string>, targets: string[]): Route {
 }
 
 /** The one entry point every variant uses. Accepts one target or several. */
-export function solveRoute(known: Iterable<string>, target: string | string[]): Route {
+export function solveRoute(known: Iterable<string>, target: string | string[], overrides?: Weights): Route {
   const knownSet = new Set(known);
   const targets = Array.isArray(target) ? target : [target];
   if (!targets.length) return { reachable: true, cost: 0, order: [], pointIds: [...knownSet], exact: true };
-  if (targets.length === 1) {
+  if (targets.length === 1 && !overrides) {
     const preset = presets.find((item) => samePointSet(item.points, knownSet));
     if (preset) {
       const stored = exactRoutes[preset.id][targets[0]];
       if (stored) return { ...stored, exact: true };
     }
   }
-  return approximateRoute(knownSet, targets);
+  return approximateRoute(knownSet, targets, overrides);
 }
 
 export type Step = {

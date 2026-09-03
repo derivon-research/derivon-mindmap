@@ -8,6 +8,7 @@ import SearchFirst, { name as searchName } from './variants/SearchFirst';
 import Atlas, { name as atlasName } from './variants/Atlas';
 import Dialogue, { name as dialogueName } from './variants/Dialogue';
 import Fusion, { name as fusionName } from './variants/Fusion';
+import Teaching, { name as teachingName } from './variants/Teaching';
 
 const VARIANTS = [
   { key: '0', name: nowName, Component: NowForce },
@@ -15,6 +16,7 @@ const VARIANTS = [
   { key: 'B', name: atlasName, Component: Atlas },
   { key: 'C', name: dialogueName, Component: Dialogue },
   { key: 'D', name: fusionName, Component: Fusion },
+  { key: 'E', name: teachingName, Component: Teaching },
 ];
 
 function readVariant(): string {
