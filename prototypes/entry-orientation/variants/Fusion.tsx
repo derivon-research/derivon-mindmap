@@ -15,7 +15,18 @@ type Turn =
   | { kind: 'agent'; text: string }
   | { kind: 'user'; text: string }
   | { kind: 'card'; pointId: string }
+  | { kind: 'reasons' }
+  | { kind: 'targets'; ids: string[] }
   | { kind: 'probe'; ids: string[]; round: number };
+
+/** C 的预设问答保留下来：不想打字的人全程点点就行。 */
+const REASONS = [
+  { text: '要看懂一篇用到 SVD 的论文', targets: ['svd'] },
+  { text: '课上讲到谱定理，跟不上', targets: ['spectral-theorem'] },
+  { text: '想搞明白 PCA 到底在干什么', targets: ['principal-component-analysis'] },
+  { text: '工作里要用 Kalman 滤波', targets: ['kalman-filter'] },
+  { text: '我还不确定，先随便逛逛', targets: [] },
+];
 
 let cachedLayout: Array<{ id: string; x: number; y: number }> | null = null;
 function forceLayout() {
@@ -64,10 +75,11 @@ export default function Fusion() {
   const nodes = forceLayout();
   const [mode, setMode] = useState<'navigate' | 'learn' | 'browse'>('navigate');
   const [turns, setTurns] = useState<Turn[]>([
-    { kind: 'agent', text: '这张图有 293 个概念。你可以直接问一个概念，我把资料给你；也可以告诉我你想学会什么，我来算路线。' },
+    { kind: 'agent', text: '这张图有 293 个概念。别看图 —— 先告诉我你为什么来。不想打字就点下面，想直接查某个概念就在下面打它的名字。' },
+    { kind: 'reasons' },
   ]);
   const [draft, setDraft] = useState('');
-  const [target, setTarget] = useState<string | null>(null);
+  const [targets, setTargets] = useState<string[]>([]);
   const [known, setKnown] = useState<Set<string>>(new Set(ROOTS));
   const [asked, setAsked] = useState<Set<string>>(new Set());
   const [cursor, setCursor] = useState(0);
@@ -77,7 +89,7 @@ export default function Fusion() {
   const threadEnd = useRef<HTMLDivElement>(null);
   const activeNode = useRef<SVGGElement>(null);
 
-  const route = useMemo(() => (target ? solveRoute(known, target) : null), [target, known]);
+  const route = useMemo(() => (targets.length ? solveRoute(known, targets) : null), [targets, known]);
   const steps = useMemo(() => (route ? routeSteps(route, known) : []), [route, known]);
   const routePoints = useMemo(() => new Set(steps.map((step) => step.pointId)), [steps]);
   const current = steps[cursor];
@@ -100,17 +112,31 @@ export default function Fusion() {
       return;
     }
     say(
-      { kind: 'agent', text: `「${hit.label}」的资料在这儿。要我把到它的路线算出来，还是你本来就会？` },
+      { kind: 'agent', text: `「${hit.label}」的资料在这儿。要把它加进目标，还是你本来就会？` },
       { kind: 'card', pointId: hit.id },
     );
   };
 
-  const chooseTarget = (id: string) => {
-    setTarget(id);
+  /** 目标可以不只一个。先收齐目标，再一轮轮问已知 —— 路线不在点一下就定下来。 */
+  const addTarget = (ids: string[]) => {
+    if (!ids.length) {
+      say({ kind: 'agent', text: '那先去逐逐看。看到想学的就点「设为目标」，回来我接着问。' });
+      setMode('browse');
+      return;
+    }
+    const merged = [...new Set([...targets, ...ids])];
+    setTargets(merged);
     setCursor(0);
-    const first = routeSteps(solveRoute(known, id), known);
     say(
-      { kind: 'agent', text: `目标定成「${labelOf(id)}」。按你现在告诉我的，还差 ${first.length} 步。我问你几个，路线会更准 —— 会就点亮，不会就留着。` },
+      { kind: 'agent', text: `目标记下了：${merged.map((id) => `「${labelOf(id)}」`).join('、')}。还要连带学会别的吗？跟它们同领域的有这几个。` },
+      { kind: 'targets', ids: neighbourTargets(merged) },
+    );
+  };
+
+  const finishTargets = () => {
+    const first = routeSteps(solveRoute(known, targets), known);
+    say(
+      { kind: 'agent', text: `就这 ${targets.length} 个目标。按你现在告诉我的，还差 ${first.length} 步 —— 但我还不知道你会什么。下面这几个，会的点亮。` },
       { kind: 'probe', ids: probeCandidates(first, known, asked), round: 1 },
     );
   };
@@ -124,6 +150,16 @@ export default function Fusion() {
       return next;
     });
   };
+
+  /** 与当前目标同领域、且不在路线上的几个点，给人“顺手再学一个”的机会。 */
+  function neighbourTargets(chosen: string[]): string[] {
+    const wanted = new Set(chosen);
+    const sameTag = new Set(chosen.map((id) => tagOf(id)));
+    return points
+      .filter((point) => sameTag.has(point.tag) && !wanted.has(point.id))
+      .slice(0, 4)
+      .map((point) => point.id);
+  }
 
   const askAgain = (round: number) => {
     const next = probeCandidates(steps, known, asked);
@@ -151,8 +187,8 @@ export default function Fusion() {
         <div className="fusion-browse-bar">
           <strong>大图浏览</strong>
           <span>随便逛。看到感兴趣的点开，可以直接设为目标，或者标记成你已经会的。</span>
-          <button type="button" onClick={() => { setInspecting(null); setMode(target ? 'learn' : 'navigate'); }}>
-            ← 回{target ? '学习' : '定向'}
+          <button type="button" onClick={() => { setInspecting(null); setMode(steps.length && cursor > 0 ? 'learn' : 'navigate'); }}>
+            ← 回{steps.length && cursor > 0 ? '学习' : '对话'}
           </button>
         </div>
         <svg viewBox={`${Math.min(...xs) - 30} ${Math.min(...ys) - 30} ${Math.max(...xs) - Math.min(...xs) + 60} ${Math.max(...ys) - Math.min(...ys) + 60}`}>
@@ -171,7 +207,7 @@ export default function Fusion() {
                   cx={node.x}
                   cy={node.y}
                   r={hovered === node.id ? 8 : onRoute ? 5.5 : 4}
-                  fill={node.id === target ? '#ef4444' : onRoute ? colorOf(tagOf(node.id)) : isKnown ? '#22c55e' : '#cbd5e1'}
+                  fill={targets.includes(node.id) ? '#ef4444' : onRoute ? colorOf(tagOf(node.id)) : isKnown ? '#22c55e' : '#cbd5e1'}
                 />
                 {(hovered === node.id || inspecting === node.id) && (
                   <text x={node.x + 10} y={node.y + 4} fontSize={11}>{labelOf(node.id)}</text>
@@ -188,7 +224,7 @@ export default function Fusion() {
             </header>
             <div className="fusion-inspect-body"><DocumentBody id={inspecting} /></div>
             <footer>
-              <button type="button" onClick={() => { chooseTarget(inspecting); setInspecting(null); setMode('navigate'); }}>设为目标</button>
+              <button type="button" onClick={() => { addTarget([inspecting]); setInspecting(null); setMode('navigate'); }}>设为目标</button>
               <button type="button" onClick={() => { answerProbe(inspecting); setInspecting(null); }}>这个我会</button>
             </footer>
           </aside>
@@ -201,9 +237,46 @@ export default function Fusion() {
   if (mode === 'learn' && route) {
     return (
       <div className="fusion-learn">
+        <aside className="fusion-tutor">
+          <header>Agent · 教学</header>
+          <div className="fusion-tutor-thread">
+            <div className="bubble agent"><p>还是我。刚才把路线算出来了，现在我往下讲 —— 卡住就问，我只按图上的前置回答，不跑题。</p></div>
+            {teachTurns.map((turn, index) => (
+              <div key={index} className={`bubble ${turn.kind === 'user' ? 'user' : 'agent'}`}>
+                <p>{'text' in turn ? turn.text : ''}</p>
+              </div>
+            ))}
+            {current && (
+              <div className="fusion-tutor-quick">
+                {current.requires.slice(0, 3).map((id) => (
+                  <button key={id} type="button" onClick={() => setTeachTurns((value) => [
+                    ...value,
+                    { kind: 'user', text: `「${labelOf(id)}」是什么来着？` },
+                    { kind: 'agent', text: `${labelOf(id)}：${excerpt(id)}` },
+                  ])}>
+                    「{labelOf(id)}」是什么来着？
+                  </button>
+                ))}
+                <button type="button" onClick={() => setTeachTurns((value) => [
+                  ...value,
+                  { kind: 'user', text: '这一步我早就会了' },
+                  { kind: 'agent', text: `那跳过「${current.label}」。后面的路线会重算。` },
+                ]) || answerProbe(current.pointId)}>
+                  这一步我早就会了
+                </button>
+              </div>
+            )}
+            <div ref={threadEnd} />
+          </div>
+          <footer className="fusion-tutor-foot">
+            <button type="button" onClick={() => setMode('navigate')}>← 改目标 / 已知</button>
+            <button type="button" onClick={() => setMode('browse')}>⤢ 大图浏览</button>
+          </footer>
+        </aside>
+
         <nav className="fusion-rail">
           <div className="fusion-rail-head">
-            <span>{labelOf(target!)}</span>
+            <span>{targets.map((id) => labelOf(id)).join('、')}</span>
             <em>{Math.min(cursor + 1, steps.length)} / {steps.length}</em>
           </div>
           {routeGraph && (
@@ -237,8 +310,7 @@ export default function Fusion() {
             </svg>
             </div>
           )}
-          <button type="button" className="fusion-rail-browse" onClick={() => setMode('browse')}>⤢ 大图浏览</button>
-          <button type="button" className="fusion-rail-browse" onClick={() => setMode('navigate')}>← 改目标 / 已知</button>
+          <p className="fusion-rail-note">路线子图 · 点哪一步就跳到哪一步</p>
         </nav>
 
         <article className="fusion-text">
@@ -268,39 +340,6 @@ export default function Fusion() {
             </div>
           )}
         </article>
-
-        <aside className="fusion-tutor">
-          <header>Agent · 教学</header>
-          <div className="fusion-tutor-thread">
-            <div className="bubble agent"><p>我在这儿。读到卡住的地方就问，我按图上的前置回答，不跑题。</p></div>
-            {teachTurns.map((turn, index) => (
-              <div key={index} className={`bubble ${turn.kind === 'user' ? 'user' : 'agent'}`}>
-                <p>{'text' in turn ? turn.text : ''}</p>
-              </div>
-            ))}
-            {current && (
-              <div className="fusion-tutor-quick">
-                {current.requires.slice(0, 3).map((id) => (
-                  <button key={id} type="button" onClick={() => setTeachTurns((value) => [
-                    ...value,
-                    { kind: 'user', text: `「${labelOf(id)}」是什么来着？` },
-                    { kind: 'agent', text: `${labelOf(id)}：${excerpt(id)}` },
-                  ])}>
-                    「{labelOf(id)}」是什么来着？
-                  </button>
-                ))}
-                <button type="button" onClick={() => setTeachTurns((value) => [
-                  ...value,
-                  { kind: 'user', text: '这一步我早就会了' },
-                  { kind: 'agent', text: `那跳过「${current.label}」。后面的路线会重算。` },
-                ]) || answerProbe(current.pointId)}>
-                  这一步我早就会了
-                </button>
-              </div>
-            )}
-            <div ref={threadEnd} />
-          </div>
-        </aside>
       </div>
     );
   }
@@ -321,9 +360,49 @@ export default function Fusion() {
                 <div key={index} className="fusion-card">
                   <div className="fusion-card-doc"><DocumentBody id={turn.pointId} /></div>
                   <div className="fusion-card-actions">
-                    <button type="button" onClick={() => chooseTarget(turn.pointId)}>我想学会它 →</button>
+                    <button type="button" onClick={() => addTarget([turn.pointId])}>加进目标 →</button>
                     <button type="button" onClick={() => answerProbe(turn.pointId)}>我已经会了</button>
                   </div>
+                </div>
+              );
+            }
+            if (turn.kind === 'reasons') {
+              return (
+                <div key={index} className="choices">
+                  {REASONS.map((reason) => (
+                    <button key={reason.text} type="button" onClick={() => {
+                      say({ kind: 'user', text: reason.text });
+                      addTarget(reason.targets);
+                    }}>
+                      {reason.text}
+                    </button>
+                  ))}
+                </div>
+              );
+            }
+            if (turn.kind === 'targets') {
+              return (
+                <div key={index} className="fusion-probe">
+                  <div className="fusion-probe-grid">
+                    {turn.ids.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={targets.includes(id) ? 'is-yes' : ''}
+                        onClick={() => setTargets((value) => [...new Set([...value, id])])}
+                      >
+                        <span className="dot" style={{ background: colorOf(tagOf(id)) }} />
+                        {labelOf(id)}
+                      </button>
+                    ))}
+                  </div>
+                  {index === turns.length - 1 && (
+                    <div className="fusion-probe-actions">
+                      <button type="button" className="primary" onClick={finishTargets}>
+                        就这{targets.length > 1 ? ` ${targets.length} 个` : '一个'}，问我会什么吧
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             }
@@ -346,8 +425,8 @@ export default function Fusion() {
                 {index === turns.length - 1 && (
                   <div className="fusion-probe-actions">
                     <button type="button" onClick={() => askAgain(turn.round)}>再问我一轮，路线会更准</button>
-                    <button type="button" className="primary" onClick={() => setMode('learn')}>
-                      就这样，开始学（{steps.length} 步）
+                    <button type="button" className="primary" onClick={() => { setCursor(0); setMode('learn'); }}>
+                      够了，开始学（{steps.length} 步）
                     </button>
                   </div>
                 )}
@@ -386,7 +465,7 @@ export default function Fusion() {
           {nodes.map((node) => {
             const isKnown = known.has(node.id);
             const onRoute = routePoints.has(node.id);
-            const isTarget = node.id === target;
+            const isTarget = targets.includes(node.id);
             return (
               <circle
                 key={node.id}

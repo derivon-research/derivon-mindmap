@@ -69,7 +69,8 @@ function samePointSet(a: Iterable<string>, b: Iterable<string>): boolean {
  * The presets hit precomputed answers from the real derivon CLI; this one is a
  * cheap upper bound so the prototype stays clickable. Marked in the UI as 近似.
  */
-function approximateRoute(known: Set<string>, target: string): Route {
+function approximateRoute(baseKnown: Set<string>, targets: string[]): Route {
+  let known = new Set(baseKnown);
   const memo = new Map<string, { cost: number; edges: Set<string> } | null>();
   const inProgress = new Set<string>();
 
@@ -93,12 +94,22 @@ function approximateRoute(known: Set<string>, target: string): Route {
     return winner;
   }
 
-  const solution = best(target);
-  if (!solution) return { reachable: false, cost: null, order: [], pointIds: [], exact: false };
+  // Multi-target: take the targets in turn, letting later ones reuse what earlier
+  // ones already bought. A real set-cover solver would do better; this is a bound.
+  const selected = new Set<string>();
+  for (const target of targets) {
+    const solution = best(target);
+    if (!solution) return { reachable: false, cost: null, order: [], pointIds: [], exact: false };
+    solution.edges.forEach((id) => selected.add(id));
+    known = new Set([...known, ...pointsOf(solution.edges)]);
+    memo.clear();
+  }
+  let total = 0;
+  for (const id of selected) total += edgeById.get(id)?.weight ?? 0;
 
-  const derived = new Set(known);
+  const derived = new Set(baseKnown);
   const order: string[] = [];
-  const remaining = new Set(solution.edges);
+  const remaining = new Set(selected);
   let progress = true;
   while (remaining.size && progress) {
     progress = false;
@@ -114,22 +125,35 @@ function approximateRoute(known: Set<string>, target: string): Route {
   }
   return {
     reachable: true,
-    cost: solution.cost,
+    cost: total,
     order,
     pointIds: [...derived],
     exact: false,
   };
+
+  function pointsOf(edgeIds: Iterable<string>): string[] {
+    const heads: string[] = [];
+    for (const id of edgeIds) {
+      const edge = edgeById.get(id);
+      if (edge) heads.push(edge.head);
+    }
+    return heads;
+  }
 }
 
-/** The one entry point every variant uses. */
-export function solveRoute(known: Iterable<string>, target: string): Route {
+/** The one entry point every variant uses. Accepts one target or several. */
+export function solveRoute(known: Iterable<string>, target: string | string[]): Route {
   const knownSet = new Set(known);
-  const preset = presets.find((item) => samePointSet(item.points, knownSet));
-  if (preset) {
-    const stored = exactRoutes[preset.id][target];
-    if (stored) return { ...stored, exact: true };
+  const targets = Array.isArray(target) ? target : [target];
+  if (!targets.length) return { reachable: true, cost: 0, order: [], pointIds: [...knownSet], exact: true };
+  if (targets.length === 1) {
+    const preset = presets.find((item) => samePointSet(item.points, knownSet));
+    if (preset) {
+      const stored = exactRoutes[preset.id][targets[0]];
+      if (stored) return { ...stored, exact: true };
+    }
   }
-  return approximateRoute(knownSet, target);
+  return approximateRoute(knownSet, targets);
 }
 
 export type Step = {
