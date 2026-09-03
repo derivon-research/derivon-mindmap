@@ -8,13 +8,24 @@ import { documents, edgeById, labelOf, tagOf, type Edge } from './data';
 const marked = new Marked();
 marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
 
-export function DocumentBody({ id, fallback = '（这个节点没有文档）' }: { id: string; fallback?: string }) {
-  const html = useMemo(() => {
-    const source = documents[id];
-    if (!source) return `<p class="doc-missing">${fallback}</p>`;
-    return marked.parse(source) as string;
-  }, [id, fallback]);
+export function MarkdownBody({ source }: { source: string }) {
+  const html = useMemo(() => marked.parse(source) as string, [source]);
   return <div className="doc-body" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+export function DocumentBody({ id, fallback = '（这个节点没有文档）' }: { id: string; fallback?: string }) {
+  const source = documents[id];
+  if (!source) return <p className="doc-missing">{fallback}</p>;
+  return <MarkdownBody source={source} />;
+}
+
+/** First display-math block in a document, if it has one. Used to decide whether a
+ *  tutor answer is "tall" content that should push the panel open. */
+export function displayFormula(id: string): string | null {
+  const source = documents[id];
+  if (!source) return null;
+  const match = source.match(/\$\$[\s\S]*?\$\$/);
+  return match ? match[0] : null;
 }
 
 export type LaidOutNode = {

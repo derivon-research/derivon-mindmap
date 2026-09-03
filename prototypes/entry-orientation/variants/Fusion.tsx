@@ -5,7 +5,7 @@ import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } 
 import {
   documents, edges, edgeById, labelOf, points, routeSteps, searchPoints, solveRoute, tagOf, type Step,
 } from '../data';
-import { DocumentBody, colorOf, layoutSubgraph, polyline } from '../render';
+import { DocumentBody, MarkdownBody, colorOf, displayFormula, layoutSubgraph, polyline } from '../render';
 
 export const name = '融合稿';
 
@@ -17,7 +17,52 @@ type Turn =
   | { kind: 'card'; pointId: string }
   | { kind: 'reasons' }
   | { kind: 'targets'; ids: string[] }
-  | { kind: 'probe'; ids: string[]; round: number };
+  | { kind: 'probe'; ids: string[]; round: number }
+  // 教学栏里的富文本回答：整行公式与可交互组件。它们一出现就把栏擑开。
+  | { kind: 'formula'; text: string; tex: string }
+  | { kind: 'widget'; text: string };
+
+type PanelState = 'expanded' | 'default' | 'hidden';
+
+const isRich = (turn: Turn) => turn.kind === 'formula' || turn.kind === 'widget';
+
+/** 展开 / 折叠 / 隐藏 三态的控件。 */
+function PanelControls({ state, onChange, expandLabel }: {
+  state: PanelState;
+  onChange: (state: PanelState) => void;
+  expandLabel: string;
+}) {
+  return (
+    <span className="panel-controls">
+      {state === 'expanded' ? (
+        <button type="button" title="收回默认宽度" onClick={() => onChange('default')}>–</button>
+      ) : (
+        <button type="button" title={expandLabel} onClick={() => onChange('expanded')}>⤢</button>
+      )}
+      <button type="button" title="隐藏" onClick={() => onChange('hidden')}>×</button>
+    </span>
+  );
+}
+
+/** 占位用的交互组件：数据是假的，存在的意义只是“回答里可以有拖得动的东西”。 */
+function TruncationDemo() {
+  const values = [9.1, 6.4, 4.8, 3.1, 2.2, 1.4, 0.9, 0.5];
+  const [k, setK] = useState(3);
+  const total = values.reduce((sum, value) => sum + value * value, 0);
+  const kept = values.slice(0, k).reduce((sum, value) => sum + value * value, 0);
+  return (
+    <div className="tutor-widget">
+      <p className="tutor-widget-title">拖动 k，看秩-k 截断保留了多少能量<em>示意，假数据</em></p>
+      <div className="tutor-widget-bars">
+        {values.map((value, index) => (
+          <span key={index} style={{ height: `${value * 7}px`, background: index < k ? '#4f46e5' : '#e2e8f0' }} />
+        ))}
+      </div>
+      <input type="range" min={1} max={values.length} value={k} onChange={(event) => setK(Number(event.target.value))} />
+      <p className="tutor-widget-read">k = {k}，保留 {(100 * kept / total).toFixed(1)}% 的能量</p>
+    </div>
+  );
+}
 
 /** C 的预设问答保留下来：不想打字的人全程点点就行。 */
 const REASONS = [
@@ -84,6 +129,9 @@ export default function Fusion() {
   const [asked, setAsked] = useState<Set<string>>(new Set());
   const [cursor, setCursor] = useState(0);
   const [teachTurns, setTeachTurns] = useState<Turn[]>([]);
+  // 三态面板：展开 / 默认 / 隐藏。展开一侧就把另一侧收起 —— 中间的教材不让位。
+  const [tutorPanel, setTutorPanel] = useState<PanelState>('default');
+  const [railPanel, setRailPanel] = useState<PanelState>('default');
   const [hovered, setHovered] = useState<string | null>(null);
   const [inspecting, setInspecting] = useState<string | null>(null);
   const threadEnd = useRef<HTMLDivElement>(null);
@@ -98,6 +146,27 @@ export default function Fusion() {
   useEffect(() => { activeNode.current?.scrollIntoView({ block: 'center', inline: 'center' }); }, [cursor, mode]);
 
   const say = (...items: Turn[]) => setTurns((value) => [...value, ...items]);
+
+  const openPanel = (which: 'tutor' | 'rail', state: PanelState) => {
+    if (which === 'tutor') {
+      setTutorPanel(state);
+      if (state === 'expanded') setRailPanel('hidden');
+      else if (state !== 'hidden' && railPanel === 'hidden') setRailPanel('default');
+    } else {
+      setRailPanel(state);
+      if (state === 'expanded') setTutorPanel('hidden');
+      else if (state !== 'hidden' && tutorPanel === 'hidden') setTutorPanel('default');
+    }
+  };
+
+  /** 教学栏的回答。带富文本的自动把栏擑开，不需要用户先去点展开。 */
+  const tutorSay = (...items: Turn[]) => {
+    setTeachTurns((value) => [...value, ...items]);
+    if (items.some(isRich)) {
+      setTutorPanel('expanded');
+      setRailPanel('hidden');
+    }
+  };
 
   const suggestions = searchPoints(draft, 6);
 
@@ -236,32 +305,80 @@ export default function Fusion() {
   // ------------------------------------------------------------------ 学习模式
   if (mode === 'learn' && route) {
     return (
-      <div className="fusion-learn">
+      <div className={`fusion-learn tutor-${tutorPanel} rail-${railPanel}`}>
+        {tutorPanel === 'hidden' && (
+          <button type="button" className="fusion-tab left" onClick={() => openPanel('tutor', 'default')}>Agent 教学 ›</button>
+        )}
+        {railPanel === 'hidden' && (
+          <button type="button" className="fusion-tab right" onClick={() => openPanel('rail', 'default')}>‹ 路线</button>
+        )}
+
+        {tutorPanel !== 'hidden' && (
         <aside className="fusion-tutor">
-          <header>Agent · 教学</header>
+          <header>
+            <span>Agent · 教学</span>
+            <PanelControls
+              state={tutorPanel}
+              onChange={(state) => openPanel('tutor', state)}
+              expandLabel="展开对话"
+            />
+          </header>
           <div className="fusion-tutor-thread">
             <div className="bubble agent"><p>还是我。刚才把路线算出来了，现在我往下讲 —— 卡住就问，我只按图上的前置回答，不跑题。</p></div>
-            {teachTurns.map((turn, index) => (
-              <div key={index} className={`bubble ${turn.kind === 'user' ? 'user' : 'agent'}`}>
-                <p>{'text' in turn ? turn.text : ''}</p>
-              </div>
-            ))}
+            {teachTurns.map((turn, index) => {
+              if (turn.kind === 'formula') {
+                return (
+                  <div key={index} className="bubble agent is-rich">
+                    <p>{turn.text}</p>
+                    <MarkdownBody source={turn.tex} />
+                  </div>
+                );
+              }
+              if (turn.kind === 'widget') {
+                return (
+                  <div key={index} className="bubble agent is-rich">
+                    <p>{turn.text}</p>
+                    <TruncationDemo />
+                  </div>
+                );
+              }
+              return (
+                <div key={index} className={`bubble ${turn.kind === 'user' ? 'user' : 'agent'}`}>
+                  <p>{'text' in turn ? turn.text : ''}</p>
+                </div>
+              );
+            })}
             {current && (
               <div className="fusion-tutor-quick">
-                {current.requires.slice(0, 3).map((id) => (
-                  <button key={id} type="button" onClick={() => setTeachTurns((value) => [
-                    ...value,
+                {current.requires.slice(0, 2).map((id) => (
+                  <button key={id} type="button" onClick={() => tutorSay(
                     { kind: 'user', text: `「${labelOf(id)}」是什么来着？` },
                     { kind: 'agent', text: `${labelOf(id)}：${excerpt(id)}` },
-                  ])}>
+                  )}>
                     「{labelOf(id)}」是什么来着？
                   </button>
                 ))}
-                <button type="button" onClick={() => setTeachTurns((value) => [
-                  ...value,
+                <button type="button" onClick={() => {
+                  const tex = displayFormula(current.edgeId) ?? displayFormula(current.pointId);
+                  tutorSay(
+                    { kind: 'user', text: '把这一步的式子完整写出来' },
+                    tex
+                      ? { kind: 'formula', text: `「${current.label}」这一步的式子：`, tex }
+                      : { kind: 'agent', text: '这一步的文档里没有整行公式。' },
+                  );
+                }}>
+                  把这一步的式子完整写出来
+                </button>
+                <button type="button" onClick={() => tutorSay(
+                  { kind: 'user', text: '给我一个可以调的例子' },
+                  { kind: 'widget', text: '拖一下试试：' },
+                )}>
+                  给我一个可以调的例子
+                </button>
+                <button type="button" onClick={() => tutorSay(
                   { kind: 'user', text: '这一步我早就会了' },
                   { kind: 'agent', text: `那跳过「${current.label}」。后面的路线会重算。` },
-                ]) || answerProbe(current.pointId)}>
+                ) || answerProbe(current.pointId)}>
                   这一步我早就会了
                 </button>
               </div>
@@ -273,13 +390,35 @@ export default function Fusion() {
             <button type="button" onClick={() => setMode('browse')}>⤢ 大图浏览</button>
           </footer>
         </aside>
+        )}
 
+        {railPanel !== 'hidden' && (
         <nav className="fusion-rail">
           <div className="fusion-rail-head">
             <span>{targets.map((id) => labelOf(id)).join('、')}</span>
             <em>{Math.min(cursor + 1, steps.length)} / {steps.length}</em>
+            <PanelControls
+              state={railPanel}
+              onChange={(state) => openPanel('rail', state)}
+              expandLabel="展开子图"
+            />
           </div>
-          {routeGraph && (
+
+          {railPanel === 'default' && (
+            <ol className="fusion-rail-list">
+              {steps.map((step, index) => (
+                <li key={step.pointId} className={index === cursor ? 'is-active' : index < cursor ? 'is-done' : ''}>
+                  <button type="button" onClick={() => setCursor(index)}>
+                    <span className="fusion-rail-index">{step.index}</span>
+                    <span className="dot" style={{ background: colorOf(step.tag) }} />
+                    <span className="fusion-rail-label">{step.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+
+          {railPanel === 'expanded' && routeGraph && (
             <div className="fusion-rail-scroll">
             <svg width={routeGraph.width} height={routeGraph.height} viewBox={`0 0 ${routeGraph.width} ${routeGraph.height}`}>
               {routeGraph.links.map((link, index) => (
@@ -310,8 +449,13 @@ export default function Fusion() {
             </svg>
             </div>
           )}
-          <p className="fusion-rail-note">路线子图 · 点哪一步就跳到哪一步</p>
+          <p className="fusion-rail-note">
+            {railPanel === 'expanded'
+              ? '路线子图 · 看得见哪几步合流、哪几步并行'
+              : '折叠态 · 只排步骤，不画依赖关系'}
+          </p>
         </nav>
+        )}
 
         <article className="fusion-text">
           {current ? (
@@ -328,7 +472,7 @@ export default function Fusion() {
               </details>
               <div className="fusion-text-actions">
                 <button type="button" onClick={() => setCursor((value) => value + 1)}>读完了，下一步 →</button>
-                <button type="button" onClick={() => setTeachTurns((value) => [...value, { kind: 'agent', text: `我们停在「${current.label}」。它依赖 ${current.requires.map((id) => labelOf(id)).join('、')} —— 你想让我从哪一个重讲？` }])}>
+                <button type="button" onClick={() => { openPanel('tutor', 'default'); tutorSay({ kind: 'agent', text: `我们停在「${current.label}」。它依赖 ${current.requires.map((id) => labelOf(id)).join('、')} —— 你想让我从哪一个重讲？` }); }}>
                   没看懂，问 Agent
                 </button>
               </div>
