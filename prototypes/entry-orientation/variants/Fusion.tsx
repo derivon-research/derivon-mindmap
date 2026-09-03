@@ -24,7 +24,36 @@ type Turn =
   | { kind: 'widget'; text: string };
 
 type PanelState = 'expanded' | 'default' | 'hidden';
-type Mode = 'navigate' | 'learn' | 'browse';
+type Mode = 'navigate' | 'preview' | 'learn' | 'browse';
+
+/**
+ * 会话。定向与学习是**两个**会话，不是一条线程往下接；用户随时可以另开。
+ * 目标与对话属于会话，**已知集合属于学习者本人**，跨会话共享。
+ */
+type Session = {
+  id: string;
+  kind: 'navigate' | 'learn';
+  title: string;
+  turns: Turn[];
+  targets: string[];
+  cursor: number;
+};
+
+let sessionSeq = 0;
+function newNavigateSession(): Session {
+  sessionSeq += 1;
+  return {
+    id: `s${sessionSeq}`,
+    kind: 'navigate',
+    title: '新对话',
+    turns: [
+      { kind: 'agent', text: '这张图有 293 个概念。别看图 —— 先告诉我你为什么来。不想打字就点下面，想直接查某个概念就在下面打它的名字。' },
+      { kind: 'reasons' },
+    ],
+    targets: [],
+    cursor: 0,
+  };
+}
 
 const isRich = (turn: Turn) => turn.kind === 'formula' || turn.kind === 'widget';
 
@@ -121,16 +150,12 @@ function probeCandidates(steps: Step[], known: Set<string>, asked: Set<string>, 
 export default function Fusion() {
   const nodes = forceLayout();
   const [mode, setMode] = useState<Mode>('navigate');
-  // 一条会话，两个模式共用。学习态不是新开一个 Agent，是同一个往下接。
-  const [turns, setTurns] = useState<Turn[]>([
-    { kind: 'agent', text: '这张图有 293 个概念。别看图 —— 先告诉我你为什么来。不想打字就点下面，想直接查某个概念就在下面打它的名字。' },
-    { kind: 'reasons' },
-  ]);
+  const [sessions, setSessions] = useState<Session[]>(() => [newNavigateSession()]);
+  const [activeId, setActiveId] = useState<string>(() => sessions[0].id);
   const [draft, setDraft] = useState('');
-  const [targets, setTargets] = useState<string[]>([]);
+  // 学习者自己的状态，不属于任何一个会话
   const [known, setKnown] = useState<Set<string>>(new Set(ROOTS));
   const [asked, setAsked] = useState<Set<string>>(new Set());
-  const [cursor, setCursor] = useState(0);
   // 三态面板：展开 / 默认 / 隐藏。展开一侧就把另一侧收起 —— 中间的教材不让位。
   const [tutorPanel, setTutorPanel] = useState<PanelState>('default');
   const [railPanel, setRailPanel] = useState<PanelState>('default');
@@ -139,21 +164,72 @@ export default function Fusion() {
   const threadEnd = useRef<HTMLDivElement>(null);
   const activeNode = useRef<SVGGElement>(null);
 
+  const session = sessions.find((item) => item.id === activeId) ?? sessions[0];
+  const { turns, targets, cursor } = session;
+
+  const setTargets = (update: string[] | ((value: string[]) => string[])) =>
+    setSessions((value) => value.map((item) => (item.id === activeId
+      ? { ...item, targets: typeof update === 'function' ? update(item.targets) : update }
+      : item)));
+  const setCursor = (update: number | ((value: number) => number)) =>
+    setSessions((value) => value.map((item) => (item.id === activeId
+      ? { ...item, cursor: typeof update === 'function' ? update(item.cursor) : update }
+      : item)));
+
   const route = useMemo(() => (targets.length ? solveRoute(known, targets) : null), [targets, known]);
   const steps = useMemo(() => (route ? routeSteps(route, known) : []), [route, known]);
   const routePoints = useMemo(() => new Set(steps.map((step) => step.pointId)), [steps]);
   const current = steps[cursor];
 
-  useEffect(() => { threadEnd.current?.scrollIntoView({ block: 'end' }); }, [turns, mode, tutorPanel]);
+  useEffect(() => { threadEnd.current?.scrollIntoView({ block: 'end' }); }, [turns, mode, tutorPanel, activeId]);
   useEffect(() => { activeNode.current?.scrollIntoView({ block: 'center', inline: 'center' }); }, [cursor, mode, railPanel]);
 
   /** 说话。带富文本的自动把对话栏撑开，不需要用户先去点展开。 */
   const say = (...items: Turn[]) => {
-    setTurns((value) => [...value, ...items]);
+    setSessions((value) => value.map((item) => (item.id === activeId
+      ? { ...item, turns: [...item.turns, ...items] }
+      : item)));
     if (mode === 'learn' && items.some(isRich)) {
       setTutorPanel('expanded');
       setRailPanel('hidden');
     }
+  };
+
+  const startSession = () => {
+    const fresh = newNavigateSession();
+    setSessions((value) => [...value, fresh]);
+    setActiveId(fresh.id);
+    setMode('navigate');
+    setDraft('');
+  };
+
+  const openSession = (id: string) => {
+    const next = sessions.find((item) => item.id === id);
+    if (!next) return;
+    setActiveId(id);
+    setMode(next.kind === 'learn' ? 'learn' : 'navigate');
+  };
+
+  /** 确认路线后，学习走的是**新会话**：定向那段问答不再压在教学对话里。 */
+  const startLearning = () => {
+    sessionSeq += 1;
+    const title = targets.map((id) => labelOf(id)).join('、');
+    const learn: Session = {
+      id: `s${sessionSeq}`,
+      kind: 'learn',
+      title: `学：${title}`,
+      targets: [...targets],
+      cursor: 0,
+      turns: [{
+        kind: 'agent',
+        text: `新开一段：学「${title}」，${steps.length} 步。上一段怎么问出来的不重要了 —— 这里只讲课。卡住就问，我只按图上的前置回答。`,
+      }],
+    };
+    setSessions((value) => value.map((item) => (item.id === activeId
+      ? { ...item, title: title ? `找路线：${title}` : item.title }
+      : item)).concat(learn));
+    setActiveId(learn.id);
+    setMode('learn');
   };
 
   const openPanel = (which: 'tutor' | 'rail', state: PanelState) => {
@@ -346,11 +422,30 @@ export default function Fusion() {
         {index === turns.length - 1 && (
           <div className="fusion-probe-actions">
             <button type="button" onClick={() => askAgain(turn.round)}>再问我一轮，路线会更准</button>
-            <button type="button" className="primary" onClick={() => { setCursor(0); setMode('learn'); }}>
-              够了，开始学（{steps.length} 步）
+            <button type="button" className="primary" onClick={() => setMode('preview')}>
+              够了，先看看路线（{steps.length} 步）
             </button>
           </div>
         )}
+      </div>
+    );
+  }
+
+  function SessionBar() {
+    return (
+      <div className="session-bar">
+        {sessions.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={item.id === activeId ? 'is-active' : ''}
+            onClick={() => openSession(item.id)}
+            title={item.title}
+          >
+            {item.kind === 'learn' ? '▸ ' : '○ '}{item.title}
+          </button>
+        ))}
+        <button type="button" className="session-new" onClick={startSession}>+ 新会话</button>
       </div>
     );
   }
@@ -405,11 +500,11 @@ export default function Fusion() {
           </button>
           <button
             type="button"
-            className={mode === 'learn' ? 'is-active' : ''}
+            className={mode === 'learn' || mode === 'preview' ? 'is-active' : ''}
             disabled={!steps.length}
-            onClick={() => setMode('learn')}
+            onClick={() => setMode(session.kind === 'learn' ? 'learn' : 'preview')}
           >
-            路线学习
+            {session.kind === 'learn' ? '继续学习' : '路线预览'}
           </button>
           <button
             type="button"
@@ -424,6 +519,7 @@ export default function Fusion() {
       {mode === 'navigate' && (
         <div className="fusion-navigate">
           <section className="fusion-chat">
+            <SessionBar />
             <div className="fusion-chat-thread">
               {turns.map(renderTurn)}
               <div ref={threadEnd} />
@@ -460,6 +556,77 @@ export default function Fusion() {
         </div>
       )}
 
+      {mode === 'preview' && route && (
+        <div className="fusion-preview">
+          <section className="fusion-preview-main">
+            <h1>这是算出来的路线</h1>
+            <p className="fusion-preview-sub">
+              目标 {targets.map((id) => labelOf(id)).join('、')} · 共 <strong>{steps.length}</strong> 步 ·
+              总学习成本 <strong>{route.cost}</strong> · {route.exact ? '精确解' : '近似解'} ·
+              已按你告诉我的 {known.size} 个已知概念削过
+            </p>
+
+            <div className="fusion-preview-tags">
+              {[...new Set(steps.map((step) => step.tag))].map((tag) => (
+                <span key={tag}>
+                  <i style={{ background: colorOf(tag) }} />
+                  {tag} · {steps.filter((step) => step.tag === tag).length}
+                </span>
+              ))}
+            </div>
+
+            <ol className="fusion-preview-list">
+              {steps.map((step) => (
+                <li key={step.pointId}>
+                  <span className="fusion-rail-index">{step.index}</span>
+                  <span className="dot" style={{ background: colorOf(step.tag) }} />
+                  <span className="fusion-preview-label">{step.label}</span>
+                  <span className="fusion-preview-because">需要 {step.requires.map((id) => labelOf(id)).join(' + ')}</span>
+                  <span className="fusion-preview-weight">{step.weight}</span>
+                </li>
+              ))}
+            </ol>
+
+            <div className="fusion-preview-actions">
+              <button type="button" className="primary" onClick={startLearning}>
+                开始学（新开一段会话）
+              </button>
+              <button type="button" onClick={() => setMode('navigate')}>不对，回去改</button>
+              <button type="button" onClick={() => setMode('browse')}>先去大图里看看</button>
+            </div>
+          </section>
+
+          <aside className="fusion-preview-graph">
+            {routeGraph && (
+              <div className="fusion-rail-scroll">
+                <svg width={routeGraph.width} height={routeGraph.height} viewBox={`0 0 ${routeGraph.width} ${routeGraph.height}`}>
+                  {routeGraph.links.map((link, index) => (
+                    <path key={index} d={polyline(link.points)} fill="none" stroke="#e2e8f0" strokeWidth={1} />
+                  ))}
+                  {routeGraph.nodes.map((node) => (node.kind === 'derivation' ? (
+                    <circle key={node.id} cx={node.x} cy={node.y} r={3} fill="#cbd5e1" />
+                  ) : (
+                    <g key={node.id}>
+                      <rect
+                        x={node.x - node.width / 2}
+                        y={node.y - node.height / 2}
+                        width={node.width}
+                        height={node.height}
+                        rx={7}
+                        fill={known.has(node.id) ? '#f1f5f9' : '#fff'}
+                        stroke={colorOf(tagOf(node.id))}
+                      />
+                      <text x={node.x} y={node.y + 4} textAnchor="middle" fontSize={11}>{node.label}</text>
+                    </g>
+                  )))}
+                </svg>
+              </div>
+            )}
+            <p className="fusion-rail-note">灿灰的是你已经会的 · 看得见哪几步合流</p>
+          </aside>
+        </div>
+      )}
+
       {mode === 'learn' && route && (
         <div className={`fusion-learn tutor-${tutorPanel} rail-${railPanel}`}>
           {tutorPanel === 'hidden' && (
@@ -472,9 +639,10 @@ export default function Fusion() {
           {tutorPanel !== 'hidden' && (
             <aside className="fusion-tutor">
               <header>
-                <span>Agent · 同一条会话</span>
+                <span>Agent · {session.title}</span>
                 <PanelControls state={tutorPanel} onChange={(state) => openPanel('tutor', state)} expandLabel="展开对话" />
               </header>
+              <SessionBar />
               <div className="fusion-tutor-thread">
                 {turns.map(renderTurn)}
                 {current && (

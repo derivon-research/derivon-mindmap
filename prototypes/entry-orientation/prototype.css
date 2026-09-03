@@ -303,3 +303,26 @@ button { font: inherit; cursor: pointer; }
 .tutor-widget-bars span { flex: 1; border-radius: 3px 3px 0 0; }
 .tutor-widget input[type="range"] { width: 100%; }
 .tutor-widget-read { margin: 6px 0 0; font-size: 12px; color: var(--ink); }
+
+/* --------------------------------------------- 会话条与路线预览 */
+.session-bar { display: flex; gap: 6px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); overflow-x: auto; background: var(--paper); }
+.session-bar button { flex: none; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 12px; color: var(--muted); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-bar button.is-active { border-color: var(--accent); color: var(--accent); background: #eef2ff; }
+.session-bar .session-new { margin-left: auto; border-style: dashed; }
+
+.fusion-preview { display: grid; grid-template-columns: minmax(520px, 1fr) minmax(360px, 40%); flex: 1; min-height: 0; }
+.fusion-preview-main { overflow-y: auto; padding: 32px 40px 96px; }
+.fusion-preview-main h1 { margin: 0 0 6px; font-size: 26px; }
+.fusion-preview-sub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.fusion-preview-tags { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; font-size: 12px; color: var(--muted); }
+.fusion-preview-tags i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+.fusion-preview-list { list-style: none; margin: 0 0 22px; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.fusion-preview-list li { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.fusion-preview-list li:last-child { border-bottom: none; }
+.fusion-preview-label { font-weight: 600; }
+.fusion-preview-because { margin-left: auto; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
+.fusion-preview-weight { color: var(--muted); font-size: 12px; width: 22px; text-align: right; }
+.fusion-preview-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.fusion-preview-actions button { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 11px 18px; color: var(--muted); }
+.fusion-preview-actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fusion-preview-graph { display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); padding: 14px 12px 84px; min-height: 0; }
