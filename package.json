@@ -11,7 +11,7 @@
     "tauri:debug": "tauri dev --features debug-tools -- -- --debug",
     "tauri:build": "tauri build",
     "build": "tsc -b && vite build",
-    "test": "vitest run src && npm run test:initial-js-budget",
+    "test": "tsc --noEmit -p tsconfig.workspace-source-desktop.json && vitest run src && npm run test:initial-js-budget",
     "test:initial-js-budget": "node --test scripts/check-initial-js-budget.test.mjs",
     "check:initial-js-budget": "node scripts/check-initial-js-budget.mjs",
     "test:e2e": "playwright test",
