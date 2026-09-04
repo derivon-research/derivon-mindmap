@@ -65,6 +65,7 @@ export type G6GraphSurfaceHandle = {
   fitView: (ids?: string[]) => Promise<void>;
   fitInitialView: () => Promise<void>;
   focusElement: (ids: string | string[]) => Promise<void>;
+  whenIdle: () => Promise<void>;
   clientToGraph: (position: Position) => Position;
   zoomBy: (ratio: number) => Promise<void>;
 };
@@ -467,6 +468,9 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       } catch (error) {
         callbacksRef.current.onError(error);
       }
+    },
+    async whenIdle() {
+      await synchronizedGraph();
     },
     clientToGraph(position) {
       const graph = graphRef.current;

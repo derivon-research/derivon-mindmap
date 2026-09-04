@@ -1,0 +1,67 @@
+name: Runtime performance budget
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-performance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  PERF_SIZE: "1000"
+  PERF_RUNS: "5"
+
+jobs:
+  runtime-performance:
+    name: Runtime performance
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Measure runtime performance
+        id: benchmark
+        continue-on-error: true
+        run: npm run bench:runtime
+
+      - name: Publish performance summary
+        if: always()
+        run: |
+          if [[ -f test-results/runtime-performance-summary.md ]]; then
+            cat test-results/runtime-performance-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Runtime benchmark did not produce a summary." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload performance results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: runtime-performance-results
+          if-no-files-found: warn
+          retention-days: 14
+          path: test-results
+
+      - name: Enforce performance budgets
+        if: steps.benchmark.outcome != 'success'
+        run: exit 1

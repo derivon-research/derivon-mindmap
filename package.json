@@ -15,7 +15,7 @@
     "test:e2e": "playwright test",
     "typecheck:perf": "tsc --noEmit -p tsconfig.performance.json",
     "bench:graph": "playwright test --config playwright.performance.config.ts benchmarks/graph-performance.spec.ts",
-    "bench:replacement": "playwright test --config playwright.performance.config.ts benchmarks/replacement-performance.spec.ts",
+    "bench:runtime": "playwright test --config playwright.performance.config.ts benchmarks/runtime-performance.spec.ts",
     "bench:g6-isolated": "playwright test --config playwright.performance.config.ts benchmarks/g6-performance.spec.ts",
     "check:release-version": "node scripts/check-release-version.mjs"
   },
