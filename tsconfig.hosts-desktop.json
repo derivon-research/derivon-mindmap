@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "paths": {
+      "#host": ["./src/hosts/desktop/host.ts"]
+    }
+  },
+  "include": [
+    "src/app",
+    "src/hosts/desktop",
+    "src/ports/WorkspaceSource.ts"
+  ],
+  "exclude": []
+}

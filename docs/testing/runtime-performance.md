@@ -123,3 +123,7 @@ PERF_SIZE=1000 PERF_RUNS=5 npm run bench:runtime:desktop
 `PERF_RUNS` has a minimum of 3. Both runners import the same thresholds and distribution functions from `benchmarks/runtime-metrics.ts`. Reports include every sample plus min, median, p75, p95, and max distributions. A maximum over either fixed limit fails the benchmark. Human-readable and JSON results are preserved under `test-results`; CI publishes them before enforcing the expected-red budgets.
 
 Non-performance end-to-end coverage of this contract uses the bundled `math-reforged` workspace in `tests/performance-hooks.spec.ts`; synthetic data is reserved for performance measurement.
+
+## During the v1.0.0 rewrite
+
+The benchmarks navigate to `/legacy.html`, the v0.4.2 application, because it is the only form with a graph to measure. The rewrite's shell at `/` emits the `interactive` signal from its first ready frame on both hosts (`tests/app-shell.spec.ts`, `tests/app-shell.desktop.spec.ts`); it emits no `interaction-complete` events yet, because it has no interactions. Point the benchmarks at `/` once the rewrite renders a graph, and drop the `legacy` entry with the old form.

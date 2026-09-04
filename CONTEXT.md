@@ -137,4 +137,6 @@ authoring manifest 的盘上结构见 [README 的“工作区格式”](README.m
 | `src/hosts/desktop/` | `src/hosts/desktop/index.ts` | desktop composition、本地工作区和 Pi SDK bridge | 改本地文件、桌面 IPC 或桌面对话实现 |
 | `src/rendering/` | `src/rendering/index.ts` | 渲染视图模型、事件契约和懒加载的 G6 实现 | 改图的可视表达或图交互事件 |
 
+宿主入口下的 `host.ts` 是构建实际解析的那个模块：`vite --mode desktop` 把 `#host` 指向 `src/hosts/desktop/host.ts`，其余构建指向 `src/hosts/web/host.ts`。应用只依赖这个模块声明的能力与模式；web 宿主不引用创作侧模块，创作侧因此不在 web 构建的模块图里，而不是在运行时被藏起来。应用入口直接 `import` 该文件而不经过 `index.ts` 门面，以免门面的其它导出进入首屏 chunk。
+
 这些入口是后续重写票据要创建并保持稳定的模块门面；内部文件可随实现细化。一次功能改动先从拥有状态转换或内容语义的入口开始，再检查它使用的端口；只有外部能力发生变化时才改宿主入口，只有视图模型或图事件发生变化时才改渲染入口。provider 功能不得把定向状态转换搬入 `src/hosts/`，工作区 I/O 也不得进入 `src/modes/` 或 `src/rendering/`。

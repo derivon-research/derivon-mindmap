@@ -295,14 +295,22 @@ Agent 修改工作区时仍应遵循同一原则：先读取完整受影响子�
 常用命令：
 
 ```bash
-npm run dev                 # 浏览器开发服务器
+npm run dev                 # 浏览器开发服务器（web 宿主）
+npm run dev:desktop         # 浏览器开发服务器，但构建的是桌面宿主
 npm run tauri:dev           # Tauri 桌面开发应用
 npm run tauri:debug         # 启用开发工具和原生 tracing
-npm run build               # TypeScript + Vite 生产构建
+npm run build               # TypeScript + Vite 生产构建（web 宿主）
+npm run build:desktop       # 同上，桌面宿主；`tauri:build` 用的就是它
 npm test                    # 前端与构建门禁单元测试
 npm run test:e2e            # Playwright 端到端测试
 npm run tauri:build         # 桌面 release bundle
 ```
+
+### 一个应用、两种宿主构建
+
+`--mode desktop` 决定 `#host` 解析到 `src/hosts/desktop/host.ts` 还是 `src/hosts/web/host.ts`，宿主模块再决定这次构建里存在哪些模式。**创作侧只被桌面宿主模块引用**，所以 web 构建的模块图里根本没有 `src/modes/authoring/`，不是靠运行时判断藏起来的。`src/app/moduleBoundaries.test.ts` 守着这条边界，同时守着首屏不含图渲染、公式排版与富文本编辑。
+
+重写期间 v0.4.2 旧应用仍留在 `legacy.html`，不进默认构建；端到端测试与性能基准暂时仍驱动它。新应用是 `index.html`，`npm run check:initial-js-budget` 量的就是它。
 
 Rust 检查：
 

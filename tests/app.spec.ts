@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 async function openExample(page: Page) {
   await page.addInitScript(() => localStorage.clear());
-  await page.goto('/?example=replace-with');
+  await page.goto('/legacy.html?example=replace-with');
   await expect(page.locator('.g6-graph-surface')).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
 }
 

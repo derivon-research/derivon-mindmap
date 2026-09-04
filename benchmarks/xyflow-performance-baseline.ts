@@ -149,7 +149,7 @@ async function runSample(browser: Browser, concepts: number, run: number): Promi
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   await installWorkspace(page, concepts);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.goto('/legacy.html', { waitUntil: 'domcontentloaded' });
   await page.getByTitle('打开路线模式').waitFor({ state: 'visible', timeout: 120_000 });
   const readyMs = await page.evaluate(() => performance.now() - ((window as PerfWindow).__derivonStartedAt ?? 0));
   await page.waitForTimeout(300);

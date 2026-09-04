@@ -131,7 +131,7 @@ async function runSample(browser: Browser, concepts: number, run: number): Promi
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   await installWorkspace(page, concepts);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.goto('/legacy.html', { waitUntil: 'domcontentloaded' });
   const surface = page.locator('.g6-graph-surface');
   const app = page.locator('.app-shell');
   await expect(app).toHaveAttribute('data-layout-ready', 'true', { timeout: 120_000 });
