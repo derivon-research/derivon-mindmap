@@ -1,10 +1,7 @@
 name: Runtime performance budget
 
+# Keep workflows manual until the v1.0.0 rewrite is complete.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

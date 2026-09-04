@@ -1,8 +1,7 @@
 name: Deploy to GitHub Pages
 
+# Keep workflows manual until the v1.0.0 rewrite is complete.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
