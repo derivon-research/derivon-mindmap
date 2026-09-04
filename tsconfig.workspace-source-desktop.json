@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.app.json",
+  "include": [
+    "src/workspaceSource.ts",
+    "src/workspaceSources/desktopWorkspaceSource.ts",
+    "src/workspaceSources/desktopWorkspaceSource.test.ts"
+  ],
+  "exclude": []
+}

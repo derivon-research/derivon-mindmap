@@ -16,5 +16,9 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/workspaceSources/desktopWorkspaceSource.ts",
+    "src/workspaceSources/desktopWorkspaceSource.test.ts"
+  ]
 }
