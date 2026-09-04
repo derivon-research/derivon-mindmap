@@ -41,6 +41,11 @@ pub fn run() {
             workspace::read_workspace_asset,
             workspace::write_workspace_asset,
             workspace::write_workspace,
+            workspace::read_workspace_source_graph,
+            workspace::read_workspace_source_document,
+            workspace::read_workspace_source_asset,
+            workspace::read_workspace_source_companion_metadata,
+            workspace::commit_workspace_source_changes,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Derivon");

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -49,6 +49,32 @@ struct DocumentReference {
     format: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSourceTextChange {
+    path: String,
+    content: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSourceAssetChange {
+    path: String,
+    content: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSourceChanges {
+    graph: Option<String>,
+    #[serde(default)]
+    documents: Vec<WorkspaceSourceTextChange>,
+    #[serde(default)]
+    assets: Vec<WorkspaceSourceAssetChange>,
+    #[serde(default)]
+    companion_metadata: Vec<WorkspaceSourceTextChange>,
+}
+
 fn safe_relative_path(value: &str) -> Result<PathBuf, String> {
     let path = Path::new(value);
     if path.is_absolute()
@@ -64,6 +90,181 @@ fn safe_relative_path(value: &str) -> Result<PathBuf, String> {
         ));
     }
     Ok(path.to_owned())
+}
+
+fn resolve_workspace_file(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    let canonical_root = fs::canonicalize(root)
+        .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
+    let requested_path = root.join(safe_relative_path(relative_path)?);
+    let canonical_path = fs::canonicalize(&requested_path)
+        .map_err(|error| format!("cannot resolve {}: {error}", requested_path.display()))?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(format!(
+            "workspace path `{relative_path}` resolves outside the workspace"
+        ));
+    }
+    Ok(canonical_path)
+}
+
+fn read_workspace_source_text(root: &Path, relative_path: &str) -> Result<String, String> {
+    let path = resolve_workspace_file(root, relative_path)?;
+    fs::read_to_string(&path).map_err(|error| format!("cannot read {}: {error}", path.display()))
+}
+
+fn read_optional_workspace_source_text(
+    root: &Path,
+    relative_path: &str,
+) -> Result<Option<String>, String> {
+    let relative = safe_relative_path(relative_path)?;
+    let requested_path = root.join(&relative);
+    if !requested_path
+        .try_exists()
+        .map_err(|error| format!("cannot inspect {}: {error}", requested_path.display()))?
+    {
+        return Ok(None);
+    }
+    read_workspace_source_text(root, relative_path).map(Some)
+}
+
+fn validate_companion_metadata_path(value: &str) -> Result<PathBuf, String> {
+    let path = safe_relative_path(value)?;
+    if !path.starts_with(".derivon") || path == Path::new(MANIFEST_PATH) {
+        return Err(format!(
+            "companion metadata path `{value}` must be inside `.derivon` and must not be the workspace manifest"
+        ));
+    }
+    Ok(path)
+}
+
+fn validate_workspace_source_changes(changes: &WorkspaceSourceChanges) -> Result<(), String> {
+    if let Some(graph) = &changes.graph {
+        serde_json::from_str::<WorkspaceDocument>(graph)
+            .map_err(|error| format!("invalid {MANIFEST_PATH}: {error}"))?;
+    }
+
+    let mut paths = HashSet::new();
+    if changes.graph.is_some() {
+        paths.insert(PathBuf::from(MANIFEST_PATH));
+    }
+    for change in &changes.documents {
+        let path = safe_relative_path(&change.path)?;
+        if path == Path::new(MANIFEST_PATH) || !paths.insert(path) {
+            return Err(format!(
+                "duplicate or reserved workspace path `{}`",
+                change.path
+            ));
+        }
+    }
+    for change in &changes.assets {
+        let path = safe_relative_path(&change.path)?;
+        if path == Path::new(MANIFEST_PATH) || !paths.insert(path) {
+            return Err(format!(
+                "duplicate or reserved workspace path `{}`",
+                change.path
+            ));
+        }
+    }
+    for change in &changes.companion_metadata {
+        let path = validate_companion_metadata_path(&change.path)?;
+        if !paths.insert(path) {
+            return Err(format!("duplicate workspace path `{}`", change.path));
+        }
+    }
+    Ok(())
+}
+
+fn prepare_workspace_source_target(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    let canonical_root = fs::canonicalize(root)
+        .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
+    let relative = safe_relative_path(relative_path)?;
+    let target = root.join(&relative);
+    let target_parent = target
+        .parent()
+        .ok_or_else(|| format!("workspace path `{relative_path}` has no parent"))?;
+
+    let mut existing_ancestor = target_parent;
+    while !existing_ancestor.exists() {
+        existing_ancestor = existing_ancestor
+            .parent()
+            .ok_or_else(|| format!("workspace path `{relative_path}` has no existing ancestor"))?;
+    }
+    let canonical_ancestor = fs::canonicalize(existing_ancestor)
+        .map_err(|error| format!("cannot resolve {}: {error}", existing_ancestor.display()))?;
+    if !canonical_ancestor.starts_with(&canonical_root) {
+        return Err(format!(
+            "workspace path `{relative_path}` resolves outside the workspace"
+        ));
+    }
+
+    fs::create_dir_all(target_parent)
+        .map_err(|error| format!("cannot create {}: {error}", target_parent.display()))?;
+    let canonical_parent = fs::canonicalize(target_parent)
+        .map_err(|error| format!("cannot resolve {}: {error}", target_parent.display()))?;
+    if !canonical_parent.starts_with(&canonical_root) {
+        return Err(format!(
+            "workspace path `{relative_path}` resolves outside the workspace"
+        ));
+    }
+
+    let filename = relative
+        .file_name()
+        .ok_or_else(|| format!("workspace path `{relative_path}` has no filename"))?;
+    let canonical_target = canonical_parent.join(filename);
+    if canonical_target.exists() {
+        let resolved_target = fs::canonicalize(&canonical_target)
+            .map_err(|error| format!("cannot resolve {}: {error}", canonical_target.display()))?;
+        if !resolved_target.starts_with(&canonical_root) {
+            return Err(format!(
+                "workspace path `{relative_path}` resolves outside the workspace"
+            ));
+        }
+    }
+    Ok(canonical_target)
+}
+
+fn apply_workspace_source_change(
+    root: &Path,
+    relative_path: &str,
+    content: Option<&[u8]>,
+) -> Result<(), String> {
+    let target = prepare_workspace_source_target(root, relative_path)?;
+    match content {
+        Some(bytes) => fs::write(&target, bytes)
+            .map_err(|error| format!("cannot write {}: {error}", target.display())),
+        None => match fs::remove_file(&target) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("cannot remove {}: {error}", target.display())),
+        },
+    }
+}
+
+fn commit_workspace_source_changes_to_disk(
+    root: &Path,
+    changes: &WorkspaceSourceChanges,
+) -> Result<(), String> {
+    validate_workspace_source_changes(changes)?;
+    if let Some(graph) = &changes.graph {
+        apply_workspace_source_change(root, MANIFEST_PATH, Some(graph.as_bytes()))?;
+    }
+    for change in &changes.documents {
+        apply_workspace_source_change(
+            root,
+            &change.path,
+            change.content.as_deref().map(str::as_bytes),
+        )?;
+    }
+    for change in &changes.assets {
+        apply_workspace_source_change(root, &change.path, change.content.as_deref())?;
+    }
+    for change in &changes.companion_metadata {
+        apply_workspace_source_change(
+            root,
+            &change.path,
+            change.content.as_deref().map(str::as_bytes),
+        )?;
+    }
+    Ok(())
 }
 
 fn referenced_files(manifest: &WorkspaceDocument) -> Result<Vec<String>, String> {
@@ -225,6 +426,40 @@ pub async fn read_workspace_file(
     .map_err(|error| format!("workspace file reader task failed: {error}"))?
 }
 
+#[tauri::command]
+pub async fn read_workspace_source_graph(root_path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        read_workspace_source_text(Path::new(&root_path), MANIFEST_PATH)
+    })
+    .await
+    .map_err(|error| format!("workspace source graph reader task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn read_workspace_source_document(
+    root_path: String,
+    relative_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        read_workspace_source_text(Path::new(&root_path), &relative_path)
+    })
+    .await
+    .map_err(|error| format!("workspace source document reader task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn read_workspace_source_companion_metadata(
+    root_path: String,
+    relative_path: String,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        validate_companion_metadata_path(&relative_path)?;
+        read_optional_workspace_source_text(Path::new(&root_path), &relative_path)
+    })
+    .await
+    .map_err(|error| format!("workspace source companion metadata reader task failed: {error}"))?
+}
+
 fn read_workspace_asset_bytes(root: &Path, relative_path: &str) -> Result<Vec<u8>, String> {
     let canonical_root = fs::canonicalize(root)
         .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
@@ -253,6 +488,19 @@ pub async fn read_workspace_asset(
     Ok(tauri::ipc::Response::new(bytes))
 }
 
+#[tauri::command]
+pub async fn read_workspace_source_asset(
+    root_path: String,
+    relative_path: String,
+) -> Result<tauri::ipc::Response, String> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        read_workspace_asset_bytes(Path::new(&root_path), &relative_path)
+    })
+    .await
+    .map_err(|error| format!("workspace source asset reader task failed: {error}"))??;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 fn decode_request_header(request: &tauri::ipc::Request<'_>, name: &str) -> Result<String, String> {
     let value = request
         .headers()
@@ -270,8 +518,9 @@ fn decode_request_header(request: &tauri::ipc::Request<'_>, name: &str) -> Resul
                 .ok_or_else(|| format!("invalid percent encoding in `{name}` header"))?;
             let text = std::str::from_utf8(hex)
                 .map_err(|error| format!("invalid percent encoding in `{name}` header: {error}"))?;
-            decoded.push(u8::from_str_radix(text, 16)
-                .map_err(|error| format!("invalid percent encoding in `{name}` header: {error}"))?);
+            decoded.push(u8::from_str_radix(text, 16).map_err(|error| {
+                format!("invalid percent encoding in `{name}` header: {error}")
+            })?);
             index += 3;
         } else {
             decoded.push(bytes[index]);
@@ -281,7 +530,11 @@ fn decode_request_header(request: &tauri::ipc::Request<'_>, name: &str) -> Resul
     String::from_utf8(decoded).map_err(|error| format!("`{name}` header is not UTF-8: {error}"))
 }
 
-fn write_workspace_asset_bytes(root: &Path, relative_path: &str, bytes: &[u8]) -> Result<(), String> {
+fn write_workspace_asset_bytes(
+    root: &Path,
+    relative_path: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
     const MAX_ASSET_BYTES: usize = 32 * 1024 * 1024;
     if bytes.is_empty() || bytes.len() > MAX_ASSET_BYTES {
         return Err("workspace image must be between 1 byte and 32 MiB".to_owned());
@@ -293,15 +546,22 @@ fn write_workspace_asset_bytes(root: &Path, relative_path: &str, bytes: &[u8]) -
     if parent.components().count() < 3
         || parent.file_name().and_then(|name| name.to_str()) != Some("assets")
     {
-        return Err("workspace images must be written inside an object assets directory".to_owned());
+        return Err(
+            "workspace images must be written inside an object assets directory".to_owned(),
+        );
     }
     let extension = relative
         .extension()
         .and_then(|value| value.to_str())
         .map(str::to_ascii_lowercase)
         .unwrap_or_default();
-    if !matches!(extension.as_str(), "avif" | "gif" | "jpg" | "jpeg" | "png" | "svg" | "webp") {
-        return Err(format!("unsupported workspace image extension `{extension}`"));
+    if !matches!(
+        extension.as_str(),
+        "avif" | "gif" | "jpg" | "jpeg" | "png" | "svg" | "webp"
+    ) {
+        return Err(format!(
+            "unsupported workspace image extension `{extension}`"
+        ));
     }
 
     let canonical_root = fs::canonicalize(root)
@@ -342,7 +602,9 @@ pub async fn write_workspace_asset(request: tauri::ipc::Request<'_>) -> Result<(
     let relative_path = decode_request_header(&request, "x-derivon-relative-path")?;
     let bytes = match request.body() {
         tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
-        tauri::ipc::InvokeBody::Json(_) => return Err("workspace image body must be raw bytes".to_owned()),
+        tauri::ipc::InvokeBody::Json(_) => {
+            return Err("workspace image body must be raw bytes".to_owned())
+        }
     };
     tauri::async_runtime::spawn_blocking(move || {
         write_workspace_asset_bytes(Path::new(&root_path), &relative_path, &bytes)
@@ -362,6 +624,18 @@ pub async fn write_workspace(
     })
     .await
     .map_err(|error| format!("workspace writer task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn commit_workspace_source_changes(
+    root_path: String,
+    changes: WorkspaceSourceChanges,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        commit_workspace_source_changes_to_disk(Path::new(&root_path), &changes)
+    })
+    .await
+    .map_err(|error| format!("workspace source commit task failed: {error}"))?
 }
 
 fn write_new_workspace_files(
@@ -422,6 +696,105 @@ mod tests {
     }
 
     #[test]
+    fn workspace_source_round_trip_preserves_every_byte() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
+        let graph = fs::read_to_string(fixture.join(MANIFEST_PATH)).unwrap();
+        let document = fs::read_to_string(fixture.join("docs/points/a/document.md")).unwrap();
+        let asset = vec![0, 1, 2, 127, 128, 255];
+        let companion = "{ \"questions\" : [ ] }\n".to_owned();
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        fs::create_dir_all(root.path().join("docs/points/a")).unwrap();
+        fs::create_dir_all(root.path().join("assets")).unwrap();
+        fs::write(root.path().join(MANIFEST_PATH), graph.as_bytes()).unwrap();
+        fs::write(
+            root.path().join("docs/points/a/document.md"),
+            document.as_bytes(),
+        )
+        .unwrap();
+        fs::write(root.path().join("assets/diagram.bin"), &asset).unwrap();
+        fs::write(
+            root.path().join(".derivon/orientation.json"),
+            companion.as_bytes(),
+        )
+        .unwrap();
+
+        let opened_graph = read_workspace_source_text(root.path(), MANIFEST_PATH).unwrap();
+        let opened_document =
+            read_workspace_source_text(root.path(), "docs/points/a/document.md").unwrap();
+        let opened_asset = read_workspace_asset_bytes(root.path(), "assets/diagram.bin").unwrap();
+        let opened_companion =
+            read_optional_workspace_source_text(root.path(), ".derivon/orientation.json").unwrap();
+        assert_eq!(
+            read_optional_workspace_source_text(root.path(), ".derivon/missing.json").unwrap(),
+            None
+        );
+
+        commit_workspace_source_changes_to_disk(
+            root.path(),
+            &WorkspaceSourceChanges {
+                graph: Some(opened_graph),
+                documents: vec![WorkspaceSourceTextChange {
+                    path: "docs/points/a/document.md".to_owned(),
+                    content: Some(opened_document),
+                }],
+                assets: vec![WorkspaceSourceAssetChange {
+                    path: "assets/diagram.bin".to_owned(),
+                    content: Some(opened_asset),
+                }],
+                companion_metadata: vec![WorkspaceSourceTextChange {
+                    path: ".derivon/orientation.json".to_owned(),
+                    content: opened_companion,
+                }],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(root.path().join(MANIFEST_PATH)).unwrap(),
+            graph.as_bytes()
+        );
+        assert_eq!(
+            fs::read(root.path().join("docs/points/a/document.md")).unwrap(),
+            document.as_bytes()
+        );
+        assert_eq!(
+            fs::read(root.path().join("assets/diagram.bin")).unwrap(),
+            asset
+        );
+        assert_eq!(
+            fs::read(root.path().join(".derivon/orientation.json")).unwrap(),
+            companion.as_bytes()
+        );
+    }
+
+    #[test]
+    fn workspace_source_validates_all_paths_before_writing() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        fs::write(root.path().join("docs/original.md"), "original\n").unwrap();
+        let changes = WorkspaceSourceChanges {
+            graph: None,
+            documents: vec![WorkspaceSourceTextChange {
+                path: "docs/original.md".to_owned(),
+                content: Some("changed\n".to_owned()),
+            }],
+            assets: vec![],
+            companion_metadata: vec![WorkspaceSourceTextChange {
+                path: MANIFEST_PATH.to_owned(),
+                content: Some("not metadata\n".to_owned()),
+            }],
+        };
+
+        assert!(commit_workspace_source_changes_to_disk(root.path(), &changes).is_err());
+        assert_eq!(
+            fs::read_to_string(root.path().join("docs/original.md")).unwrap(),
+            "original\n"
+        );
+    }
+
+    #[test]
     fn reads_binary_assets_without_allowing_workspace_escape() {
         let root = tempfile::tempdir().unwrap();
         let asset_directory = root.path().join("assets");
@@ -434,12 +807,8 @@ mod tests {
         );
         assert!(read_workspace_asset_bytes(root.path(), "../diagram.png").is_err());
 
-        write_workspace_asset_bytes(
-            root.path(),
-            "docs/concept-a/assets/image-1.png",
-            &[1, 2, 3],
-        )
-        .unwrap();
+        write_workspace_asset_bytes(root.path(), "docs/concept-a/assets/image-1.png", &[1, 2, 3])
+            .unwrap();
         assert_eq!(
             fs::read(root.path().join("docs/concept-a/assets/image-1.png")).unwrap(),
             vec![1, 2, 3]
