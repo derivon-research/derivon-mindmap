@@ -1,8 +1,12 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import {
+  TEST_HOOK_EVENT,
+  TEST_HOOK_VERSION,
+  type DerivonTestHook,
+} from '../src/testHooks';
 import { createGeneratedRuntimeWorkspace, type RuntimeWorkspaceFixture } from './fixtures/generated-workspace';
 
-const TEST_HOOK_EVENT = 'derivon:test-hook';
 const READY_THRESHOLD_MS = 2_500;
 const INTERACTION_THRESHOLD_MS = 200;
 
@@ -17,16 +21,10 @@ function integerEnvironmentValue(name: string, fallback: number, minimum: number
 const concepts = integerEnvironmentValue('PERF_SIZE', 1000, 100);
 const runCount = integerEnvironmentValue('PERF_RUNS', 5, 3);
 
-type InteractionName = 'select-point' | 'switch-target' | 'toggle-panel';
-type TestHookEvent = {
-  version: 1;
-  sequence: number;
-  at: number;
-  kind: 'interactive' | 'interaction-complete';
-  interaction?: InteractionName;
-  context?: Record<string, string | boolean>;
+type PerfWindow = Window & {
+  __derivonPerfEvents?: DerivonTestHook[];
+  __derivonRejectedHookVersion?: number;
 };
-type PerfWindow = Window & { __derivonPerfEvents?: TestHookEvent[] };
 type Distribution = {
   samples: number;
   min: number;
@@ -94,11 +92,16 @@ function formatSummary(fixture: RuntimeWorkspaceFixture, summary: ReturnType<typ
 }
 
 async function installFixture(page: Page, fixture: RuntimeWorkspaceFixture): Promise<void> {
-  await page.addInitScript(({ eventName, workspace }) => {
+  await page.addInitScript(({ eventName, hookVersion, workspace }) => {
     const perfWindow = window as PerfWindow;
     perfWindow.__derivonPerfEvents = [];
     window.addEventListener(eventName, (event) => {
-      perfWindow.__derivonPerfEvents?.push((event as CustomEvent<TestHookEvent>).detail);
+      const detail = (event as CustomEvent<Partial<DerivonTestHook>>).detail;
+      if (detail.version !== hookVersion) {
+        perfWindow.__derivonRejectedHookVersion = detail.version;
+        return;
+      }
+      perfWindow.__derivonPerfEvents?.push(detail as DerivonTestHook);
     });
     localStorage.setItem('derivon.onboarding/v2', JSON.stringify({
       version: 2,
@@ -106,31 +109,37 @@ async function installFixture(page: Page, fixture: RuntimeWorkspaceFixture): Pro
       progress: {},
     }));
     localStorage.setItem('derivon.authoring.workspace/v0.3.0', JSON.stringify(workspace));
-  }, { eventName: TEST_HOOK_EVENT, workspace: fixture.workspace });
+  }, { eventName: TEST_HOOK_EVENT, hookVersion: TEST_HOOK_VERSION, workspace: fixture.workspace });
 }
 
 async function waitForHook(
   page: Page,
   afterSequence: number,
-  expected: Pick<TestHookEvent, 'kind' | 'interaction'> & { context?: Record<string, string | boolean> },
-): Promise<TestHookEvent> {
-  await page.waitForFunction(({ minimumSequence, match }) => {
-    const events = (window as PerfWindow).__derivonPerfEvents ?? [];
-    return events.some((event) => event.sequence > minimumSequence
+  expected: Pick<DerivonTestHook, 'kind' | 'interaction'> & { context?: Record<string, string | boolean> },
+): Promise<DerivonTestHook> {
+  await page.waitForFunction(({ minimumSequence, match, hookVersion }) => {
+    const perfWindow = window as PerfWindow;
+    if (perfWindow.__derivonRejectedHookVersion !== undefined) {
+      throw new Error(`Unsupported Derivon test-hook version: ${perfWindow.__derivonRejectedHookVersion}`);
+    }
+    const events = perfWindow.__derivonPerfEvents ?? [];
+    return events.some((event) => event.version === hookVersion
+      && event.sequence > minimumSequence
       && event.kind === match.kind
       && event.interaction === match.interaction
       && Object.entries(match.context ?? {}).every(([key, value]) => event.context?.[key] === value));
-  }, { minimumSequence: afterSequence, match: expected }, { timeout: 120_000 });
+  }, { minimumSequence: afterSequence, match: expected, hookVersion: TEST_HOOK_VERSION }, { timeout: 120_000 });
 
-  return page.evaluate(({ minimumSequence, match }) => {
+  return page.evaluate(({ minimumSequence, match, hookVersion }) => {
     const events = (window as PerfWindow).__derivonPerfEvents ?? [];
-    const event = events.find((candidate) => candidate.sequence > minimumSequence
+    const event = events.find((candidate) => candidate.version === hookVersion
+      && candidate.sequence > minimumSequence
       && candidate.kind === match.kind
       && candidate.interaction === match.interaction
       && Object.entries(match.context ?? {}).every(([key, value]) => candidate.context?.[key] === value));
     if (!event) throw new Error(`Missing ${match.kind} test hook`);
     return event;
-  }, { minimumSequence: afterSequence, match: expected });
+  }, { minimumSequence: afterSequence, match: expected, hookVersion: TEST_HOOK_VERSION });
 }
 
 async function lastSequence(page: Page): Promise<number> {
@@ -139,14 +148,14 @@ async function lastSequence(page: Page): Promise<number> {
 
 async function measureInteraction(
   page: Page,
-  expected: Pick<TestHookEvent, 'kind' | 'interaction'> & { context?: Record<string, string | boolean> },
+  expected: Pick<DerivonTestHook, 'kind' | 'interaction'> & { context?: Record<string, string | boolean> },
   trigger: () => Promise<void>,
 ): Promise<number> {
   const sequence = await lastSequence(page);
   const startedAt = await page.evaluate(() => performance.now());
   await trigger();
   const completed = await waitForHook(page, sequence, expected);
-  return completed.at - startedAt;
+  return completed.completedAtMs - startedAt;
 }
 
 async function runSample(
@@ -199,7 +208,7 @@ async function runSample(
   await context.close();
   return {
     run,
-    readyMs: interactive.at,
+    readyMs: interactive.completedAtMs,
     selectPointMs,
     switchTargetMs,
     panelExpandMs,

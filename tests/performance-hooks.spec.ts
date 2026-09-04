@@ -1,23 +1,28 @@
 import { expect, test, type Page } from '@playwright/test';
+import {
+  TEST_HOOK_EVENT,
+  TEST_HOOK_VERSION,
+  type DerivonTestHook,
+} from '../src/testHooks';
 
-const TEST_HOOK_EVENT = 'derivon:test-hook';
-
-type TestHookEvent = {
-  version: 1;
-  sequence: number;
-  at: number;
-  kind: 'interactive' | 'interaction-complete';
-  interaction?: 'select-point' | 'switch-target' | 'toggle-panel';
-  context?: Record<string, string | boolean>;
+type TestWindow = Window & {
+  __testHookEvents?: DerivonTestHook[];
+  __interactiveSnapshot?: { layoutReady: boolean; rendererReady: boolean };
 };
-type TestWindow = Window & { __testHookEvents?: TestHookEvent[] };
 
 async function installRecorder(page: Page): Promise<void> {
   await page.addInitScript((eventName) => {
     const testWindow = window as TestWindow;
     testWindow.__testHookEvents = [];
     window.addEventListener(eventName, (event) => {
-      testWindow.__testHookEvents?.push((event as CustomEvent<TestHookEvent>).detail);
+      const detail = (event as CustomEvent<DerivonTestHook>).detail;
+      testWindow.__testHookEvents?.push(detail);
+      if (detail.kind === 'interactive') {
+        testWindow.__interactiveSnapshot = {
+          layoutReady: document.querySelector('.app-shell')?.getAttribute('data-layout-ready') === 'true',
+          rendererReady: document.querySelector('.g6-graph-surface')?.getAttribute('data-ready') === 'true',
+        };
+      }
     });
     localStorage.setItem('derivon.onboarding/v2', JSON.stringify({
       version: 2,
@@ -29,21 +34,25 @@ async function installRecorder(page: Page): Promise<void> {
 
 async function expectHook(
   page: Page,
-  expected: Pick<TestHookEvent, 'kind' | 'interaction'> & { context?: Record<string, string | boolean> },
+  expected: Pick<DerivonTestHook, 'kind' | 'interaction'> & { context?: Record<string, string | boolean> },
 ): Promise<void> {
-  await expect.poll(() => page.evaluate((match) => {
+  await expect.poll(() => page.evaluate(({ match, hookVersion }) => {
     const events = (window as TestWindow).__testHookEvents ?? [];
-    return events.some((event) => event.version === 1
+    return events.some((event) => event.version === hookVersion
       && event.kind === match.kind
       && event.interaction === match.interaction
       && Object.entries(match.context ?? {}).every(([key, value]) => event.context?.[key] === value));
-  }, expected)).toBe(true);
+  }, { match: expected, hookVersion: TEST_HOOK_VERSION })).toBe(true);
 }
 
 test('math-reforged workspace emits the runtime performance hook contract', async ({ page }) => {
   await installRecorder(page);
   await page.goto('/?example=math-reforged');
   await expectHook(page, { kind: 'interactive' });
+  expect(await page.evaluate(() => (window as TestWindow).__interactiveSnapshot)).toEqual({
+    layoutReady: true,
+    rendererReady: true,
+  });
 
   const search = page.getByRole('combobox', { name: '搜索概念' });
   await search.fill('linear-map');
@@ -79,5 +88,5 @@ test('math-reforged workspace emits the runtime performance hook contract', asyn
 
   const events = await page.evaluate(() => (window as TestWindow).__testHookEvents ?? []);
   expect(events.map((event) => event.sequence)).toEqual(events.map((_, index) => index + 1));
-  expect(events.every((event) => Number.isFinite(event.at) && event.at >= 0)).toBe(true);
+  expect(events.every((event) => Number.isFinite(event.completedAtMs) && event.completedAtMs >= 0)).toBe(true);
 });

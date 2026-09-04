@@ -391,15 +391,22 @@ function AuthoringCanvas() {
   const fitInitialGraph = useCallback(() =>
     graphSurfaceRef.current?.fitInitialView() ?? Promise.resolve(), []);
 
+  const waitForGraphIdle = useCallback(async () => {
+    while (!graphSurfaceRef.current) {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    }
+    await graphSurfaceRef.current.whenIdle();
+  }, []);
+
   const completeTestInteraction = useCallback((
     interaction: TestHookInteraction,
     context: TestHookContext,
   ) => {
     window.requestAnimationFrame(() => {
-      void (graphSurfaceRef.current?.whenIdle() ?? Promise.resolve())
+      void waitForGraphIdle()
         .then(() => emitInteractionCompleteTestHook(interaction, context));
     });
-  }, []);
+  }, [waitForGraphIdle]);
 
   const clientToGraph = useCallback((position: Position): Position =>
     graphSurfaceRef.current?.clientToGraph(position) ?? position, []);
@@ -1233,10 +1240,11 @@ function AuthoringCanvas() {
     setSelectedId(concept.id);
     notifyTourAction('concept-found');
     window.setTimeout(() => {
-      void (graphSurfaceRef.current?.focusElement(concept.id) ?? Promise.resolve())
+      void waitForGraphIdle()
+        .then(() => graphSurfaceRef.current?.focusElement(concept.id))
         .then(() => emitInteractionCompleteTestHook('select-point', { pointId: concept.id }));
     }, 30);
-  }, [commit, document, replacementDraft, search]);
+  }, [commit, document, replacementDraft, search, waitForGraphIdle]);
 
   const adoptChosenWorkspace = useCallback((result: ChosenWorkspaceDirectory, statusMessage?: string) => {
     const imported = result.workspace.manifest;
@@ -2048,10 +2056,9 @@ function AuthoringCanvas() {
     if (interactiveTestHookEmittedRef.current || !layoutReady || layoutRunning) return;
     interactiveTestHookEmittedRef.current = true;
     window.requestAnimationFrame(() => {
-      void (graphSurfaceRef.current?.whenIdle() ?? Promise.resolve())
-        .then(() => emitInteractiveTestHook());
+      void waitForGraphIdle().then(() => emitInteractiveTestHook());
     });
-  }, [layoutReady, layoutRunning]);
+  }, [layoutReady, layoutRunning, waitForGraphIdle]);
 
   return (
     <main

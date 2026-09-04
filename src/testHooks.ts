@@ -6,7 +6,7 @@ export type TestHookContext = Record<string, string | boolean>;
 export type DerivonTestHook = {
   version: typeof TEST_HOOK_VERSION;
   sequence: number;
-  at: number;
+  completedAtMs: number;
   kind: 'interactive' | 'interaction-complete';
   interaction?: TestHookInteraction;
   context?: TestHookContext;
@@ -21,14 +21,14 @@ function afterPaint(): Promise<void> {
 }
 
 async function emitTestHook(
-  hook: Omit<DerivonTestHook, 'version' | 'sequence' | 'at'>,
+  hook: Omit<DerivonTestHook, 'version' | 'sequence' | 'completedAtMs'>,
 ): Promise<void> {
   await afterPaint();
   window.dispatchEvent(new CustomEvent<DerivonTestHook>(TEST_HOOK_EVENT, {
     detail: {
       version: TEST_HOOK_VERSION,
       sequence: ++sequence,
-      at: performance.now(),
+      completedAtMs: performance.now(),
       ...hook,
     },
   }));

@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Circle as GCircle, Path as GPath, Polygon as GPolygon, Rect as GRect, Text as GText } from '@antv/g';
 import { Maximize, Minus, Plus, Replace } from 'lucide-react';
 import { DragCanvas } from '@antv/g6/esm/behaviors/drag-canvas';
@@ -329,6 +329,7 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
   const graphRef = useRef<Graph | null>(null);
   const callbacksRef = useRef<CallbackProps>(props);
   const syncQueueRef = useRef(Promise.resolve());
+  const graphReadyRef = useRef(false);
   const snapshot = useMemo(() => createG6SceneSnapshot(props.runtime), [props.runtime]);
   const snapshotRef = useRef<G6SceneSnapshot | null>(null);
   const replacementAssistShapesRef = useRef(new Map<string, GPath>());
@@ -349,6 +350,10 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
   const [replacementHoverId, setReplacementHoverId] = useState<string | null>(null);
   const activeReplacementNodeRef = useRef<G6SceneNode | null>(null);
   callbacksRef.current = props;
+
+  useLayoutEffect(() => {
+    graphReadyRef.current = ready;
+  }, [ready]);
 
   const activeReplacementNode = useMemo(() => {
     if (props.replacementControlsDisabled) return null;
@@ -419,16 +424,20 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
     };
   }, [replacementPopover]);
 
-  const synchronizedGraph = useCallback(async (): Promise<Graph | null> => {
+  const waitForSyncQueue = useCallback(async (): Promise<void> => {
     let pending = syncQueueRef.current;
     await pending;
     while (pending !== syncQueueRef.current) {
       pending = syncQueueRef.current;
       await pending;
     }
+  }, []);
+
+  const synchronizedGraph = useCallback(async (): Promise<Graph | null> => {
+    await waitForSyncQueue();
     const graph = graphRef.current;
     return !graph || graph.destroyed || !ready ? null : graph;
-  }, [ready]);
+  }, [ready, waitForSyncQueue]);
 
   const fitSynchronizedGraph = useCallback(async (
     ids: string[] | undefined,
@@ -470,7 +479,10 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       }
     },
     async whenIdle() {
-      await synchronizedGraph();
+      while (!graphReadyRef.current) await nextFrame();
+      await nextFrame();
+      await nextFrame();
+      await waitForSyncQueue();
     },
     clientToGraph(position) {
       const graph = graphRef.current;
@@ -484,7 +496,7 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
       if (!graph || graph.destroyed || !ready) return;
       await graph.zoomBy(ratio, { duration: 160 });
     },
-  }), [fitSynchronizedGraph, ready, synchronizedGraph]);
+  }), [fitSynchronizedGraph, ready, synchronizedGraph, waitForSyncQueue]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -492,6 +504,7 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
     snapshotRef.current = null;
     syncQueueRef.current = Promise.resolve();
     initialFitDoneRef.current = false;
+    graphReadyRef.current = false;
     setReady(false);
     let disposed = false;
     let initialized = false;
@@ -1111,6 +1124,7 @@ const G6GraphSurface = forwardRef<G6GraphSurfaceHandle, G6GraphSurfaceProps>(fun
 
     return () => {
       disposed = true;
+      graphReadyRef.current = false;
       resizeObserver.disconnect();
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('blur', cancelGestures);

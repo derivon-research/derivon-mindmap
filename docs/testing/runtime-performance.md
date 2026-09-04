@@ -17,14 +17,14 @@ Every event detail has this common shape:
 type DerivonTestHook = {
   version: 1;
   sequence: number;
-  at: number;
+  completedAtMs: number;
   kind: 'interactive' | 'interaction-complete';
   interaction?: 'select-point' | 'switch-target' | 'toggle-panel';
   context?: Record<string, string | boolean>;
 };
 ```
 
-`at` is the completion time from the document's `performance.now()` clock. `sequence` starts at 1 and increases by one for each event in a document. Consumers must reject unsupported versions rather than guessing at payload changes.
+`completedAtMs` is the completion time in milliseconds from the document's `performance.now()` clock. `sequence` starts at 1 and increases by one for each event in a document. Consumers must reject unsupported versions rather than guessing at payload changes.
 
 ## Interactive signal
 
@@ -39,7 +39,7 @@ Emit exactly one event after all of these conditions are true:
 {
   version: 1,
   sequence: 1,
-  at: 1842.6,
+  completedAtMs: 1842.6,
   kind: 'interactive'
 }
 ```
