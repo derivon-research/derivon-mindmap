@@ -80,25 +80,33 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 确定性问答、桌面 Pi SDK 和未来远端对话实现共同满足的适配接口。provider 负责把各自的交互方式接到定向流程所接受的意图与事件，并可报告流式回复、完成、错误和中止；它不拥有应用状态，不能直接修改 React 状态或工作区，也不能绕过定向状态机。更换或缺少 provider 不改变定向流程的正确性。
 
-### 本仓库拥有的创作层词汇
+### 本仓库拥有的产品词汇
 
-以下词只描述 `derivon.authoring/v0.3.0` 创作层；对应的数学对象和语义仍以外部规范为准。
+这些词属于 Derivon Mindmap 的产品语意，由学习侧与创作侧共同使用。它们不是 `derivon-core` 数学模型的别名；应用在需要求解时才把其中的结构投影为 core 输入。
 
 **概念（concept）**
 
-创作协议中对一个 point 的可创作表达，增加稳定 ID、面向人的 label 和对象文档引用。概念不是 point 数学定义的替代品。
+产品中一个可命名、可阅读的理解对象。学习侧把概念用作目标、已知和教材内容；创作侧创建、修改概念及其文档。authoring manifest 用 point 记录概念的稳定 ID 与创作元数据，但概念不是 point 数学定义的替代品。
 
-**推导（derivation，创作层）**
+**推导（derivation，产品语意）**
 
-创作协议中对一个 hyperedge 的可创作表达，关联作为联合前提与结论的概念、学习成本和对象文档。此处指可编辑、可记录的创作对象；数学模型中的完整 derivation 定义不在本仓库重述。
+概念之间的一条有方向的关系：零个或多个前提概念共同通向一个结果概念。每条推导拥有自己的问题引入与推导过程，说明已有概念为什么不够、又通过什么论证、构造或转换得到结果概念。学习侧按路线呈现并阅读推导；创作侧创建、修改推导及其对象文档。
+
+求解时，一条产品推导被投影为一个带 `tails`、`head` 和 `weight` 的 hyperedge。`derivon-core` 只处理这个数学结构，不拥有问题引入、推导过程或产品中的“推导”语意。产品推导也不等于 paper 定义的 mathematical derivation。
 
 **对象文档（object document）**
 
-归属于一个概念或一条创作层推导的独立文档及其资产。文档路径由 authoring manifest 引用，不同对象不共享同一个文档目录。
+归属于一个概念或一条产品推导的独立文档及其资产。概念文档承载概念内容；推导文档承载问题引入与推导过程。文档路径由 authoring manifest 引用，不同对象不共享同一个文档目录。
 
-**替换视图（replacement view）**
+**标签（tag）**
 
-authoring manifest 中声明的一种显示投影，把一组对象在特定视角下呈现为另一组对象。它只改变可见表达，不创建推导，也不保证替换前后具有相同可达性或最低成本。
+图作者附着到 point 的工作区内容，例如 `linear algebra`。tag 可供学习侧与创作侧组织、筛选和呈现概念，但不改变 core 的可达性、推导或成本语义。某位学习者临时选择的筛选条件属于应用状态，图作者提供的 tag 本身属于工作区内容。
+
+**替换视图（replacement view，v1 废弃）**
+
+v0.4.2 曾用 authoring manifest 的 `view.replacements` 把一组对象显示为另一组对象。实践表明它没有有效降低模型复杂度，反而增加了编辑、渲染和文档行为的分支，因此 v1 不再把替换视图作为产品能力，不建立新增、编辑或显示路径。
+
+为保持 `derivon.authoring/v0.3.0` 工作区兼容，既有字段只在工作区边界作为旧数据处理，不进入 v1 的产品状态或模块设计。需要组织和筛选概念时使用 tag；tag 只做分类，不声称对象之间等价，也不改变图语义。
 
 authoring manifest 的盘上结构见 [README 的“工作区格式”](README.md#工作区格式)。
 
@@ -106,11 +114,11 @@ authoring manifest 的盘上结构见 [README 的“工作区格式”](README.m
 
 本仓库不重新定义以下共有词；评审和实现遇到歧义时直接以对应来源为准：
 
-- 数学模型中的 point、hyperedge、tail、head、closure、derivation、set cost、tree cost、depth cost 与 bracket：[derivon-research/paper](https://github.com/derivon-research/paper#readme)。
+- 数学模型中的 point、hyperedge、tail、head、closure、mathematical derivation、set cost、tree cost、depth cost 与 bracket：[derivon-research/paper](https://github.com/derivon-research/paper#readme)。
 - 图协议 `derivon.graph/v1`：[derivon-research/derivon 的 graph format](https://github.com/derivon-research/derivon/blob/main/docs/src/graph-format.md)。
 - problem pressure 与 problem-led derivation 等创作方法：[derivon-research/skills 的 context](https://github.com/derivon-research/skills/blob/main/CONTEXT.md)。
 
-同一个英文词 `derivation` 同时出现在数学模型、创作层和创作方法中；讨论时必须加上“数学模型”“创作层”或“problem-led”限定，不能把三者的定义互换。
+同一个英文词 `derivation` 同时出现在数学模型、产品语意和创作方法中；讨论时必须加上“数学模型”“产品”或“problem-led”限定。产品推导是一条拥有问题引入与推导过程的概念关系；mathematical derivation 遵循 paper 的定义，不能把两者互换。
 
 ## 模块地图
 
@@ -122,8 +130,8 @@ authoring manifest 的盘上结构见 [README 的“工作区格式”](README.m
 | --- | --- | --- | --- |
 | `src/app/` | `src/app/App.tsx` | composition root、宿主能力选择、应用级模式切换与顶栏 | 增加宿主能力或应用级模式入口 |
 | `src/modes/learning/` | `src/modes/learning/index.ts` | 定向状态机、路线预览、路线学习，以及大图浏览中的学习者操作与应用状态 | 改目标/已知/进度行为或学习侧界面 |
-| `src/modes/authoring/` | `src/modes/authoring/index.ts` | 桌面创作工作流、编辑界面，以及大图浏览中的作者操作 | 增加创作功能；同时检查工作区提交契约 |
-| `src/workspace/` | `src/workspace/index.ts` | authoring manifest、对象文档、资产和伴随文档的解析、校验与领域操作，不做宿主 I/O | 改工作区内容模型或定向配置 |
+| `src/modes/authoring/` | `src/modes/authoring/index.ts` | 桌面创作工作流、编辑界面，以及大图浏览中的作者操作 | 增加创作功能或 tag 编辑；同时检查工作区提交契约 |
+| `src/workspace/` | `src/workspace/index.ts` | authoring manifest、对象文档、tag、伴随文档及旧字段的解析、校验与领域操作，不做宿主 I/O | 改工作区内容模型或定向配置 |
 | `src/ports/` | `src/ports/WorkspaceSource.ts`, `src/ports/ConversationProvider.ts` | `WorkspaceSource`、`ConversationProvider` 及求解等小接口 | 改跨边界能力；随后检查每个实现和契约测试 |
 | `src/hosts/web/` | `src/hosts/web/index.ts` | web composition 与只读端口实现 | 改 web 能力、内置工作区加载或确定性 provider |
 | `src/hosts/desktop/` | `src/hosts/desktop/index.ts` | desktop composition、本地工作区和 Pi SDK bridge | 改本地文件、桌面 IPC 或桌面对话实现 |

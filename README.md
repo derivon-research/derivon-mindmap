@@ -155,9 +155,11 @@ npm run dev
 
 ## 核心模型
 
-数学模型中的 point、hyperedge、tail、head、closure、derivation 与成本由 [`derivon-research/paper`](https://github.com/derivon-research/paper#readme) 定义；CLI 接受的 `derivon.graph/v1` 图协议以 [`derivon-research/derivon` 的 graph format](https://github.com/derivon-research/derivon/blob/main/docs/src/graph-format.md) 为准。本仓库不另写一套定义。
+数学模型中的 point、hyperedge、tail、head、closure、mathematical derivation 与成本由 [`derivon-research/paper`](https://github.com/derivon-research/paper#readme) 定义；CLI 接受的 `derivon.graph/v1` 图协议以 [`derivon-research/derivon` 的 graph format](https://github.com/derivon-research/derivon/blob/main/docs/src/graph-format.md) 为准。本仓库不另写一套定义。
 
-Mindmap 在图协议之上拥有 `derivon.authoring/v0.3.0` 创作层。概念、创作层推导、对象文档和替换视图的规范词义见 [`CONTEXT.md`](CONTEXT.md#本仓库拥有的创作层词汇)，盘上结构见下文“工作区格式”。不了解这些边界时，优先使用 `derivon-cli` 和 `derivon-mindmap` Skills，不要按普通有向图直觉批量改写 manifest。
+Mindmap 自己拥有学习侧与创作侧共有的产品语意。产品推导是概念之间的一条关系，拥有问题引入、推导过程和对象文档；求解时它投影为一个 hyperedge，但不等于 core 数学模型中的 mathematical derivation。概念、产品推导、对象文档和 tag 的规范词义见 [`CONTEXT.md`](CONTEXT.md#本仓库拥有的产品词汇)，盘上结构见下文“工作区格式”。
+
+替换视图是当前 v0.4.2 的旧能力；v1 不再提供它的新增、编辑或显示路径，而以 point 上的 tag 支持组织和筛选。不了解这些边界时，优先使用 `derivon-cli` 和 `derivon-mindmap` Skills，不要按普通有向图直觉批量改写 manifest。
 
 ## 主要功能
 
@@ -226,7 +228,7 @@ my-workspace/
 - 自动保存会检测磁盘修订变化；发生外部修改冲突时暂停写入并要求用户选择版本。
 - 图片引用保留作者写下的相对路径；运行时 Blob URL 和绝对磁盘路径不会写入 Markdown。
 
-最小 manifest 示例：
+以下是当前 v0.4.2 的最小 manifest，也是 `derivon.authoring/v0.3.0` 兼容示例；其中的 `view.replacements` 是旧字段，不代表 v1 仍提供替换视图产品能力：
 
 ```json
 {
@@ -273,7 +275,7 @@ my-workspace/
 }
 ```
 
-仓库内的完整工作区示例位于 [`src/examples/replace-with`](src/examples/replace-with)，原生路线验收 fixture 位于 [`src-tauri/tests/fixtures/complete-workspace`](src-tauri/tests/fixtures/complete-workspace)。
+仓库内的 v0.4.2 兼容工作区 fixture 位于 [`src/examples/replace-with`](src/examples/replace-with)，其中包含 v1 不再提供产品行为的旧 replacement 数据；原生路线验收 fixture 位于 [`src-tauri/tests/fixtures/complete-workspace`](src-tauri/tests/fixtures/complete-workspace)。
 
 ## 与 Agent 协作
 
