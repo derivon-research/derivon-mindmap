@@ -1,5 +1,7 @@
 # Next Demo Release
 
+> Historical pre-v1 release record. Replacement-view descriptions below document shipped v0.x behavior, not v1 product capabilities; see [`CONTEXT.md`](CONTEXT.md) for the v1 boundary.
+
 ## Agent integration
 
 - Agent Skills now live in the independent `derivon-research/skills` repository and install through `npx skills`; Mindmap no longer embeds, installs, upgrades, detects, or removes Agent files when workspaces are opened or saved.

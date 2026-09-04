@@ -2,6 +2,8 @@
 
 Derivon Mindmap 是一个本地优先的知识图谱编辑器，用加权有向 B-超图表达概念、联合前提、推导、替代方案和学习成本。它将可视化图编辑、对象级 Markdown 文档、路线求解和静态发布组织在同一个普通文件夹工作区中。
 
+> 版本范围：本 README 的用户说明对应当前已发布的 v0.4.2。`main` 正在进行 v1.0.0 重写；v1 是运行在 web 与桌面宿主上的一个应用，学习侧在两个宿主都可用，创作侧只在桌面可用。重写期术语与目标模块边界以 [`CONTEXT.md`](CONTEXT.md) 为准。
+
 - 在线版：<https://mindmap.derivon.net/>
 - 桌面版：[GitHub Releases](https://github.com/derivon-research/derivon-mindmap/releases/latest)
 - CLI：<https://github.com/derivon-research/derivon>
@@ -130,9 +132,9 @@ gh attestation verify ./Derivon_<version>_amd64.deb \
 
 ### 在线版
 
-使用 Chromium 系浏览器访问 <https://mindmap.derivon.net/> 即可体验图编辑、文档编辑和内置教程。但浏览器不支持路线求解功能。
+当前已发布的 v0.4.2 使用 Chromium 系浏览器访问 <https://mindmap.derivon.net/>，可以体验图编辑、文档编辑和内置教程，但不支持路线求解。v1.0.0 将 web 明确为只提供学习侧的宿主；创作侧与本地工作区写入只在桌面宿主提供。
 
-浏览器直接读写工作区依赖 File System Access API，需要 Chromium 系浏览器和 HTTPS 安全上下文。浏览器权限由用户显式授予；项目内容不会自动上传到 Derivon 服务。
+v0.4.2 的浏览器工作区读写依赖 File System Access API，需要 Chromium 系浏览器和 HTTPS 安全上下文。浏览器权限由用户显式授予；项目内容不会自动上传到 Derivon 服务。这是旧版能力说明，不是 v1 的宿主边界。
 
 ### 从源码运行
 
@@ -153,16 +155,11 @@ npm run dev
 
 ## 核心模型
 
-Derivon 使用加权有向 B-超图，而不是把推导压缩成普通二元边：
+数学模型中的 point、hyperedge、tail、head、closure、mathematical derivation 与成本由 [`derivon-research/paper`](https://github.com/derivon-research/paper#readme) 定义；CLI 接受的 `derivon.graph/v1` 图协议以 [`derivon-research/derivon` 的 graph format](https://github.com/derivon-research/derivon/blob/main/docs/src/graph-format.md) 为准。本仓库不另写一套定义。
 
-- **概念（point）**：由稳定、区分大小写的 ID 标识，并拥有显示 label 和独立文档。
-- **推导（hyperedge）**：包含零个或多个联合前提 `tails`、一个结论 `head` 和一个非负权重。
-- **联合语义**：一条多前提推导只有在所有 tails 都可用时才能推出 head；将它拆成多条普通边会把 AND 错误地改成 OR。
-- **合法结构**：空前提、环、自依赖、零权重、孤立概念和平行推导都允许存在。
-- **路线成本**：一条路线是能从起点闭包覆盖全部目标的推导集合；每条被选推导的权重只计算一次。
-- **替换视图**：`view.replacements` 只改变知识图的可见投影，不会创建推导，也不承诺替换前后具有相同可达性或最低成本。
+Mindmap 自己拥有学习侧与创作侧共有的产品语意。产品推导是概念之间的一条关系，拥有问题引入、推导过程和对象文档；求解时它投影为一个 hyperedge，但不等于 core 数学模型中的 mathematical derivation。概念、产品推导、对象文档和 tag 的规范词义见 [`CONTEXT.md`](CONTEXT.md#本仓库拥有的产品词汇)，盘上结构见下文“工作区格式”。
 
-不了解这些差异时，优先使用 `derivon-cli` 和 `derivon-mindmap` Skills，不要按普通有向图直觉批量改写 manifest。
+替换视图是当前 v0.4.2 的旧能力；v1 不再提供它的新增、编辑或显示路径，而以 point 上的 tag 支持组织和筛选。不了解这些边界时，优先使用 `derivon-cli` 和 `derivon-mindmap` Skills，不要按普通有向图直觉批量改写 manifest。
 
 ## 主要功能
 
@@ -231,7 +228,7 @@ my-workspace/
 - 自动保存会检测磁盘修订变化；发生外部修改冲突时暂停写入并要求用户选择版本。
 - 图片引用保留作者写下的相对路径；运行时 Blob URL 和绝对磁盘路径不会写入 Markdown。
 
-最小 manifest 示例：
+以下是当前 v0.4.2 的最小 manifest，也是 `derivon.authoring/v0.3.0` 兼容示例；其中的 `view.replacements` 是旧字段，不代表 v1 仍提供替换视图产品能力：
 
 ```json
 {
@@ -278,7 +275,7 @@ my-workspace/
 }
 ```
 
-仓库内的完整工作区示例位于 [`src/examples/replace-with`](src/examples/replace-with)，原生路线验收 fixture 位于 [`src-tauri/tests/fixtures/complete-workspace`](src-tauri/tests/fixtures/complete-workspace)。
+仓库内的 v0.4.2 兼容工作区 fixture 位于 [`src/examples/replace-with`](src/examples/replace-with)，其中包含 v1 不再提供产品行为的旧 replacement 数据；原生路线验收 fixture 位于 [`src-tauri/tests/fixtures/complete-workspace`](src-tauri/tests/fixtures/complete-workspace)。
 
 ## 与 Agent 协作
 

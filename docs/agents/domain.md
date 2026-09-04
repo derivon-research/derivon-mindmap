@@ -58,9 +58,10 @@ shared term, defer to the artifact that owns it:
 
 | Vocabulary | Normative source |
 | --- | --- |
-| Mathematical model: point, hyperedge, tail, head, closure, derivation, set cost, tree cost, depth cost, bracket | `derivon-research/paper` |
+| Mathematical model: point, hyperedge, tail, head, closure, mathematical derivation, set cost, tree cost, depth cost, bracket | `derivon-research/paper` |
 | Graph protocol `derivon.graph/v1` | `derivon-research/derivon` |
-| Authoring protocol `derivon.authoring/v0.3.0`: concept, derivation, object document, replacement view | `derivon-research/derivon-mindmap` |
+| Product semantics shared by learning and authoring: concept, product derivation, object document, tag | `derivon-research/derivon-mindmap` (`CONTEXT.md`) |
+| Workspace protocol `derivon.authoring/v0.3.0`; legacy replacement-view compatibility | `derivon-research/derivon-mindmap` |
 | Authoring methodology: problem pressure, problem-led derivation | `derivon-research/skills` (`CONTEXT.md`) |
 
 Do not restate a term owned elsewhere. Link to its source instead. If two sources appear to

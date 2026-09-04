@@ -1,7 +1,8 @@
 # derivon-mindmap
 
-Local-first knowledge graph editor built on Tauri 2, React and `derivon-core`. This repo
-owns the `derivon.authoring/v0.3.0` workspace protocol.
+Local-first knowledge graph application built on Tauri 2, React and `derivon-core`. This
+repo owns the product semantics shared by learning and authoring modes, plus the
+`derivon.authoring/v0.3.0` workspace protocol.
 
 ## Agent skills
 
@@ -19,5 +20,5 @@ The five canonical roles, each label string equal to its name. See
 
 ### Domain docs
 
-Single-context. This repo is normative for authoring-layer vocabulary (concept,
-derivation, object document, replacement view). See `docs/agents/domain.md`.
+Single-context. Before naming or changing product concepts, derivations, object documents,
+tags, or replacement compatibility, read `CONTEXT.md` and `docs/agents/domain.md`.
