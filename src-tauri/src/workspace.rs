@@ -222,16 +222,17 @@ fn prepare_workspace_source_target(root: &Path, relative_path: &str) -> Result<P
     Ok(canonical_target)
 }
 
-fn apply_workspace_source_change(
-    root: &Path,
-    relative_path: &str,
-    content: Option<&[u8]>,
-) -> Result<(), String> {
-    let target = prepare_workspace_source_target(root, relative_path)?;
+struct PreparedWorkspaceSourceChange {
+    target: PathBuf,
+    content: Option<Vec<u8>>,
+    previous_content: Option<Vec<u8>>,
+}
+
+fn write_workspace_source_content(target: &Path, content: Option<&[u8]>) -> Result<(), String> {
     match content {
-        Some(bytes) => fs::write(&target, bytes)
+        Some(bytes) => fs::write(target, bytes)
             .map_err(|error| format!("cannot write {}: {error}", target.display())),
-        None => match fs::remove_file(&target) {
+        None => match fs::remove_file(target) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(format!("cannot remove {}: {error}", target.display())),
@@ -239,32 +240,103 @@ fn apply_workspace_source_change(
     }
 }
 
+fn prepare_workspace_source_change(
+    root: &Path,
+    relative_path: &str,
+    content: Option<Vec<u8>>,
+) -> Result<PreparedWorkspaceSourceChange, String> {
+    let target = prepare_workspace_source_target(root, relative_path)?;
+    let previous_content = match fs::read(&target) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(format!(
+                "cannot read {} before commit: {error}",
+                target.display()
+            ))
+        }
+    };
+    Ok(PreparedWorkspaceSourceChange {
+        target,
+        content,
+        previous_content,
+    })
+}
+
+fn apply_prepared_workspace_source_changes<F>(
+    changes: &[PreparedWorkspaceSourceChange],
+    mut apply: F,
+) -> Result<(), String>
+where
+    F: FnMut(&PreparedWorkspaceSourceChange) -> Result<(), String>,
+{
+    for (index, change) in changes.iter().enumerate() {
+        if let Err(error) = apply(change) {
+            let rollback_errors = changes[..=index]
+                .iter()
+                .rev()
+                .filter_map(|applied| {
+                    write_workspace_source_content(
+                        &applied.target,
+                        applied.previous_content.as_deref(),
+                    )
+                    .err()
+                })
+                .collect::<Vec<_>>();
+            return if rollback_errors.is_empty() {
+                Err(error)
+            } else {
+                Err(format!(
+                    "{error}; workspace rollback also failed: {}",
+                    rollback_errors.join("; ")
+                ))
+            };
+        }
+    }
+    Ok(())
+}
+
 fn commit_workspace_source_changes_to_disk(
     root: &Path,
     changes: &WorkspaceSourceChanges,
 ) -> Result<(), String> {
     validate_workspace_source_changes(changes)?;
+    let mut requested = Vec::new();
     if let Some(graph) = &changes.graph {
-        apply_workspace_source_change(root, MANIFEST_PATH, Some(graph.as_bytes()))?;
+        requested.push((MANIFEST_PATH, Some(graph.as_bytes().to_vec())));
     }
-    for change in &changes.documents {
-        apply_workspace_source_change(
-            root,
-            &change.path,
-            change.content.as_deref().map(str::as_bytes),
-        )?;
-    }
-    for change in &changes.assets {
-        apply_workspace_source_change(root, &change.path, change.content.as_deref())?;
-    }
-    for change in &changes.companion_metadata {
-        apply_workspace_source_change(
-            root,
-            &change.path,
-            change.content.as_deref().map(str::as_bytes),
-        )?;
-    }
-    Ok(())
+    requested.extend(changes.documents.iter().map(|change| {
+        (
+            change.path.as_str(),
+            change
+                .content
+                .as_ref()
+                .map(|content| content.as_bytes().to_vec()),
+        )
+    }));
+    requested.extend(
+        changes
+            .assets
+            .iter()
+            .map(|change| (change.path.as_str(), change.content.clone())),
+    );
+    requested.extend(changes.companion_metadata.iter().map(|change| {
+        (
+            change.path.as_str(),
+            change
+                .content
+                .as_ref()
+                .map(|content| content.as_bytes().to_vec()),
+        )
+    }));
+    let prepared = requested
+        .into_iter()
+        .map(|(path, content)| prepare_workspace_source_change(root, path, content))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    apply_prepared_workspace_source_changes(&prepared, |change| {
+        write_workspace_source_content(&change.target, change.content.as_deref())
+    })
 }
 
 fn referenced_files(manifest: &WorkspaceDocument) -> Result<Vec<String>, String> {
@@ -791,6 +863,49 @@ mod tests {
         assert_eq!(
             fs::read_to_string(root.path().join("docs/original.md")).unwrap(),
             "original\n"
+        );
+    }
+
+    #[test]
+    fn workspace_source_rolls_back_every_file_when_a_commit_write_fails() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        fs::write(root.path().join("docs/first.md"), "first original\n").unwrap();
+        fs::write(root.path().join("docs/second.md"), "second original\n").unwrap();
+        let prepared = vec![
+            prepare_workspace_source_change(
+                root.path(),
+                "docs/first.md",
+                Some(b"first changed\n".to_vec()),
+            )
+            .unwrap(),
+            prepare_workspace_source_change(
+                root.path(),
+                "docs/second.md",
+                Some(b"second changed\n".to_vec()),
+            )
+            .unwrap(),
+        ];
+        let mut write_count = 0;
+
+        let error = apply_prepared_workspace_source_changes(&prepared, |change| {
+            write_count += 1;
+            write_workspace_source_content(&change.target, change.content.as_deref())?;
+            if write_count == 2 {
+                return Err("simulated second write failure".to_owned());
+            }
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert!(error.contains("simulated second write failure"));
+        assert_eq!(
+            fs::read_to_string(root.path().join("docs/first.md")).unwrap(),
+            "first original\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("docs/second.md")).unwrap(),
+            "second original\n"
         );
     }
 

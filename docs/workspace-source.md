@@ -2,7 +2,7 @@
 
 `WorkspaceSource` is the application port for workspace content. It reads the authoring graph manifest as exact UTF-8 text, object documents as text, assets as bytes, and optional workspace-level companion metadata as text. Parsing and validating the authoring protocol happen on the application side of the port.
 
-Write access is a separate capability. `WritableWorkspaceSource` adds one operation, `commit`, whose change set has graph, document, asset, and companion-metadata categories. Keeping the graph as source text lets an unchanged read/commit round trip preserve every byte instead of normalizing JSON formatting.
+Write access is a separate capability. `WritableWorkspaceSource` adds one operation, `commit`, whose change set has graph, document, asset, and companion-metadata categories. The desktop binding validates and snapshots the whole change set before writing, then rolls every touched file back if a write fails. Keeping the graph as source text lets an unchanged read/commit round trip preserve every byte instead of normalizing JSON formatting.
 
 ## Host bindings
 
