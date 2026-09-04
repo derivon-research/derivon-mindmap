@@ -42,7 +42,7 @@ async function dragConnection(page: Page, sourceId: string, targetId: string) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/?example=replace-with');
+  await page.goto('/legacy.html?example=replace-with');
   await page.evaluate(() => localStorage.clear());
 });
 
@@ -51,7 +51,7 @@ test('loads G6 as the default renderer without an XYFlow surface', async ({ page
     'derivon.layout-cache/v0.1.0',
     JSON.stringify({ entries: { stale: { positions: { A: { x: 1, y: 2 } } } } }),
   ));
-  await page.goto('/?example=replace-with');
+  await page.goto('/legacy.html?example=replace-with');
   const surface = page.locator('.g6-graph-surface');
 
   await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
@@ -523,7 +523,7 @@ test('keeps card text and edges visible in a large global overview', async ({ pa
       files,
     }));
   });
-  await page.goto('/');
+  await page.goto('/legacy.html');
   const surface = page.locator('.g6-graph-surface');
 
   await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
@@ -589,7 +589,7 @@ test('renders an empty workspace and incrementally adds its first concept', asyn
     localStorage.clear();
     localStorage.setItem('derivon.onboarding/v2', '{}');
   });
-  await page.goto('/');
+  await page.goto('/legacy.html');
   const surface = page.locator('.g6-graph-surface');
   await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
   await expect(surface).toHaveAttribute('data-rendered-nodes', '0');
@@ -602,7 +602,7 @@ test('renders an empty workspace and incrementally adds its first concept', asyn
 });
 
 test('creates and edits a derivation through the G6 authoring workflow', async ({ page }) => {
-  await page.goto('/?example=replace-with');
+  await page.goto('/legacy.html?example=replace-with');
   const surface = page.locator('.g6-graph-surface');
   await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 30_000 });
 

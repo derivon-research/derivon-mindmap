@@ -109,7 +109,7 @@ async function runSample(
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   await prepareFixture(page, fixture);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.goto('/legacy.html', { waitUntil: 'domcontentloaded' });
   const interactive = await waitForHook(page, 0, { kind: 'interactive' });
 
   const search = page.getByRole('combobox', { name: '搜索概念' });

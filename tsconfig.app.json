@@ -14,7 +14,10 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "paths": {
+      "#host": ["./src/hosts/web/host.ts"]
+    }
   },
   "include": ["src"],
   "exclude": ["src/hosts/desktop"]

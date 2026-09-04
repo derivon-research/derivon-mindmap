@@ -20,7 +20,7 @@ async function activeDocumentMarkdown(page: Page, id: string): Promise<string> {
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.clear());
-  await page.goto('/?example=replace-with');
+  await page.goto('/legacy.html?example=replace-with');
 });
 
 test('round-trips images and task lists without selection errors', async ({ page }) => {

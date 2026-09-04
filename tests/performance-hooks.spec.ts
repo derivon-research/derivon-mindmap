@@ -67,7 +67,7 @@ async function expectHook(page: Page, expected: HookExpectation): Promise<void> 
 
 test('math-reforged workspace emits the runtime performance hook contract', async ({ page }) => {
   await installRecorder(page);
-  await page.goto('/?example=math-reforged');
+  await page.goto('/legacy.html?example=math-reforged');
   await expectHook(page, { kind: 'interactive' });
   expect(await page.evaluate(() => (window as TestWindow).__interactiveSnapshot)).toEqual({
     layoutReady: true,

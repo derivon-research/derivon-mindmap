@@ -89,7 +89,7 @@ async function runSample(browser: Browser, run: number) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   await installWorkspace(page);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.goto('/legacy.html', { waitUntil: 'domcontentloaded' });
   const surface = page.locator('.g6-graph-surface');
   await expect(page.locator('.app-shell')).toHaveAttribute('data-layout-ready', 'true', { timeout: 120_000 });
   await expect(surface).toHaveAttribute('data-ready', 'true', { timeout: 120_000 });
