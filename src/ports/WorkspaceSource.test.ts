@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bundledExampleWorkspaceSource,
   createBundledWorkspaceSource,
-} from './workspaceSources/bundledWorkspaceSource';
+} from '../hosts/web';
 
 describe('WorkspaceSource', () => {
   it('reads a bundled workspace without exposing a write capability', async () => {
@@ -28,5 +28,4 @@ describe('WorkspaceSource', () => {
     expect(await bundledExampleWorkspaceSource.readDocument('docs/concept-a/document.md')).toBe('# A\n\n点 A。\n');
     expect('commit' in bundledExampleWorkspaceSource).toBe(false);
   });
-
 });

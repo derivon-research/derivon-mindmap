@@ -17,8 +17,5 @@
     "jsx": "react-jsx"
   },
   "include": ["src"],
-  "exclude": [
-    "src/workspaceSources/desktopWorkspaceSource.ts",
-    "src/workspaceSources/desktopWorkspaceSource.test.ts"
-  ]
+  "exclude": ["src/hosts/desktop"]
 }

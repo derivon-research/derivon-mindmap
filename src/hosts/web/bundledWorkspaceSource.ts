@@ -1,7 +1,7 @@
-import type { WorkspaceSource } from '../workspaceSource';
-import exampleGraph from '../examples/replace-with/.derivon/workspace.json?raw';
+import type { WorkspaceSource } from '../../ports/WorkspaceSource';
+import exampleGraph from '../../examples/replace-with/.derivon/workspace.json?raw';
 
-const exampleDocuments = import.meta.glob('../examples/replace-with/docs/**/*.{md,html}', {
+const exampleDocuments = import.meta.glob('../../examples/replace-with/docs/**/*.{md,html}', {
   eager: true,
   import: 'default',
   query: '?raw',
@@ -42,7 +42,7 @@ export function createBundledWorkspaceSource(bundle: BundledWorkspace): Workspac
 export const bundledExampleWorkspaceSource = createBundledWorkspaceSource({
   graph: exampleGraph,
   documents: Object.fromEntries(Object.entries(exampleDocuments).map(([path, content]) => [
-    path.replace('../examples/replace-with/', ''),
+    path.replace('../../examples/replace-with/', ''),
     content,
   ])),
 });

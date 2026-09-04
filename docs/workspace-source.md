@@ -8,11 +8,11 @@ Write access is a separate capability. `WritableWorkspaceSource` adds one operat
 
 | Host | Binding | Capability |
 | --- | --- | --- |
-| web, built-in example | `bundledWorkspaceSource.ts` | Read only; its data comes only from Vite bundle imports. |
-| web, remote | `remoteWorkspaceSource.ts` | Type boundary only. No transport, endpoint, account, or credentials are implemented in this phase. |
-| desktop, local filesystem | `desktopWorkspaceSource.ts` plus Tauri workspace commands | Read and commit. Filesystem paths exist only in this binding. |
+| web, built-in example | `src/hosts/web/index.ts` | Read only; its data comes only from Vite bundle imports. |
+| web, remote | `src/hosts/web/remoteWorkspaceSource.ts` | Type boundary only. No transport, endpoint, account, or credentials are implemented in this phase. |
+| desktop, local filesystem | `src/hosts/desktop/index.ts` plus Tauri workspace commands | Read and commit. Filesystem paths exist only in this binding. |
 
-The web binding implements `WorkspaceSource`, not `WritableWorkspaceSource`, and does not import the desktop binding or browser filesystem APIs. Desktop code must be imported only from a desktop host entry point. The legacy workspace path remains unchanged during this expand phase; later tickets move its callers behind this port.
+The port lives at `src/ports/WorkspaceSource.ts`, following the v1 module map in `CONTEXT.md`. The web binding implements `WorkspaceSource`, not `WritableWorkspaceSource`, and does not import the desktop binding or browser filesystem APIs. Desktop code must be imported only from its desktop host entry point. The legacy workspace path remains unchanged during this expand phase; later tickets move its callers behind this port.
 
 ## State boundary
 

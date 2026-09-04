@@ -1,4 +1,4 @@
-import type { WorkspaceSource } from '../workspaceSource';
+import type { WorkspaceSource } from '../../ports/WorkspaceSource';
 
 /**
  * Contract for a future web host backed by a remote workspace service.

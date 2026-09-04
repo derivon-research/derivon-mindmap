@@ -1,5 +1,5 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
-import type { WorkspaceCommit, WritableWorkspaceSource } from '../workspaceSource';
+import type { WorkspaceCommit, WritableWorkspaceSource } from '../../ports/WorkspaceSource';
 
 export type DesktopInvoke = <T>(
   command: string,
