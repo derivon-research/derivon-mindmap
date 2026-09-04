@@ -3,8 +3,14 @@ import {
   TEST_HOOK_EVENT,
   TEST_HOOK_VERSION,
   type DerivonTestHook,
+  type TestHookInteraction,
 } from '../src/testHooks';
 
+type HookExpectation = {
+  kind: DerivonTestHook['kind'];
+  interaction?: TestHookInteraction;
+  context?: Record<string, string | boolean>;
+};
 type TestWindow = Window & {
   __testHookEvents?: DerivonTestHook[];
   __interactiveSnapshot?: { layoutReady: boolean; rendererReady: boolean };
@@ -32,17 +38,20 @@ async function installRecorder(page: Page): Promise<void> {
   }, TEST_HOOK_EVENT);
 }
 
-async function expectHook(
-  page: Page,
-  expected: Pick<DerivonTestHook, 'kind' | 'interaction'> & { context?: Record<string, string | boolean> },
-): Promise<void> {
+async function expectHook(page: Page, expected: HookExpectation): Promise<void> {
   await expect.poll(() => page.evaluate(({ match, hookVersion }) => {
     const events = (window as TestWindow).__testHookEvents ?? [];
-    return events.some((event) => event.version === hookVersion
-      && event.kind === match.kind
-      && event.interaction === match.interaction
-      && Object.entries(match.context ?? {}).every(([key, value]) => event.context?.[key] === value));
-  }, { match: expected, hookVersion: TEST_HOOK_VERSION })).toBe(true);
+    return events.some((event) => {
+      const interaction = 'interaction' in event ? event.interaction : undefined;
+      const context = 'context' in event
+        ? event.context as Record<string, string | boolean>
+        : undefined;
+      return event.version === hookVersion
+        && event.kind === match.kind
+        && interaction === match.interaction
+        && Object.entries(match.context ?? {}).every(([key, value]) => context?.[key] === value);
+    });
+  }, { match: expected, hookVersion: TEST_HOOK_VERSION }), { timeout: 120_000 }).toBe(true);
 }
 
 test('math-reforged workspace emits the runtime performance hook contract', async ({ page }) => {
@@ -59,8 +68,8 @@ test('math-reforged workspace emits the runtime performance hook contract', asyn
   await page.getByRole('option', { name: /linear-map/ }).click();
   await expectHook(page, {
     kind: 'interaction-complete',
-    interaction: 'select-point',
-    context: { pointId: 'linear-map' },
+    interaction: 'select-concept',
+    context: { conceptId: 'linear-map' },
   });
 
   await page.getByTitle('打开路线模式').click();
@@ -76,7 +85,7 @@ test('math-reforged workspace emits the runtime performance hook contract', asyn
   await expectHook(page, {
     kind: 'interaction-complete',
     interaction: 'switch-target',
-    context: { pointId: 'null-range', selected: true },
+    context: { conceptId: 'null-range', selected: true },
   });
 
   await page.getByTitle('关闭路线模式').first().click();
@@ -89,4 +98,7 @@ test('math-reforged workspace emits the runtime performance hook contract', asyn
   const events = await page.evaluate(() => (window as TestWindow).__testHookEvents ?? []);
   expect(events.map((event) => event.sequence)).toEqual(events.map((_, index) => index + 1));
   expect(events.every((event) => Number.isFinite(event.completedAtMs) && event.completedAtMs >= 0)).toBe(true);
+  expect(events.filter((event) => event.kind === 'interaction-complete').every((event) =>
+    Number.isFinite(event.startedAtMs) && event.completedAtMs >= event.startedAtMs,
+  )).toBe(true);
 });

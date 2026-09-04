@@ -24,8 +24,8 @@ export type RuntimeWorkspaceFixture = {
     files: Record<string, string>;
   };
   interactions: {
-    selectedPointId: string;
-    targetPointId: string;
+    selectedConceptId: string;
+    targetConceptId: string;
   };
 };
 
@@ -66,8 +66,8 @@ export function createGeneratedRuntimeWorkspace(concepts: number): RuntimeWorksp
       files,
     },
     interactions: {
-      selectedPointId: `p-${Math.floor(concepts / 2)}`,
-      targetPointId: `p-${Math.floor(concepts / 2) + 1}`,
+      selectedConceptId: `p-${Math.floor(concepts / 2)}`,
+      targetConceptId: `p-${Math.floor(concepts / 2) + 1}`,
     },
   };
 }

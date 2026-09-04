@@ -320,7 +320,9 @@ cargo test
 
 ```bash
 npm run bench:graph
+npm run bench:replacement
 npm run bench:runtime
+npm run bench:runtime:desktop # Linux, built debug Tauri binary, tauri-driver
 npm run bench:g6-isolated
 ```
 

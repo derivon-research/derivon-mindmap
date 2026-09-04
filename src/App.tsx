@@ -63,8 +63,7 @@ import { RoutePanel } from './RoutePanel';
 import {
   emitInteractiveTestHook,
   emitInteractionCompleteTestHook,
-  type TestHookContext,
-  type TestHookInteraction,
+  type TestHookInteractionCompletion,
 } from './testHooks';
 import {
   createRouteSelection,
@@ -398,13 +397,10 @@ function AuthoringCanvas() {
     await graphSurfaceRef.current.whenIdle();
   }, []);
 
-  const completeTestInteraction = useCallback((
-    interaction: TestHookInteraction,
-    context: TestHookContext,
-  ) => {
+  const completeTestInteraction = useCallback((completion: TestHookInteractionCompletion) => {
     window.requestAnimationFrame(() => {
       void waitForGraphIdle()
-        .then(() => emitInteractionCompleteTestHook(interaction, context));
+        .then(() => emitInteractionCompleteTestHook(completion));
     });
   }, [waitForGraphIdle]);
 
@@ -1199,6 +1195,7 @@ function AuthoringCanvas() {
   }, [document, fitGraph, layoutMode, layoutRunning, reportWorkspaceError]);
 
   const findConcept = useCallback((pointId?: string) => {
+    const startedAtMs = performance.now();
     const query = search.trim().toLocaleLowerCase();
     const concept = pointId
       ? document.graph.points.find((item) => item.id === pointId)
@@ -1242,7 +1239,11 @@ function AuthoringCanvas() {
     window.setTimeout(() => {
       void waitForGraphIdle()
         .then(() => graphSurfaceRef.current?.focusElement(concept.id))
-        .then(() => emitInteractionCompleteTestHook('select-point', { pointId: concept.id }));
+        .then(() => emitInteractionCompleteTestHook({
+          interaction: 'select-concept',
+          context: { conceptId: concept.id },
+          startedAtMs,
+        }));
     }, 30);
   }, [commit, document, replacementDraft, search, waitForGraphIdle]);
 
@@ -1426,6 +1427,7 @@ function AuthoringCanvas() {
   }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, reportWorkspaceError, resolvingExternalChange, workspaceDirectory]);
 
   const toggleRouteMode = useCallback(() => {
+    const startedAtMs = performance.now();
     const expanded = !routeMode;
     if (expanded) notifyTourAction('route-mode-opened');
     setRouteMode(expanded);
@@ -1433,7 +1435,11 @@ function AuthoringCanvas() {
     setFocusedId(null);
     setSelectedNodeIds([]);
     setSelectedId(null);
-    completeTestInteraction('toggle-panel', { panel: 'route', expanded });
+    completeTestInteraction({
+      interaction: 'toggle-panel',
+      context: { panel: 'route', expanded },
+      startedAtMs,
+    });
   }, [completeTestInteraction, routeMode]);
 
   const toggleStartPoint = useCallback((pointId: string) => {
@@ -1445,13 +1451,18 @@ function AuthoringCanvas() {
   }, []);
 
   const toggleTargetPoint = useCallback((pointId: string) => {
+    const startedAtMs = performance.now();
     const selected = !routeSelection.targetPointIds.includes(pointId);
     setRouteSelection((current) => {
       if (!current.targetPointIds.includes(pointId)) notifyTourAction('route-target-selected');
       return toggleRouteTarget(current, pointId);
     });
     setRouteError(null);
-    completeTestInteraction('switch-target', { pointId, selected });
+    completeTestInteraction({
+      interaction: 'switch-target',
+      context: { conceptId: pointId, selected },
+      startedAtMs,
+    });
   }, [completeTestInteraction, routeSelection.targetPointIds]);
 
   const clearRoute = useCallback(() => {
@@ -1484,6 +1495,7 @@ function AuthoringCanvas() {
   }, [document, groupByMemberId, routeSelection]);
 
   const selectNode = useCallback((id: string, shiftKey: boolean) => {
+    const startedAtMs = performance.now();
     const displayedDerivation = displayedDerivationByNodeId.get(id);
     const semanticId = displayedDerivation?.id ?? id;
     const derivationGroup = visibleGroupByNodeId.get(id);
@@ -1531,7 +1543,11 @@ function AuthoringCanvas() {
     }
     setSelectedId(semanticId);
     if (document.graph.points.some((concept) => concept.id === semanticId)) {
-      completeTestInteraction('select-point', { pointId: semanticId });
+      completeTestInteraction({
+        interaction: 'select-concept',
+        context: { conceptId: semanticId },
+        startedAtMs,
+      });
     }
   }, [commit, completeTestInteraction, displayedDerivationByNodeId, document, layoutRunning, replacementDraft, routeMode, selectedId, toggleStartPoint, visibleGroupByNodeId]);
 
