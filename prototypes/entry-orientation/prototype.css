@@ -1,0 +1,405 @@
+/* PROTOTYPE — throwaway styling. Restrained on purpose: the structure is what's being judged. */
+:root {
+  --ink: #111827;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --paper: #ffffff;
+  --bg: #f7f7f5;
+  --accent: #4f46e5;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+button { font: inherit; cursor: pointer; }
+
+.variant-stage { min-height: 100vh; padding-bottom: 72px; }
+
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+
+/* ------------------------------------------------------------------ switcher */
+.switcher {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #111827;
+  color: #f8fafc;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.28);
+  z-index: 100;
+}
+.switcher button {
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: inherit;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+.switcher-note { font-size: 12px; color: #94a3b8; border-left: 1px solid #334155; padding-left: 10px; }
+
+.provenance {
+  position: fixed; left: 0; right: 0; bottom: 0; margin: 0; padding: 6px 14px;
+  background: rgba(247, 247, 245, 0.94); border-top: 1px solid var(--line);
+  font-size: 11px; line-height: 1.5; color: #94a3b8; z-index: 99; pointer-events: auto;
+}
+.provenance a { color: #94a3b8; }
+
+/* ------------------------------------------------------------------ 0 现状 */
+.now-root { display: flex; flex-direction: column; height: 100vh; }
+.now-toolbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 18px; background: var(--paper); border-bottom: 1px solid var(--line);
+  font-size: 13px; color: var(--muted);
+}
+.now-task { color: var(--accent); font-weight: 600; }
+.now-picked { margin-left: auto; }
+.now-canvas { flex: 1; width: 100%; background: var(--paper); }
+.now-note { margin: 0; padding: 12px 18px 24px; font-size: 13px; color: var(--muted); background: var(--paper); }
+
+/* ------------------------------------------------------------------ A 搜索先行 */
+.search-root { max-width: 780px; margin: 0 auto; padding: 8vh 24px 40px; }
+.search-hero h1 { font-size: 30px; margin: 0 0 6px; }
+.search-hero p { color: var(--muted); margin: 0 0 22px; }
+.search-input {
+  width: 100%; padding: 16px 18px; font-size: 19px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--paper);
+}
+.search-input:focus { outline: 2px solid var(--accent); }
+.search-results { display: flex; flex-direction: column; margin-top: 10px; }
+.search-results button {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  background: var(--paper); border: 1px solid var(--line); border-bottom: none; padding: 11px 14px;
+}
+.search-results button:first-child { border-radius: 12px 12px 0 0; }
+.search-results button:last-child { border-radius: 0 0 12px 12px; border-bottom: 1px solid var(--line); }
+.search-results em { margin-left: auto; color: var(--muted); font-size: 12px; font-style: normal; }
+.search-suggested { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+.search-suggested button { background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; }
+.search-back { background: none; border: none; color: var(--muted); padding: 0 0 14px; }
+.search-hint { margin-top: 20px; color: var(--muted); font-size: 13px; }
+
+.preset-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); }
+.preset-card {
+  display: flex; flex-direction: column; gap: 6px; text-align: left;
+  padding: 16px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+}
+.preset-card:hover { border-color: var(--accent); }
+.preset-card strong { font-size: 15px; }
+.preset-card span { color: var(--muted); font-size: 13px; }
+.preset-card em { font-style: normal; color: var(--accent); font-weight: 700; }
+
+.search-root.reading { max-width: 860px; }
+.reading-head { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.reading-head h2 { margin: 0; font-size: 22px; }
+.reading-head span { color: var(--muted); font-size: 13px; }
+.reading-head button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; color: var(--muted); }
+.reading-list { list-style: none; margin: 0; padding: 0; }
+.reading-list li { border: 1px solid var(--line); border-bottom: none; background: var(--paper); }
+.reading-list li:first-child { border-radius: 12px 12px 0 0; }
+.reading-list li:last-child { border-radius: 0 0 12px 12px; border-bottom: 1px solid var(--line); }
+.reading-list li.is-open { border-color: var(--accent); }
+.reading-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; background: none; border: none; text-align: left; }
+.reading-index { width: 22px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.reading-label { font-weight: 600; }
+.reading-tag { color: var(--muted); font-size: 12px; }
+.reading-weight { margin-left: auto; color: var(--muted); font-size: 12px; }
+.reading-doc { padding: 0 20px 18px 52px; }
+.reading-because { color: var(--muted); font-size: 13px; border-left: 3px solid var(--line); padding-left: 10px; }
+.reading-next button { margin-top: 12px; background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 10px 16px; }
+.reading-graph { margin-top: 20px; text-align: center; }
+.reading-graph > button { background: none; border: 1px dashed var(--line); border-radius: 999px; padding: 8px 16px; color: var(--muted); }
+
+/* ------------------------------------------------------------------ B 分区地图 */
+.atlas-root { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+.atlas-side { background: var(--paper); border-right: 1px solid var(--line); padding: 18px; overflow-y: auto; max-height: 100vh; }
+.atlas-side h3 { margin: 0 0 4px; font-size: 15px; }
+.atlas-hint { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+.atlas-block { display: grid; grid-template-columns: 1fr auto; gap: 4px; margin-bottom: 6px; }
+.atlas-block-head { display: flex; align-items: center; gap: 8px; background: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; text-align: left; }
+.atlas-block-head em { margin-left: auto; font-style: normal; color: var(--muted); font-size: 12px; }
+.atlas-block-more { background: none; border: none; color: var(--muted); font-size: 12px; }
+.atlas-points { grid-column: 1 / -1; list-style: none; margin: 4px 0 8px; padding: 0 0 0 8px; max-height: 240px; overflow-y: auto; }
+.atlas-points li { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 0; }
+.atlas-points label { display: flex; align-items: center; gap: 6px; flex: 1; }
+.atlas-points button { background: none; border: none; color: var(--accent); font-size: 12px; }
+.atlas-known-count { color: var(--muted); font-size: 12px; }
+.atlas-main { padding: 18px 24px; overflow-y: auto; max-height: 100vh; }
+.atlas-main.has-drawer { padding-right: 480px; }
+.atlas-map { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; }
+.atlas-route { margin-top: 18px; }
+.atlas-route h3 { display: flex; align-items: center; gap: 10px; font-size: 17px; }
+.atlas-exact { font-size: 12px; color: var(--muted); font-weight: 400; }
+.atlas-empty { color: var(--muted); }
+.atlas-step-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.atlas-step-groups section { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.atlas-step-groups h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 13px; }
+.atlas-step { display: block; width: 100%; text-align: left; background: none; border: none; padding: 5px 0; font-size: 13px; }
+.atlas-step span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.atlas-drawer {
+  position: fixed; right: 0; top: 0; bottom: 0; width: 460px; background: var(--paper);
+  border-left: 1px solid var(--line); padding: 18px 22px 90px; overflow-y: auto; box-shadow: -12px 0 30px rgba(15, 23, 42, 0.08);
+}
+.atlas-drawer header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.atlas-drawer-tag { color: var(--muted); font-size: 12px; }
+.atlas-drawer header button { margin-left: auto; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+.atlas-drawer footer { position: sticky; bottom: 0; display: flex; gap: 8px; padding-top: 12px; background: var(--paper); }
+.atlas-drawer footer button { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 9px; background: var(--paper); }
+
+/* ------------------------------------------------------------------ C 对话先行 */
+.dialogue-root { display: grid; grid-template-columns: minmax(420px, 560px) 1fr; min-height: 100vh; }
+.dialogue-thread { padding: 24px; overflow-y: auto; max-height: 100vh; }
+.bubble { max-width: 440px; padding: 12px 16px; border-radius: 14px; margin-bottom: 10px; }
+.bubble p { margin: 0; }
+.bubble > strong:first-child { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.bubble.agent { background: var(--paper); border: 1px solid var(--line); }
+.bubble.user { background: var(--accent); color: #fff; margin-left: auto; }
+.aside { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 18px; }
+.choices button { background: var(--paper); border: 1px solid var(--accent); color: var(--accent); border-radius: 999px; padding: 8px 14px; }
+.probe-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
+.probe-grid button { display: flex; align-items: center; gap: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+.probe-grid button.is-yes { border-color: #22c55e; background: #f0fdf4; }
+.probe-grid em { margin-left: auto; font-style: normal; font-size: 12px; color: var(--muted); }
+.teach-doc { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 10px; }
+.teach-derivation { border-top: 1px dashed var(--line); margin-top: 14px; padding-top: 10px; }
+.dialogue-graph { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); }
+.dialogue-graph svg { flex: 1; width: 100%; }
+.dialogue-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 12px 18px 76px; font-size: 12px; color: var(--muted); }
+.dialogue-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+.dialogue-legend .muted { opacity: 0.7; }
+
+/* ------------------------------------------------------------------ documents */
+.doc-body { font-size: 14px; }
+.doc-body h1 { font-size: 19px; }
+.doc-body h2 { font-size: 16px; }
+.doc-body blockquote { margin: 10px 0; padding: 6px 12px; border-left: 3px solid var(--line); color: var(--muted); }
+.doc-body img { max-width: 100%; }
+.doc-missing { color: var(--muted); }
+
+/* ------------------------------------------------------------------ D 融合稿 */
+/* 三个模式：定向 navigate / 学习 learn / 浏览 browse。共享的只有数据，不共享布局。 */
+.fusion-root { display: flex; flex-direction: column; height: 100vh; }
+.fusion-topbar { flex: none; display: flex; align-items: center; gap: 16px; height: 48px; padding: 0 18px; background: var(--paper); border-bottom: 1px solid var(--line); }
+.fusion-brand { font-weight: 700; letter-spacing: 0.04em; }
+.fusion-topbar-context { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fusion-topbar-modes { margin-left: auto; display: flex; gap: 6px; }
+.fusion-topbar-modes button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; color: var(--muted); font-size: 13px; }
+.fusion-topbar-modes button.is-active { border-color: var(--accent); color: var(--accent); background: #eef2ff; }
+.fusion-topbar-modes button:disabled { opacity: 0.45; cursor: default; }
+.fusion-navigate { display: grid; grid-template-columns: minmax(440px, 46%) 1fr; flex: 1; min-height: 0; }
+.fusion-chat { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+.fusion-chat-thread { flex: 1; overflow-y: auto; padding: 24px 24px 8px; }
+.fusion-composer { padding: 12px 24px 84px; background: var(--bg); border-top: 1px solid var(--line); }
+.fusion-composer form { display: flex; gap: 8px; }
+.fusion-composer input { flex: 1; padding: 13px 16px; font-size: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.fusion-composer input:focus { outline: 2px solid var(--accent); }
+.fusion-composer button { border: none; background: var(--accent); color: #fff; border-radius: 12px; padding: 0 16px; white-space: nowrap; flex: none; }
+.fusion-suggest { display: flex; flex-direction: column; margin-bottom: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.fusion-suggest button { display: flex; align-items: center; gap: 10px; background: none; border: none; border-bottom: 1px solid var(--line); padding: 9px 14px; text-align: left; }
+.fusion-suggest button:last-child { border-bottom: none; }
+.fusion-suggest em { margin-left: auto; font-style: normal; font-size: 12px; color: var(--muted); }
+.fusion-card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }
+.fusion-card-doc { max-height: 260px; overflow-y: auto; }
+.fusion-card-actions { display: flex; gap: 8px; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.fusion-card-actions button { flex: 1; border: 1px solid var(--accent); color: var(--accent); background: none; border-radius: 10px; padding: 8px; }
+.fusion-probe { margin-bottom: 14px; }
+.fusion-probe-round { font-size: 12px; color: var(--muted); }
+.fusion-probe-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 6px 0 8px; }
+.fusion-probe-grid button { display: flex; align-items: center; gap: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; text-align: left; }
+.fusion-probe-grid button.is-yes { border-color: #22c55e; background: #f0fdf4; }
+.fusion-probe-actions { display: flex; gap: 8px; }
+.fusion-probe-actions button { background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; }
+.fusion-probe-actions .primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.fusion-graph { position: relative; display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); }
+.fusion-graph svg { flex: 1; width: 100%; min-height: 0; }
+.fusion-graph-legend { display: flex; align-items: center; gap: 14px; padding: 12px 18px 84px; font-size: 12px; color: var(--muted); }
+.fusion-graph-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+.fusion-graph-legend button { margin-left: auto; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; color: var(--muted); }
+
+.fusion-learn { display: flex; flex: 1; min-height: 0; }
+.fusion-rail { display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); padding: 14px 12px 84px; min-height: 0; order: 3; }
+.fusion-rail-note { margin: 8px 2px 0; font-size: 11px; color: var(--muted); }
+.fusion-rail-head { display: flex; align-items: baseline; gap: 8px; padding: 0 6px 10px; }
+.fusion-rail-head span { font-weight: 600; }
+.fusion-rail-head em { margin-left: auto; font-style: normal; color: var(--muted); font-size: 12px; }
+.fusion-rail-scroll { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: #fcfcfd; }
+.fusion-rail-browse { margin-top: 8px; background: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px; color: var(--muted); }
+/* 教材区永远吃满剩下的宽度：收起右栏时不留空白，只是把栏宽还给正文的左右留白 */
+.fusion-text { overflow-y: auto; padding: 28px 40px 96px; order: 2; display: flex; justify-content: center; }
+.fusion-text-column { width: 100%; max-width: 780px; }
+.fusion-learn.rail-hidden .fusion-text-column, .fusion-learn.tutor-hidden .fusion-text-column { max-width: 860px; }
+.fusion-text header { border-bottom: 1px solid var(--line); margin-bottom: 18px; padding-bottom: 12px; }
+.fusion-text header span { font-size: 12px; color: var(--muted); }
+.fusion-text header h2 { margin: 4px 0 6px; font-size: 26px; }
+.fusion-text header p { margin: 0; color: var(--muted); font-size: 13px; }
+.fusion-derivation { margin-top: 18px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.fusion-text-actions { display: flex; gap: 10px; margin-top: 22px; }
+.fusion-text-actions button:first-child { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 11px 18px; }
+.fusion-text-actions button:last-child { background: none; border: 1px solid var(--line); border-radius: 10px; padding: 11px 18px; color: var(--muted); }
+.fusion-done { padding-top: 40px; }
+.fusion-tutor { display: flex; flex-direction: column; background: var(--paper); border-right: 1px solid var(--line); min-height: 0; order: 1; }
+.fusion-tutor-foot { display: flex; gap: 8px; padding: 10px 14px 84px; border-top: 1px solid var(--line); }
+.fusion-tutor-foot button { flex: 1; background: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px; color: var(--muted); font-size: 12px; }
+.fusion-tutor header { padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.fusion-tutor-thread { flex: 1; overflow-y: auto; padding: 14px 16px; min-height: 0; }
+.fusion-tutor .fusion-composer { padding: 10px 14px 62px; border-top: 1px solid var(--line); }
+.fusion-tutor-thread .bubble { max-width: 100%; font-size: 13px; }
+.fusion-tutor-quick { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.fusion-tutor-quick button { background: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; text-align: left; font-size: 12px; color: var(--accent); }
+
+.fusion-browse { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--paper); }
+.fusion-browse-bar { display: flex; align-items: center; gap: 16px; padding: 10px 18px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.fusion-browse-bar button { margin-left: auto; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; }
+.fusion-browse svg { flex: 1; width: 100%; min-height: 0; }
+.fusion-inspect { position: absolute; right: 0; top: 44px; bottom: 0; width: 420px; background: var(--paper); border-left: 1px solid var(--line); display: flex; flex-direction: column; box-shadow: -12px 0 30px rgba(15, 23, 42, 0.08); }
+.fusion-inspect header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.fusion-inspect header button { margin-left: auto; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+.fusion-inspect-body { flex: 1; overflow-y: auto; padding: 14px 18px; }
+.fusion-inspect footer { display: flex; gap: 8px; padding: 12px 16px 84px; border-top: 1px solid var(--line); }
+.fusion-inspect footer button { flex: 1; border: 1px solid var(--accent); color: var(--accent); background: none; border-radius: 10px; padding: 9px; }
+
+/* --------------------------------------------- D 学习态的三态面板（展开 / 折叠 / 隐藏） */
+/* flex, not grid: 隐藏一侧时列数会变，grid 的列宽会错位 */
+.fusion-tutor { flex: 0 0 300px; transition: flex-basis 180ms ease; }
+.fusion-rail { flex: 0 0 300px; transition: flex-basis 180ms ease; }
+.fusion-text { flex: 1 1 auto; min-width: 0; }
+/* 展开的对话要占到教材那么宽，不是稍微宽一点 */
+.fusion-learn.tutor-expanded .fusion-tutor { flex-basis: 64%; min-width: 640px; }
+.fusion-learn.rail-expanded .fusion-rail { flex-basis: 44%; min-width: 480px; }
+.fusion-tutor header { display: flex; align-items: center; gap: 6px; }
+.fusion-tutor header .panel-controls { margin-left: 0; }
+.panel-controls { margin-left: auto; display: flex; gap: 4px; }
+.panel-controls button { background: none; border: 1px solid var(--line); border-radius: 6px; width: 22px; height: 22px; line-height: 1; color: var(--muted); padding: 0; }
+.fusion-rail-head .panel-controls { margin-left: 6px; }
+.fusion-tab {
+  position: fixed; top: calc(50% + 24px); transform: translateY(-50%); z-index: 60;
+  background: var(--paper); border: 1px solid var(--line); color: var(--muted);
+  padding: 12px 6px; font-size: 12px; writing-mode: vertical-rl;
+}
+.fusion-tab.left { left: 0; border-radius: 0 10px 10px 0; }
+.fusion-tab.right { right: 0; border-radius: 10px 0 0 10px; }
+.fusion-rail-list { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
+.fusion-rail-list li button { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: none; padding: 7px 8px; text-align: left; font-size: 13px; border-radius: 8px; }
+.fusion-rail-list li.is-active button { background: #4f46e5; color: #fff; }
+.fusion-rail-list li.is-done button { color: var(--muted); }
+.fusion-rail-index { width: 20px; font-variant-numeric: tabular-nums; font-size: 12px; opacity: 0.7; }
+.fusion-rail-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bubble.is-rich { max-width: 100%; }
+.bubble.is-rich .doc-body { margin-top: 8px; overflow-x: auto; }
+.tutor-widget { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg); }
+.tutor-widget-title { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+.tutor-widget-title em { font-style: normal; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: #fef3c7; color: #92400e; }
+.tutor-widget-bars { display: flex; align-items: flex-end; gap: 6px; height: 72px; margin-bottom: 8px; }
+.tutor-widget-bars span { flex: 1; border-radius: 3px 3px 0 0; }
+.tutor-widget input[type="range"] { width: 100%; }
+.tutor-widget-read { margin: 6px 0 0; font-size: 12px; color: var(--ink); }
+
+/* --------------------------------------------- 新对话按钮与路线预览 */
+.session-new { background: none; border: 1px dashed var(--line); border-radius: 999px; padding: 4px 11px; font-size: 12px; color: var(--muted); }
+.fusion-chat-head { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--paper); font-size: 12px; color: var(--muted); }
+.fusion-chat-head .session-new { margin-left: auto; }
+.fusion-tutor header .session-new { margin-left: auto; }
+
+.fusion-preview { display: grid; grid-template-columns: minmax(520px, 1fr) minmax(360px, 40%); flex: 1; min-height: 0; }
+.fusion-preview-main { overflow-y: auto; padding: 32px 40px 96px; }
+.fusion-preview-main h1 { margin: 0 0 6px; font-size: 26px; }
+.fusion-preview-sub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.fusion-preview-tags { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; font-size: 12px; color: var(--muted); }
+.fusion-preview-tags i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+.fusion-preview-list { list-style: none; margin: 0 0 22px; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.fusion-preview-list li { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.fusion-preview-list li:last-child { border-bottom: none; }
+.fusion-preview-label { font-weight: 600; }
+.fusion-preview-because { margin-left: auto; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
+.fusion-preview-weight { color: var(--muted); font-size: 12px; width: 22px; text-align: right; }
+.fusion-preview-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.fusion-preview-actions button { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 11px 18px; color: var(--muted); }
+.fusion-preview-actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fusion-preview-graph { display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); padding: 14px 12px 84px; min-height: 0; }
+
+/* ------------------------------------------------------------------ E 教学流程 */
+.teach-start { max-width: 720px; margin: 0 auto; padding: 8vh 24px 40px; }
+.teach-start h1 { font-size: 28px; margin: 0 0 10px; }
+.teach-start p { color: var(--muted); }
+.teach-start-known { margin-top: 22px; color: var(--ink); font-size: 14px; }
+.teach-start-targets { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.teach-start-targets button { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; }
+.teach-start-targets button:hover { border-color: var(--accent); color: var(--accent); }
+
+.teach-root { display: grid; grid-template-columns: 330px 1fr 250px; height: 100vh; }
+.teach-agent { display: flex; flex-direction: column; background: var(--paper); border-right: 1px solid var(--line); min-height: 0; }
+.teach-agent > header { padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.teach-agent-thread { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.teach-agent-thread .bubble { max-width: 100%; }
+.teach-agent-thread em { color: var(--ink); font-style: normal; background: #fef3c7; padding: 0 4px; }
+.teach-standin { margin-top: 8px !important; font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
+
+.teach-stage { overflow-y: auto; padding: 22px 40px 96px; display: flex; flex-direction: column; align-items: center; }
+.teach-stage-head { display: flex; align-items: center; gap: 16px; width: 100%; max-width: 760px; margin-bottom: 14px; font-size: 12px; color: var(--muted); }
+.teach-phases { margin-left: auto; display: flex; gap: 6px; }
+.teach-phases i { font-style: normal; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; }
+.teach-phases i.is-active { border-color: var(--accent); color: var(--accent); background: #eef2ff; }
+.teach-card { width: 100%; max-width: 760px; background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 22px 26px; }
+.teach-card h2 { margin: 0 0 12px; font-size: 20px; }
+.teach-card-note { color: var(--muted); font-size: 13px; }
+.teach-card textarea { width: 100%; min-height: 90px; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; font: inherit; resize: vertical; }
+.teach-actions { display: flex; gap: 10px; margin-top: 18px; }
+.teach-actions button { background: none; border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; color: var(--muted); }
+.teach-actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.teach-standin-tag { margin-left: 10px; font-size: 11px; font-weight: 400; padding: 2px 8px; border-radius: 999px; background: #fef3c7; color: #92400e; }
+.teach-verdicts { display: flex; flex-direction: column; gap: 8px; }
+.teach-verdicts button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; background: none; border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; text-align: left; }
+.teach-verdicts button:hover { border-color: var(--accent); }
+.teach-verdicts span { font-size: 12px; color: var(--muted); }
+.teach-toolcall { background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 14px 16px; font-size: 12.5px; overflow-x: auto; }
+.teach-diff { margin: 12px 0 0; padding-left: 18px; font-size: 14px; }
+.teach-diff .muted { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+.teach-rail { background: var(--paper); border-left: 1px solid var(--line); padding: 12px 10px 84px; overflow-y: auto; }
+.teach-rail-head { font-size: 12px; color: var(--muted); padding: 0 6px 8px; }
+.teach-rail ol { list-style: none; margin: 0; padding: 0; }
+.teach-rail li { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-radius: 8px; font-size: 13px; }
+.teach-rail li.is-active { background: #eef2ff; color: var(--accent); }
+.teach-rail-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.teach-rail-weight { margin-left: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.teach-rail-weight.is-changed { color: #b45309; font-weight: 600; }
+
+.teach-log { border-top: 1px solid var(--line); padding: 12px 16px 84px; }
+.teach-log.is-compact { max-height: 34%; overflow-y: auto; }
+.teach-log header { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.teach-log ul { list-style: none; margin: 0; padding: 0; }
+.teach-log li { display: flex; align-items: baseline; gap: 8px; font-size: 12px; padding: 3px 0; }
+.teach-log-label { font-weight: 600; }
+.teach-log-delta { font-variant-numeric: tabular-nums; }
+.teach-log-delta.up { color: #b45309; }
+.teach-log-delta.down { color: #15803d; }
+.teach-log-reason { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --------------------------------------------- F 定稿：推导在前、定义在后、定义后带任务 */
+.fusion-definition { margin-top: 26px; border-top: 2px solid var(--line); padding-top: 16px; }
+.fusion-definition h3 { margin: 0 0 8px; font-size: 17px; }
+.fusion-task { margin-top: 22px; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: var(--paper); }
+.fusion-task.is-done { border-color: #86efac; background: #f0fdf4; }
+.fusion-task h3 { margin: 0 0 8px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.fusion-task h3 span { font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.fusion-task p { margin: 0; font-size: 14px; }
+.fusion-task textarea { width: 100%; min-height: 72px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; resize: vertical; }
+.fusion-task-actions { display: flex; gap: 8px; margin-top: 10px; }
+.fusion-task-actions button { border: 1px solid var(--line); background: none; border-radius: 10px; padding: 8px 14px; color: var(--muted); }
+.fusion-task-actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fusion-task-actions .primary:disabled { opacity: 0.45; }
+.fusion-task-done { color: #15803d; font-size: 13px; }
+.fusion-text-actions button:disabled { opacity: 0.45; cursor: default; }
+.tutor-guard { margin: 0 0 6px; font-size: 12px; color: var(--muted); background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 7px 9px; }
