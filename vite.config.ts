@@ -4,6 +4,9 @@ export default defineConfig({
   base: '/',
   plugins: [react()],
   clearScreen: false,
+  build: {
+    manifest: true,
+  },
   optimizeDeps: {
     exclude: ['@antv/g6'],
     include: ['color-string', 'eventemitter3', 'svg-path-parser'],

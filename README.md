@@ -302,7 +302,7 @@ npm run dev                 # 浏览器开发服务器
 npm run tauri:dev           # Tauri 桌面开发应用
 npm run tauri:debug         # 启用开发工具和原生 tracing
 npm run build               # TypeScript + Vite 生产构建
-npm test                    # Vitest 单元测试
+npm test                    # 前端与构建门禁单元测试
 npm run test:e2e            # Playwright 端到端测试
 npm run tauri:build         # 桌面 release bundle
 ```

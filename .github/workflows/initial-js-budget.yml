@@ -1,0 +1,39 @@
+name: Initial JavaScript Budget
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: initial-js-budget-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  initial-js-budget:
+    name: Initial JS budget
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test budget checker
+        run: npm run test:initial-js-budget
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Check initial JavaScript budget
+        run: npm run check:initial-js-budget
