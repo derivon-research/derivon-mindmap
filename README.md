@@ -2,6 +2,8 @@
 
 Derivon Mindmap 是一个本地优先的知识图谱编辑器，用加权有向 B-超图表达概念、联合前提、推导、替代方案和学习成本。它将可视化图编辑、对象级 Markdown 文档、路线求解和静态发布组织在同一个普通文件夹工作区中。
 
+> 版本范围：本 README 的用户说明对应当前已发布的 v0.4.2。`main` 正在进行 v1.0.0 重写；v1 是运行在 web 与桌面宿主上的一个应用，学习侧在两个宿主都可用，创作侧只在桌面可用。重写期术语与目标模块边界以 [`CONTEXT.md`](CONTEXT.md) 为准。
+
 - 在线版：<https://mindmap.derivon.net/>
 - 桌面版：[GitHub Releases](https://github.com/derivon-research/derivon-mindmap/releases/latest)
 - CLI：<https://github.com/derivon-research/derivon>
@@ -130,9 +132,9 @@ gh attestation verify ./Derivon_<version>_amd64.deb \
 
 ### 在线版
 
-使用 Chromium 系浏览器访问 <https://mindmap.derivon.net/> 即可体验图编辑、文档编辑和内置教程。但浏览器不支持路线求解功能。
+当前已发布的 v0.4.2 使用 Chromium 系浏览器访问 <https://mindmap.derivon.net/>，可以体验图编辑、文档编辑和内置教程，但不支持路线求解。v1.0.0 将 web 明确为只提供学习侧的宿主；创作侧与本地工作区写入只在桌面宿主提供。
 
-浏览器直接读写工作区依赖 File System Access API，需要 Chromium 系浏览器和 HTTPS 安全上下文。浏览器权限由用户显式授予；项目内容不会自动上传到 Derivon 服务。
+v0.4.2 的浏览器工作区读写依赖 File System Access API，需要 Chromium 系浏览器和 HTTPS 安全上下文。浏览器权限由用户显式授予；项目内容不会自动上传到 Derivon 服务。这是旧版能力说明，不是 v1 的宿主边界。
 
 ### 从源码运行
 
@@ -153,16 +155,9 @@ npm run dev
 
 ## 核心模型
 
-Derivon 使用加权有向 B-超图，而不是把推导压缩成普通二元边：
+数学模型中的 point、hyperedge、tail、head、closure、derivation 与成本由 [`derivon-research/paper`](https://github.com/derivon-research/paper#readme) 定义；CLI 接受的 `derivon.graph/v1` 图协议以 [`derivon-research/derivon` 的 graph format](https://github.com/derivon-research/derivon/blob/main/docs/src/graph-format.md) 为准。本仓库不另写一套定义。
 
-- **概念（point）**：由稳定、区分大小写的 ID 标识，并拥有显示 label 和独立文档。
-- **推导（hyperedge）**：包含零个或多个联合前提 `tails`、一个结论 `head` 和一个非负权重。
-- **联合语义**：一条多前提推导只有在所有 tails 都可用时才能推出 head；将它拆成多条普通边会把 AND 错误地改成 OR。
-- **合法结构**：空前提、环、自依赖、零权重、孤立概念和平行推导都允许存在。
-- **路线成本**：一条路线是能从起点闭包覆盖全部目标的推导集合；每条被选推导的权重只计算一次。
-- **替换视图**：`view.replacements` 只改变知识图的可见投影，不会创建推导，也不承诺替换前后具有相同可达性或最低成本。
-
-不了解这些差异时，优先使用 `derivon-cli` 和 `derivon-mindmap` Skills，不要按普通有向图直觉批量改写 manifest。
+Mindmap 在图协议之上拥有 `derivon.authoring/v0.3.0` 创作层。概念、创作层推导、对象文档和替换视图的规范词义见 [`CONTEXT.md`](CONTEXT.md#本仓库拥有的创作层词汇)，盘上结构见下文“工作区格式”。不了解这些边界时，优先使用 `derivon-cli` 和 `derivon-mindmap` Skills，不要按普通有向图直觉批量改写 manifest。
 
 ## 主要功能
 
