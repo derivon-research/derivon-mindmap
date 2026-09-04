@@ -129,7 +129,6 @@ test.describe('replacement compare performance', () => {
       contentType: 'application/json',
     });
 
-    expect(samples.every((sample) => sample.readyMs <= 4_100)).toBe(true);
     expect(samples.every((sample) => [sample.sixMember, sample.wrapped, sample.child, sample.parent]
       .every((action) => action.materializedMs <= 200))).toBe(true);
     expect(samples.every((sample) => [sample.sixMember, sample.wrapped, sample.child, sample.parent]

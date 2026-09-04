@@ -1,8 +1,8 @@
 name: Release Desktop App
 
+# Keep workflows manual until the v1.0.0 rewrite is complete.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read

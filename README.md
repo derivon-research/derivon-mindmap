@@ -318,6 +318,8 @@ cargo test
 ```bash
 npm run bench:graph
 npm run bench:replacement
+npm run bench:runtime
+npm run bench:runtime:desktop # Linux, built debug Tauri binary, tauri-driver
 npm run bench:g6-isolated
 ```
 
@@ -328,6 +330,8 @@ npm run bench:g6-isolated
 - Tiptap、Marked 和 KaTeX；
 - Tauri 2；
 - `derivon-core` Rust 路线求解器。
+
+运行时性能基准默认对 1000 个概念的生成图采样 5 次，可通过 `PERF_SIZE` 和 `PERF_RUNS` 调整。测试钩子及 2.5s/200ms 阈值的稳定契约见 [`docs/testing/runtime-performance.md`](docs/testing/runtime-performance.md)。
 
 生产构建不会包含 debug 菜单或 tracing 开销。`npm run tauri:debug` 产生的 Chrome Trace Event 文件会写入 `src-tauri/target/perf/`，可使用 [Perfetto](https://ui.perfetto.dev/) 分析。
 

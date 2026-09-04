@@ -61,6 +61,12 @@ import { projectDocument, type ReplacementViewMode } from './projection';
 import { replacementFromSelection } from './replacements';
 import { RoutePanel } from './RoutePanel';
 import {
+  currentInputStartedAtMs,
+  emitInteractiveTestHook,
+  emitInteractionCompleteTestHook,
+  type TestHookInteractionCompletion,
+} from './testHooks';
+import {
   createRouteSelection,
   invalidateRoute,
   routeHighlightIds,
@@ -231,16 +237,19 @@ function historyReducer(state: DocumentHistory, action: HistoryAction): Document
   };
 }
 
-function isExampleMode(): boolean {
-  return new URLSearchParams(window.location.search).get('example') === 'replace-with';
+function bundledExampleWorkspace(): AuthoringWorkspace | null {
+  const example = new URLSearchParams(window.location.search).get('example');
+  if (example === 'replace-with') return sampleWorkspace;
+  if (example === 'math-reforged') return navigationSampleWorkspace;
+  return null;
 }
 
 function initialWorkspace(): AuthoringWorkspace {
-  return loadLocalWorkspace(isExampleMode() ? sampleWorkspace : createEmptyWorkspace());
+  return loadLocalWorkspace(bundledExampleWorkspace() ?? createEmptyWorkspace());
 }
 
 function shouldStartFirstTour(): boolean {
-  return !isExampleMode()
+  return !bundledExampleWorkspace()
     && !localStorage.getItem(LOCAL_WORKSPACE_KEY)
     && !localStorage.getItem(PREVIOUS_LOCAL_WORKSPACE_KEY)
     && !localStorage.getItem(ONBOARDING_STORAGE_KEY);
@@ -372,6 +381,7 @@ function AuthoringCanvas() {
   const previousLayoutModeRef = useRef<LayoutMode>(layoutMode);
   const fittedLayoutEpochRef = useRef(-1);
   const tutorialFitAfterLayoutRef = useRef(false);
+  const interactiveTestHookEmittedRef = useRef(false);
 
   const fitGraph = useCallback((ids?: Iterable<string>) => {
     const visibleIds = ids ? [...ids] : undefined;
@@ -380,6 +390,20 @@ function AuthoringCanvas() {
 
   const fitInitialGraph = useCallback(() =>
     graphSurfaceRef.current?.fitInitialView() ?? Promise.resolve(), []);
+
+  const waitForGraphIdle = useCallback(async () => {
+    while (!graphSurfaceRef.current) {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    }
+    await graphSurfaceRef.current.whenIdle();
+  }, []);
+
+  const completeTestInteraction = useCallback((completion: TestHookInteractionCompletion) => {
+    window.requestAnimationFrame(() => {
+      void waitForGraphIdle()
+        .then(() => emitInteractionCompleteTestHook(completion));
+    });
+  }, [waitForGraphIdle]);
 
   const clientToGraph = useCallback((position: Position): Position =>
     graphSurfaceRef.current?.clientToGraph(position) ?? position, []);
@@ -1172,6 +1196,7 @@ function AuthoringCanvas() {
   }, [document, fitGraph, layoutMode, layoutRunning, reportWorkspaceError]);
 
   const findConcept = useCallback((pointId?: string) => {
+    const startedAtMs = currentInputStartedAtMs();
     const query = search.trim().toLocaleLowerCase();
     const concept = pointId
       ? document.graph.points.find((item) => item.id === pointId)
@@ -1212,8 +1237,16 @@ function AuthoringCanvas() {
     setSelectedNodeIds([concept.id]);
     setSelectedId(concept.id);
     notifyTourAction('concept-found');
-    window.setTimeout(() => void graphSurfaceRef.current?.focusElement(concept.id), 30);
-  }, [commit, document, replacementDraft, search]);
+    window.setTimeout(() => {
+      void waitForGraphIdle()
+        .then(() => graphSurfaceRef.current?.focusElement(concept.id))
+        .then(() => emitInteractionCompleteTestHook({
+          interaction: 'select-concept',
+          context: { conceptId: concept.id },
+          startedAtMs,
+        }));
+    }, 30);
+  }, [commit, document, replacementDraft, search, waitForGraphIdle]);
 
   const adoptChosenWorkspace = useCallback((result: ChosenWorkspaceDirectory, statusMessage?: string) => {
     const imported = result.workspace.manifest;
@@ -1395,15 +1428,20 @@ function AuthoringCanvas() {
   }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, reportWorkspaceError, resolvingExternalChange, workspaceDirectory]);
 
   const toggleRouteMode = useCallback(() => {
-    setRouteMode((current) => {
-      if (!current) notifyTourAction('route-mode-opened');
-      return !current;
-    });
+    const startedAtMs = currentInputStartedAtMs();
+    const expanded = !routeMode;
+    if (expanded) notifyTourAction('route-mode-opened');
+    setRouteMode(expanded);
     setRouteError(null);
     setFocusedId(null);
     setSelectedNodeIds([]);
     setSelectedId(null);
-  }, []);
+    completeTestInteraction({
+      interaction: 'toggle-panel',
+      context: { panel: 'route', expanded },
+      startedAtMs,
+    });
+  }, [completeTestInteraction, routeMode]);
 
   const toggleStartPoint = useCallback((pointId: string) => {
     setRouteSelection((current) => {
@@ -1414,12 +1452,19 @@ function AuthoringCanvas() {
   }, []);
 
   const toggleTargetPoint = useCallback((pointId: string) => {
+    const startedAtMs = currentInputStartedAtMs();
+    const selected = !routeSelection.targetPointIds.includes(pointId);
     setRouteSelection((current) => {
       if (!current.targetPointIds.includes(pointId)) notifyTourAction('route-target-selected');
       return toggleRouteTarget(current, pointId);
     });
     setRouteError(null);
-  }, []);
+    completeTestInteraction({
+      interaction: 'switch-target',
+      context: { conceptId: pointId, selected },
+      startedAtMs,
+    });
+  }, [completeTestInteraction, routeSelection.targetPointIds]);
 
   const clearRoute = useCallback(() => {
     setRouteSelection(createRouteSelection());
@@ -1451,6 +1496,7 @@ function AuthoringCanvas() {
   }, [document, groupByMemberId, routeSelection]);
 
   const selectNode = useCallback((id: string, shiftKey: boolean) => {
+    const startedAtMs = currentInputStartedAtMs();
     const displayedDerivation = displayedDerivationByNodeId.get(id);
     const semanticId = displayedDerivation?.id ?? id;
     const derivationGroup = visibleGroupByNodeId.get(id);
@@ -1497,7 +1543,14 @@ function AuthoringCanvas() {
       return;
     }
     setSelectedId(semanticId);
-  }, [commit, displayedDerivationByNodeId, document, layoutRunning, replacementDraft, routeMode, selectedId, toggleStartPoint, visibleGroupByNodeId]);
+    if (document.graph.points.some((concept) => concept.id === semanticId)) {
+      completeTestInteraction({
+        interaction: 'select-concept',
+        context: { conceptId: semanticId },
+        startedAtMs,
+      });
+    }
+  }, [commit, completeTestInteraction, displayedDerivationByNodeId, document, layoutRunning, replacementDraft, routeMode, selectedId, toggleStartPoint, visibleGroupByNodeId]);
 
   const toggleFocusedView = useCallback(() => {
     setFocusedId((current) => current ? null : selectedId);
@@ -2016,6 +2069,14 @@ function AuthoringCanvas() {
     ? '正在自动布局'
     : layoutMode === 'auto' ? '自动布局' : `使用 ${layoutModeLabel} 重新布局`;
 
+  useEffect(() => {
+    if (interactiveTestHookEmittedRef.current || !layoutReady || layoutRunning) return;
+    interactiveTestHookEmittedRef.current = true;
+    window.requestAnimationFrame(() => {
+      void waitForGraphIdle().then(() => emitInteractiveTestHook());
+    });
+  }, [layoutReady, layoutRunning, waitForGraphIdle]);
+
   return (
     <main
       className="app-shell"
@@ -2291,7 +2352,7 @@ function AuthoringCanvas() {
             onToggleTarget={toggleTargetPoint}
             onSolve={runRouteSolve}
             onClear={clearRoute}
-            onClose={() => setRouteMode(false)}
+            onClose={toggleRouteMode}
           />
         ) : <aside className="inspector">
           {selectedConcept ? (
