@@ -1,0 +1,176 @@
+/* PROTOTYPE — throwaway styling. Only the shell structure is being judged; the panes are
+   deliberately plain so they don't compete with it. */
+
+.tm-stage { height: 100vh; padding-bottom: 0; overflow: hidden; }
+
+.tm-shell { display: flex; flex-direction: column; height: calc(100vh - 78px); background: var(--bg); }
+.tm-body { flex: 1; display: flex; min-height: 0; }
+
+.tm-muted { color: var(--muted); font-size: 13px; }
+.tm-eyebrow { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.tm-field-title { display: block; font-size: 11px; color: var(--muted); margin: 14px 0 4px; }
+
+/* ------------------------------------------------------------------ top bar */
+.tm-topbar {
+  display: flex; align-items: center; gap: 10px; flex: none;
+  padding: 8px 14px; background: var(--paper); border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.tm-topbar.is-tabs { padding: 6px 14px 0; gap: 8px; align-items: flex-end; }
+.tm-topbar.is-tabs .tm-brand, .tm-topbar.is-tabs .tm-split, .tm-topbar.is-tabs .tm-toolbar { margin-bottom: 6px; }
+
+.tm-brand {
+  width: 24px; height: 24px; border-radius: 7px; background: var(--ink); color: #fff;
+  display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none;
+}
+.tm-workspace { font-weight: 600; }
+.tm-workspace.is-menu { background: none; border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; }
+
+.tm-segment { display: flex; align-items: center; gap: 2px; padding: 2px; background: #eef2f7; border-radius: 10px; }
+.tm-segment-right { margin-left: auto; }
+.tm-segment-title { font-size: 11px; color: var(--muted); padding: 0 6px 0 4px; }
+.tm-segment button {
+  background: none; border: none; border-radius: 8px; padding: 5px 14px; color: var(--muted); font-size: 13px;
+}
+.tm-segment button.is-active { background: var(--paper); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(15,23,42,0.12); }
+
+.tm-modes { display: flex; gap: 6px; margin-left: 8px; }
+.tm-modes button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; color: var(--muted); }
+.tm-modes button.is-active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+.tm-toolbar { display: flex; align-items: center; gap: 6px; margin-left: 8px; }
+.tm-toolbar button { background: none; border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; color: var(--ink); font-size: 12px; }
+.tm-toolbar-divider { width: 1px; height: 16px; background: var(--line); }
+.tm-saved { color: #16a34a; font-size: 11px; margin-left: 4px; }
+
+/* tabs (C) */
+.tm-tabs { display: flex; align-items: flex-end; gap: 4px; }
+.tm-tabs button {
+  background: #eef2f7; border: 1px solid transparent; border-bottom: none;
+  border-radius: 9px 9px 0 0; padding: 7px 14px; color: var(--muted); font-size: 13px;
+  display: flex; align-items: center; gap: 8px;
+}
+.tm-tabs button.is-active { background: var(--paper); border-color: var(--line); color: var(--ink); font-weight: 600; margin-bottom: -1px; }
+.tm-tab-close { color: var(--muted); font-size: 14px; }
+.tm-tab-add { padding: 7px 10px !important; }
+.tm-split { margin-left: auto; background: none; border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; color: var(--muted); font-size: 12px; }
+.tm-split.is-active { border-color: var(--accent); color: var(--accent); }
+.tm-split-body { flex: 1; display: flex; min-height: 0; }
+.tm-split-pane { flex: 1; min-width: 0; display: flex; border-left: 1px solid var(--line); }
+.tm-split-pane:first-child { border-left: none; }
+.tm-split-pane > * { flex: 1; min-width: 0; }
+
+/* ------------------------------------------------------------------ authoring */
+.tm-canvas { flex: 1; min-width: 0; position: relative; background: var(--paper); }
+.tm-canvas svg { width: 100%; height: 100%; }
+.tm-canvas text { font-size: 12px; fill: var(--ink); pointer-events: none; }
+.tm-canvas-link { fill: none; stroke: #cbd5e1; stroke-width: 1.4; }
+.tm-canvas-derivation { fill: #94a3b8; }
+.tm-canvas-point { cursor: pointer; }
+.tm-canvas-point:hover rect { stroke: var(--accent); }
+.tm-canvas-legend {
+  position: absolute; left: 12px; bottom: 10px; display: flex; align-items: center; gap: 14px;
+  font-size: 11px; color: var(--muted);
+}
+.tm-canvas-legend i { display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; }
+.tm-canvas-scope { border-left: 1px solid var(--line); padding-left: 14px; }
+
+.tm-inspector {
+  width: 268px; flex: none; padding: 14px; background: var(--paper);
+  border-left: 1px solid var(--line); overflow: auto; font-size: 13px;
+}
+.tm-inspector-head { display: flex; flex-direction: column; gap: 2px; }
+.tm-inspector-head strong { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; color: var(--muted); }
+.tm-inspector-label { margin: 6px 0 0; font-size: 17px; font-weight: 600; }
+.tm-path { display: block; font-size: 11px; color: var(--muted); word-break: break-all; }
+.tm-edge-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+.tm-edge-card code { font-size: 11px; color: var(--muted); }
+.tm-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.tm-chip { background: #eef2f7; border-radius: 999px; padding: 2px 9px; font-size: 12px; }
+.tm-weight { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.tm-weight input { width: 62px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; }
+.tm-learn-cta {
+  width: 100%; margin-top: 16px; padding: 9px 12px; border: none; border-radius: 10px;
+  background: var(--accent); color: #fff; font-weight: 600;
+}
+.tm-hint { margin: 6px 0 0; }
+
+/* ------------------------------------------------------------------ launch */
+.tm-recent { max-width: 520px; margin: 0 auto; padding: 12vh 24px; }
+.tm-recent h1 { margin: 0 0 2px; font-size: 26px; }
+.tm-recent-row {
+  display: flex; flex-direction: column; gap: 3px; align-items: flex-start; width: 100%; text-align: left;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 8px;
+}
+.tm-recent-row.is-primary { border-color: var(--accent); }
+.tm-recent-row span { color: var(--muted); font-size: 12px; }
+.tm-recent-actions { display: flex; gap: 8px; margin-top: 18px; }
+.tm-recent-actions button { background: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; }
+
+/* ------------------------------------------------------------------ learning */
+.tm-learn { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.tm-learn.is-empty { padding: 24px; }
+.tm-learn-body { flex: 1; display: flex; min-height: 0; }
+
+.tm-banner {
+  flex: none; padding: 7px 14px; background: #eef2ff; color: #3730a3; font-size: 12px;
+  border-bottom: 1px solid #c7d2fe;
+}
+.tm-banner button { background: none; border: 1px solid #a5b4fc; border-radius: 999px; padding: 2px 10px; color: inherit; font-size: 12px; }
+
+.tm-ask { width: 280px; flex: none; display: flex; flex-direction: column; background: var(--paper); border-right: 1px solid var(--line); }
+.tm-ask header { padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.tm-thread { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.tm-turn { margin: 0; padding: 8px 11px; border-radius: 12px; background: #f1f5f9; font-size: 13px; }
+.tm-turn.is-user { background: var(--ink); color: #f8fafc; align-self: flex-end; }
+.tm-composer { display: flex; gap: 6px; padding: 10px; border-top: 1px solid var(--line); }
+.tm-composer input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; font: inherit; font-size: 13px; }
+.tm-composer button { background: var(--ink); color: #fff; border: none; border-radius: 9px; padding: 0 12px; font-size: 13px; }
+
+.tm-doc { flex: 1; min-width: 0; overflow: auto; padding: 22px 30px 60px; background: var(--paper); }
+.tm-doc-head { border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 14px; }
+.tm-doc-head h2 { margin: 4px 0 6px; font-size: 24px; }
+.tm-doc-because { display: block; color: var(--muted); font-size: 13px; border-left: 3px solid var(--line); padding-left: 10px; }
+.tm-doc .doc-body { font-size: 14px; }
+.tm-doc .doc-body h1 { font-size: 20px; }
+.tm-doc .doc-body h2 { font-size: 16px; }
+.tm-task { margin-top: 26px; border: 1px dashed var(--accent); border-radius: 12px; padding: 14px; background: #f8faff; }
+.tm-task p { margin: 6px 0 10px; font-size: 13px; }
+.tm-task button { background: var(--accent); color: #fff; border: none; border-radius: 9px; padding: 7px 16px; }
+
+.tm-route { width: 236px; flex: none; overflow: auto; background: var(--paper); border-left: 1px solid var(--line); }
+.tm-route header { padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.tm-steps { list-style: none; margin: 0; padding: 6px; }
+.tm-steps button {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: none; border: none; border-radius: 8px; padding: 7px 9px; font-size: 13px; color: var(--ink);
+}
+.tm-steps button:hover { background: #f1f5f9; }
+.tm-steps button.is-current { background: #eef2ff; color: #3730a3; font-weight: 600; }
+.tm-steps button.is-done { color: var(--muted); }
+.tm-step-index { width: 18px; flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tm-step-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-step-weight { color: var(--muted); font-size: 11px; }
+.tm-steps.is-dense button { padding: 4px 8px; font-size: 12px; }
+
+/* docked learning (B) */
+.tm-dock { width: 460px; flex: none; display: flex; flex-direction: column; border-left: 2px solid var(--accent); background: var(--paper); }
+.tm-dock-head { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: #eef2ff; color: #3730a3; font-size: 12px; }
+.tm-dock-head span { flex: 1; }
+.tm-dock-head button { background: none; border: none; color: inherit; font-size: 14px; }
+.tm-dock .tm-doc { padding: 16px 18px 40px; }
+.tm-dock .tm-route { width: 176px; }
+
+/* ------------------------------------------------------------------ web host */
+.tm-web { position: relative; height: 100%; overflow: auto; }
+.tm-web-note {
+  position: fixed; right: 16px; bottom: 84px; width: 320px; margin: 0; padding: 10px 12px;
+  background: rgba(17, 24, 39, 0.92); color: #e2e8f0; border-radius: 12px; font-size: 12px; line-height: 1.6;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.28); z-index: 90;
+}
+
+/* ------------------------------------------------------------------ switcher additions */
+.tm-host-toggle { display: flex; gap: 4px; border-left: 1px solid #334155; padding-left: 10px; }
+.tm-host-toggle button { width: auto !important; border-radius: 999px !important; padding: 0 10px; font-size: 12px; height: 24px; }
+.tm-host-toggle button.is-active { background: #f8fafc !important; color: #111827; font-weight: 600; }
+.tm-reset { font-size: 14px; }
