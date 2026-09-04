@@ -13,7 +13,7 @@ type GeneratedHyperedge = {
 
 export type RuntimeWorkspaceFixture = {
   name: string;
-  concepts: number;
+  conceptCount: number;
   workspace: {
     manifest: {
       schema: 'derivon.authoring/v0.3.0';
@@ -29,20 +29,20 @@ export type RuntimeWorkspaceFixture = {
   };
 };
 
-export function createGeneratedRuntimeWorkspace(concepts: number): RuntimeWorkspaceFixture {
-  if (!Number.isSafeInteger(concepts) || concepts < 100) {
+export function createGeneratedRuntimeWorkspace(conceptCount: number): RuntimeWorkspaceFixture {
+  if (!Number.isSafeInteger(conceptCount) || conceptCount < 100) {
     throw new RangeError('Runtime performance fixture requires at least 100 concepts');
   }
 
-  const points = Array.from({ length: concepts }, (_, index): GeneratedPoint => ({
+  const points = Array.from({ length: conceptCount }, (_, index): GeneratedPoint => ({
     id: `p-${index}`,
     data: { label: `Concept ${index}`, document: `docs/p-${index}`, format: 'html' },
   }));
-  const hyperedges = Array.from({ length: concepts }, (_, index): GeneratedHyperedge => ({
+  const hyperedges = Array.from({ length: conceptCount }, (_, index): GeneratedHyperedge => ({
     id: `h-${index}`,
     weight: (index % 6) + 0.5,
-    tails: [`p-${index}`, `p-${(index + concepts - 1) % concepts}`],
-    head: `p-${(index + 1) % concepts}`,
+    tails: [`p-${index}`, `p-${(index + conceptCount - 1) % conceptCount}`],
+    head: `p-${(index + 1) % conceptCount}`,
     data: { document: `docs/h-${index}`, format: 'html' },
   }));
   const files = Object.fromEntries([
@@ -51,13 +51,13 @@ export function createGeneratedRuntimeWorkspace(concepts: number): RuntimeWorksp
   ]);
 
   return {
-    name: `generated-cyclic-${concepts}`,
-    concepts,
+    name: `generated-cyclic-${conceptCount}`,
+    conceptCount,
     workspace: {
       manifest: {
         schema: 'derivon.authoring/v0.3.0',
         document: {
-          title: `Runtime performance ${concepts}`,
+          title: `Runtime performance ${conceptCount}`,
           description: 'Generated cyclic B-hypergraph runtime fixture',
         },
         graph: { points, hyperedges },
@@ -66,8 +66,8 @@ export function createGeneratedRuntimeWorkspace(concepts: number): RuntimeWorksp
       files,
     },
     interactions: {
-      selectedConceptId: `p-${Math.floor(concepts / 2)}`,
-      targetConceptId: `p-${Math.floor(concepts / 2) + 1}`,
+      selectedConceptId: `p-${Math.floor(conceptCount / 2)}`,
+      targetConceptId: `p-${Math.floor(conceptCount / 2) + 1}`,
     },
   };
 }

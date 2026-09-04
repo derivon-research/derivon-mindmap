@@ -1,6 +1,14 @@
 export const READY_THRESHOLD_MS = 2_500;
 export const INTERACTION_THRESHOLD_MS = 200;
 
+export function integerEnvironmentValue(name: string, fallback: number, minimum: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    throw new RangeError(`${name} must be an integer greater than or equal to ${minimum}`);
+  }
+  return value;
+}
+
 export type RuntimeSample = {
   run: number;
   readyMs: number;
@@ -57,13 +65,13 @@ function formatDistribution(name: string, values: Distribution, threshold: numbe
 export function formatRuntimeSummary(
   host: 'web' | 'desktop',
   fixtureName: string,
-  concepts: number,
+  conceptCount: number,
   summary: RuntimeSummary,
 ): string {
   return [
     `# Runtime performance: ${fixtureName}`,
     '',
-    `Host: ${host}. Fixture size: ${concepts} concepts. Samples: ${summary.runs}.`,
+    `Host: ${host}. Fixture size: ${conceptCount} concepts. Samples: ${summary.runs}.`,
     '',
     '| Metric | Samples | Min ms | Median ms | P75 ms | P95 ms | Max ms | Limit ms |',
     '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { createGeneratedRuntimeWorkspace } from './fixtures/generated-workspace.ts';
 import {
   formatRuntimeSummary,
+  integerEnvironmentValue,
   runtimeBudgetFailures,
   summarizeRuntime,
 } from './runtime-metrics.ts';
@@ -11,16 +12,9 @@ import { TEST_HOOK_BUFFER, TEST_HOOK_VERSION } from '../src/testHooks.ts';
 
 const DRIVER_URL = process.env.TAURI_DRIVER_URL ?? 'http://127.0.0.1:4444';
 const APP_PATH = resolve(process.env.DERIVON_DESKTOP_APP ?? 'src-tauri/target/debug/derivon-app');
+const WEB_ELEMENT_ID = 'element-6066-11e4-a52e-4f735466cecf';
 
-function integerEnvironmentValue(name, fallback, minimum) {
-  const value = Number(process.env[name] ?? fallback);
-  if (!Number.isSafeInteger(value) || value < minimum) {
-    throw new RangeError(`${name} must be an integer greater than or equal to ${minimum}`);
-  }
-  return value;
-}
-
-const concepts = integerEnvironmentValue('PERF_SIZE', 1000, 100);
+const conceptCount = integerEnvironmentValue('PERF_SIZE', 1000, 100);
 const runCount = integerEnvironmentValue('PERF_RUNS', 5, 3);
 
 async function webdriver(method, path, body) {
@@ -119,7 +113,13 @@ async function setInput(sessionId, selector, value) {
 
 async function click(sessionId, selector) {
   await poll(sessionId, 'return document.querySelector(arguments[0]) !== null;', [selector]);
-  await execute(sessionId, 'document.querySelector(arguments[0]).click(); return true;', [selector]);
+  const element = await webdriver('POST', `/session/${sessionId}/element`, {
+    using: 'css selector',
+    value: selector,
+  });
+  const elementId = element[WEB_ELEMENT_ID];
+  if (!elementId) throw new Error(`WebDriver did not return an element id for ${selector}`);
+  await webdriver('POST', `/session/${sessionId}/element/${elementId}/click`, {});
 }
 
 async function measureInteraction(sessionId, expected, trigger) {
@@ -194,7 +194,7 @@ async function runSample(fixture, run) {
 const driver = spawn(process.env.TAURI_DRIVER ?? 'tauri-driver', [], { stdio: 'inherit' });
 try {
   await waitForDriver(driver);
-  const fixture = createGeneratedRuntimeWorkspace(concepts);
+  const fixture = createGeneratedRuntimeWorkspace(conceptCount);
   await installFixture(fixture.workspace);
   const samples = [];
   for (let run = 1; run <= runCount; run += 1) {
@@ -202,11 +202,11 @@ try {
   }
 
   const summary = summarizeRuntime(samples);
-  const markdown = formatRuntimeSummary('desktop', fixture.name, fixture.concepts, summary);
+  const markdown = formatRuntimeSummary('desktop', fixture.name, fixture.conceptCount, summary);
   const result = {
     surface: 'runtime-test-hook-v1',
     host: 'desktop',
-    fixture: { name: fixture.name, concepts: fixture.concepts },
+    fixture: { name: fixture.name, conceptCount: fixture.conceptCount },
     summary,
     samples,
   };

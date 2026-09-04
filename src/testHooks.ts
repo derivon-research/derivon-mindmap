@@ -6,7 +6,7 @@ export type TestHookInteraction = 'select-concept' | 'switch-target' | 'toggle-p
 export type TestHookInteractionContext = {
   'select-concept': { conceptId: string };
   'switch-target': { conceptId: string; selected: boolean };
-  'toggle-panel': { panel: string; expanded: boolean };
+  'toggle-panel': { panel: 'route'; expanded: boolean };
 };
 
 export type TestHookInteractionCompletion = {

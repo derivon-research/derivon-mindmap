@@ -9,21 +9,14 @@ import {
 import { createGeneratedRuntimeWorkspace, type RuntimeWorkspaceFixture } from './fixtures/generated-workspace';
 import {
   formatRuntimeSummary,
+  integerEnvironmentValue,
   INTERACTION_THRESHOLD_MS,
   READY_THRESHOLD_MS,
   summarizeRuntime,
   type RuntimeSample,
 } from './runtime-metrics';
 
-function integerEnvironmentValue(name: string, fallback: number, minimum: number): number {
-  const value = Number(process.env[name] ?? fallback);
-  if (!Number.isSafeInteger(value) || value < minimum) {
-    throw new RangeError(`${name} must be an integer greater than or equal to ${minimum}`);
-  }
-  return value;
-}
-
-const concepts = integerEnvironmentValue('PERF_SIZE', 1000, 100);
+const conceptCount = integerEnvironmentValue('PERF_SIZE', 1000, 100);
 const runCount = integerEnvironmentValue('PERF_RUNS', 5, 3);
 
 type HookExpectation = {
@@ -169,18 +162,18 @@ async function runSample(
 test.describe('runtime performance budget', () => {
   test.describe.configure({ mode: 'serial' });
 
-  test(`${concepts} concept generated workspace`, async ({ browser }, testInfo) => {
-    const fixture = createGeneratedRuntimeWorkspace(concepts);
+  test(`${conceptCount} concept generated workspace`, async ({ browser }, testInfo) => {
+    const fixture = createGeneratedRuntimeWorkspace(conceptCount);
     const samples: RuntimeSample[] = [];
     for (let run = 1; run <= runCount; run += 1) {
       samples.push(await runSample(browser, fixture, run));
     }
 
     const summary = summarizeRuntime(samples);
-    const markdown = formatRuntimeSummary('web', fixture.name, fixture.concepts, summary);
+    const markdown = formatRuntimeSummary('web', fixture.name, fixture.conceptCount, summary);
     const result = {
       surface: 'runtime-test-hook-v1',
-      fixture: { name: fixture.name, concepts: fixture.concepts },
+      fixture: { name: fixture.name, conceptCount: fixture.conceptCount },
       thresholds: { readyMs: READY_THRESHOLD_MS, interactionMs: INTERACTION_THRESHOLD_MS },
       summary,
       samples,

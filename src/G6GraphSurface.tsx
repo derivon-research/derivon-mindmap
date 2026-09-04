@@ -59,6 +59,7 @@ export type G6PointerModifiers = {
   shiftKey: boolean;
   ctrlKey: boolean;
   metaKey: boolean;
+  startedAtMs: number;
 };
 
 export type G6GraphSurfaceHandle = {
@@ -237,11 +238,12 @@ async function syncSnapshot(
   if (changed) await graph.draw();
 }
 
-function modifiers(event: Pick<IElementEvent, 'shiftKey' | 'ctrlKey' | 'metaKey'>): G6PointerModifiers {
+function modifiers(event: Pick<IElementEvent, 'shiftKey' | 'ctrlKey' | 'metaKey' | 'timeStamp'>): G6PointerModifiers {
   return {
     shiftKey: event.shiftKey,
     ctrlKey: event.ctrlKey,
     metaKey: event.metaKey,
+    startedAtMs: event.timeStamp,
   };
 }
 

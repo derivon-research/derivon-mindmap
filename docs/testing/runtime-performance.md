@@ -42,7 +42,7 @@ type TestHookPayload =
     };
 ```
 
-Both timestamps are milliseconds from the document's `performance.now()` clock. `startedAtMs` is captured when the application accepts the input; the response duration is `completedAtMs - startedAtMs`. `sequence` starts at 1 and increases by one for each event in a document. Consumers must reject unsupported versions rather than guessing at payload changes.
+Both timestamps are milliseconds from the document's `performance.now()` clock. `startedAtMs` comes from the browser input event's `timeStamp`, normalized to the same time origin when necessary; this includes delay before the application handler starts. The response duration is `completedAtMs - startedAtMs` and covers input delay, application processing, renderer synchronization, and the completion paint. `sequence` starts at 1 and increases by one for each event in a document. Consumers must reject unsupported versions rather than guessing at payload changes.
 
 ## Interactive signal
 

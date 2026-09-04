@@ -315,6 +315,11 @@ function graphTutorialStageSatisfied(document: AuthoringDocument, stage: GraphTu
   return completeInvertible && surjectiveParallel && nullSpaceUpdated;
 }
 
+function eventStartedAtMs(timeStamp?: number): number {
+  if (typeof timeStamp !== 'number' || !Number.isFinite(timeStamp)) return performance.now();
+  return timeStamp > performance.timeOrigin ? timeStamp - performance.timeOrigin : timeStamp;
+}
+
 function AuthoringCanvas() {
   const initial = useRef<ReturnType<typeof initialWorkspace> | null>(null);
   if (!initial.current) initial.current = initialWorkspace();
@@ -1194,8 +1199,8 @@ function AuthoringCanvas() {
     }).finally(() => setLayoutRunning(false));
   }, [document, fitGraph, layoutMode, layoutRunning, reportWorkspaceError]);
 
-  const findConcept = useCallback((pointId?: string) => {
-    const startedAtMs = performance.now();
+  const findConcept = useCallback((pointId?: string, timeStamp?: number) => {
+    const startedAtMs = eventStartedAtMs(timeStamp);
     const query = search.trim().toLocaleLowerCase();
     const concept = pointId
       ? document.graph.points.find((item) => item.id === pointId)
@@ -1426,8 +1431,8 @@ function AuthoringCanvas() {
       .finally(() => setResolvingExternalChange(false));
   }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, reportWorkspaceError, resolvingExternalChange, workspaceDirectory]);
 
-  const toggleRouteMode = useCallback(() => {
-    const startedAtMs = performance.now();
+  const toggleRouteMode = useCallback((event?: { timeStamp: number }) => {
+    const startedAtMs = eventStartedAtMs(event?.timeStamp);
     const expanded = !routeMode;
     if (expanded) notifyTourAction('route-mode-opened');
     setRouteMode(expanded);
@@ -1450,8 +1455,8 @@ function AuthoringCanvas() {
     setRouteError(null);
   }, []);
 
-  const toggleTargetPoint = useCallback((pointId: string) => {
-    const startedAtMs = performance.now();
+  const toggleTargetPoint = useCallback((pointId: string, timeStamp?: number) => {
+    const startedAtMs = eventStartedAtMs(timeStamp);
     const selected = !routeSelection.targetPointIds.includes(pointId);
     setRouteSelection((current) => {
       if (!current.targetPointIds.includes(pointId)) notifyTourAction('route-target-selected');
@@ -1494,8 +1499,8 @@ function AuthoringCanvas() {
     }).finally(() => setRouteSolving(false));
   }, [document, groupByMemberId, routeSelection]);
 
-  const selectNode = useCallback((id: string, shiftKey: boolean) => {
-    const startedAtMs = performance.now();
+  const selectNode = useCallback((id: string, shiftKey: boolean, timeStamp?: number) => {
+    const startedAtMs = eventStartedAtMs(timeStamp);
     const displayedDerivation = displayedDerivationByNodeId.get(id);
     const semanticId = displayedDerivation?.id ?? id;
     const derivationGroup = visibleGroupByNodeId.get(id);
@@ -1613,7 +1618,7 @@ function AuthoringCanvas() {
       }
       return next;
     });
-    selectNode(id, pointer.shiftKey);
+    selectNode(id, pointer.shiftKey, pointer.startedAtMs);
   }, [displayedDerivationByNodeId, document.graph.points, openDocument, selectNode]);
 
   const handleG6NodeContextMenu = useCallback((id: string, pointer: G6PointerModifiers) => {
@@ -2106,7 +2111,7 @@ function AuthoringCanvas() {
             tourFeatureId={TOUR_FEATURES.search.id}
             onChange={setSearch}
             onSelect={findConcept}
-            onSubmit={() => findConcept()}
+            onSubmit={(startedAtMs) => findConcept(undefined, startedAtMs)}
           />
           <a
             className="github-link"
