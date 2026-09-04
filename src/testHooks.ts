@@ -28,6 +28,27 @@ export type DerivonTestHook = TestHookPayload & {
 };
 
 let sequence = 0;
+let activeInputStartedAtMs: number | null = null;
+
+function normalizeEventTimeStamp(timeStamp: number): number {
+  return timeStamp > performance.timeOrigin ? timeStamp - performance.timeOrigin : timeStamp;
+}
+
+if (typeof window !== 'undefined') {
+  for (const eventName of ['click', 'contextmenu', 'keydown']) {
+    window.addEventListener(eventName, (event) => {
+      const startedAtMs = normalizeEventTimeStamp(event.timeStamp);
+      activeInputStartedAtMs = startedAtMs;
+      window.setTimeout(() => {
+        if (activeInputStartedAtMs === startedAtMs) activeInputStartedAtMs = null;
+      }, 0);
+    }, { capture: true });
+  }
+}
+
+export function currentInputStartedAtMs(): number {
+  return activeInputStartedAtMs ?? performance.now();
+}
 
 function afterPaint(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => {

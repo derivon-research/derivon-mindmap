@@ -3,10 +3,12 @@
   "compilerOptions": {
     "composite": false,
     "types": ["node"],
+    "allowImportingTsExtensions": true,
     "noEmit": true
   },
   "include": [
     "benchmarks/**/*.ts",
+    "src/file-system.d.ts",
     "playwright.performance.config.ts",
     "vite.performance.config.ts"
   ]

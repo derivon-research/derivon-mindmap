@@ -14,15 +14,26 @@ type HookExpectation = {
 type TestWindow = Window & {
   __testHookEvents?: DerivonTestHook[];
   __interactiveSnapshot?: { layoutReady: boolean; rendererReady: boolean };
+  __lastInputStartedAtMs?: number;
+  __interactionStartedAtDeltas?: number[];
 };
 
 async function installRecorder(page: Page): Promise<void> {
   await page.addInitScript((eventName) => {
     const testWindow = window as TestWindow;
     testWindow.__testHookEvents = [];
+    testWindow.__interactionStartedAtDeltas = [];
+    window.addEventListener('click', (event) => {
+      testWindow.__lastInputStartedAtMs = event.timeStamp > performance.timeOrigin
+        ? event.timeStamp - performance.timeOrigin
+        : event.timeStamp;
+    }, { capture: true });
     window.addEventListener(eventName, (event) => {
       const detail = (event as CustomEvent<DerivonTestHook>).detail;
       testWindow.__testHookEvents?.push(detail);
+      if (detail.kind === 'interaction-complete') {
+        testWindow.__interactionStartedAtDeltas?.push(detail.startedAtMs - (testWindow.__lastInputStartedAtMs ?? 0));
+      }
       if (detail.kind === 'interactive') {
         testWindow.__interactiveSnapshot = {
           layoutReady: document.querySelector('.app-shell')?.getAttribute('data-layout-ready') === 'true',
@@ -101,4 +112,10 @@ test('math-reforged workspace emits the runtime performance hook contract', asyn
   expect(events.filter((event) => event.kind === 'interaction-complete').every((event) =>
     Number.isFinite(event.startedAtMs) && event.completedAtMs >= event.startedAtMs,
   )).toBe(true);
+  expect(await page.evaluate(() => (window as TestWindow).__interactionStartedAtDeltas)).toEqual([
+    0,
+    0,
+    0,
+    0,
+  ]);
 });

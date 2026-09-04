@@ -11,7 +11,7 @@ type ConceptMultiSelectProps = {
   tone: 'start' | 'target' | 'premise';
   tourFeatureId?: string;
   visibleIds?: ReadonlySet<string>;
-  onToggle: (pointId: string, startedAtMs?: number) => void;
+  onToggle: (pointId: string) => void;
 };
 
 export function ConceptMultiSelect({
@@ -88,7 +88,7 @@ export function ConceptMultiSelect({
                 <input
                   type="checkbox"
                   checked={selected.has(point.id)}
-                  onChange={(event) => onToggle(point.id, event.timeStamp)}
+                  onChange={() => onToggle(point.id)}
                 />
                 <span>{point.data.label}<small>{point.id}{visibleIds && !visibleIds.has(point.id) ? ' · 当前视图未显示' : ''}</small></span>
               </label>
@@ -104,7 +104,7 @@ export function ConceptMultiSelect({
           return (
             <div key={pointId}>
               <span>{point.data.label}<small>{point.id}{visibleIds && !visibleIds.has(point.id) ? ' · 当前视图未显示' : ''}</small></span>
-              <button type="button" title={`移除 ${point.data.label}`} aria-label={`移除 ${point.data.label}`} onClick={(event) => onToggle(pointId, event.timeStamp)}>
+              <button type="button" title={`移除 ${point.data.label}`} aria-label={`移除 ${point.data.label}`} onClick={() => onToggle(pointId)}>
                 <X size={13} />
               </button>
             </div>

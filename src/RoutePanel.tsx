@@ -10,7 +10,7 @@ type RoutePanelProps = {
   solving: boolean;
   error: string | null;
   onToggleStart: (pointId: string) => void;
-  onToggleTarget: (pointId: string, startedAtMs?: number) => void;
+  onToggleTarget: (pointId: string) => void;
   onSolve: () => void;
   onClear: () => void;
   onClose: () => void;

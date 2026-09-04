@@ -8,8 +8,8 @@ type ConceptSearchProps = {
   value: string;
   tourFeatureId?: string;
   onChange: (value: string) => void;
-  onSelect: (pointId: string, startedAtMs: number) => void;
-  onSubmit: (startedAtMs: number) => void;
+  onSelect: (pointId: string) => void;
+  onSubmit: () => void;
 };
 
 export function ConceptSearch({
@@ -38,10 +38,10 @@ export function ConceptSearch({
 
   useEffect(() => setActiveIndex(0), [value]);
 
-  const choose = (point: Point, startedAtMs: number) => {
+  const choose = (point: Point) => {
     onChange(point.data.label);
     setOpen(false);
-    onSelect(point.id, startedAtMs);
+    onSelect(point.id);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -62,8 +62,8 @@ export function ConceptSearch({
     if (event.key !== 'Enter') return;
     event.preventDefault();
     const result = results[activeIndex] ?? results[0];
-    if (result) choose(result, event.timeStamp);
-    else onSubmit(event.timeStamp);
+    if (result) choose(result);
+    else onSubmit();
   };
 
   const closeWhenFocusLeaves = (event: FocusEvent<HTMLElement>) => {
@@ -111,7 +111,7 @@ export function ConceptSearch({
               className={index === activeIndex ? 'is-active' : ''}
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => setActiveIndex(index)}
-              onClick={(event) => choose(point, event.timeStamp)}
+              onClick={() => choose(point)}
             >
               <span>{point.data.label}<small>{point.id}</small></span>
             </button>

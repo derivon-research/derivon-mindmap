@@ -61,6 +61,7 @@ import { projectDocument, type ReplacementViewMode } from './projection';
 import { replacementFromSelection } from './replacements';
 import { RoutePanel } from './RoutePanel';
 import {
+  currentInputStartedAtMs,
   emitInteractiveTestHook,
   emitInteractionCompleteTestHook,
   type TestHookInteractionCompletion,
@@ -313,11 +314,6 @@ function graphTutorialStageSatisfied(document: AuthoringDocument, stage: GraphTu
   if (stage === 'invertible-complete') return completeInvertible;
   if (stage === 'surjective-parallel') return completeInvertible && surjectiveParallel;
   return completeInvertible && surjectiveParallel && nullSpaceUpdated;
-}
-
-function eventStartedAtMs(timeStamp?: number): number {
-  if (typeof timeStamp !== 'number' || !Number.isFinite(timeStamp)) return performance.now();
-  return timeStamp > performance.timeOrigin ? timeStamp - performance.timeOrigin : timeStamp;
 }
 
 function AuthoringCanvas() {
@@ -1199,8 +1195,8 @@ function AuthoringCanvas() {
     }).finally(() => setLayoutRunning(false));
   }, [document, fitGraph, layoutMode, layoutRunning, reportWorkspaceError]);
 
-  const findConcept = useCallback((pointId?: string, timeStamp?: number) => {
-    const startedAtMs = eventStartedAtMs(timeStamp);
+  const findConcept = useCallback((pointId?: string) => {
+    const startedAtMs = currentInputStartedAtMs();
     const query = search.trim().toLocaleLowerCase();
     const concept = pointId
       ? document.graph.points.find((item) => item.id === pointId)
@@ -1431,8 +1427,8 @@ function AuthoringCanvas() {
       .finally(() => setResolvingExternalChange(false));
   }, [document, enqueueDirectoryOperation, externalWorkspaceChange, files, reportWorkspaceError, resolvingExternalChange, workspaceDirectory]);
 
-  const toggleRouteMode = useCallback((event?: { timeStamp: number }) => {
-    const startedAtMs = eventStartedAtMs(event?.timeStamp);
+  const toggleRouteMode = useCallback(() => {
+    const startedAtMs = currentInputStartedAtMs();
     const expanded = !routeMode;
     if (expanded) notifyTourAction('route-mode-opened');
     setRouteMode(expanded);
@@ -1455,8 +1451,8 @@ function AuthoringCanvas() {
     setRouteError(null);
   }, []);
 
-  const toggleTargetPoint = useCallback((pointId: string, timeStamp?: number) => {
-    const startedAtMs = eventStartedAtMs(timeStamp);
+  const toggleTargetPoint = useCallback((pointId: string) => {
+    const startedAtMs = currentInputStartedAtMs();
     const selected = !routeSelection.targetPointIds.includes(pointId);
     setRouteSelection((current) => {
       if (!current.targetPointIds.includes(pointId)) notifyTourAction('route-target-selected');
@@ -1499,8 +1495,8 @@ function AuthoringCanvas() {
     }).finally(() => setRouteSolving(false));
   }, [document, groupByMemberId, routeSelection]);
 
-  const selectNode = useCallback((id: string, shiftKey: boolean, timeStamp?: number) => {
-    const startedAtMs = eventStartedAtMs(timeStamp);
+  const selectNode = useCallback((id: string, shiftKey: boolean) => {
+    const startedAtMs = currentInputStartedAtMs();
     const displayedDerivation = displayedDerivationByNodeId.get(id);
     const semanticId = displayedDerivation?.id ?? id;
     const derivationGroup = visibleGroupByNodeId.get(id);
@@ -1618,7 +1614,7 @@ function AuthoringCanvas() {
       }
       return next;
     });
-    selectNode(id, pointer.shiftKey, pointer.startedAtMs);
+    selectNode(id, pointer.shiftKey);
   }, [displayedDerivationByNodeId, document.graph.points, openDocument, selectNode]);
 
   const handleG6NodeContextMenu = useCallback((id: string, pointer: G6PointerModifiers) => {
@@ -2111,7 +2107,7 @@ function AuthoringCanvas() {
             tourFeatureId={TOUR_FEATURES.search.id}
             onChange={setSearch}
             onSelect={findConcept}
-            onSubmit={(startedAtMs) => findConcept(undefined, startedAtMs)}
+            onSubmit={() => findConcept()}
           />
           <a
             className="github-link"
