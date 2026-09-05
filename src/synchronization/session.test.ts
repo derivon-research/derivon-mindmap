@@ -148,6 +148,26 @@ describe('application-scoped workspace synchronization', () => {
     await expect(openWorkspaceSession(source)).rejects.toThrow();
   });
 
+  it('reads existing images without publishing content and invalidates cached bytes on reload', async () => {
+    const { source, assets } = memorySource();
+    const path = 'docs/example/assets/image.png';
+    assets.set(path, new Uint8Array([1, 2]));
+    const session = await openWorkspaceSession(source);
+    const snapshot = session.reader.getSnapshot();
+    const changed = vi.fn();
+    session.reader.subscribe(changed);
+    const bytes = await session.reader.readAsset(path);
+    bytes[0] = 99;
+    assets.set(path, new Uint8Array([3, 4]));
+    expect(await session.reader.readAsset(path)).toEqual(new Uint8Array([1, 2]));
+    expect(session.reader.getSnapshot()).toBe(snapshot);
+    expect(changed).not.toHaveBeenCalled();
+    await session.reload();
+    expect(await session.reader.readAsset(path)).toEqual(new Uint8Array([3, 4]));
+    expect(changed).toHaveBeenCalledTimes(1);
+    session.dispose();
+  });
+
   it('previews accepted document and image bytes before persistence, then reopens them', async () => {
     vi.useFakeTimers();
     const { source, assets, commits } = memorySource();
