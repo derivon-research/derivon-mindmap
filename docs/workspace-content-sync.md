@@ -28,6 +28,8 @@ implemented port behaviour.
   newer disk files independently. External consistency during acquisition still belongs to #55.
 - The GUI offers metadata-only concept creation and the approved prototype C workbench:
   relations on the left, object/graph views in the centre, and an independent Agent pane.
+  It opens directly in the overview; [workbench navigation](authoring-workbench.md) specifies
+  overview selection, neighbourhood selection and opening the selected object's editor.
   A follow-up restores the existing v0.4 Tiptap editor through `updateObjectDocument` and the
   shared session. Markdown source/rendered HTML and newly staged images form one accepted
   change set; HTML documents edit their existing entry. Missing sources remain explicit errors.

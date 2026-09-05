@@ -118,7 +118,7 @@ export function AuthoringDocumentEditor({ object, content, authoring, drafts, on
         : <DraftPreview source={value} title={title} format={reference.format} documentPath={sourcePath} resolveImage={resolveImage} />}
     <footer className="document-editor-actions"><small>{value.length} 字符正文</small><span />
       <button type="button" disabled={!dirty || applying} onClick={discard}><Undo2 size={15} />放弃草稿</button>
-      <button type="button" className="primary-command" disabled={!dirty || applying} onClick={() => { void apply(); }}><Check size={15} />{applying ? '正在应用…' : '应用修改'}</button>
+      <button type="button" className="authoring-primary" disabled={!dirty || applying} onClick={() => { void apply(); }}><Check size={15} />{applying ? '正在应用…' : '应用修改'}</button>
     </footer>
   </section>;
 }

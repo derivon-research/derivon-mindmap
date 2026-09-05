@@ -28,18 +28,24 @@ export function AuthoringMode({ workspace, content, authoring, selectedConceptId
   const canCreate = Boolean(authoring) && !content.requiresMigrationConsent;
   const [selected, setSelected] = useState<GraphObject | null>(selectedConceptId ? { kind: 'concept', id: selectedConceptId } : null);
   const [draft, setDraft] = useState<ConceptDraft>(emptyDraft);
-  const [formOpen, setFormOpen] = useState(() => canCreate && content.graph.points.length === 0);
+  const [formOpen, setFormOpen] = useState(false);
   const [formError, setFormError] = useState('');
   const [relationsOpen, setRelationsOpen] = useState(() => !window.matchMedia('(max-width: 700px)').matches);
   const [agentOpen, setAgentOpen] = useState(() => !window.matchMedia('(max-width: 700px)').matches);
   const [documentDrafts] = useState<DocumentDrafts>(() => new Map());
-  const [view, setView] = useState<'objects' | 'graph'>('objects');
+  const [view, setView] = useState<'objects' | 'graph'>('graph');
+  const [lastOpenedObject, setLastOpenedObject] = useState<GraphObject | null>(null);
+  const [neighbourhoodFocusId, setNeighbourhoodFocusId] = useState<string | null>(selectedConceptId);
   const [graphKind, setGraphKind] = useState<'overview' | 'neighbourhood'>('overview');
   const dirty = Boolean(draft.label || draft.id || draft.format !== 'markdown');
 
   useEffect(() => { authoring?.protectDraft(draftKey, dirty); }, [authoring, dirty, draftKey]);
+  useEffect(() => { if (view === 'objects') setLastOpenedObject(selected); }, [view, selected]);
   useEffect(() => {
-    if (selectedConceptId && (selected?.kind !== 'concept' || selected.id !== selectedConceptId)) setSelected({ kind: 'concept', id: selectedConceptId });
+    if (selectedConceptId && (selected?.kind !== 'concept' || selected.id !== selectedConceptId)) {
+      setSelected({ kind: 'concept', id: selectedConceptId });
+      setNeighbourhoodFocusId(selectedConceptId);
+    }
   }, [selectedConceptId]);
 
   const points = content.graph.points;
@@ -48,11 +54,15 @@ export function AuthoringMode({ workspace, content, authoring, selectedConceptId
   const edgeById = useMemo(() => new Map(edges.map((edge) => [edge.id, edge])), [edges]);
   const concept = selected?.kind === 'concept' ? pointById.get(selected.id) : undefined;
   const derivation = selected?.kind === 'derivation' ? edgeById.get(selected.id) : undefined;
-  const reference = concept?.data ?? derivation?.data;
   const title = concept?.data.label ?? (derivation ? derivationTitle(derivation) : '');
+  const documentObject = view === 'objects' ? selected : lastOpenedObject;
+  const documentConcept = documentObject?.kind === 'concept' ? pointById.get(documentObject.id) : undefined;
+  const documentDerivation = documentObject?.kind === 'derivation' ? edgeById.get(documentObject.id) : undefined;
+  const reference = documentConcept?.data ?? documentDerivation?.data;
+  const documentTitle = documentConcept?.data.label ?? (documentDerivation ? derivationTitle(documentDerivation) : '');
   const incoming = concept ? edges.filter((edge) => edge.head === concept.id) : [];
   const outgoing = concept ? edges.filter((edge) => edge.tails.includes(concept.id)) : [];
-  const focusId = concept?.id ?? derivation?.head;
+  const focusId = neighbourhoodFocusId;
   const neighbourhoodEdges = useMemo(() => focusId ? edges.filter((edge) => edge.head === focusId || edge.tails.includes(focusId)) : [], [edges, focusId]);
   const neighbourhoodIds = useMemo(() => new Set([
     ...(focusId ? [focusId] : []), ...neighbourhoodEdges.flatMap((edge) => [edge.head, ...edge.tails]),
@@ -65,12 +75,19 @@ export function AuthoringMode({ workspace, content, authoring, selectedConceptId
 
   const openObject = (object: GraphObject) => {
     setSelected(object); onSelectConcept(object.kind === 'concept' ? object.id : null); setView('objects'); setFormOpen(false);
+    setNeighbourhoodFocusId(object.kind === 'concept' ? object.id : edgeById.get(object.id)?.head ?? null);
     if (window.matchMedia('(max-width: 700px)').matches) setRelationsOpen(false);
   };
   const graphEvent = (event: GraphEvent) => {
-    if (!event.object) return;
-    setSelected(event.object); onSelectConcept(event.object.kind === 'concept' ? event.object.id : null);
-    if (graphKind === 'neighbourhood' || event.type === 'activate') setGraphKind('neighbourhood');
+    const object = event.object;
+    if (!object) { setSelected(null); onSelectConcept(null); return; }
+    const openSelected = graphKind === 'neighbourhood'
+      && (event.type === 'activate' || (selected?.kind === object.kind && selected.id === object.id));
+    setSelected(object);
+    onSelectConcept(object.kind === 'concept' ? object.id : null);
+    if (object.kind === 'concept') setNeighbourhoodFocusId(object.id);
+    if (graphKind === 'overview') setGraphKind('neighbourhood');
+    else if (openSelected) { setFormOpen(false); setView('objects'); }
   };
   const cancelCreate = () => { setDraft(emptyDraft); setFormError(''); setFormOpen(false); };
   const submit = (event: FormEvent) => {
@@ -79,7 +96,7 @@ export function AuthoringMode({ workspace, content, authoring, selectedConceptId
     if (!authoring) { setFormError('当前工作区不可创作'); return; }
     try {
       const id = authoring.createConcept({ label: draft.label, id: draft.id.trim() || undefined, format: draft.format });
-      setDraft(emptyDraft); authoring.protectDraft(draftKey, false); setFormOpen(false); setSelected({ kind: 'concept', id }); onSelectConcept(id); setView('objects');
+      setDraft(emptyDraft); authoring.protectDraft(draftKey, false); setFormOpen(false); setSelected({ kind: 'concept', id }); setNeighbourhoodFocusId(id); onSelectConcept(id); setView('objects');
     } catch (error) { setFormError(error instanceof Error ? error.message : String(error)); }
   };
 
@@ -88,8 +105,8 @@ export function AuthoringMode({ workspace, content, authoring, selectedConceptId
     {content.requiresMigrationConsent && <p className="authoring-diagnostics">工作区格式需要升级，当前仅可浏览。</p>}
     <div className="authoring-workspace">
       <aside className={`authoring-context-pane ${relationsOpen ? '' : 'is-collapsed'}`} aria-label="关系区"><header><IconButton label={relationsOpen ? '收起关系区' : '展开关系区'} onClick={() => setRelationsOpen(!relationsOpen)}>{relationsOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</IconButton>{relationsOpen && <strong>关系</strong>}</header><div className="authoring-context-body" hidden={!relationsOpen}>{derivation ? <DerivationEndpoints edge={derivation} pointById={pointById} onOpen={openObject} /> : <><RelationGroup title="前提推导" eyebrow="如何得到" edges={incoming} direction="incoming" pointById={pointById} onOpen={openObject} /><RelationGroup title="后续推导" eyebrow="能够到达哪里" edges={outgoing} direction="outgoing" pointById={pointById} onOpen={openObject} />{!concept && <p className="authoring-empty-note">选择概念后查看关系</p>}</>}</div></aside>
-      <div className="authoring-content">{view === 'graph' && <main className="authoring-graph-page"><header><div className="authoring-tabs" role="group" aria-label="图视图"><button type="button" aria-pressed={graphKind === 'overview'} onClick={() => setGraphKind('overview')}>全图</button><button type="button" aria-pressed={graphKind === 'neighbourhood'} disabled={!selected} onClick={() => setGraphKind('neighbourhood')}>关联布局</button></div><span className="authoring-flex" />{selected && <button type="button" onClick={() => setView('objects')}><FileText size={15} />回到对象</button>}</header><div className="authoring-graph"><Suspense fallback={<span role="status">正在载入图…</span>}><GraphRenderer view={graphView} onEvent={graphEvent} /></Suspense></div><div className="authoring-graph-caption"><span>{title || '未选择对象'}</span><span>{graphView.concepts.length} 个概念 · {graphView.hyperedges.length} 条推导</span></div></main>
-        }<main className="authoring-focus-page" hidden={view === 'graph'}><header className="authoring-focus-nav"><Layers size={17} /><WorkspaceSearch content={content} onOpenObject={openObject} /><span className="authoring-current-object">{formOpen ? '新建概念' : title}</span></header><div className="authoring-focus-editor">{formOpen ? <ConceptForm draft={draft} error={formError} onChange={setDraft} onSubmit={submit} onClose={() => setFormOpen(false)} onCancel={cancelCreate} /> : reference ? <article className="authoring-object"><header className="authoring-object-heading"><div><span className="authoring-eyebrow">{concept ? '概念文档' : '推导文档'}</span><h1>{title}</h1><code>{selected?.id}</code></div><span className="authoring-status-ready">有效内容</span></header><div className="authoring-document-meta"><span>{reference.format === 'markdown' ? 'Markdown' : 'HTML'}</span><code>{reference.document}</code></div>{authoring && !content.requiresMigrationConsent && selected ? <AuthoringDocumentEditor key={`${selected.kind}:${selected.id}`} object={selected} content={content} authoring={authoring} readAsset={readAsset} drafts={documentDrafts} onOpenObject={openObject} /> : <DocumentView title={title} documentPath={`${reference.document}/index.html`} readAsset={readAsset} resource={objectDocumentPreview(content, reference)} />}</article> : <div className="authoring-empty"><FileText size={30} strokeWidth={1.3} /><h1>{points.length ? '选择一个对象' : canCreate ? '创建第一个概念' : '工作区中还没有概念'}</h1><p>{workspace.name}</p>{canCreate && <button type="button" className="authoring-primary" onClick={() => setFormOpen(true)}><Plus size={16} />创建第一个概念</button>}</div>}</div></main></div>
+      <div className="authoring-content">{view === 'graph' && <main className="authoring-graph-page"><header><div className="authoring-tabs" role="group" aria-label="图视图"><button type="button" aria-pressed={graphKind === 'overview'} onClick={() => setGraphKind('overview')}>全图</button><button type="button" aria-pressed={graphKind === 'neighbourhood'} disabled={!focusId} onClick={() => setGraphKind('neighbourhood')}>关联布局</button></div><span className="authoring-flex" />{selected && <button type="button" onClick={() => setView('objects')}><FileText size={15} />回到对象</button>}</header><div className="authoring-graph"><Suspense fallback={<span role="status">正在载入图…</span>}><GraphRenderer view={graphView} onEvent={graphEvent} /></Suspense></div><div className="authoring-graph-caption"><span>{title || '未选择对象'}</span><span>{graphView.concepts.length} 个概念 · {graphView.hyperedges.length} 条推导</span></div></main>
+        }<main className="authoring-focus-page" hidden={view === 'graph'}><header className="authoring-focus-nav"><Layers size={17} /><WorkspaceSearch content={content} onOpenObject={openObject} /><span className="authoring-current-object">{formOpen ? '新建概念' : title}</span></header><div className="authoring-focus-editor">{formOpen ? <ConceptForm draft={draft} error={formError} onChange={setDraft} onSubmit={submit} onClose={() => setFormOpen(false)} onCancel={cancelCreate} /> : reference ? <article className="authoring-object"><header className="authoring-object-heading"><div><span className="authoring-eyebrow">{documentConcept ? '概念文档' : '推导文档'}</span><h1>{documentTitle}</h1><code>{documentObject?.id}</code></div><span className="authoring-status-ready">有效内容</span></header><div className="authoring-document-meta"><span>{reference.format === 'markdown' ? 'Markdown' : 'HTML'}</span><code>{reference.document}</code></div>{authoring && !content.requiresMigrationConsent && documentObject ? <AuthoringDocumentEditor key={`${documentObject.kind}:${documentObject.id}`} object={documentObject} content={content} authoring={authoring} readAsset={readAsset} drafts={documentDrafts} onOpenObject={openObject} /> : <DocumentView title={documentTitle} documentPath={`${reference.document}/index.html`} readAsset={readAsset} resource={objectDocumentPreview(content, reference)} />}</article> : <div className="authoring-empty"><FileText size={30} strokeWidth={1.3} /><h1>{points.length ? '选择一个对象' : canCreate ? '创建第一个概念' : '工作区中还没有概念'}</h1><p>{workspace.name}</p>{points.length ? <button type="button" onClick={() => { setGraphKind('overview'); setView('graph'); }}><Network size={16} />浏览全图</button> : canCreate && <button type="button" className="authoring-primary" onClick={() => setFormOpen(true)}><Plus size={16} />创建第一个概念</button>}</div>}</div></main></div>
       <AuthoringAgentPane open={agentOpen} onToggle={() => setAgentOpen(!agentOpen)} contextLabel={title || workspace.name} />
     </div>
     {content.diagnostics.length > 0 && <details className="authoring-diagnostics"><summary>{content.diagnostics.length} 个本地内容问题</summary>{content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}><code>{item.path}</code> {item.message}</p>)}</details>}

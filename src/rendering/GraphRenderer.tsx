@@ -1,6 +1,13 @@
 import { Graph, type EdgeData, type GraphData, type IElementEvent, type NodeData } from '@antv/g6';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { GraphMark, GraphObject, GraphRendererProps, GraphView } from './index';
+import {
+  NEIGHBOURHOOD_CONCEPT,
+  NEIGHBOURHOOD_DERIVATION,
+  NEIGHBOURHOOD_EDGE,
+  neighbourhoodEdgeStyle,
+  neighbourhoodNodeStyle,
+} from './neighbourhoodPresentation';
 
 // Namespaces also protect arbitrary IDs containing separators and parallel hyperedges.
 const conceptId = (id: string) => JSON.stringify(['concept', id]);
@@ -20,23 +27,21 @@ function markStyle(marks: readonly GraphMark[], derivation = false, overview = f
 /** The view-specific hypergraph translation never leaves this module. */
 function drawable(view: GraphView): GraphData {
   const overview = view.kind === 'overview';
+  const neighbourhood = view.kind === 'neighbourhood';
   const nodes: NodeData[] = view.concepts.map((concept) => ({
     id: conceptId(concept.id),
-    type: overview ? 'circle' : 'rect',
+    type: overview ? 'circle' : neighbourhood ? NEIGHBOURHOOD_CONCEPT : 'rect',
     data: { object: { kind: 'concept', id: concept.id }, label: concept.label },
     style: {
-      ...markStyle(concept.marks, false, overview),
-      size: overview ? 14 : [176, 56],
-      radius: 6,
+      ...(neighbourhood ? neighbourhoodNodeStyle('concept', concept.marks) : markStyle(concept.marks, false, overview)),
       labelText: overview ? '' : concept.label,
-      labelPlacement: 'center',
-      labelFill: '#ffffff',
-      labelFontSize: 13,
-      labelWordWrap: true,
-      labelMaxWidth: 152,
-      labelMaxLines: 2,
-      labelTextOverflow: 'ellipsis',
+      ...(!neighbourhood ? {
+        size: overview ? 14 : [176, 56], radius: 6,
+        labelPlacement: 'center', labelFill: '#ffffff', labelFontSize: 13,
+        labelWordWrap: true, labelMaxWidth: 152, labelMaxLines: 2, labelTextOverflow: 'ellipsis',
+      } : {}),
       cursor: 'pointer',
+      identityText: neighbourhood ? concept.id : undefined,
     },
   }));
   const edges: EdgeData[] = [];
@@ -44,15 +49,18 @@ function drawable(view: GraphView): GraphData {
     if (!overview) {
       nodes.push({
         id: derivationId(hyperedge.id),
-        type: 'diamond',
+        type: neighbourhood ? NEIGHBOURHOOD_DERIVATION : 'diamond',
         data: { object: { kind: 'derivation', id: hyperedge.id } },
         style: {
-          ...markStyle(hyperedge.marks, true), size: 28,
-          labelText: String(hyperedge.weight), labelPlacement: 'bottom',
-          labelFill: '#475569', labelFontSize: 11, cursor: 'pointer',
+          ...(neighbourhood ? neighbourhoodNodeStyle('derivation', hyperedge.marks) : markStyle(hyperedge.marks, true)),
+          labelText: String(hyperedge.weight), cursor: 'pointer',
+          ...(!neighbourhood ? { size: 28, labelPlacement: 'bottom', labelFill: '#475569', labelFontSize: 11 } : {}),
         },
       });
-      edges.push({ id: JSON.stringify(['head', hyperedge.id]), source: derivationId(hyperedge.id), target: conceptId(hyperedge.head) });
+      edges.push({
+        id: JSON.stringify(['head', hyperedge.id]), source: derivationId(hyperedge.id), target: conceptId(hyperedge.head),
+        style: neighbourhood ? neighbourhoodEdgeStyle('conclusion') : undefined,
+      });
     }
     const marked = markStyle(hyperedge.marks, false, overview);
     hyperedge.tails.forEach((tail, index) => {
@@ -65,7 +73,7 @@ function drawable(view: GraphView): GraphData {
             : hyperedge.marks.includes('known') ? marked.fill : '#94a3b8',
           lineWidth: marked.lineWidth,
           opacity: marked.opacity * 0.12,
-        } : undefined,
+        } : neighbourhood ? neighbourhoodEdgeStyle('premise') : undefined,
       });
     });
   }
@@ -124,12 +132,13 @@ export function GraphRenderer({ view, onEvent }: GraphRendererProps) {
     const overview = view.kind === 'overview';
     setBusy(true);
     setFailure(undefined);
+    const fitOptions = { when: view.kind === 'neighbourhood' ? 'always' as const : 'overflow' as const };
     const graph = new Graph({
       container: host,
       width: Math.max(1, host.clientWidth),
       height: Math.max(1, host.clientHeight),
       animation: false,
-      autoFit: { type: 'view', options: { when: 'overflow' }, animation: false },
+      autoFit: { type: 'view', options: fitOptions, animation: false },
       padding: 32,
       zoomRange: [0.05, 4],
       data: previous,
@@ -141,11 +150,14 @@ export function GraphRenderer({ view, onEvent }: GraphRendererProps) {
           hovered: { labelText: (node) => String(node.data?.label ?? ''), labelPlacement: 'top', labelFill: '#111827' },
         },
       },
-      edge: { type: 'line', style: (edge) => ({ stroke: '#94a3b8', lineWidth: 1, opacity: 0.7, endArrow: !overview, ...edge.style }) },
+      edge: {
+        type: view.kind === 'neighbourhood' ? NEIGHBOURHOOD_EDGE : 'line',
+        style: (edge) => ({ stroke: '#94a3b8', lineWidth: 1, opacity: 0.7, endArrow: !overview, ...edge.style }),
+      },
       layout: overview
         ? { type: 'd3-force', animation: false, iterations: 40, manyBody: { strength: -80 }, link: { distance: 45 } }
-        : { type: 'dagre', rankdir: host.clientHeight > host.clientWidth ? 'TB' : 'LR', nodesep: 24, ranksep: 48 },
-      behaviors: ['drag-canvas', 'zoom-canvas', 'optimize-viewport-transform'],
+        : { type: 'dagre', rankdir: view.kind === 'neighbourhood' || host.clientHeight <= host.clientWidth ? 'LR' : 'TB', nodesep: 24, ranksep: 48 },
+      behaviors: ['drag-canvas', 'zoom-canvas', ...(view.kind === 'neighbourhood' ? [] : ['optimize-viewport-transform'])],
     });
     const objectOf = (event: IElementEvent) => graph.getNodeData(event.target.id).data?.object as GraphObject;
     graph.on('node:click', (event: IElementEvent) => emit.current({ type: 'select', object: objectOf(event) }));
@@ -153,8 +165,13 @@ export function GraphRenderer({ view, onEvent }: GraphRendererProps) {
     graph.on('canvas:click', () => emit.current({ type: 'select', object: null }));
 
     const fail = (error: unknown) => { if (!disposed) { setBusy(false); setFailure(String(error)); } };
+    // G6's overflow fit requires both axes to overflow. Fit neighbourhoods on either
+    // axis without enlarging a small graph beyond its natural card dimensions.
+    const capFittedZoom = () => {
+      if (view.kind === 'neighbourhood' && graph.getZoom() > 1) return graph.zoomTo(1, false);
+    };
     // Serialize initial render, updates and teardown. StrictMode may unmount during layout.
-    let work = graph.render().then(afterPaint).then(() => { if (!disposed) setBusy(false); }).catch(fail);
+    let work = graph.render().then(capFittedZoom).then(afterPaint).then(() => { if (!disposed) setBusy(false); }).catch(fail);
     let hoverIds: string[] = [];
     let pendingHover: string | null = null;
     let hoverQueued = false;
@@ -213,7 +230,8 @@ export function GraphRenderer({ view, onEvent }: GraphRendererProps) {
         await graph.draw();
         if (topologyChanged && !disposed) {
           await graph.layout();
-          await graph.fitView({ when: 'overflow' }, false);
+          await graph.fitView(fitOptions, false);
+          await capFittedZoom();
           await afterPaint();
           if (!disposed) setBusy(false);
         }

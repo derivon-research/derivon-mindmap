@@ -94,7 +94,8 @@
   .authoring-workbar { min-height: 54px; padding: 8px 12px; gap: 5px; flex-wrap: wrap; }
   .authoring-workbar > button, .authoring-tabs button { padding: 7px 9px; font-size: 12px; }
   .authoring-sync { flex-basis: 100%; justify-content: flex-end; margin: 0; }
-  .authoring-workspace { --context-height: 118px; --agent-height: 260px; grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--context-height) minmax(0, 1fr) var(--agent-height); }
+  .authoring-workbench { --context-height: 118px; --agent-height: 260px; }
+  .authoring-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--context-height) minmax(0, 1fr) var(--agent-height); }
   .authoring-workbench[data-relations-open="false"] { --context-height: 38px; }
   .authoring-workbench[data-agent-open="false"] { --agent-height: 38px; }
   .authoring-context-pane { border-right: 0; border-bottom: 1px solid #e0e3e8; }

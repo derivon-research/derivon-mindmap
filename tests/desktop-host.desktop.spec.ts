@@ -91,6 +91,7 @@ async function openWorkspace(page: Page): Promise<void> {
   await page.goto('/');
   await page.getByRole('button', { name: /GUI fixture/ }).click();
   await expect(page.locator('[data-derivon-mode="authoring"]')).toBeVisible();
+  await page.getByRole('button', { name: '新建概念', exact: true }).click();
 }
 
 test('opens on recent workspaces with native open/create commands, not a mode chooser', async ({ page }) => {
@@ -126,7 +127,22 @@ for (const width of [1440, 390, 320]) {
     await page.goto('/');
     await page.getByRole('button', { name: '新建工作区', exact: true }).click();
     await expect(page.locator('[data-derivon-mode="authoring"]')).toBeVisible();
+    if (width <= 700) {
+      const relationHeight = () => page.locator('.authoring-context-pane').evaluate((element) => element.getBoundingClientRect().height);
+      const agentHeight = () => page.locator('.authoring-agent-pane').evaluate((element) => element.getBoundingClientRect().height);
+      await expect.poll(relationHeight).toBe(38);
+      await expect.poll(agentHeight).toBe(38);
+      await page.getByRole('button', { name: '展开关系区', exact: true }).click();
+      await expect.poll(relationHeight).toBe(118);
+      await page.getByRole('button', { name: '收起关系区', exact: true }).click();
+      await expect.poll(relationHeight).toBe(38);
+      await page.getByRole('button', { name: '展开 Agent', exact: true }).click();
+      await expect.poll(agentHeight).toBe(260);
+      await page.getByRole('button', { name: '收起 Agent', exact: true }).click();
+      await expect.poll(agentHeight).toBe(38);
+    }
     holdWrites = new Promise<void>((resolve) => { releaseWrites = resolve; });
+    await page.getByRole('button', { name: '新建概念', exact: true }).click();
     await page.getByLabel('名称', { exact: true }).fill('Vector space');
     await page.getByRole('button', { name: '创建', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Vector space', exact: true })).toBeVisible();
@@ -153,6 +169,21 @@ for (const width of [1440, 390, 320]) {
     await page.getByRole('button', { name: '关闭工作区', exact: true }).click();
     await page.reload();
     await page.getByRole('button', { name: '打开文件夹…', exact: true }).click();
+    await expect(page.getByRole('button', { name: '图浏览', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
+    const overviewPoint = await page.evaluate(findCanvasPixel, { clientCoordinates: true });
+    expect(overviewPoint).toBeDefined();
+    await page.mouse.click(overviewPoint!.x, overviewPoint!.y);
+    await expect(page.getByRole('button', { name: '关联布局', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
+    const selectedPoint = await page.evaluate(findCanvasPixel, { clientCoordinates: true, color: [147, 51, 234], center: true });
+    const headPort = await page.evaluate(findCanvasPixel, { clientCoordinates: true, color: [164, 79, 63], center: true });
+    const tailPort = await page.evaluate(findCanvasPixel, { clientCoordinates: true, color: [47, 112, 135], center: true });
+    expect(headPort!.x).toBeLessThan(selectedPoint!.x);
+    expect(tailPort!.x).toBeGreaterThan(selectedPoint!.x);
+    await page.screenshot({ path: testInfo.outputPath('neighbourhood-card.png') });
+    await page.mouse.click(selectedPoint!.x, selectedPoint!.y);
+    await expect(page.getByRole('button', { name: '对象', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.getByLabel('搜索概念与推导文档').fill('Vector');
     await page.getByRole('option', { name: /Vector space/ }).click();
     await expect(page.getByRole('heading', { name: 'Vector space', exact: true })).toBeVisible();
@@ -170,6 +201,7 @@ test('warns before closing a protected draft and does not restore an explicitly 
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: '关闭工作区', exact: true }).click();
   await page.getByRole('button', { name: '打开文件夹…', exact: true }).click();
+  await page.getByRole('button', { name: '新建概念', exact: true }).click();
   await expect(page.getByLabel('名称', { exact: true })).toHaveValue('');
   expect(commits).toBe(0);
 });
@@ -254,6 +286,7 @@ test('edits rich documents with protected drafts, atomic images, effective previ
   await page.getByRole('button', { name: '关闭工作区', exact: true }).click();
   await page.reload();
   await page.getByRole('button', { name: '打开文件夹…', exact: true }).click();
+  await page.getByRole('button', { name: '对象', exact: true }).click();
   await page.getByLabel('搜索概念与推导文档').fill('Draft body');
   await page.getByRole('option', { name: /Vector space/ }).click();
   await expect(editor.locator('p > strong').first()).toHaveText('Draft body');
@@ -277,6 +310,7 @@ test('retains object references, HTML source editing and interactive Markdown wi
   await writeFile(path.join(directory, 'docs/html/index.html'), '<p>HTML entry</p>');
   await page.goto('/');
   await page.getByRole('button', { name: /GUI fixture/ }).click();
+  await page.getByRole('button', { name: '对象', exact: true }).click();
   await page.getByLabel('搜索概念与推导文档').fill('Markdown concept');
   await page.getByRole('option', { name: /Markdown concept/ }).click();
   const editor = page.getByLabel('Markdown 正文', { exact: true });
