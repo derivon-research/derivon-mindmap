@@ -55,6 +55,9 @@ jobs:
       - name: Validate release metadata
         run: npm run check:release-version -- "$RELEASE_VERSION"
 
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Test and build frontend
         run: |
           npm test
