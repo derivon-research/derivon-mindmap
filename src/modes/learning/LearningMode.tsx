@@ -1,13 +1,13 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
-import { parseDocument, type AuthoringDocument } from '../../domain';
+import { parseWorkspaceGraph, type WorkspaceGraph } from '../../workspace/index';
 import type { GraphEvent, GraphObject, GraphView } from '../../rendering';
 import './learning.css';
 
 const GraphRenderer = lazy(async () => ({ default: (await import('../../rendering')).GraphRenderer }));
 
 export function LearningMode({ workspace, targetIds }: LearningModeProps) {
-  const [content, setContent] = useState<AuthoringDocument>();
+  const [content, setContent] = useState<WorkspaceGraph>();
   const [failure, setFailure] = useState<string>();
   const [selected, setSelected] = useState<GraphObject | null>(null);
 
@@ -17,8 +17,8 @@ export function LearningMode({ workspace, targetIds }: LearningModeProps) {
     setFailure(undefined);
     setSelected(null);
     void workspace.source.readGraph().then((text) => {
-      const document = parseDocument(text);
-      if (!cancelled) setContent(document);
+      const graph = parseWorkspaceGraph(text);
+      if (!cancelled) setContent(graph);
     }).catch((error: unknown) => {
       if (!cancelled) setFailure(String(error));
     });
@@ -27,17 +27,17 @@ export function LearningMode({ workspace, targetIds }: LearningModeProps) {
 
   const view = useMemo<GraphView>(() => ({
     kind: 'overview',
-    concepts: content?.graph.points.map((point) => ({
+    concepts: content?.points.map((point) => ({
       id: point.id, label: point.data.label, marks: targetIds.includes(point.id) ? ['target'] : [],
     })) ?? [],
-    hyperedges: content?.graph.hyperedges.map((edge) => ({
+    hyperedges: content?.hyperedges.map((edge) => ({
       id: edge.id, tails: edge.tails, head: edge.head, weight: edge.weight, marks: [],
     })) ?? [],
   }), [content, targetIds]);
 
   const handleEvent = (event: GraphEvent) => setSelected(event.object);
   const selectedLabel = selected?.kind === 'concept'
-    ? content?.graph.points.find((point) => point.id === selected.id)?.data.label
+    ? content?.points.find((point) => point.id === selected.id)?.data.label
     : undefined;
 
   return (
