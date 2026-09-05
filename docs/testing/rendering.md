@@ -25,13 +25,19 @@ mounts a fresh layout. Within a kind, the renderer diffs complete models by ID. 
 weight and mark changes use G6 `draw()` only: positions and the user's pan/zoom survive.
 A topology replacement (changed node IDs or link endpoints) receives a new native layout
 and fit internally, so newly introduced objects are placed and remain selectable. The
-caller does not need a remount key. This distinguishes ordinary full-model updates from
-opening a different subgraph; retaining an old hierarchy for arbitrary new topology
-cannot preserve the new graph's hierarchical presentation.
+caller does not need a remount key. Under
+[ADR-0006](../adr/0006-the-overview-does-not-track-authoring-changes-live.md), this is
+opening a changed graph or another subgraph, not a promise to animate authoring changes
+in a visible overview. The "no layout recomputation" constraint applies to ordinary
+updates of the same topology; continuity across authoring topology changes is not a
+product requirement.
 
-Issue #45 says "no layout recomputation" without explicitly granting this topology
-exception. The implementation currently makes that exception to keep new objects
-selectable; issue-owner confirmation remains required before calling #45 complete.
+The renderer does not subscribe to workspace changes and currently lays out a changed
+topology whenever a caller supplies one. Deferring hidden updates, invalidating retained
+views and refreshing on return belong to the consuming workflows in #47/#52; external
+changes while visible need the synchronization policy in #55. Those integration behaviors
+are not implemented by this module. Do not feed every accepted edit into a hidden
+renderer and assume CSS hiding prevents computation.
 
 `select` carries `{ kind: 'concept' | 'derivation', id }`, or `null` for a canvas click.
 `activate` carries a non-null object on double-click. There are no mutation events.
@@ -58,6 +64,10 @@ ADR-0003, not a complete reachability result. G6 owns adjacency, force/hierarchi
 canvas drawing and viewport-transform simplification. No legacy scene, projection, graph
 index, geometry, or layout service is imported. Direct legacy `d3-force` and
 `@dagrejs/dagre` dependencies remain only for the old application until #56 removes it.
+
+The abandoned incremental-force investigation is recorded in
+[G6 force research](g6-force-research.md). It documents the installed library's capabilities
+and limitations, not an additional renderer, simulation or committed animation feature.
 
 ## Verification
 
