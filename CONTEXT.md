@@ -70,7 +70,19 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **应用状态（application state）**
 
-应用为当前使用过程维护的状态，包括当前模式与视图、目标、已知、求解结果、路线进度、面板状态和当前对话。目标、已知和进度不会写回工作区；新建或释放对话也不会清除它们。创作侧尚未提交的编辑可以暂存在应用状态，只有显式提交后才成为工作区内容。
+应用为当前使用过程维护的状态，包括当前模式与视图、目标、已知、求解结果、路线进度、面板状态、当前对话，以及编辑草稿和内容同步状态。目标、已知和进度不会写回工作区，也不随对话新建或释放而清除；合法的创作变更进入有效内存内容后可自动保存，不以切换模式或手动保存作为内容生效的前提。
+
+**编辑草稿（editing draft）**
+
+尚未被接受为完整内容变更的表单或编辑器输入，不属于有效内存内容，也不参与自动保存。草稿仍是需要保护的本地编辑，即使没有待保存内容，也不能被外部更新直接覆盖。
+
+**有效内存内容（effective in-memory content）**
+
+当前会话中可供两种模式一致读取的工作区内容，包含已接受但尚未落盘的合法创作变更，不包含未完成的编辑草稿。“有效”不意味着所有对象文档都完好：结构有效的图可保留明确报告的局部文档问题，无关修改不得扩大这些问题。
+
+**工作区同步（workspace synchronization）**
+
+有效内存内容与已落盘内容之间的自动保存、自动载入及冲突和失败处理，其生命周期不依附于当前显示的模式。它保护待保存变更与编辑草稿，不把学习者的目标、已知或进度变成工作区写入。
 
 **`WorkspaceSource` 端口**
 
@@ -78,7 +90,7 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **`WorkspaceSource` 宿主实现**
 
-把端口映射到具体宿主能力的适配器。v1 包含 web 内置工作区只读实现和桌面本地文件系统读写实现，并为未来远端实现保留接口位置而不实现服务。只有桌面创作侧调用写操作；web 实现从结构上不具备本地文件读写能力。
+把端口映射到具体宿主能力的适配器。v1 包含 web 内置工作区只读实现和桌面本地文件系统读写实现，并保留未来远端实现的位置而不实现远端能力；只有经桌面创作写权限接受的内容变更可由工作区同步落盘，切换模式不撤销已有保存工作，web 与学习侧不因此获得写权限。
 
 **渲染层（rendering layer）**
 
@@ -152,15 +164,17 @@ authoring manifest 的盘上结构见 [README 的“工作区格式”](README.m
 
 | 目标目录 | 计划公共入口 | 责任 | 典型改动入口 |
 | --- | --- | --- | --- |
-| `src/app/` | `src/app/App.tsx` | composition root、宿主能力选择、应用级模式切换与顶栏 | 增加宿主能力或应用级模式入口 |
+| `src/app/` | `src/app/App.tsx` | composition root、宿主能力选择、应用级模式切换与顶栏，接入不依附模式的工作区同步生命周期 | 增加宿主能力或应用级模式入口 |
 | `src/modes/learning/` | `src/modes/learning/index.ts` | 定向状态机、路线预览、路线学习，以及大图浏览中的学习者操作与应用状态 | 改目标/已知/进度行为或学习侧界面 |
 | `src/modes/authoring/` | `src/modes/authoring/index.ts` | 桌面创作工作流、编辑界面，以及大图浏览中的作者操作 | 增加创作功能或 tag 编辑；同时检查工作区提交契约 |
-| `src/workspace/` | `src/workspace/index.ts` | authoring manifest、对象文档、tag、伴随文档及旧字段的解析、校验与领域操作，不做宿主 I/O | 改工作区内容模型或定向配置 |
+| `src/workspace/` | `src/workspace/index.ts` | authoring manifest、对象文档、tag、伴随文档及旧字段的解析、校验与完整内容变更，不做宿主 I/O | 改工作区内容模型、引用影响规则或定向配置 |
 | `src/ports/` | `src/ports/WorkspaceSource.ts`, `src/ports/ConversationProvider.ts` | `WorkspaceSource`、`ConversationProvider` 及求解等小接口 | 改跨边界能力；随后检查每个实现和契约测试 |
 | `src/hosts/web/` | `src/hosts/web/index.ts` | web composition 与只读端口实现 | 改 web 能力、内置工作区加载或确定性 provider |
 | `src/hosts/desktop/` | `src/hosts/desktop/index.ts` | desktop composition、本地工作区和 Pi SDK bridge | 改本地文件、桌面 IPC 或桌面对话实现 |
 | `src/rendering/` | `src/rendering/index.ts` | 渲染视图模型、事件契约和懒加载的 G6 实现 | 改图的可视表达或图交互事件 |
 
 宿主入口下的 `host.ts` 是构建实际解析的那个模块：`vite --mode desktop` 把 `#host` 指向 `src/hosts/desktop/host.ts`，其余构建指向 `src/hosts/web/host.ts`。应用只依赖这个模块声明的能力与模式；web 宿主不引用创作侧模块，创作侧因此不在 web 构建的模块图里，而不是在运行时被藏起来。应用入口直接 `import` 该文件而不经过 `index.ts` 门面，以免门面的其它导出进入首屏 chunk。
+
+内容变更与工作区同步的分工、验收及当前能力缺口见 [工作区内容与同步设计](docs/workspace-content-sync.md)；该设计是待实现约束，不代表当前端口已提供全部能力。
 
 这些入口是后续重写票据要创建并保持稳定的模块门面；内部文件可随实现细化。一次功能改动先从拥有状态转换或内容语义的入口开始，再检查它使用的端口；只有外部能力发生变化时才改宿主入口，只有视图模型或图事件发生变化时才改渲染入口。provider 功能不得把定向状态转换搬入 `src/hosts/`，工作区 I/O 也不得进入 `src/modes/` 或 `src/rendering/`。
