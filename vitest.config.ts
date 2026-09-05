@@ -19,6 +19,8 @@ export default defineConfig({
         plugins: [react()],
         test: {
           name: 'browser',
+          // Measure canvas budgets without competing with CPU-heavy Node layout tests.
+          sequence: { groupOrder: 1 },
           include: ['src/**/*.browser.test.{ts,tsx}'],
           browser: {
             enabled: true,
