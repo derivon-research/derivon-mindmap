@@ -24,6 +24,7 @@
     "bench:replacement": "playwright test --config playwright.performance.config.ts benchmarks/replacement-performance.spec.ts",
     "bench:runtime": "playwright test --config playwright.performance.config.ts benchmarks/runtime-performance.spec.ts",
     "bench:runtime:desktop": "node --experimental-strip-types benchmarks/desktop-runtime.mjs",
+    "bench:rendering": "vitest run --project browser src/rendering/GraphRenderer.browser.test.tsx -t 'generated performance' --reporter verbose",
     "bench:g6-isolated": "playwright test --config playwright.performance.config.ts benchmarks/g6-performance.spec.ts",
     "check:release-version": "node scripts/check-release-version.mjs"
   },

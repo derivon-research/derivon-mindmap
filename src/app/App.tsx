@@ -22,6 +22,7 @@ export default function App({ host }: { host: Host }) {
   const [recentWorkspaces, setRecentWorkspaces] = useState<readonly RecentWorkspace[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
   const announcedInteractive = useRef(false);
+  const applicationElement = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,9 +47,26 @@ export default function App({ host }: { host: Host }) {
   // The runtime performance contract: one `interactive` signal, after the first frame
   // that actually accepts input has been painted.
   useEffect(() => {
-    if (!state || announcedInteractive.current) return;
-    announcedInteractive.current = true;
-    void emitInteractiveTestHook();
+    const element = applicationElement.current;
+    if (!state || !element || announcedInteractive.current) return;
+    let frame = 0;
+    // Test instrumentation observes accessible loading states, not renderer internals
+    // or a second event contract. Hidden mode subtrees do not gate the active frame.
+    const check = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const pending = [...element.querySelectorAll('[role="status"], [role="alert"], [aria-busy="true"]')]
+          .some((node) => !node.closest('[hidden]'));
+        if (pending || announcedInteractive.current) return;
+        announcedInteractive.current = true;
+        observer.disconnect();
+        void emitInteractiveTestHook();
+      });
+    };
+    const observer = new MutationObserver(check);
+    observer.observe(element, { childList: true, subtree: true, attributes: true });
+    check();
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
   }, [state]);
 
   const modes = useMemo(() => {
@@ -91,7 +109,7 @@ export default function App({ host }: { host: Host }) {
   const LearningMode = modes.learning;
 
   return (
-    <div className="app" data-derivon-host={state.hostId}>
+    <div ref={applicationElement} className="app" data-derivon-host={state.hostId}>
       <TopBar
         workspaceName={workspace?.name ?? null}
         modes={workspace ? state.availableModes : []}
