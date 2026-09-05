@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => ({
     // Dependencies the scanner cannot see: reached from a worker or from the excluded G6.
     // Discovering them on navigation force-reloads the page. `@dagrejs/dagre` and
     // `d3-force` belong to the v0.4.2 form and go away with it (#56).
-    include: ['color-string', 'eventemitter3', 'svg-path-parser', '@dagrejs/dagre', 'd3-force'],
+    include: ['color-string', 'eventemitter3', 'svg-path-parser', '@dagrejs/dagre', 'd3-force', 'minisearch', 'htmlparser2'],
   },
   server: {
     port: 1420,

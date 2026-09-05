@@ -1,7 +1,7 @@
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import {
-  createConcept, objectDocumentPaths, parseWorkspaceContent, parseWorkspaceGraph,
-  type ContentChange, type CreateConceptIntent, type TextResource, type WorkspaceContent,
+  createConcept, objectDocumentPaths, parseWorkspaceContent, parseWorkspaceGraph, updateObjectDocument,
+  type ContentChange, type CreateConceptIntent, type TextResource, type UpdateDocumentIntent, type WorkspaceContent,
 } from '../workspace/index';
 
 export type WorkspaceSnapshot = {
@@ -16,10 +16,12 @@ export type WorkspaceSnapshot = {
 export type WorkspaceReader = {
   getSnapshot(): WorkspaceSnapshot;
   subscribe(listener: () => void): () => void;
+  readAsset(path: string): Promise<Uint8Array>;
 };
 
 export type AuthoringCommands = {
   createConcept(intent: CreateConceptIntent): string;
+  updateDocument(intent: UpdateDocumentIntent): void;
   protectDraft(key: string, dirty: boolean): void;
 };
 
@@ -68,11 +70,20 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
   };
   const listeners = new Set<() => void>();
   const drafts = new Set<string>();
+  const loadedAssets = new Map<string, Uint8Array>();
   const queue: ContentChange[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
   let saving: Promise<void> | undefined;
   let disposed = false;
   let generation = 0;
+
+  function accept(change: ContentChange) {
+    queue.push(change);
+    generation++;
+    publish({ content: change.content, saveState: saving ? 'saving' : 'pending', error: null });
+    clearTimeout(timer);
+    timer = setTimeout(() => { void flush(); }, options.autosaveDelayMs ?? 900);
+  }
 
   function publish(update: Partial<WorkspaceSnapshot>) {
     snapshot = { ...snapshot, ...update, hasDrafts: drafts.size > 0, hasProtectedChanges: drafts.size > 0 || queue.length > 0 };
@@ -101,17 +112,27 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
     reader: {
       getSnapshot: () => snapshot,
       subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+      async readAsset(path) {
+        const accepted = snapshot.content.assets?.[path];
+        if (accepted) return new Uint8Array(accepted);
+        const cached = loadedAssets.get(path);
+        if (cached) return new Uint8Array(cached);
+        const before = generation;
+        const bytes = new Uint8Array(await source.readAsset(path));
+        if (!disposed && generation === before) loadedAssets.set(path, bytes);
+        return new Uint8Array(snapshot.content.assets?.[path] ?? bytes);
+      },
     },
     ...(options.authoring ? { authoring: {
       createConcept(intent: CreateConceptIntent) {
         if (disposed) throw new Error('工作区已关闭');
         const change = createConcept(snapshot.content, intent);
-        queue.push(change);
-        generation++;
-        publish({ content: change.content, saveState: saving ? 'saving' : 'pending', error: null });
-        clearTimeout(timer);
-        timer = setTimeout(() => { void flush(); }, options.autosaveDelayMs ?? 900);
+        accept(change);
         return change.objectId;
+      },
+      updateDocument(intent: UpdateDocumentIntent) {
+        if (disposed) throw new Error('工作区已关闭');
+        accept(updateObjectDocument(snapshot.content, intent));
       },
       protectDraft(key: string, dirty: boolean) {
         if (disposed) return;
@@ -127,12 +148,14 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
       const next = await readContent(source);
       if (disposed || snapshot.hasProtectedChanges || before !== generation) return 'protected';
       generation++;
+      loadedAssets.clear();
       publish({ content: next, persistedContent: next, saveState: 'saved', error: null });
       return 'loaded';
     },
     dispose() {
       disposed = true;
       listeners.clear();
+      loadedAssets.clear();
       clearTimeout(timer);
       // The application warns before closing; already-authorized work is not cancelled.
       void flush();

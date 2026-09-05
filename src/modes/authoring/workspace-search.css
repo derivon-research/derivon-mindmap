@@ -1,0 +1,26 @@
+.ws-search { position: relative; flex: 1; min-width: 0; }
+.ws-input { display: flex; align-items: center; gap: 7px; min-height: 38px; min-width: 0; padding: 0 9px; border: 1px solid var(--app-line, #e0e3e8); border-radius: 5px; background: #fff; color: var(--app-muted, #717782); }
+.ws-input > svg { flex: none; }
+.ws-input input { width: 100%; min-width: 0; padding: 8px 0; border: 0; background: transparent; color: var(--app-ink, #24272d); font: inherit; font-size: 12px; outline: none; }
+.ws-input:focus-within { outline: 2px solid #168b72; outline-offset: 2px; }
+.ws-input input::-webkit-search-cancel-button { display: none; }
+.ws-search .ws-clear { display: grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border: 0; background: transparent; color: var(--app-muted, #717782); }
+.ws-popover { position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; width: min(560px, calc(100vw - 80px)); border: 1px solid var(--app-line, #e0e3e8); border-radius: 6px; box-shadow: 0 12px 32px #1d272329; background: #fff; }
+.ws-popover > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border-bottom: 1px solid var(--app-line, #e0e3e8); }
+.ws-popover small { font-size: 11px; color: var(--app-muted, #717782); }
+.ws-filters { display: flex; gap: 2px; }
+.ws-search .ws-filters button { border: 0; border-radius: 4px; padding: 6px 9px; background: transparent; font-size: 12px; color: #717782; }
+.ws-search .ws-filters button[aria-pressed="true"] { color: #215f52; background: #eaf2ee; font-weight: 600; }
+.ws-results { max-height: min(460px, 55dvh); overflow: auto; padding: 6px; }
+.ws-search .ws-results > button { width: 100%; display: flex; align-items: flex-start; gap: 9px; padding: 10px; border: 0; border-radius: 4px; text-align: left; background: #fff; color: #24272d; }
+.ws-search .ws-results > button[aria-selected="true"] { background: #eaf2ee; }
+.ws-results button > svg { flex: none; margin-top: 2px; color: #717782; }
+.ws-results button > span { min-width: 0; }
+.ws-results strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
+.ws-results small { display: block; margin-top: 3px; overflow-wrap: anywhere; }
+.ws-results p { margin: 5px 0 0; font-size: 12px; line-height: 1.6; color: #717782; overflow-wrap: anywhere; }
+.ws-results > p { display: flex; align-items: center; gap: 7px; padding: 12px 6px; margin: 0; }
+.ws-spinner { animation: ws-spin 1s linear infinite; }
+@keyframes ws-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ws-spinner { animation: none; } }
+@media (max-width: 700px) { .ws-popover { width: min(560px, calc(100vw - 52px)); } }

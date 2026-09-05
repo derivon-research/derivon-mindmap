@@ -32,13 +32,17 @@ export type AuthoringModeProps = {
   readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
   readonly content: WorkspaceContent;
   readonly authoring?: AuthoringCommands;
+  readonly readAsset?: (path: string) => Promise<Uint8Array>;
   readonly selectedConceptId: string | null;
   readonly onSelectConcept: (conceptId: string | null) => void;
+  readonly syncStatus?: { readonly state: 'saved' | 'pending' | 'saving' | 'error'; readonly label: string };
+  readonly onRetrySync?: () => void;
 };
 
 export type LearningModeProps = {
   readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
   readonly content: WorkspaceContent;
+  readonly readAsset?: (path: string) => Promise<Uint8Array>;
   readonly targetIds: readonly string[];
   readonly onChangeTargets: (conceptIds: readonly string[]) => void;
 };

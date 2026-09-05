@@ -41,6 +41,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import 'katex/dist/katex.min.css';
+import { EDITOR_IMAGE_MIME_TYPES } from './workspace/imageReference';
 import { createEditorImage, type EditorImageResolver } from './editorImage';
 import { prepareMarkdownForEditor } from './editorMarkdown';
 import {
@@ -137,7 +138,6 @@ type ReferenceSelection = {
 
 type ReferenceTriggerRange = { from: number; to: number };
 
-const PASTED_IMAGE_TYPES = ['image/avif', 'image/gif', 'image/jpeg', 'image/png', 'image/svg+xml', 'image/webp'];
 
 function countMathNodes(document: Editor['state']['doc']): number {
   let count = 0;
@@ -255,7 +255,7 @@ function createExtensions(
     TableKit.configure({ table: { resizable: true } }),
     createEditorImage(resolveImage),
     FileHandler.configure({
-      allowedMimeTypes: PASTED_IMAGE_TYPES,
+      allowedMimeTypes: EDITOR_IMAGE_MIME_TYPES,
       consumePasteEvent: true,
       onPaste: (editor, files) => {
         const initialPosition = editor.state.selection.from;

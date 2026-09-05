@@ -12,7 +12,8 @@ const emptyContent: WorkspaceContent = {
 let container: HTMLDivElement;
 let root: Root | undefined;
 
-beforeEach(() => {
+beforeEach(async () => {
+  await page.viewport(320, 700);
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   container = document.createElement('div');
   container.style.cssText = 'width:320px;height:600px';
@@ -34,10 +35,10 @@ function render(content: WorkspaceContent, authoring?: AuthoringCommands, onSele
 }
 
 it('submits a complete creation intent and selects its result without a body field', async () => {
-  const authoring: AuthoringCommands = { createConcept: vi.fn(() => 'c-1'), protectDraft: vi.fn() };
+  const authoring: AuthoringCommands = { createConcept: vi.fn(() => 'c-1'), updateDocument: vi.fn(), protectDraft: vi.fn() };
   const onSelect = render(emptyContent, authoring);
   await page.getByLabelText('名称').fill('Vector space');
-  expect(container.querySelector('textarea')).toBeNull();
+  expect(container.querySelector('.authoring-concept-form textarea')).toBeNull();
   await page.getByRole('button', { name: '创建' }).click();
   expect(authoring.createConcept).toHaveBeenCalledWith({ label: 'Vector space', id: undefined, format: 'markdown' });
   expect(authoring.protectDraft).toHaveBeenCalledWith('fixture:create-concept', false);
@@ -45,7 +46,7 @@ it('submits a complete creation intent and selects its result without a body fie
 });
 
 it('reports an empty required label inline', async () => {
-  const authoring: AuthoringCommands = { createConcept: vi.fn(() => 'unused'), protectDraft: vi.fn() };
+  const authoring: AuthoringCommands = { createConcept: vi.fn(() => 'unused'), updateDocument: vi.fn(), protectDraft: vi.fn() };
   render(emptyContent, authoring);
   await page.getByRole('button', { name: '创建' }).click();
   await expect.element(page.getByRole('alert')).toHaveTextContent('请输入概念名称');
@@ -53,7 +54,7 @@ it('reports an empty required label inline', async () => {
 });
 
 it('keeps an unfinished form when hidden and reports command failures inline', async () => {
-  const authoring: AuthoringCommands = { createConcept: vi.fn(() => { throw new Error('ID 已存在'); }), protectDraft: vi.fn() };
+  const authoring: AuthoringCommands = { createConcept: vi.fn(() => { throw new Error('ID 已存在'); }), updateDocument: vi.fn(), protectDraft: vi.fn() };
   render(emptyContent, authoring);
   await page.getByLabelText('名称').fill('Kept draft');
   await page.getByRole('button', { name: '关闭', exact: true }).click();
@@ -68,7 +69,7 @@ it('shows the concept palette only for a query despite local document diagnostic
     documents: { 'docs/vector/index.html': { status: 'error', message: 'Permission denied' } }, diagnostics: [{ path: 'docs/vector/index.html', message: 'Permission denied' }] };
   const onSelect = render(content);
   expect(container.querySelector('[role="listbox"]')).toBeNull();
-  await page.getByLabelText('搜索概念').fill('Vector');
+  await page.getByLabelText('搜索概念与推导文档').fill('Vector');
   await page.getByRole('option', { name: /Vector space/ }).click();
   expect(onSelect).toHaveBeenCalledWith('vectors');
 });

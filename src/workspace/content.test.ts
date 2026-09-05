@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from '../domain';
-import { createConcept, createWorkspace, objectDocumentPreview, parseWorkspaceContent } from './index';
+import { createConcept, createWorkspace, objectDocumentPreview, parseWorkspaceContent, updateObjectDocument } from './index';
 
 describe('complete workspace content operations', () => {
   it('creates an old-format workspace and its first concept with owned documents in one operation', () => {
@@ -67,5 +67,63 @@ describe('complete workspace content operations', () => {
     expect(old.graphText).toContain('v0.2.0');
     expect(initial.graph.points).toEqual([]);
     expect(created.graph.points).toHaveLength(1);
+  });
+
+  it('atomically updates Markdown source, rendered HTML and owned image bytes', () => {
+    const original = new Uint8Array([1, 2, 255]);
+    const created = createConcept(createWorkspace({ title: 'Test' }).content,
+      { label: 'Vector', format: 'markdown' }).content;
+    const name = '123e4567-e89b-42d3-a456-426614174000.png';
+    const updated = updateObjectDocument(created, {
+      object: { kind: 'concept', id: 'c-1' }, source: `# Changed\n\n![plot](assets/${name})`,
+      assets: [{ name, content: original }],
+    });
+
+    expect(updated.changes.documents).toEqual([
+      { path: 'docs/concept-c-1/document.md', content: `# Changed\n\n![plot](assets/${name})` },
+      { path: 'docs/concept-c-1/index.html', content: expect.stringContaining(`<img src="assets/${name}" alt="plot">`) },
+    ]);
+    expect(updated.changes.assets).toEqual([
+      { path: `docs/concept-c-1/assets/${name}`, content: new Uint8Array([1, 2, 255]) },
+    ]);
+    original[0] = 99;
+    expect(updated.content.assets![`docs/concept-c-1/assets/${name}`]).toEqual(new Uint8Array([1, 2, 255]));
+    expect(updated.content.graphText).toBe(created.graphText);
+    expect(updated.content.graph).toBe(created.graph);
+  });
+
+  it('repairs derived HTML from readable Markdown while retaining unrelated damage and opaque data', () => {
+    const graph = JSON.stringify({ schema: 'derivon.authoring/v0.3.0', document: { title: 'T', description: 'opaque' },
+      graph: { points: [
+        { id: 'a', data: { label: 'A', document: 'docs/a', format: 'markdown', tags: ['keep'] } },
+        { id: 'b', data: { label: 'B', document: 'docs/b', format: 'html' } },
+      ], hyperedges: [] }, view: { replacements: [] } });
+    const content = parseWorkspaceContent({ graph, documents: {
+      'docs/a/document.md': { status: 'ready', text: 'old' },
+      'docs/a/index.html': { status: 'error', message: 'damaged derived file' },
+      'docs/b/index.html': { status: 'error', message: 'unrelated' },
+    } });
+    const updated = updateObjectDocument(content, { object: { kind: 'concept', id: 'a' }, source: 'new' });
+    expect(updated.content.diagnostics).toEqual([{ path: 'docs/b/index.html', message: 'unrelated' }]);
+    expect(JSON.parse(updated.content.graphText).graph.points[0].data.tags).toEqual(['keep']);
+    expect(updated.content.documents['docs/a/index.html']).toEqual({ status: 'ready', text: expect.stringContaining('<p>new</p>') });
+  });
+
+  it('rejects unknown objects, unreadable source, invalid images and asset collisions', () => {
+    const created = createConcept(createWorkspace({ title: 'Test' }).content,
+      { label: 'A', format: 'markdown' }).content;
+    expect(() => updateObjectDocument(created, { object: { kind: 'concept', id: 'missing' }, source: '' })).toThrow(/missing/);
+    const damaged = parseWorkspaceContent({ graph: created.graphText, documents: {
+      ...created.documents, 'docs/concept-c-1/document.md': { status: 'error', message: 'unreadable source' },
+    } });
+    expect(() => updateObjectDocument(damaged, { object: { kind: 'concept', id: 'c-1' }, source: '' })).toThrow(/unreadable source/);
+    for (const name of ['../x.png', 'folder/x.png', '.hidden.png', 'x.txt', 'x\0.png', 'not-a-uuid.png']) {
+      expect(() => updateObjectDocument(created, { object: { kind: 'concept', id: 'c-1' }, source: '',
+        assets: [{ name, content: new Uint8Array([1]) }] })).toThrow(/文件名/);
+    }
+    const withAsset = parseWorkspaceContent({ graph: created.graphText, documents: created.documents,
+      assets: { 'docs/concept-c-1/assets/123e4567-e89b-42d3-a456-426614174000.webp': new Uint8Array([8]) } });
+    expect(() => updateObjectDocument(withAsset, { object: { kind: 'concept', id: 'c-1' }, source: '',
+      assets: [{ name: '123e4567-e89b-42d3-a456-426614174000.webp', content: new Uint8Array([9]) }] })).toThrow(/已存在/);
   });
 });

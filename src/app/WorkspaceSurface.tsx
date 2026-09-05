@@ -47,18 +47,17 @@ function SessionModes({ session, state, workspace, modes, onSelectConcept, onCha
   const LearningMode = modes.learning;
   const identity = { id: workspace.id, name: workspace.name };
   const labels = { saved: '已保存', pending: '待保存', saving: '正在保存', error: '保存失败' };
+  const saveLabel = `${labels[snapshot.saveState]}${snapshot.hasDrafts ? ' · 有未提交草稿' : ''}${snapshot.error ? ` · ${snapshot.error}` : ''}`;
   return <>
-    {workspace.authoringSource && <div className="app-sync-bar">
-      <output aria-label="保存状态">{labels[snapshot.saveState]}{snapshot.hasDrafts ? ' · 有未提交草稿' : ''}</output>
-      {snapshot.error && <span role="alert">{snapshot.error}</span>}
-      {snapshot.saveState === 'error' && <button type="button" onClick={() => { void session.flush(); }}>重试保存</button>}
-    </div>}
+    {state.mode === 'learning' && workspace.authoringSource && <div className="app-sync-bar"><output aria-label="保存状态" aria-live="polite">{saveLabel}</output>{snapshot.saveState === 'error' && <button type="button" onClick={() => { void session.flush(); }}>重试保存</button>}</div>}
     {state.visitedModes.map((mode) => <div className="app-mode" key={mode} hidden={mode !== state.mode}>
       <Suspense fallback={<div className="app-mode-loading" role="status">正在载入…</div>}>
         {mode === 'learning' ? <LearningMode workspace={identity} content={snapshot.content}
-          targetIds={state.learningTargetIds} onChangeTargets={onChangeTargets} />
+          targetIds={state.learningTargetIds} onChangeTargets={onChangeTargets} readAsset={session.reader.readAsset} />
           : AuthoringMode && <AuthoringMode workspace={identity} content={snapshot.content}
-            authoring={session.authoring} selectedConceptId={state.selectedConceptId} onSelectConcept={onSelectConcept} />}
+            authoring={session.authoring} readAsset={session.reader.readAsset} selectedConceptId={state.selectedConceptId} onSelectConcept={onSelectConcept}
+            syncStatus={workspace.authoringSource && state.mode === 'authoring' ? { state: snapshot.saveState, label: saveLabel } : undefined}
+            onRetrySync={snapshot.saveState === 'error' ? () => { void session.flush(); } : undefined} />}
       </Suspense>
     </div>)}
   </>;

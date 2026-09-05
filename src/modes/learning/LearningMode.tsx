@@ -1,5 +1,6 @@
 import { FileText, Network, X } from 'lucide-react';
 import { lazy, Suspense, useMemo, useState } from 'react';
+import { DocumentPreview } from '../../app/DocumentPreview';
 import type { LearningModeProps } from '../../app/host';
 import type { GraphEvent, GraphView } from '../../rendering';
 import { objectDocumentPreview, type TextResource } from '../../workspace/index';
@@ -7,7 +8,7 @@ import './learning.css';
 
 const GraphRenderer = lazy(async () => ({ default: (await import('../../rendering')).GraphRenderer }));
 
-export function LearningMode({ workspace, content, targetIds, onChangeTargets }: LearningModeProps) {
+export function LearningMode({ workspace, content, targetIds, onChangeTargets, readAsset }: LearningModeProps) {
   const [selectedId, setSelectedId] = useState<string | null>(() => targetIds[0] ?? null);
   const selected = selectedId ? content.graph.points.find((point) => point.id === selectedId) : undefined;
   const view = useMemo<GraphView>(() => ({
@@ -31,13 +32,13 @@ export function LearningMode({ workspace, content, targetIds, onChangeTargets }:
     </header>
     <div className={`learning-main${selected ? ' has-document' : ''}`}>
       <div className="learning-graph-canvas"><Suspense fallback={<div role="status">正在载入全图…</div>}><GraphRenderer view={view} onEvent={handleEvent} /></Suspense></div>
-      {selected && <section className="learning-document" aria-label={`${selected.data.label} 文档`}><Document title={selected.data.label} resource={objectDocumentPreview(content, selected.data)} /></section>}
+      {selected && <section className="learning-document" aria-label={`${selected.data.label} 文档`}><Document title={selected.data.label} documentPath={`${selected.data.document}/index.html`} readAsset={readAsset} resource={objectDocumentPreview(content, selected.data)} /></section>}
     </div>
     {content.diagnostics.length > 0 && <details className="learning-diagnostics"><summary>{content.diagnostics.length} 个本地内容问题</summary>{content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}><code>{item.path}</code> {item.message}</p>)}</details>}
   </section>;
 }
 
-function Document({ title, resource }: { title: string; resource: TextResource }) {
-  return resource.status === 'ready' ? <iframe title={`${title} 文档`} sandbox="" srcDoc={resource.text} />
+function Document({ title, resource, documentPath, readAsset }: { title: string; resource: TextResource; documentPath: string; readAsset?: LearningModeProps['readAsset'] }) {
+  return resource.status === 'ready' ? <DocumentPreview title={`${title} 文档`} html={resource.text} documentPath={documentPath} readAsset={readAsset} />
     : <div className="learning-document-error" role="alert"><FileText aria-hidden="true" /><div><strong>无法读取对象文档</strong><p>{resource.message}</p></div></div>;
 }

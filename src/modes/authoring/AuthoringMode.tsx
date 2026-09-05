@@ -1,110 +1,115 @@
-import Fuse from 'fuse.js';
-import { ChevronLeft, ChevronRight, FileText, Network, PanelLeftClose, PanelLeftOpen, Plus, Search, X } from 'lucide-react';
-import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { ChevronRight, FileText, GitBranch, Layers, List, Network, PanelLeftClose, PanelLeftOpen, Plus, X } from 'lucide-react';
+import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { DocumentPreview } from '../../app/DocumentPreview';
 import type { AuthoringModeProps } from '../../app/host';
-import type { GraphEvent, GraphView } from '../../rendering';
-import { objectDocumentPaths, objectDocumentPreview, type TextResource } from '../../workspace/index';
+import type { GraphEvent, GraphObject, GraphView } from '../../rendering';
+import { objectDocumentPreview, type TextResource } from '../../workspace/index';
+import { WorkspaceSearch } from './WorkspaceSearch';
+import { AuthoringDocumentEditor, type DocumentDrafts } from './AuthoringDocumentEditor';
+import { AuthoringAgentPane } from './AuthoringAgentPane';
 import './authoring.css';
 
 const GraphRenderer = lazy(async () => ({ default: (await import('../../rendering')).GraphRenderer }));
 type ConceptDraft = { label: string; id: string; format: 'markdown' | 'html' };
 const emptyDraft: ConceptDraft = { label: '', id: '', format: 'markdown' };
 
-function DocumentView({ title, resource }: { title: string; resource: TextResource }) {
-  return <section className="object-document" aria-label={`${title} 文档`}>
-    {resource.status === 'ready'
-      ? <iframe title={`${title} 文档`} sandbox="" srcDoc={resource.text} />
-      : <div className="document-error" role="alert"><FileText aria-hidden="true" /><div><strong>无法读取对象文档</strong><p>{resource.message}</p></div></div>}
-  </section>;
+function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return <button type="button" className="authoring-icon" title={label} aria-label={label} onClick={onClick}>{children}</button>;
 }
 
-export function AuthoringMode({ workspace, content, authoring, selectedConceptId, onSelectConcept }: AuthoringModeProps) {
+function DocumentView({ title, resource, documentPath, readAsset }: { title: string; resource: TextResource; documentPath: string; readAsset?: AuthoringModeProps['readAsset'] }) {
+  return <section className="authoring-document" aria-label={`${title} 文档`}>{resource.status === 'ready'
+    ? <DocumentPreview title={`${title} 文档`} html={resource.text} documentPath={documentPath} readAsset={readAsset} />
+    : <div className="authoring-document-error" role="alert"><FileText /><div><strong>无法读取对象文档</strong><p>{resource.message}</p></div></div>}</section>;
+}
+
+export function AuthoringMode({ workspace, content, authoring, selectedConceptId, onSelectConcept, syncStatus, onRetrySync, readAsset }: AuthoringModeProps) {
   const draftKey = `${workspace.id}:create-concept`;
   const canCreate = Boolean(authoring) && !content.requiresMigrationConsent;
+  const [selected, setSelected] = useState<GraphObject | null>(selectedConceptId ? { kind: 'concept', id: selectedConceptId } : null);
   const [draft, setDraft] = useState<ConceptDraft>(emptyDraft);
   const [formOpen, setFormOpen] = useState(() => canCreate && content.graph.points.length === 0);
   const [formError, setFormError] = useState('');
-  const [query, setQuery] = useState('');
-  const [relationsOpen, setRelationsOpen] = useState(() => !window.matchMedia('(max-width: 560px)').matches);
-  const [overview, setOverview] = useState(false);
+  const [relationsOpen, setRelationsOpen] = useState(() => !window.matchMedia('(max-width: 700px)').matches);
+  const [agentOpen, setAgentOpen] = useState(() => !window.matchMedia('(max-width: 700px)').matches);
+  const [documentDrafts] = useState<DocumentDrafts>(() => new Map());
+  const [view, setView] = useState<'objects' | 'graph'>('objects');
+  const [graphKind, setGraphKind] = useState<'overview' | 'neighbourhood'>('overview');
   const dirty = Boolean(draft.label || draft.id || draft.format !== 'markdown');
+
   useEffect(() => { authoring?.protectDraft(draftKey, dirty); }, [authoring, dirty, draftKey]);
+  useEffect(() => {
+    if (selectedConceptId && (selected?.kind !== 'concept' || selected.id !== selectedConceptId)) setSelected({ kind: 'concept', id: selectedConceptId });
+  }, [selectedConceptId]);
 
   const points = content.graph.points;
+  const edges = content.graph.hyperedges;
   const pointById = useMemo(() => new Map(points.map((point) => [point.id, point])), [points]);
-  const searchable = useMemo(() => points.map((point) => ({ point, body: objectDocumentPaths(point.data).map((path) => {
-    const resource = content.documents[path];
-    return resource?.status === 'ready' ? resource.text : '';
-  }).join('\n') })), [content.documents, points]);
-  const fuse = useMemo(() => new Fuse(searchable, { keys: ['point.data.label', 'point.id', 'body'], threshold: 0.35 }), [searchable]);
-  const results = query.trim() ? fuse.search(query.trim()).slice(0, 12).map(({ item }) => item.point) : [];
-  const selected = selectedConceptId ? pointById.get(selectedConceptId) : undefined;
-  const incoming = selected ? content.graph.hyperedges.filter((edge) => edge.head === selected.id) : [];
-  const outgoing = selected ? content.graph.hyperedges.filter((edge) => edge.tails.includes(selected.id)) : [];
-  const view = useMemo<GraphView>(() => ({
-    kind: 'overview',
-    concepts: points.map((point) => ({ id: point.id, label: point.data.label, marks: point.id === selectedConceptId ? ['selected'] : [] })),
-    hyperedges: content.graph.hyperedges.map((edge) => ({ ...edge, marks: [] })),
-  }), [content.graph.hyperedges, points, selectedConceptId]);
+  const edgeById = useMemo(() => new Map(edges.map((edge) => [edge.id, edge])), [edges]);
+  const concept = selected?.kind === 'concept' ? pointById.get(selected.id) : undefined;
+  const derivation = selected?.kind === 'derivation' ? edgeById.get(selected.id) : undefined;
+  const reference = concept?.data ?? derivation?.data;
+  const title = concept?.data.label ?? (derivation ? derivationTitle(derivation) : '');
+  const incoming = concept ? edges.filter((edge) => edge.head === concept.id) : [];
+  const outgoing = concept ? edges.filter((edge) => edge.tails.includes(concept.id)) : [];
+  const focusId = concept?.id ?? derivation?.head;
+  const neighbourhoodEdges = useMemo(() => focusId ? edges.filter((edge) => edge.head === focusId || edge.tails.includes(focusId)) : [], [edges, focusId]);
+  const neighbourhoodIds = useMemo(() => new Set([
+    ...(focusId ? [focusId] : []), ...neighbourhoodEdges.flatMap((edge) => [edge.head, ...edge.tails]),
+  ]), [focusId, neighbourhoodEdges]);
+  const graphView = useMemo<GraphView>(() => ({
+    kind: graphKind,
+    concepts: points.filter((point) => graphKind === 'overview' || neighbourhoodIds?.has(point.id)).map((point) => ({ id: point.id, label: point.data.label, marks: selected?.kind === 'concept' && point.id === selected.id ? ['selected'] : [] })),
+    hyperedges: (graphKind === 'overview' ? edges : neighbourhoodEdges).map((edge) => ({ ...edge, marks: selected?.kind === 'derivation' && edge.id === selected.id ? ['selected'] : [] })),
+  }), [edges, graphKind, neighbourhoodIds, neighbourhoodEdges, points, selected]);
 
-  const selectConcept = (id: string) => {
-    onSelectConcept(id);
-    setQuery('');
-    if (window.matchMedia('(max-width: 560px)').matches) setRelationsOpen(false);
+  const openObject = (object: GraphObject) => {
+    setSelected(object); onSelectConcept(object.kind === 'concept' ? object.id : null); setView('objects'); setFormOpen(false);
+    if (window.matchMedia('(max-width: 700px)').matches) setRelationsOpen(false);
   };
   const graphEvent = (event: GraphEvent) => {
-    if (event.object?.kind === 'concept') onSelectConcept(event.object.id);
-    if (event.type === 'activate' && event.object.kind === 'concept') setOverview(false);
+    if (!event.object) return;
+    setSelected(event.object); onSelectConcept(event.object.kind === 'concept' ? event.object.id : null);
+    if (graphKind === 'neighbourhood' || event.type === 'activate') setGraphKind('neighbourhood');
   };
+  const cancelCreate = () => { setDraft(emptyDraft); setFormError(''); setFormOpen(false); };
   const submit = (event: FormEvent) => {
-    event.preventDefault();
-    setFormError('');
+    event.preventDefault(); setFormError('');
     if (!draft.label.trim()) { setFormError('请输入概念名称'); return; }
     if (!authoring) { setFormError('当前工作区不可创作'); return; }
     try {
       const id = authoring.createConcept({ label: draft.label, id: draft.id.trim() || undefined, format: draft.format });
-      setDraft(emptyDraft);
-      authoring.protectDraft(draftKey, false);
-      setFormOpen(false);
-      onSelectConcept(id);
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : String(error));
-    }
+      setDraft(emptyDraft); authoring.protectDraft(draftKey, false); setFormOpen(false); setSelected({ kind: 'concept', id }); onSelectConcept(id); setView('objects');
+    } catch (error) { setFormError(error instanceof Error ? error.message : String(error)); }
   };
 
-  return <section className="authoring-workbench" data-derivon-mode="authoring" data-selected-concept={selectedConceptId ?? ''} aria-label="创作侧">
-    <header className="workbench-toolbar">
-      <div className="workbench-search"><Search aria-hidden="true" /><input aria-label="搜索概念" placeholder="搜索名称、ID 或正文" value={query} onChange={(event) => setQuery(event.target.value)} />
-        {query && <button className="icon-button" type="button" onClick={() => setQuery('')} title="清除搜索"><X aria-hidden="true" /></button>}
-        {query.trim() && <div className="search-palette" role="listbox" aria-label="搜索结果">{results.length ? results.map((point) => <button role="option" aria-selected={point.id === selectedConceptId} key={point.id} onClick={() => selectConcept(point.id)}><span>{point.data.label}</span><code>{point.id}</code></button>) : <p>没有匹配的概念</p>}</div>}
-      </div>
-      {canCreate && <button type="button" className="toolbar-command" onClick={() => setFormOpen(true)}><Plus aria-hidden="true" />新建概念</button>}
-      <button type="button" className="toolbar-command" aria-pressed={overview} onClick={() => setOverview((shown) => !shown)}><Network aria-hidden="true" />{overview ? '返回对象' : '全图'}</button>
-    </header>
-    {content.requiresMigrationConsent && <p className="local-diagnostics">工作区格式需要升级，当前仅可浏览。</p>}
-    {formOpen && <form className="concept-form" onSubmit={submit}>
-      <div className="form-heading"><strong>新建概念</strong><button type="button" className="icon-button" title="关闭" onClick={() => setFormOpen(false)}><X aria-hidden="true" /></button></div>
-      <label>名称<input autoFocus value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} /></label>
-      <label>ID（可选）<input value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} /></label>
-      <label>文档格式<select value={draft.format} onChange={(event) => setDraft({ ...draft, format: event.target.value as ConceptDraft['format'] })}><option value="markdown">Markdown</option><option value="html">HTML</option></select></label>
-      {formError && <p className="form-error" role="alert">{formError}</p>}
-      <button type="submit" className="primary-command"><Plus aria-hidden="true" />创建</button>
-      <button type="button" className="toolbar-command" onClick={() => { setDraft(emptyDraft); setFormError(''); setFormOpen(false); }}>取消</button>
-    </form>}
-    {overview ? <div className="overview-pane"><Suspense fallback={<div role="status">正在载入全图…</div>}><GraphRenderer view={view} onEvent={graphEvent} /></Suspense></div> : <div className={`object-layout${relationsOpen ? '' : ' relations-collapsed'}`}>
-      <aside className="relations-pane" aria-label="相关推导"><button type="button" className="collapse-command" onClick={() => setRelationsOpen((open) => !open)} title={relationsOpen ? '收起相关推导' : '展开相关推导'}>{relationsOpen ? <PanelLeftClose aria-hidden="true" /> : <PanelLeftOpen aria-hidden="true" />}</button>
-        {relationsOpen && <div className="relations-content"><h2>相关推导</h2>{selected ? <><RelationGroup title="作为结果" edges={incoming} direction="incoming" pointById={pointById} onSelect={selectConcept} /><RelationGroup title="作为前提" edges={outgoing} direction="outgoing" pointById={pointById} onSelect={selectConcept} /></> : <p className="empty-note">选择概念后查看关系</p>}</div>}
-      </aside>
-      <main className="content-pane">{selected ? <><div className="object-heading"><div><span>概念</span><h1>{selected.data.label}</h1></div><code>{selected.id}</code></div><DocumentView title={selected.data.label} resource={objectDocumentPreview(content, selected.data)} /></> : <div className="empty-state"><FileText aria-hidden="true" /><h1>{points.length ? '选择一个概念' : canCreate ? '创建第一个概念' : '工作区中还没有概念'}</h1><p>{workspace.name}</p></div>}</main>
-    </div>}
-    {content.diagnostics.length > 0 && <details className="local-diagnostics"><summary>{content.diagnostics.length} 个本地内容问题</summary>{content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}><code>{item.path}</code> {item.message}</p>)}</details>}
+  return <section className="authoring-workbench" data-derivon-mode="authoring" data-relations-open={relationsOpen} data-agent-open={agentOpen} data-selected-concept={selectedConceptId ?? ''} aria-label="创作侧">
+    <div className="authoring-workbar"><div className="authoring-tabs" role="group" aria-label="创作视图"><button type="button" aria-pressed={view === 'objects'} onClick={() => setView('objects')}><List size={15} />对象</button><button type="button" aria-pressed={view === 'graph'} onClick={() => setView('graph')}><Network size={15} />图浏览</button></div><span className="authoring-flex" />{canCreate && <button type="button" onClick={() => { setFormOpen(true); setView('objects'); }}><Plus size={15} />新建概念</button>}{syncStatus && <span className={`authoring-sync is-${syncStatus.state}`} aria-label="保存状态" aria-live="polite"><span />{syncStatus.label}{syncStatus.state === 'error' && onRetrySync && <button type="button" onClick={onRetrySync}>重试保存</button>}</span>}</div>
+    {content.requiresMigrationConsent && <p className="authoring-diagnostics">工作区格式需要升级，当前仅可浏览。</p>}
+    <div className="authoring-workspace">
+      <aside className={`authoring-context-pane ${relationsOpen ? '' : 'is-collapsed'}`} aria-label="关系区"><header><IconButton label={relationsOpen ? '收起关系区' : '展开关系区'} onClick={() => setRelationsOpen(!relationsOpen)}>{relationsOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</IconButton>{relationsOpen && <strong>关系</strong>}</header><div className="authoring-context-body" hidden={!relationsOpen}>{derivation ? <DerivationEndpoints edge={derivation} pointById={pointById} onOpen={openObject} /> : <><RelationGroup title="前提推导" eyebrow="如何得到" edges={incoming} direction="incoming" pointById={pointById} onOpen={openObject} /><RelationGroup title="后续推导" eyebrow="能够到达哪里" edges={outgoing} direction="outgoing" pointById={pointById} onOpen={openObject} />{!concept && <p className="authoring-empty-note">选择概念后查看关系</p>}</>}</div></aside>
+      <div className="authoring-content">{view === 'graph' && <main className="authoring-graph-page"><header><div className="authoring-tabs" role="group" aria-label="图视图"><button type="button" aria-pressed={graphKind === 'overview'} onClick={() => setGraphKind('overview')}>全图</button><button type="button" aria-pressed={graphKind === 'neighbourhood'} disabled={!selected} onClick={() => setGraphKind('neighbourhood')}>关联布局</button></div><span className="authoring-flex" />{selected && <button type="button" onClick={() => setView('objects')}><FileText size={15} />回到对象</button>}</header><div className="authoring-graph"><Suspense fallback={<span role="status">正在载入图…</span>}><GraphRenderer view={graphView} onEvent={graphEvent} /></Suspense></div><div className="authoring-graph-caption"><span>{title || '未选择对象'}</span><span>{graphView.concepts.length} 个概念 · {graphView.hyperedges.length} 条推导</span></div></main>
+        }<main className="authoring-focus-page" hidden={view === 'graph'}><header className="authoring-focus-nav"><Layers size={17} /><WorkspaceSearch content={content} onOpenObject={openObject} /><span className="authoring-current-object">{formOpen ? '新建概念' : title}</span></header><div className="authoring-focus-editor">{formOpen ? <ConceptForm draft={draft} error={formError} onChange={setDraft} onSubmit={submit} onClose={() => setFormOpen(false)} onCancel={cancelCreate} /> : reference ? <article className="authoring-object"><header className="authoring-object-heading"><div><span className="authoring-eyebrow">{concept ? '概念文档' : '推导文档'}</span><h1>{title}</h1><code>{selected?.id}</code></div><span className="authoring-status-ready">有效内容</span></header><div className="authoring-document-meta"><span>{reference.format === 'markdown' ? 'Markdown' : 'HTML'}</span><code>{reference.document}</code></div>{authoring && !content.requiresMigrationConsent && selected ? <AuthoringDocumentEditor key={`${selected.kind}:${selected.id}`} object={selected} content={content} authoring={authoring} readAsset={readAsset} drafts={documentDrafts} onOpenObject={openObject} /> : <DocumentView title={title} documentPath={`${reference.document}/index.html`} readAsset={readAsset} resource={objectDocumentPreview(content, reference)} />}</article> : <div className="authoring-empty"><FileText size={30} strokeWidth={1.3} /><h1>{points.length ? '选择一个对象' : canCreate ? '创建第一个概念' : '工作区中还没有概念'}</h1><p>{workspace.name}</p>{canCreate && <button type="button" className="authoring-primary" onClick={() => setFormOpen(true)}><Plus size={16} />创建第一个概念</button>}</div>}</div></main></div>
+      <AuthoringAgentPane open={agentOpen} onToggle={() => setAgentOpen(!agentOpen)} contextLabel={title || workspace.name} />
+    </div>
+    {content.diagnostics.length > 0 && <details className="authoring-diagnostics"><summary>{content.diagnostics.length} 个本地内容问题</summary>{content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}><code>{item.path}</code> {item.message}</p>)}</details>}
   </section>;
 }
 
-type RelationGroupProps = { title: string; edges: AuthoringModeProps['content']['graph']['hyperedges']; direction: 'incoming' | 'outgoing'; pointById: Map<string, AuthoringModeProps['content']['graph']['points'][number]>; onSelect: (id: string) => void };
-function RelationGroup({ title, edges, direction, pointById, onSelect }: RelationGroupProps) {
-  return <section className="relation-group"><h3>{title}<span>{edges.length}</span></h3>{edges.length ? edges.map((edge) => {
-    const relatedIds = direction === 'incoming' ? edge.tails : [edge.head];
-    return <div className="relation-row" key={edge.id}><code>{edge.id}</code><span>{direction === 'incoming' ? <ChevronRight aria-hidden="true" /> : <ChevronLeft aria-hidden="true" />}</span>{relatedIds.map((id) => <button type="button" key={id} onClick={() => onSelect(id)}>{pointById.get(id)?.data.label ?? id}</button>)}</div>;
-  }) : <p className="empty-note">无</p>}</section>;
+function ConceptForm({ draft, error, onChange, onSubmit, onClose, onCancel }: { draft: ConceptDraft; error: string; onChange: (draft: ConceptDraft) => void; onSubmit: (event: FormEvent) => void; onClose: () => void; onCancel: () => void }) {
+  return <article className="authoring-object"><header className="authoring-object-heading"><div><span className="authoring-eyebrow">新建概念</span><code>尚未创建</code></div><div className="authoring-heading-actions"><span className="authoring-status-draft">编辑草稿</span><IconButton label="关闭" onClick={onClose}><X size={16} /></IconButton></div></header><form className="authoring-concept-form" onSubmit={onSubmit}><label className="authoring-field authoring-title-field">名称<input autoFocus aria-label="名称" placeholder="概念名称" value={draft.label} onChange={(event) => onChange({ ...draft, label: event.target.value })} /></label><label className="authoring-field">ID（可选）<input value={draft.id} placeholder="自动生成" onChange={(event) => onChange({ ...draft, id: event.target.value })} /></label><label className="authoring-field">文档格式<select value={draft.format} onChange={(event) => onChange({ ...draft, format: event.target.value as ConceptDraft['format'] })}><option value="markdown">Markdown</option><option value="html">HTML</option></select></label>{error && <p className="authoring-form-error" role="alert">{error}</p>}<footer className="authoring-editor-actions"><span className="authoring-flex" /><button type="button" onClick={onCancel}>取消</button><button type="submit" className="authoring-primary"><Plus size={16} />创建</button></footer></form></article>;
+}
+
+type RelationGroupProps = { title: string; eyebrow: string; edges: AuthoringModeProps['content']['graph']['hyperedges']; direction: 'incoming' | 'outgoing'; pointById: Map<string, AuthoringModeProps['content']['graph']['points'][number]>; onOpen: (object: GraphObject) => void };
+function DerivationEndpoints({ edge, pointById, onOpen }: Pick<RelationGroupProps, 'pointById' | 'onOpen'> & { edge: RelationGroupProps['edges'][number] }) {
+  return <>{[{ title: '联合前提', ids: edge.tails }, { title: '结果概念', ids: [edge.head] }].map(({ title, ids }) => <section className="authoring-relations" key={title}>
+    <header><h2>{title} <small>{ids.length}</small></h2></header><div className="authoring-relation-concepts">{ids.map((id) => <button type="button" key={id} onClick={() => onOpen({ kind: 'concept', id })}><FileText size={13} />{pointById.get(id)?.data.label ?? id}</button>)}</div>{!ids.length && <p className="authoring-empty-note">空前提</p>}
+  </section>)}</>;
+}
+function derivationTitle(edge: RelationGroupProps['edges'][number]): string {
+  const label = (edge.data as { label?: unknown }).label;
+  return typeof label === 'string' && label.trim() ? label : `推导 ${edge.id}`;
+}
+function RelationGroup({ title, eyebrow, edges, direction, pointById, onOpen }: RelationGroupProps) {
+  return <section className="authoring-relations"><header><div><span className="authoring-eyebrow">{eyebrow}</span><h2>{title} <small>{edges.length}</small></h2></div></header><div className="authoring-relation-items">{edges.map((edge) => <article className="authoring-relation" key={edge.id}><button type="button" className="authoring-relation-title" onClick={() => onOpen({ kind: 'derivation', id: edge.id })}><GitBranch size={15} /><strong>{derivationTitle(edge)}</strong><ChevronRight size={14} /></button><div className="authoring-relation-concepts">{(direction === 'incoming' ? edge.tails : [edge.head]).map((id) => <button type="button" key={id} onClick={() => onOpen({ kind: 'concept', id })}><FileText size={13} />{pointById.get(id)?.data.label ?? id}</button>)}</div><small>{edge.tails.length ? `${edge.tails.length} 个联合前提` : '空前提'} · 成本 {edge.weight}</small></article>)}{!edges.length && <p className="authoring-empty-note">暂无{direction === 'incoming' ? '前提' : '后续'}推导</p>}</div></section>;
 }

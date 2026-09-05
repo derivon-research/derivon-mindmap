@@ -5,6 +5,7 @@ import { openWorkspaceSession } from './index';
 
 function memorySource(graph = createWorkspace({ title: 'Test' }).content.graphText) {
   const files = new Map<string, string>([['.derivon/workspace.json', graph]]);
+  const assets = new Map<string, Uint8Array>();
   const commits: WorkspaceCommit[] = [];
   const source: WritableWorkspaceSource = {
     async readGraph() { return files.get('.derivon/workspace.json')!; },
@@ -12,7 +13,11 @@ function memorySource(graph = createWorkspace({ title: 'Test' }).content.graphTe
       if (!files.has(path)) throw new Error(`Missing: ${path}`);
       return files.get(path)!;
     },
-    async readAsset() { throw new Error('No assets'); },
+    async readAsset(path) {
+      const bytes = assets.get(path);
+      if (!bytes) throw new Error(`Missing: ${path}`);
+      return new Uint8Array(bytes);
+    },
     async readCompanionMetadata(path) { return files.get(path) ?? null; },
     async commit(changes) {
       commits.push(changes);
@@ -21,9 +26,13 @@ function memorySource(graph = createWorkspace({ title: 'Test' }).content.graphTe
         if (change.content === null) files.delete(change.path);
         else files.set(change.path, change.content);
       }
+      for (const change of changes.assets ?? []) {
+        if (change.content === null) assets.delete(change.path);
+        else assets.set(change.path, new Uint8Array(change.content));
+      }
     },
   };
-  return { source, files, commits };
+  return { source, files, assets, commits };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -137,5 +146,39 @@ describe('application-scoped workspace synchronization', () => {
     reopened.dispose();
     files.set('.derivon/workspace.json', '{ "graph": { "points": [] } }');
     await expect(openWorkspaceSession(source)).rejects.toThrow();
+  });
+
+  it('previews accepted document and image bytes before persistence, then reopens them', async () => {
+    vi.useFakeTimers();
+    const { source, assets, commits } = memorySource();
+    const session = await openWorkspaceSession(source, { authoring: source, autosaveDelayMs: 50 });
+    session.authoring!.createConcept({ label: 'A', format: 'markdown' });
+    await session.flush();
+    const input = new Uint8Array([3, 4, 5]);
+    const name = '123e4567-e89b-42d3-a456-426614174000.png';
+    session.authoring!.updateDocument({ object: { kind: 'concept', id: 'c-1' },
+      source: `# Edited\n\n![x](assets/${name})`, assets: [{ name, content: input }] });
+    input[0] = 99;
+    expect(session.reader.getSnapshot().content.documents['docs/concept-c-1/document.md']).toEqual({
+      status: 'ready', text: `# Edited\n\n![x](assets/${name})`,
+    });
+    const assetPath = `docs/concept-c-1/assets/${name}`;
+    const previewBytes = await session.reader.readAsset(assetPath);
+    expect(previewBytes).toEqual(new Uint8Array([3, 4, 5]));
+    previewBytes[1] = 88;
+    expect(await session.reader.readAsset(assetPath)).toEqual(new Uint8Array([3, 4, 5]));
+    expect(assets.has(assetPath)).toBe(false);
+    expect(session.reader.getSnapshot().saveState).toBe('pending');
+    expect(commits).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(commits).toHaveLength(2);
+    const reopened = await openWorkspaceSession(source);
+    expect(reopened.reader.getSnapshot().content.documents['docs/concept-c-1/index.html']).toEqual({
+      status: 'ready', text: expect.stringContaining(`assets/${name}`),
+    });
+    expect(await reopened.reader.readAsset(assetPath)).toEqual(new Uint8Array([3, 4, 5]));
+    session.dispose();
+    reopened.dispose();
   });
 });
