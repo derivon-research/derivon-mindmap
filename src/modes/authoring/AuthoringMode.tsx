@@ -75,19 +75,18 @@ export function AuthoringMode({ workspace, content, authoring, selectedConceptId
 
   const openObject = (object: GraphObject) => {
     setSelected(object); onSelectConcept(object.kind === 'concept' ? object.id : null); setView('objects'); setFormOpen(false);
-    setNeighbourhoodFocusId(object.kind === 'concept' ? object.id : edgeById.get(object.id)?.head ?? null);
+    if (object.kind === 'concept') setNeighbourhoodFocusId(object.id);
     if (window.matchMedia('(max-width: 700px)').matches) setRelationsOpen(false);
   };
   const graphEvent = (event: GraphEvent) => {
     const object = event.object;
     if (!object) { setSelected(null); onSelectConcept(null); return; }
-    const openSelected = graphKind === 'neighbourhood'
-      && (event.type === 'activate' || (selected?.kind === object.kind && selected.id === object.id));
+    const openSelected = graphKind === 'neighbourhood' && selected?.kind === object.kind && selected.id === object.id;
+    if (event.type === 'activate' || openSelected) { openObject(object); return; }
     setSelected(object);
     onSelectConcept(object.kind === 'concept' ? object.id : null);
     if (object.kind === 'concept') setNeighbourhoodFocusId(object.id);
     if (graphKind === 'overview') setGraphKind('neighbourhood');
-    else if (openSelected) { setFormOpen(false); setView('objects'); }
   };
   const cancelCreate = () => { setDraft(emptyDraft); setFormError(''); setFormOpen(false); };
   const submit = (event: FormEvent) => {

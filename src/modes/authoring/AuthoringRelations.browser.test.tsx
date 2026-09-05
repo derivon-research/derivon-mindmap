@@ -9,8 +9,8 @@ import { AuthoringMode } from './AuthoringMode';
 vi.mock('../../rendering', () => ({ GraphRenderer: ({ view, onEvent }: GraphRendererProps) => <div>
   <output aria-label="Rendered edges">{view.hyperedges.map(({ id }) => id).join(' ')}</output>
   <output aria-label="Selected graph objects">{[...view.concepts, ...view.hyperedges].filter(({ marks }) => marks.includes('selected')).map(({ id }) => id).join(' ')}</output>
-  {view.concepts.map(({ id }) => <button key={`concept:${id}`} onClick={() => onEvent({ type: 'select', object: { kind: 'concept', id } })}>画布概念 {id}</button>)}
-  {view.kind !== 'overview' && view.hyperedges.map(({ id }) => <button key={`derivation:${id}`} onClick={() => onEvent({ type: 'select', object: { kind: 'derivation', id } })}>画布推导 {id}</button>)}
+  {view.concepts.map(({ id }) => <span key={`concept:${id}`}><button onClick={() => onEvent({ type: 'select', object: { kind: 'concept', id } })}>画布概念 {id}</button><button onClick={() => onEvent({ type: 'activate', object: { kind: 'concept', id } })}>激活概念 {id}</button></span>)}
+  {view.kind !== 'overview' && view.hyperedges.map(({ id }) => <span key={`derivation:${id}`}><button onClick={() => onEvent({ type: 'select', object: { kind: 'derivation', id } })}>画布推导 {id}</button><button onClick={() => onEvent({ type: 'activate', object: { kind: 'derivation', id } })}>激活推导 {id}</button></span>)}
 </div> }));
 let root: Root | undefined;
 let container: HTMLDivElement;
@@ -60,4 +60,17 @@ it('opens the overview, selects neighbourhood objects, and opens the selected ob
   await expect.element(page.getByRole('button', { name: '图浏览', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: '画布概念 A', exact: true }).click();
   await expect.element(page.getByRole('heading', { name: 'A', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '图浏览', exact: true }).click();
+  await page.getByRole('button', { name: '推导 unrelated', exact: true }).click();
+  await expect.element(page.getByRole('heading', { name: '推导 unrelated', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '图浏览', exact: true }).click();
+  await expect.element(page.getByLabelText('Rendered edges')).toHaveTextContent('incoming unrelated');
+  expect(page.getByLabelText('Rendered edges').element().textContent).not.toContain('outgoing');
+  await page.getByRole('button', { name: '全图', exact: true }).click();
+  await page.getByRole('button', { name: '激活概念 B', exact: true }).click();
+  await expect.element(page.getByRole('heading', { name: 'B', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '图浏览', exact: true }).click();
+  await page.getByRole('button', { name: '画布概念 Focus', exact: true }).click();
+  await page.getByRole('button', { name: '激活推导 incoming', exact: true }).click();
+  await expect.element(page.getByRole('heading', { name: '推导 incoming', exact: true })).toBeVisible();
 });

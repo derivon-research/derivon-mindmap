@@ -158,4 +158,3 @@
 .document-editor-actions > small { font-size: 12px; color: #717782; }
 .document-editor-error { color: #a12d35; font-size: 13px; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .authoring-document-editor .tiptap-content { padding: 16px 0 28px; } }
-
