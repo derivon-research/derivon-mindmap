@@ -43,10 +43,12 @@
     "@tiptap/starter-kit": "^3.30.3",
     "d3-force": "^3.0.0",
     "fuse.js": "^7.5.0",
+    "htmlparser2": "^12.0.0",
     "katex": "^0.18.4",
     "lucide-react": "^0.468.0",
     "marked": "^16.4.2",
     "marked-katex-extension": "^5.1.12",
+    "minisearch": "^7.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-joyride": "^3.2.0"

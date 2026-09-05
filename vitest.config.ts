@@ -21,6 +21,8 @@ export default defineConfig({
           name: 'browser',
           // Measure canvas budgets without competing with CPU-heavy Node layout tests.
           sequence: { groupOrder: 1 },
+          // The worker-search corpus and canvas budgets must not compete for CPU.
+          fileParallelism: false,
           include: ['src/**/*.browser.test.{ts,tsx}'],
           browser: {
             enabled: true,

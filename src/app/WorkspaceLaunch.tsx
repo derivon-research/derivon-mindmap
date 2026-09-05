@@ -1,3 +1,4 @@
+import { FolderOpen, FolderPlus } from 'lucide-react';
 import type { RecentWorkspace } from './host';
 
 /**
@@ -9,9 +10,17 @@ import type { RecentWorkspace } from './host';
 export function WorkspaceLaunch({
   recentWorkspaces,
   onOpen,
+  onChoose,
+  onCreate,
+  busy = false,
+  failure,
 }: {
   recentWorkspaces: readonly RecentWorkspace[];
   onOpen: (id: string) => void;
+  onChoose?: () => void;
+  onCreate?: () => void;
+  busy?: boolean;
+  failure?: string | null;
 }) {
   return (
     <main className="app-launch" aria-label="打开工作区">
@@ -22,7 +31,7 @@ export function WorkspaceLaunch({
           <ul className="app-launch-list">
             {recentWorkspaces.map((workspace) => (
               <li key={workspace.id}>
-                <button type="button" onClick={() => onOpen(workspace.id)}>
+                <button type="button" disabled={busy} onClick={() => onOpen(workspace.id)}>
                   <strong>{workspace.name}</strong>
                   <span>{workspace.detail}</span>
                 </button>
@@ -34,10 +43,11 @@ export function WorkspaceLaunch({
         <p className="app-launch-lead">还没有打开过工作区。</p>
       )}
       <div className="app-launch-actions">
-        {/* 打开与新建工作区属于 #51，本票只立起第一帧。 */}
-        <button type="button" disabled title="桌面从零建图：#51">打开文件夹…</button>
-        <button type="button" disabled title="桌面从零建图：#51">新建工作区</button>
+        {onChoose && <button type="button" disabled={busy} onClick={onChoose}><FolderOpen size={17} />打开文件夹…</button>}
+        {onCreate && <button type="button" disabled={busy} onClick={onCreate}><FolderPlus size={17} />新建工作区</button>}
       </div>
+      {busy && <p role="status">正在打开…</p>}
+      {failure && <p role="alert">{failure}</p>}
     </main>
   );
 }

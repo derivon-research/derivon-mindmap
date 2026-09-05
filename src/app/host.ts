@@ -1,5 +1,7 @@
 import type { ComponentType } from 'react';
-import type { WorkspaceSource } from '../ports/WorkspaceSource';
+import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
+import type { AuthoringCommands } from '../synchronization';
+import type { WorkspaceContent } from '../workspace/index';
 
 /**
  * Application modes. There are two, and only two: the learning side and the authoring
@@ -15,6 +17,8 @@ export type WorkspaceHandle = {
   readonly id: string;
   readonly name: string;
   readonly source: WorkspaceSource;
+  /** Granted only by the desktop host, never inferred from the visible mode. */
+  readonly authoringSource?: WritableWorkspaceSource;
 };
 
 /** A workspace the desktop host has opened before, offered on the launch frame. */
@@ -25,13 +29,20 @@ export type RecentWorkspace = {
 };
 
 export type AuthoringModeProps = {
-  readonly workspace: WorkspaceHandle;
+  readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
+  readonly content: WorkspaceContent;
+  readonly authoring?: AuthoringCommands;
+  readonly readAsset?: (path: string) => Promise<Uint8Array>;
   readonly selectedConceptId: string | null;
   readonly onSelectConcept: (conceptId: string | null) => void;
+  readonly syncStatus?: { readonly state: 'saved' | 'pending' | 'saving' | 'error'; readonly label: string };
+  readonly onRetrySync?: () => void;
 };
 
 export type LearningModeProps = {
-  readonly workspace: WorkspaceHandle;
+  readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
+  readonly content: WorkspaceContent;
+  readonly readAsset?: (path: string) => Promise<Uint8Array>;
   readonly targetIds: readonly string[];
   readonly onChangeTargets: (conceptIds: readonly string[]) => void;
 };
@@ -56,6 +67,8 @@ export type Host = {
   openInitialWorkspace(): Promise<WorkspaceHandle | null>;
   listRecentWorkspaces?(): Promise<readonly RecentWorkspace[]>;
   openRecentWorkspace?(id: string): Promise<WorkspaceHandle>;
+  chooseWorkspace?(): Promise<WorkspaceHandle | null>;
+  createWorkspace?(): Promise<WorkspaceHandle | null>;
   loadLearningMode(): Promise<ComponentType<LearningModeProps>>;
   loadAuthoringMode?(): Promise<ComponentType<AuthoringModeProps>>;
 };

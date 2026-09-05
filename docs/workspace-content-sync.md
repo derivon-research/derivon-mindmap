@@ -1,14 +1,59 @@
 # Workspace content and synchronization
 
-Status: accepted design from the C3 architecture discussion; implementation is still pending.
-This document does not claim that the current `WorkspaceSource` interface provides the
-capabilities below. It introduces no on-disk protocol change and no new rendering behaviour.
+Status: accepted design from the C3 architecture discussion; #51 implements the first-concept
+content operation and shared session boundary described below. The remaining cases and port
+capabilities are still planned unless explicitly identified as delivered. This design introduces
+no on-disk protocol change.
 
 Domain terms are defined in [CONTEXT.md](../CONTEXT.md). The load-bearing decisions are
 [mode-independent synchronization](adr/0004-synchronize-workspace-content-independently-of-modes.md)
 and [deletion with owned documents](adr/0005-delete-owned-documents-with-their-objects.md).
 The [current WorkspaceSource contract](workspace-source.md) remains the description of
 implemented port behaviour.
+
+## Delivered In #51
+
+- `src/workspace/index.ts`: complete empty-workspace and first-concept creation, ID and owned
+  directory allocation, blank Markdown/HTML documents, reference validation and local diagnostics.
+  Legacy replacement fields stay in source text at the boundary and survive graph updates.
+- `src/synchronization/index.ts`: a workspace session with separate effective/persisted snapshots,
+  a read-only subscription, desktop-authoring commands, serialized automatic saves, draft
+  protection and explicit protected reload. Saving is independent of subscriber/mode visibility.
+- The desktop launch frame selects a folder and initializes through `WorkspaceSource.commit`.
+  Existing manifests and files are not overwritten by initialization. New document changes
+  require absent targets during commit preparation. Existing-workspace creation collisions are
+  reported without advancing persisted content.
+- Both modes consume the same effective graph and object text. Optional orientation configuration
+  remains opaque text in that snapshot, with interpretation/editing owned by #58. No preview reads
+  newer disk files independently. External consistency during acquisition still belongs to #55.
+- The GUI offers metadata-only concept creation and the approved prototype C workbench:
+  relations on the left, object/graph views in the centre, and an independent Agent pane.
+  It opens directly in the overview; [workbench navigation](authoring-workbench.md) specifies
+  overview selection, neighbourhood selection and opening the selected object's editor.
+  A follow-up restores the existing v0.4 Tiptap editor through `updateObjectDocument` and the
+  shared session. Markdown source/rendered HTML and newly staged images form one accepted
+  change set; HTML documents edit their existing entry. Missing sources remain explicit errors.
+  Graph editing and real Agent integration remain separate. The Agent pane is explicitly
+  simulated and never executes a plan. The throwaway prototype remains separate.
+- Search uses a MiniSearch index in a dedicated Worker. It indexes source documents, not
+  generated HTML duplicates, and keeps query state below the workbench. Document drafts and
+  staged images stay in the authoring mode until applied; changing views is not an acceptance.
+- Both modes resolve accepted image bytes through the session reader before reading an existing
+  source asset. Lazy source assets are cached separately from subscribed content; reading an image
+  does not publish a new graph/document snapshot. Sandboxed previews embed image data, because
+  an opaque-origin frame cannot read a parent-origin blob URL.
+
+The session retains failures and supports an explicit retry; the GUI shows save/draft status,
+warns before its close-workspace command or browser unload, and offers retry. Native window-close
+protection, external watching/conflict resolution, schema-upgrade consent and complete failure
+integration remain #55 work. Older schemas open read-only until upgrade consent is implemented.
+No atomic read/CAS/crash-recovery guarantee is implied by the current port.
+
+The restored editor is not completion of #53. Document updates validate the owning source
+and supplied managed-image names/bytes, but do not prove existence of every manually typed
+Markdown/HTML link or image path. Renderers show unavailable images locally. Complete body
+reference integrity, inventory and repair remain #53/#55 work; no complete reference index
+or arbitrary-file existence guarantee is claimed.
 
 ## Module responsibilities
 

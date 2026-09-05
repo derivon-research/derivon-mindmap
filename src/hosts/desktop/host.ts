@@ -1,7 +1,6 @@
 import type { Host, RecentWorkspace, WorkspaceHandle } from '../../app/host';
 import {
   readRecentWorkspaces,
-  rememberWorkspace,
   type RecentWorkspaceStorage,
 } from './recentWorkspaces';
 
@@ -13,16 +12,11 @@ function storage(): RecentWorkspaceStorage | null {
   }
 }
 
-function workspaceName(path: string): string {
-  const segments = path.split(/[\\/]/).filter(Boolean);
-  return segments.at(-1) ?? path;
-}
-
 /**
  * The desktop host: local workspaces on the file system, both modes.
  *
  * It opens without a workspace, so the application's first frame is this host's recent
- * workspace list — never a mode chooser. Creating a workspace from nothing is #51.
+ * workspace list, with native open/create actions and no mode chooser.
  */
 export const host: Host = {
   id: 'desktop',
@@ -38,11 +32,18 @@ export const host: Host = {
   },
 
   async openRecentWorkspace(id: string): Promise<WorkspaceHandle> {
-    const { createDesktopWorkspaceSource } = await import('./desktopWorkspaceSource');
-    const name = workspaceName(id);
-    const store = storage();
-    if (store) rememberWorkspace(store, { path: id, name });
-    return { id, name, source: createDesktopWorkspaceSource(id) };
+    const { createDesktopWorkspaceActions } = await import('./desktopWorkspaces');
+    return createDesktopWorkspaceActions(undefined, storage()).openRecentWorkspace(id);
+  },
+
+  async chooseWorkspace() {
+    const { createDesktopWorkspaceActions } = await import('./desktopWorkspaces');
+    return createDesktopWorkspaceActions(undefined, storage()).chooseWorkspace();
+  },
+
+  async createWorkspace() {
+    const { createDesktopWorkspaceActions } = await import('./desktopWorkspaces');
+    return createDesktopWorkspaceActions(undefined, storage()).createWorkspace();
   },
 
   async loadLearningMode() {

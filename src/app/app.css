@@ -1,10 +1,10 @@
 :root {
-  --app-ink: #111827;
-  --app-muted: #64748b;
-  --app-line: #e2e8f0;
+  --app-ink: #24272d;
+  --app-muted: #717782;
+  --app-line: #e0e3e8;
   --app-paper: #ffffff;
   --app-bg: #f7f7f5;
-  --app-accent: #4f46e5;
+  --app-accent: #18705e;
 }
 
 * { box-sizing: border-box; }
@@ -39,7 +39,8 @@ button { font: inherit; cursor: pointer; }
   align-items: center;
   gap: 10px;
   flex: none;
-  padding: 8px 14px;
+  min-height: 55px;
+  padding: 8px 22px;
   background: var(--app-paper);
   border-bottom: 1px solid var(--app-line);
   font-size: 13px;
@@ -51,26 +52,37 @@ button { font: inherit; cursor: pointer; }
   width: 24px;
   height: 24px;
   flex: none;
-  border-radius: 7px;
-  background: var(--app-ink);
+  border-radius: 5px;
+  background: #262d32;
   color: #fff;
   font-weight: 700;
 }
 
-.app-workspace { font-weight: 600; }
+.app-workspace { min-width: 0; margin-right: 18px; overflow-wrap: anywhere; font-weight: 600; }
+.app-modes { flex-shrink: 0; }
+.app-icon-button { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border: 1px solid var(--app-line); border-radius: 6px; background: white; }
+.app-sync-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 3px 14px; border-bottom: 1px solid var(--app-line); font-size: 12px; }
+.app-sync-bar [role="alert"] { color: #b91c1c; overflow-wrap: anywhere; }
+.app-sync-bar button { border: 0; background: transparent; color: #9b2638; }
+.app-workspace-error { padding: 24px; overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .app-topbar { gap: 6px; padding: 6px; }
+  .app-modes button { padding: 5px 8px; }
+  .app-brand { display: none; }
+}
 
 .app-modes {
   display: flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 10px;
-  background: #eef2f7;
+  border-radius: 6px;
+  background: #eceef0;
 }
 
 .app-modes button {
   padding: 5px 14px;
   border: none;
-  border-radius: 8px;
+  border-radius: 4px;
   background: none;
   color: var(--app-muted);
   font-size: 13px;
@@ -78,7 +90,7 @@ button { font: inherit; cursor: pointer; }
 
 .app-modes button.is-active {
   background: var(--app-paper);
-  color: var(--app-ink);
+  color: #215f52;
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
 }
@@ -135,9 +147,12 @@ button { font: inherit; cursor: pointer; }
 .app-launch-list button:hover { border-color: var(--app-accent); }
 .app-launch-list span { color: var(--app-muted); font-size: 12px; }
 
-.app-launch-actions { display: flex; gap: 8px; margin-top: 18px; }
+.app-launch-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 
 .app-launch-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 14px;
   border: 1px solid var(--app-line);
   border-radius: 10px;

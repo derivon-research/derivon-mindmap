@@ -8,9 +8,11 @@ import {
   setLearningTargets,
   type AppState,
 } from './appState';
-import type { AppMode, Host, RecentWorkspace } from './host';
+import type { Host, RecentWorkspace, WorkspaceHandle } from './host';
 import { TopBar } from './TopBar';
 import { WorkspaceLaunch } from './WorkspaceLaunch';
+
+const WorkspaceSurface = lazy(() => import('./WorkspaceSurface'));
 
 /**
  * Composition root. It picks nothing itself: the host it is handed decides which modes
@@ -21,6 +23,9 @@ export default function App({ host }: { host: Host }) {
   const [state, setState] = useState<AppState | null>(null);
   const [recentWorkspaces, setRecentWorkspaces] = useState<readonly RecentWorkspace[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [openFailure, setOpenFailure] = useState<string | null>(null);
+  const protectedChanges = useRef(false);
   const announcedInteractive = useRef(false);
   const applicationElement = useRef<HTMLDivElement>(null);
 
@@ -79,14 +84,23 @@ export default function App({ host }: { host: Host }) {
     };
   }, [host]);
 
-  const handleOpenWorkspace = useCallback(async (id: string) => {
-    if (!host.openRecentWorkspace) return;
+  const handleOpenWorkspace = useCallback(async (open: () => Promise<WorkspaceHandle | null>) => {
+    setOpening(true);
+    setOpenFailure(null);
     try {
-      const workspace = await host.openRecentWorkspace(id);
-      setState((current) => (current ? openWorkspace(current, workspace) : current));
+      const workspace = await open();
+      if (workspace) setState((current) => (current ? openWorkspace(current, workspace) : current));
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : String(error));
-    }
+      setOpenFailure(error instanceof Error ? error.message : String(error));
+    } finally { setOpening(false); }
+  }, []);
+
+  const handleProtectionChange = useCallback((value: boolean) => { protectedChanges.current = value; }, []);
+  const handleCloseWorkspace = useCallback(() => {
+    if (protectedChanges.current && !window.confirm('工作区有未提交草稿或未保存内容，仍要关闭吗？')) return;
+    protectedChanges.current = false;
+    setState(initialAppState({ hostId: host.id, modes: host.modes }));
+    void host.listRecentWorkspaces?.().then(setRecentWorkspaces).catch(() => {});
   }, [host]);
 
   const handleSelectConcept = useCallback((conceptId: string | null) => {
@@ -105,8 +119,6 @@ export default function App({ host }: { host: Host }) {
   }
 
   const { workspace } = state;
-  const AuthoringMode = modes.authoring;
-  const LearningMode = modes.learning;
 
   return (
     <div ref={applicationElement} className="app" data-derivon-host={state.hostId}>
@@ -115,29 +127,19 @@ export default function App({ host }: { host: Host }) {
         modes={workspace ? state.availableModes : []}
         mode={state.mode}
         onEnterMode={(mode) => setState((current) => (current ? enterMode(current, mode) : current))}
+        onCloseWorkspace={workspace && host.id === 'desktop' ? handleCloseWorkspace : undefined}
       />
       {workspace ? (
-        state.visitedModes.map((mode) => (
-          <div className="app-mode" key={mode} hidden={mode !== state.mode}>
-            <Suspense fallback={<div className="app-mode-loading" role="status">正在载入…</div>}>
-              {mode === 'learning' ? (
-                <LearningMode
-                  workspace={workspace}
-                  targetIds={state.learningTargetIds}
-                  onChangeTargets={handleChangeTargets}
-                />
-              ) : AuthoringMode && (
-                <AuthoringMode
-                  workspace={workspace}
-                  selectedConceptId={state.selectedConceptId}
-                  onSelectConcept={handleSelectConcept}
-                />
-              )}
-            </Suspense>
-          </div>
-        ))
+        <Suspense fallback={<div role="status">正在载入工作区…</div>}>
+          <WorkspaceSurface key={workspace.id} workspace={workspace} state={state} modes={modes}
+            onSelectConcept={handleSelectConcept} onChangeTargets={handleChangeTargets}
+            onProtectionChange={handleProtectionChange} />
+        </Suspense>
       ) : (
-        <WorkspaceLaunch recentWorkspaces={recentWorkspaces} onOpen={handleOpenWorkspace} />
+        <WorkspaceLaunch recentWorkspaces={recentWorkspaces} busy={opening} failure={openFailure}
+          onOpen={(id) => { if (host.openRecentWorkspace) void handleOpenWorkspace(() => host.openRecentWorkspace!(id)); }}
+          onChoose={host.chooseWorkspace ? () => { void handleOpenWorkspace(host.chooseWorkspace!); } : undefined}
+          onCreate={host.createWorkspace ? () => { void handleOpenWorkspace(host.createWorkspace!); } : undefined} />
       )}
     </div>
   );

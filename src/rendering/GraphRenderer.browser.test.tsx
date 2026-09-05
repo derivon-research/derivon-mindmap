@@ -35,6 +35,48 @@ const single: GraphView = {
   hyperedges: [],
 };
 
+function colorBounds(color: readonly [number, number, number]) {
+  for (const canvas of container.querySelectorAll('canvas')) {
+    const context = canvas.getContext('2d');
+    if (!context) continue;
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let left = canvas.width;
+    let right = -1;
+    let top = canvas.height;
+    let bottom = -1;
+    for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+      const offset = (y * canvas.width + x) * 4;
+      if (pixels[offset] !== color[0] || pixels[offset + 1] !== color[1]
+        || pixels[offset + 2] !== color[2] || pixels[offset + 3] !== 255) continue;
+      left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
+    }
+    if (right < 0) continue;
+    const scaleX = canvas.getBoundingClientRect().width / canvas.width;
+    const scaleY = canvas.getBoundingClientRect().height / canvas.height;
+    return { left: left * scaleX, right: right * scaleX, top: top * scaleY, bottom: bottom * scaleY };
+  }
+  return undefined;
+}
+
+function hasColorNear(color: readonly [number, number, number], x: number, y: number, radius = 7) {
+  for (const canvas of container.querySelectorAll('canvas')) {
+    const context = canvas.getContext('2d');
+    if (!context) continue;
+    const bounds = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / bounds.width;
+    const scaleY = canvas.height / bounds.height;
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let py = Math.max(0, Math.floor((y - radius) * scaleY)); py <= Math.min(canvas.height - 1, Math.ceil((y + radius) * scaleY)); py++) {
+      for (let px = Math.max(0, Math.floor((x - radius) * scaleX)); px <= Math.min(canvas.width - 1, Math.ceil((x + radius) * scaleX)); px++) {
+        const offset = (py * canvas.width + px) * 4;
+        if (Math.abs(pixels[offset] - color[0]) <= 2 && Math.abs(pixels[offset + 1] - color[1]) <= 2
+          && Math.abs(pixels[offset + 2] - color[2]) <= 2 && pixels[offset + 3] >= 40) return true;
+      }
+    }
+  }
+  return false;
+}
+
 it('paints a concept and emits selection and activation from real canvas input', async () => {
   const onEvent = vi.fn();
   flushSync(() => root.render(<GraphRenderer view={single} onEvent={onEvent} />));
@@ -46,15 +88,127 @@ it('paints a concept and emits selection and activation from real canvas input',
   expect(onEvent).toHaveBeenCalledWith({ type: 'activate', object: { kind: 'concept', id: 'same-id' } });
 });
 
-it.each(['neighbourhood', 'route'] as const)('draws selectable derivations in %s, including an empty tail and colliding concept ID', async (kind) => {
+it('draws selectable derivations in route, including an empty tail and colliding concept ID', async () => {
   const onEvent = vi.fn();
-  const view: GraphView = { ...single, kind, hyperedges: [
+  const view: GraphView = { ...single, kind: 'route', hyperedges: [
     { id: 'same-id', tails: [], head: 'same-id', weight: 2, marks: [] },
   ] };
   flushSync(() => root.render(<GraphRenderer view={view} onEvent={onEvent} />));
   await expect.poll(() => conceptPixel({ color: [217, 119, 6] })).toBeDefined();
   await page.getByRole('img').click({ position: conceptPixel({ color: [217, 119, 6] })! });
   expect(onEvent).toHaveBeenCalledWith({ type: 'select', object: { kind: 'derivation', id: 'same-id' } });
+});
+
+it('restores neighbourhood cards, visual ports, and selected outlines', async () => {
+  const onEvent = vi.fn();
+  const emptyTail: GraphView = {
+    kind: 'neighbourhood',
+    concepts: [{ id: 'head', label: 'Knowledge card', marks: ['selected'] }],
+    hyperedges: [{ id: 'empty', tails: [], head: 'head', weight: 2, marks: ['selected'] }],
+  };
+  flushSync(() => root.render(<GraphRenderer view={emptyTail} onEvent={onEvent} />));
+  await expect.element(page.getByRole('img')).toHaveAttribute('aria-busy', 'false');
+  await expect.poll(() => colorBounds([250, 251, 249])).toBeDefined();
+  await expect.poll(() => colorBounds([255, 249, 247])).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: [147, 51, 234] })).toBeDefined();
+  const card = colorBounds([250, 251, 249])!;
+  const cardY = (card.top + card.bottom) / 2;
+  expect(hasColorNear([164, 79, 63], card.left, cardY)).toBe(true);
+  expect(hasColorNear([47, 112, 135], card.right, cardY)).toBe(true);
+  expect(hasColorNear([147, 51, 234], card.left, card.top)).toBe(true);
+  expect(card.right - card.left).toBeGreaterThan(125);
+  expect(card.bottom - card.top).toBeGreaterThan(55);
+  const diamond = colorBounds([255, 249, 247])!;
+  expect(hasColorNear([147, 51, 234], diamond.left, (diamond.top + diamond.bottom) / 2)).toBe(true);
+  const derivation = conceptPixel({ color: [255, 249, 247] })!;
+  await page.getByRole('img').click({ position: derivation });
+  expect(onEvent).toHaveBeenCalledWith({ type: 'select', object: { kind: 'derivation', id: 'empty' } });
+});
+
+it('paints cubic premise and conclusion strokes between ports, not just the port circles', async () => {
+  const view: GraphView = {
+    kind: 'neighbourhood',
+    concepts: [
+      { id: 'a', label: 'A', marks: ['known'] },
+      { id: 'b', label: 'B', marks: ['completed'] },
+      { id: 'head', label: 'Head', marks: [] },
+    ],
+    hyperedges: [{ id: 'joint', tails: ['a', 'b'], head: 'head', weight: 2, marks: [] }],
+  };
+  flushSync(() => root.render(<GraphRenderer view={view} onEvent={vi.fn()} />));
+  await expect.element(page.getByRole('img')).toHaveAttribute('aria-busy', 'false');
+  const source = colorBounds([240, 247, 249])!;
+  const diamond = colorBounds([255, 249, 247])!;
+  const head = colorBounds([250, 251, 249])!;
+  const sourceY = (source.top + source.bottom) / 2;
+  const diamondY = (diamond.top + diamond.bottom) / 2;
+  const headY = (head.top + head.bottom) / 2;
+  expect(hasColorNear([164, 79, 63], (diamond.right + head.left) / 2, (diamondY + headY) / 2, 3)).toBe(true);
+  // A quarter of the v0.4 curve is away from both ports and its straight chord.
+  const control = Math.max(42, Math.abs(diamond.left - source.right) * 0.48);
+  const curveX = 0.75 ** 3 * source.right + 3 * 0.75 ** 2 * 0.25 * (source.right + control)
+    + 3 * 0.75 * 0.25 ** 2 * (diamond.left - control) + 0.25 ** 3 * diamond.left;
+  const curveY = sourceY + 0.15625 * (diamondY - sourceY);
+  expect(hasColorNear([47, 112, 135], curveX, curveY, 3)).toBe(true);
+});
+
+it('fits a left-to-right neighbourhood inside a narrow viewport without cropping its cards', async () => {
+  await page.viewport(320, 700);
+  container.style.cssText = 'width:280px;height:500px';
+  const view: GraphView = {
+    kind: 'neighbourhood',
+    concepts: [{ id: 'a', label: 'A', marks: ['known'] }, { id: 'b', label: 'B', marks: ['completed'] }],
+    hyperedges: [{ id: 'edge', tails: ['a'], head: 'b', weight: 2, marks: [] }],
+  };
+  flushSync(() => root.render(<GraphRenderer view={view} onEvent={vi.fn()} />));
+  await expect.element(page.getByRole('img')).toHaveAttribute('aria-busy', 'false');
+  const first = colorBounds([240, 247, 249])!;
+  const last = colorBounds([243, 248, 244])!;
+  expect(first).toBeDefined();
+  expect(last).toBeDefined();
+  expect(first.left).toBeGreaterThan(20);
+  expect(last.right).toBeLessThan(260);
+  expect(first.right).toBeLessThan(last.left);
+});
+
+it('updates neighbourhood knowledge marks without moving its card', async () => {
+  const view: GraphView = { ...single, kind: 'neighbourhood' };
+  flushSync(() => root.render(<GraphRenderer view={view} onEvent={vi.fn()} />));
+  await expect.element(page.getByRole('img')).toHaveAttribute('aria-busy', 'false');
+  await expect.poll(() => conceptPixel({ color: [250, 251, 249] })).toBeDefined();
+  const before = conceptPixel({ color: [250, 251, 249], center: true })!;
+  flushSync(() => root.render(<GraphRenderer view={{ ...view, concepts: [{ ...view.concepts[0], marks: ['known', 'selected'] }] }} onEvent={vi.fn()} />));
+  await expect.poll(() => conceptPixel({ color: [240, 247, 249] })).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: [147, 51, 234] })).toBeDefined();
+  const after = conceptPixel({ color: [240, 247, 249], center: true })!;
+  expect(Math.abs(after.x - before.x)).toBeLessThan(3);
+  expect(Math.abs(after.y - before.y)).toBeLessThan(3);
+});
+
+it('draws neighbourhood cubic edges for empty tails, cycles, and parallel derivations', async () => {
+  const onEvent = vi.fn();
+  const topology: GraphView = {
+    kind: 'neighbourhood',
+    concepts: [
+      { id: 'a', label: 'A', marks: [] },
+      { id: 'b', label: 'B', marks: [] },
+    ],
+    hyperedges: [
+      { id: 'forward', tails: ['a'], head: 'b', weight: 1, marks: [] },
+      { id: 'parallel', tails: ['a'], head: 'b', weight: 2, marks: ['selected'] },
+      { id: 'cycle', tails: ['b'], head: 'a', weight: 3, marks: [] },
+      { id: 'empty', tails: [], head: 'a', weight: 4, marks: [] },
+    ],
+  };
+  flushSync(() => root.render(<GraphRenderer view={topology} onEvent={onEvent} />));
+  await expect.element(page.getByRole('img')).toHaveAttribute('aria-busy', 'false');
+  await expect.poll(() => conceptPixel({ color: [47, 112, 135] })).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: [164, 79, 63] })).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: [147, 51, 234] })).toBeDefined();
+  const derivation = conceptPixel({ color: [255, 249, 247] })!;
+  await page.getByRole('img').click({ position: derivation });
+  expect(onEvent).toHaveBeenCalledWith({ type: 'select', object: { kind: 'derivation', id: expect.any(String) } });
+  expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
 it('diffs a complete model without moving existing nodes and uses the latest event callback', async () => {
