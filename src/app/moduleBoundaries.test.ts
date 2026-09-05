@@ -128,6 +128,19 @@ describe('first screen', () => {
   });
 });
 
+describe('rendering isolation', () => {
+  it('depends only on its own files and external libraries', async () => {
+    const { modules, packages } = await walk('rendering/index.ts', 'web', true);
+    expect([...modules].filter((module) => !module.startsWith('rendering/'))).toEqual([]);
+    expect([...packages].filter((name) => !['react', '@antv/g6'].includes(name))).toEqual([]);
+  });
+
+  it.each(['web', 'desktop'] as const)('keeps every rendering file behind a lazy boundary on %s', async (host) => {
+    const { modules } = await firstScreen(host);
+    expect([...modules].filter((module) => module.startsWith('rendering/'))).toEqual([]);
+  });
+});
+
 describe('authoring in a web build', () => {
   it('is unreachable, statically and dynamically', async () => {
     const { modules } = await wholeBuild('web');

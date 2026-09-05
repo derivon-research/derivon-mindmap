@@ -19,9 +19,21 @@ export default defineConfig({
         plugins: [react()],
         test: {
           name: 'browser',
+          // Measure canvas budgets without competing with CPU-heavy Node layout tests.
+          sequence: { groupOrder: 1 },
           include: ['src/**/*.browser.test.{ts,tsx}'],
           browser: {
             enabled: true,
+            commands: {
+              async dragPointer({ page, iframe }, selector: string, from: { x: number; y: number }, to: { x: number; y: number }) {
+                const bounds = await iframe.locator(selector).boundingBox();
+                if (!bounds) throw new Error(`Missing pointer target: ${selector}`);
+                await page.mouse.move(bounds.x + from.x, bounds.y + from.y);
+                await page.mouse.down();
+                await page.mouse.move(bounds.x + to.x, bounds.y + to.y, { steps: 10 });
+                await page.mouse.up();
+              },
+            },
             provider: playwright(),
             headless: true,
             instances: [{ browser: 'chromium' }],
