@@ -83,6 +83,7 @@ jobs:
       - name: Test source
         run: |
           npm ci
+          npx playwright install --with-deps chromium
           npm test
           npm run build
           cargo test --manifest-path src-tauri/Cargo.toml --locked
