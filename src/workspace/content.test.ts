@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from '../domain';
-import { createConcept, createWorkspace, parseWorkspaceContent } from './index';
+import { createConcept, createWorkspace, objectDocumentPreview, parseWorkspaceContent } from './index';
 
 describe('complete workspace content operations', () => {
   it('creates an old-format workspace and its first concept with owned documents in one operation', () => {
@@ -22,6 +22,7 @@ describe('complete workspace content operations', () => {
     ]);
     expect(created.content.documents['docs/concept-c-1/document.md']).toEqual({ status: 'ready', text: '' });
     expect(created.content.diagnostics).toEqual([]);
+    expect(objectDocumentPreview(created.content, concept.data)).toEqual({ status: 'ready', text: created.changes.documents![1].content });
     expect(initial.content.graph.points).toEqual([]);
   });
 
@@ -41,6 +42,9 @@ describe('complete workspace content operations', () => {
     const created = createConcept(damaged, { label: 'New', format: 'html' });
 
     expect(created.content.diagnostics).toEqual(damaged.diagnostics);
+    expect(objectDocumentPreview(created.content, created.content.graph.points[0].data)).toEqual({
+      status: 'error', message: 'Missing document: docs/concept-c-2/index.html',
+    });
     expect(created.content.graph.points[2].data.document).toBe('docs/concept-c-2-2');
     expect(created.changes.documents).toHaveLength(1);
     expect(created.changes.documents![0].path).toBe('docs/concept-c-2-2/index.html');

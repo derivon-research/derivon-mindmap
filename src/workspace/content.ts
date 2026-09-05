@@ -38,6 +38,11 @@ export function objectDocumentPaths(reference: DocumentReference): readonly stri
     : [`${reference.document}/index.html`];
 }
 
+export function objectDocumentPreview(content: WorkspaceContent, reference: DocumentReference): TextResource {
+  const path = `${reference.document}/index.html`;
+  return content.documents[path] ?? { status: 'error', message: `Missing document: ${path}` };
+}
+
 export function parseWorkspaceContent(input: {
   graph: string;
   documents: Readonly<Record<string, TextResource>>;

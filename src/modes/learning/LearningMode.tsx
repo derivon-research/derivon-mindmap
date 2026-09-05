@@ -2,16 +2,10 @@ import { FileText, Network, X } from 'lucide-react';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
 import type { GraphEvent, GraphView } from '../../rendering';
-import { objectDocumentPaths, type TextResource } from '../../workspace/index';
+import { objectDocumentPreview, type TextResource } from '../../workspace/index';
 import './learning.css';
 
 const GraphRenderer = lazy(async () => ({ default: (await import('../../rendering')).GraphRenderer }));
-
-function documentResource(content: LearningModeProps['content'], reference: { document: string; format: 'markdown' | 'html' }): TextResource {
-  const paths = objectDocumentPaths(reference);
-  const path = paths.find((candidate) => candidate.endsWith('/index.html')) ?? paths[0];
-  return content.documents[path] ?? { status: 'error', message: `Missing document: ${path}` };
-}
 
 export function LearningMode({ workspace, content, targetIds, onChangeTargets }: LearningModeProps) {
   const [selectedId, setSelectedId] = useState<string | null>(() => targetIds[0] ?? null);
@@ -37,7 +31,7 @@ export function LearningMode({ workspace, content, targetIds, onChangeTargets }:
     </header>
     <div className={`learning-main${selected ? ' has-document' : ''}`}>
       <div className="learning-graph-canvas"><Suspense fallback={<div role="status">正在载入全图…</div>}><GraphRenderer view={view} onEvent={handleEvent} /></Suspense></div>
-      {selected && <section className="learning-document" aria-label={`${selected.data.label} 文档`}><Document title={selected.data.label} resource={documentResource(content, selected.data)} /></section>}
+      {selected && <section className="learning-document" aria-label={`${selected.data.label} 文档`}><Document title={selected.data.label} resource={objectDocumentPreview(content, selected.data)} /></section>}
     </div>
     {content.diagnostics.length > 0 && <details className="learning-diagnostics"><summary>{content.diagnostics.length} 个本地内容问题</summary>{content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}><code>{item.path}</code> {item.message}</p>)}</details>}
   </section>;

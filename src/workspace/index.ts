@@ -1,7 +1,7 @@
 import { parseDocument, type Hyperedge, type Point } from '../domain';
 
 export {
-  createConcept, createWorkspace, objectDocumentPaths, parseWorkspaceContent,
+  createConcept, createWorkspace, objectDocumentPaths, objectDocumentPreview, parseWorkspaceContent,
   type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type TextResource, type WorkspaceContent,
 } from './content';
 

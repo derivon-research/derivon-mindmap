@@ -34,6 +34,23 @@ describe('desktop workspace entry workflow', () => {
     expect(parseDocument(graph!).document.title).toBe('My graph');
   });
 
+  it('keeps a newly persisted workspace usable when the optional recent-list storage is unavailable', async () => {
+    let graph = '';
+    const invoke = (async (command: string, args?: Record<string, unknown>) => {
+      if (command === 'choose_workspace_source_directory') return { path: '/tmp/graph', name: 'My graph' };
+      if (command === 'commit_workspace_source_changes') { graph = (args!.changes as { graph: string }).graph; return; }
+      if (command === 'read_workspace_source_graph') return graph;
+      throw new Error(command);
+    }) as DesktopInvoke;
+    const actions = createDesktopWorkspaceActions(invoke, {
+      getItem: () => null,
+      setItem: () => { throw new Error('Storage unavailable'); },
+    });
+    const created = await actions.createWorkspace();
+    expect(parseDocument(await created!.source.readGraph()).document.title).toBe('My graph');
+    expect((await actions.chooseWorkspace())!.id).toBe(created!.id);
+  });
+
   it('does not read or write when the native picker is cancelled', async () => {
     const invoke = (async (command: string) => {
       if (command === 'choose_workspace_source_directory') return null;

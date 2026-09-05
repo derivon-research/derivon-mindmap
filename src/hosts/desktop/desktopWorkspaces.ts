@@ -10,7 +10,8 @@ type Directory = { path: string; name: string };
 export function createDesktopWorkspaceActions(invoke: DesktopInvoke = tauriInvoke, storage: RecentWorkspaceStorage | null = null) {
   function handle(directory: Directory): WorkspaceHandle {
     const source = createDesktopWorkspaceSource(directory.path, invoke);
-    if (storage) rememberWorkspace(storage, directory);
+    try { if (storage) rememberWorkspace(storage, directory); }
+    catch { /* A recent-list cache failure must not invalidate a successful workspace open. */ }
     return { id: directory.path, name: directory.name, source, authoringSource: source };
   }
 

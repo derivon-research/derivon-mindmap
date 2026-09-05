@@ -3,18 +3,12 @@ import { ChevronLeft, ChevronRight, FileText, Network, PanelLeftClose, PanelLeft
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { AuthoringModeProps } from '../../app/host';
 import type { GraphEvent, GraphView } from '../../rendering';
-import { objectDocumentPaths, type TextResource } from '../../workspace/index';
+import { objectDocumentPaths, objectDocumentPreview, type TextResource } from '../../workspace/index';
 import './authoring.css';
 
 const GraphRenderer = lazy(async () => ({ default: (await import('../../rendering')).GraphRenderer }));
 type ConceptDraft = { label: string; id: string; format: 'markdown' | 'html' };
 const emptyDraft: ConceptDraft = { label: '', id: '', format: 'markdown' };
-
-function htmlResource(content: AuthoringModeProps['content'], reference: { document: string; format: 'markdown' | 'html' }): TextResource {
-  const paths = objectDocumentPaths(reference);
-  const path = paths.find((candidate) => candidate.endsWith('/index.html')) ?? paths[0];
-  return content.documents[path] ?? { status: 'error', message: `Missing document: ${path}` };
-}
 
 function DocumentView({ title, resource }: { title: string; resource: TextResource }) {
   return <section className="object-document" aria-label={`${title} 文档`}>
@@ -101,7 +95,7 @@ export function AuthoringMode({ workspace, content, authoring, selectedConceptId
       <aside className="relations-pane" aria-label="相关推导"><button type="button" className="collapse-command" onClick={() => setRelationsOpen((open) => !open)} title={relationsOpen ? '收起相关推导' : '展开相关推导'}>{relationsOpen ? <PanelLeftClose aria-hidden="true" /> : <PanelLeftOpen aria-hidden="true" />}</button>
         {relationsOpen && <div className="relations-content"><h2>相关推导</h2>{selected ? <><RelationGroup title="作为结果" edges={incoming} direction="incoming" pointById={pointById} onSelect={selectConcept} /><RelationGroup title="作为前提" edges={outgoing} direction="outgoing" pointById={pointById} onSelect={selectConcept} /></> : <p className="empty-note">选择概念后查看关系</p>}</div>}
       </aside>
-      <main className="content-pane">{selected ? <><div className="object-heading"><div><span>概念</span><h1>{selected.data.label}</h1></div><code>{selected.id}</code></div><DocumentView title={selected.data.label} resource={htmlResource(content, selected.data)} /></> : <div className="empty-state"><FileText aria-hidden="true" /><h1>{points.length ? '选择一个概念' : canCreate ? '创建第一个概念' : '工作区中还没有概念'}</h1><p>{workspace.name}</p></div>}</main>
+      <main className="content-pane">{selected ? <><div className="object-heading"><div><span>概念</span><h1>{selected.data.label}</h1></div><code>{selected.id}</code></div><DocumentView title={selected.data.label} resource={objectDocumentPreview(content, selected.data)} /></> : <div className="empty-state"><FileText aria-hidden="true" /><h1>{points.length ? '选择一个概念' : canCreate ? '创建第一个概念' : '工作区中还没有概念'}</h1><p>{workspace.name}</p></div>}</main>
     </div>}
     {content.diagnostics.length > 0 && <details className="local-diagnostics"><summary>{content.diagnostics.length} 个本地内容问题</summary>{content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}><code>{item.path}</code> {item.message}</p>)}</details>}
   </section>;
