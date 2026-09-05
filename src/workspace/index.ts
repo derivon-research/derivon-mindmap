@@ -1,5 +1,10 @@
 import { parseDocument, type Hyperedge, type Point } from '../domain';
 
+export {
+  createConcept, createWorkspace, objectDocumentPaths, parseWorkspaceContent,
+  type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type TextResource, type WorkspaceContent,
+} from './content';
+
 export type WorkspaceGraph = {
   readonly points: readonly Point[];
   readonly hyperedges: readonly Hyperedge[];

@@ -57,7 +57,18 @@ button { font: inherit; cursor: pointer; }
   font-weight: 700;
 }
 
-.app-workspace { font-weight: 600; }
+.app-workspace { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.app-modes { flex-shrink: 0; }
+.app-icon-button { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border: 1px solid var(--app-line); border-radius: 6px; background: white; }
+.app-sync-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 3px 14px; border-bottom: 1px solid var(--app-line); font-size: 12px; }
+.app-sync-bar [role="alert"] { color: #b91c1c; overflow-wrap: anywhere; }
+.app-sync-bar button { border: 0; background: transparent; color: #9b2638; }
+.app-workspace-error { padding: 24px; overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .app-topbar { gap: 6px; padding: 6px; }
+  .app-modes button { padding: 5px 8px; }
+  .app-brand { display: none; }
+}
 
 .app-modes {
   display: flex;
@@ -135,9 +146,12 @@ button { font: inherit; cursor: pointer; }
 .app-launch-list button:hover { border-color: var(--app-accent); }
 .app-launch-list span { color: var(--app-muted); font-size: 12px; }
 
-.app-launch-actions { display: flex; gap: 8px; margin-top: 18px; }
+.app-launch-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 
 .app-launch-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 14px;
   border: 1px solid var(--app-line);
   border-radius: 10px;

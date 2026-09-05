@@ -4,6 +4,14 @@
 
 Write access is a separate capability. `WritableWorkspaceSource` adds one operation, `commit`, whose change set has graph, document, asset, and companion-metadata categories. The desktop binding validates and snapshots the whole change set before writing, then attempts to restore touched files if a write fails and reports rollback failures. Keeping the graph as source text lets an unchanged read/commit round trip preserve every byte instead of normalizing JSON formatting.
 
+A commit with `createOnly: true` initializes a workspace: it requires a graph, forbids
+removals, and uses exclusive creation for every target. On an observed failure it attempts
+to remove only files created by that attempt and reports cleanup failures. A text change
+with `createOnly: true` instead requires that individual target to be absent during commit
+preparation, protecting new concept documents from overwriting pre-existing orphan files.
+That per-file preflight is not protection against an external writer racing the commit.
+Neither operation promises cross-process transactions or crash atomicity.
+
 ## Host bindings
 
 | Host | Binding | Capability |
@@ -14,12 +22,22 @@ Write access is a separate capability. `WritableWorkspaceSource` adds one operat
 
 The port lives at `src/ports/WorkspaceSource.ts`, following the v1 module map in `CONTEXT.md`. The web binding implements `WorkspaceSource`, not `WritableWorkspaceSource`, and does not import the desktop binding or browser filesystem APIs. Desktop code must be imported only from its desktop host entry point. The legacy workspace path remains unchanged during this expand phase; later tickets move its callers behind this port.
 
-## Accepted design, pending implementation
+## Content And Synchronization
 
-The [workspace content and synchronization design](workspace-content-sync.md) defines the
-next use of this port: complete content operations, a mode-independent synchronization
-module and consistent read-only previews of effective in-memory content. It does not claim
-these capabilities are already implemented by `WorkspaceSource`.
+The first-concept path in #51 implements the shared boundary from the
+[workspace content and synchronization design](workspace-content-sync.md).
+`src/workspace/` prepares complete workspace/concept creation changes without host I/O;
+`src/synchronization/` owns one effective snapshot, its last persisted snapshot, protected
+drafts and the authorized save queue. `WorkspaceSurface` composes that session above both
+modes. Learning receives effective content and learner-state callbacks, not a source or
+an authoring command capability. Desktop folder selection carries only path/name; content
+creation and subsequent saves use this port.
+
+Object text and `.derivon/orientation.json` are acquired together before publishing an
+in-memory snapshot. Document read failures remain explicit localized diagnostics; a bad
+manifest fails opening. This is an in-memory publication boundary, not an externally atomic
+filesystem read. Assets, external observation and revision-aware acquisition remain follow-up
+work. Companion configuration is preserved as opaque text here; #58 owns its semantics.
 
 Only changes accepted through desktop authoring write authority may be persisted. A queued
 save can finish after switching to learning; learning actions still cannot create workspace
@@ -28,7 +46,8 @@ basis from automatic replacement. Automatic saving cannot authorize a schema upg
 has not been confirmed by the user.
 
 The current port does not enumerate owned files, observe revisions, or accept a revision
-precondition on commit. Owned-file deletion and external-update safety require further host
+precondition on commit. `WorkspaceSession.reload()` is an explicit, draft-protected reload
+entry point; no external watcher invokes it yet. Owned-file deletion and external-update safety require further host
 capability design and tests. The existing rollback is not a promise of concurrency safety
 or crash atomicity; its precise guarantees must be verified rather than inferred.
 

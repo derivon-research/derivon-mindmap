@@ -34,6 +34,7 @@ pub fn run() {
             crash_report::read_crash_report,
             solve_route,
             workspace::choose_workspace,
+            workspace::choose_workspace_source_directory,
             workspace::save_workspace_as,
             workspace::read_workspace,
             workspace::workspace_revision,

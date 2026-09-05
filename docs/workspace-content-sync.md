@@ -1,14 +1,41 @@
 # Workspace content and synchronization
 
-Status: accepted design from the C3 architecture discussion; implementation is still pending.
-This document does not claim that the current `WorkspaceSource` interface provides the
-capabilities below. It introduces no on-disk protocol change and no new rendering behaviour.
+Status: accepted design from the C3 architecture discussion; #51 implements the first-concept
+content operation and shared session boundary described below. The remaining cases and port
+capabilities are still planned unless explicitly identified as delivered. This design introduces
+no on-disk protocol change.
 
 Domain terms are defined in [CONTEXT.md](../CONTEXT.md). The load-bearing decisions are
 [mode-independent synchronization](adr/0004-synchronize-workspace-content-independently-of-modes.md)
 and [deletion with owned documents](adr/0005-delete-owned-documents-with-their-objects.md).
 The [current WorkspaceSource contract](workspace-source.md) remains the description of
 implemented port behaviour.
+
+## Delivered In #51
+
+- `src/workspace/index.ts`: complete empty-workspace and first-concept creation, ID and owned
+  directory allocation, blank Markdown/HTML documents, reference validation and local diagnostics.
+  Legacy replacement fields stay in source text at the boundary and survive graph updates.
+- `src/synchronization/index.ts`: a workspace session with separate effective/persisted snapshots,
+  a read-only subscription, desktop-authoring commands, serialized automatic saves, draft
+  protection and explicit protected reload. Saving is independent of subscriber/mode visibility.
+- The desktop launch frame selects a folder and initializes through `WorkspaceSource.commit`.
+  Existing manifests and files are not overwritten by initialization. New document changes
+  require absent targets during commit preparation. Existing-workspace creation collisions are
+  reported without advancing persisted content.
+- Both modes consume the same effective graph and object text. Optional orientation configuration
+  remains opaque text in that snapshot, with interpretation/editing owned by #58. No preview reads
+  newer disk files independently. External consistency during acquisition still belongs to #55.
+- The GUI offers the minimal metadata-only concept form and read-only object/graph browsing.
+  Search and the collapsible relations pane follow the agreed workbench direction; full graph
+  editing, rich-document writing and authoring Agent integration are not delivered by this ticket.
+  The throwaway prototype remains separate from the application.
+
+The session retains failures and supports an explicit retry; the GUI shows save/draft status,
+warns before its close-workspace command or browser unload, and offers retry. Native window-close
+protection, external watching/conflict resolution, schema-upgrade consent and complete failure
+integration remain #55 work. Older schemas open read-only until upgrade consent is implemented.
+No atomic read/CAS/crash-recovery guarantee is implied by the current port.
 
 ## Module responsibilities
 

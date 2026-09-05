@@ -1,60 +1,49 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { FileText, Network, X } from 'lucide-react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
-import { parseWorkspaceGraph, type WorkspaceGraph } from '../../workspace/index';
-import type { GraphEvent, GraphObject, GraphView } from '../../rendering';
+import type { GraphEvent, GraphView } from '../../rendering';
+import { objectDocumentPaths, type TextResource } from '../../workspace/index';
 import './learning.css';
 
 const GraphRenderer = lazy(async () => ({ default: (await import('../../rendering')).GraphRenderer }));
 
-export function LearningMode({ workspace, targetIds }: LearningModeProps) {
-  const [content, setContent] = useState<WorkspaceGraph>();
-  const [failure, setFailure] = useState<string>();
-  const [selected, setSelected] = useState<GraphObject | null>(null);
+function documentResource(content: LearningModeProps['content'], reference: { document: string; format: 'markdown' | 'html' }): TextResource {
+  const paths = objectDocumentPaths(reference);
+  const path = paths.find((candidate) => candidate.endsWith('/index.html')) ?? paths[0];
+  return content.documents[path] ?? { status: 'error', message: `Missing document: ${path}` };
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    setContent(undefined);
-    setFailure(undefined);
-    setSelected(null);
-    void workspace.source.readGraph().then((text) => {
-      const graph = parseWorkspaceGraph(text);
-      if (!cancelled) setContent(graph);
-    }).catch((error: unknown) => {
-      if (!cancelled) setFailure(String(error));
-    });
-    return () => { cancelled = true; };
-  }, [workspace]);
-
+export function LearningMode({ workspace, content, targetIds, onChangeTargets }: LearningModeProps) {
+  const [selectedId, setSelectedId] = useState<string | null>(() => targetIds[0] ?? null);
+  const selected = selectedId ? content.graph.points.find((point) => point.id === selectedId) : undefined;
   const view = useMemo<GraphView>(() => ({
     kind: 'overview',
-    concepts: content?.points.map((point) => ({
-      id: point.id, label: point.data.label, marks: targetIds.includes(point.id) ? ['target'] : [],
-    })) ?? [],
-    hyperedges: content?.hyperedges.map((edge) => ({
-      id: edge.id, tails: edge.tails, head: edge.head, weight: edge.weight, marks: [],
-    })) ?? [],
-  }), [content, targetIds]);
+    concepts: content.graph.points.map((point) => ({ id: point.id, label: point.data.label,
+      marks: [...(targetIds.includes(point.id) ? ['target' as const] : []), ...(point.id === selectedId ? ['selected' as const] : [])] })),
+    hyperedges: content.graph.hyperedges.map((edge) => ({ ...edge, marks: [] })),
+  }), [content.graph, selectedId, targetIds]);
+  const handleEvent = (event: GraphEvent) => {
+    if (event.object === null) setSelectedId(null);
+    else if (event.object.kind === 'concept') setSelectedId(event.object.id);
+  };
+  const toggleTarget = () => {
+    if (!selected) return;
+    onChangeTargets(targetIds.includes(selected.id) ? targetIds.filter((id) => id !== selected.id) : [...targetIds, selected.id]);
+  };
 
-  const handleEvent = (event: GraphEvent) => setSelected(event.object);
-  const selectedLabel = selected?.kind === 'concept'
-    ? content?.points.find((point) => point.id === selected.id)?.data.label
-    : undefined;
+  return <section className="learning-workbench" data-derivon-mode="learning" data-learning-targets={targetIds.join(' ')} aria-label="学习侧">
+    <header className="learning-header"><div><Network aria-hidden="true" /><h1>{workspace.name}</h1><span>{view.concepts.length} 个概念</span></div>
+      {selected && <div className="learning-selection"><output aria-label="Selected concept">{selected.data.label}</output><button type="button" aria-pressed={targetIds.includes(selected.id)} onClick={toggleTarget}>{targetIds.includes(selected.id) ? '取消目标' : '设为目标'}</button><button type="button" className="learning-icon-button" title="关闭文档" onClick={() => setSelectedId(null)}><X aria-hidden="true" /></button></div>}
+    </header>
+    <div className={`learning-main${selected ? ' has-document' : ''}`}>
+      <div className="learning-graph-canvas"><Suspense fallback={<div role="status">正在载入全图…</div>}><GraphRenderer view={view} onEvent={handleEvent} /></Suspense></div>
+      {selected && <section className="learning-document" aria-label={`${selected.data.label} 文档`}><Document title={selected.data.label} resource={documentResource(content, selected.data)} /></section>}
+    </div>
+    {content.diagnostics.length > 0 && <details className="learning-diagnostics"><summary>{content.diagnostics.length} 个本地内容问题</summary>{content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}><code>{item.path}</code> {item.message}</p>)}</details>}
+  </section>;
+}
 
-  return (
-    <section className="learning-graph" data-derivon-mode="learning"
-      data-learning-targets={targetIds.join(' ')} aria-label="学习侧">
-      <header className="learning-graph-header">
-        <h1>全图</h1>
-        <span>{view.concepts.length} 个概念</span>
-        <output aria-label="Selected concept">{selectedLabel}</output>
-      </header>
-      <div className="learning-graph-canvas">
-        {failure ? <p role="alert">{failure}</p> : !content ? <div role="status">正在载入…</div> : (
-          <Suspense fallback={<div role="status">正在载入…</div>}>
-            <GraphRenderer view={view} onEvent={handleEvent} />
-          </Suspense>
-        )}
-      </div>
-    </section>
-  );
+function Document({ title, resource }: { title: string; resource: TextResource }) {
+  return resource.status === 'ready' ? <iframe title={`${title} 文档`} sandbox="" srcDoc={resource.text} />
+    : <div className="learning-document-error" role="alert"><FileText aria-hidden="true" /><div><strong>无法读取对象文档</strong><p>{resource.message}</p></div></div>;
 }

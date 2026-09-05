@@ -6,6 +6,8 @@ export interface WorkspaceSource {
 }
 
 export type WorkspaceTextChange = {
+  /** Refuse an existing target during commit preparation; not a concurrency guarantee. */
+  createOnly?: true;
   path: string;
   content: string | null;
 };
@@ -16,6 +18,8 @@ export type WorkspaceAssetChange = {
 };
 
 export type WorkspaceCommit = {
+  /** Initialize only absent files; reject collisions instead of overwriting a workspace. */
+  createOnly?: true;
   graph?: string;
   documents?: readonly WorkspaceTextChange[];
   assets?: readonly WorkspaceAssetChange[];

@@ -14,6 +14,7 @@ function asBytes(value: ArrayBuffer | Uint8Array | number[]): Uint8Array {
 
 function commandChanges(changes: WorkspaceCommit) {
   return {
+    ...(changes.createOnly ? { createOnly: true } : {}),
     ...(changes.graph === undefined ? {} : { graph: changes.graph }),
     documents: [...(changes.documents ?? [])],
     assets: (changes.assets ?? []).map(({ path, content }) => ({

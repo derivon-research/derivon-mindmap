@@ -54,6 +54,8 @@ struct DocumentReference {
 pub struct WorkspaceSourceTextChange {
     path: String,
     content: Option<String>,
+    #[serde(default)]
+    create_only: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,6 +69,8 @@ pub struct WorkspaceSourceAssetChange {
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceSourceChanges {
     graph: Option<String>,
+    #[serde(default)]
+    create_only: bool,
     #[serde(default)]
     documents: Vec<WorkspaceSourceTextChange>,
     #[serde(default)]
@@ -147,6 +151,12 @@ fn validate_workspace_source_changes(changes: &WorkspaceSourceChanges) -> Result
         paths.insert(PathBuf::from(MANIFEST_PATH));
     }
     for change in &changes.documents {
+        if change.create_only && change.content.is_none() {
+            return Err(format!(
+                "create-only workspace text change cannot delete `{}`",
+                change.path
+            ));
+        }
         let path = safe_relative_path(&change.path)?;
         if path == Path::new(MANIFEST_PATH) || !paths.insert(path) {
             return Err(format!(
@@ -165,6 +175,12 @@ fn validate_workspace_source_changes(changes: &WorkspaceSourceChanges) -> Result
         }
     }
     for change in &changes.companion_metadata {
+        if change.create_only && change.content.is_none() {
+            return Err(format!(
+                "create-only workspace text change cannot delete `{}`",
+                change.path
+            ));
+        }
         let path = validate_companion_metadata_path(&change.path)?;
         if !paths.insert(path) {
             return Err(format!("duplicate workspace path `{}`", change.path));
@@ -303,7 +319,7 @@ fn commit_workspace_source_changes_to_disk(
     validate_workspace_source_changes(changes)?;
     let mut requested = Vec::new();
     if let Some(graph) = &changes.graph {
-        requested.push((MANIFEST_PATH, Some(graph.as_bytes().to_vec())));
+        requested.push((MANIFEST_PATH, Some(graph.as_bytes().to_vec()), false));
     }
     requested.extend(changes.documents.iter().map(|change| {
         (
@@ -312,13 +328,14 @@ fn commit_workspace_source_changes_to_disk(
                 .content
                 .as_ref()
                 .map(|content| content.as_bytes().to_vec()),
+            change.create_only,
         )
     }));
     requested.extend(
         changes
             .assets
             .iter()
-            .map(|change| (change.path.as_str(), change.content.clone())),
+            .map(|change| (change.path.as_str(), change.content.clone(), false)),
     );
     requested.extend(changes.companion_metadata.iter().map(|change| {
         (
@@ -327,16 +344,106 @@ fn commit_workspace_source_changes_to_disk(
                 .content
                 .as_ref()
                 .map(|content| content.as_bytes().to_vec()),
+            change.create_only,
         )
     }));
+
+    if changes.create_only {
+        if changes.graph.is_none() {
+            return Err("create-only workspace commit must contain graph".to_owned());
+        }
+        if let Some((path, _, _)) = requested.iter().find(|(_, content, _)| content.is_none()) {
+            return Err(format!(
+                "create-only workspace commit cannot delete `{path}`"
+            ));
+        }
+
+        let prepared = requested
+            .into_iter()
+            .map(|(path, content, _)| {
+                prepare_workspace_source_target(root, path).map(|target| (target, content.unwrap()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        return create_workspace_source_files(&prepared);
+    }
+
     let prepared = requested
         .into_iter()
-        .map(|(path, content)| prepare_workspace_source_change(root, path, content))
+        .map(|(path, content, create_only)| {
+            prepare_workspace_source_change(root, path, content).map(|change| (change, create_only))
+        })
         .collect::<Result<Vec<_>, _>>()?;
+    if let Some((change, _)) = prepared
+        .iter()
+        .find(|(change, create_only)| *create_only && change.previous_content.is_some())
+    {
+        return Err(format!(
+            "workspace target {} already exists",
+            change.target.display()
+        ));
+    }
+    let prepared = prepared
+        .into_iter()
+        .map(|(change, _)| change)
+        .collect::<Vec<_>>();
 
     apply_prepared_workspace_source_changes(&prepared, |change| {
         write_workspace_source_content(&change.target, change.content.as_deref())
     })
+}
+
+// Each target is created exclusively and files created by this attempt are rolled back on
+// observed failure. This is not a cross-process transaction or CAS, nor is it crash-atomic.
+fn create_workspace_source_files(changes: &[(PathBuf, Vec<u8>)]) -> Result<(), String> {
+    let mut created = Vec::new();
+    for (target, content) in changes {
+        let result = (|| {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(target)
+                .map_err(|error| {
+                    if error.kind() == std::io::ErrorKind::AlreadyExists {
+                        format!("workspace target {} already exists", target.display())
+                    } else {
+                        format!("cannot create {}: {error}", target.display())
+                    }
+                })?;
+            if let Err(error) = file.write_all(content) {
+                let cleanup = fs::remove_file(target).err();
+                return Err(match cleanup {
+                    Some(cleanup) => format!(
+                        "cannot write {}: {error}; cleanup also failed: {cleanup}",
+                        target.display()
+                    ),
+                    None => format!("cannot write {}: {error}", target.display()),
+                });
+            }
+            Ok(())
+        })();
+
+        if let Err(error) = result {
+            let rollback_errors = created
+                .iter()
+                .rev()
+                .filter_map(|path: &PathBuf| {
+                    fs::remove_file(path)
+                        .err()
+                        .map(|rollback| format!("cannot remove {}: {rollback}", path.display()))
+                })
+                .collect::<Vec<_>>();
+            return if rollback_errors.is_empty() {
+                Err(error)
+            } else {
+                Err(format!(
+                    "{error}; workspace initialization rollback also failed: {}",
+                    rollback_errors.join("; ")
+                ))
+            };
+        }
+        created.push(target.clone());
+    }
+    Ok(())
 }
 
 fn referenced_files(manifest: &WorkspaceDocument) -> Result<Vec<String>, String> {
@@ -440,6 +547,22 @@ pub async fn choose_workspace() -> Result<Option<ChosenWorkspace>, String> {
     })
     .await
     .map_err(|error| format!("workspace chooser task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn choose_workspace_source_directory() -> Result<Option<WorkspaceDirectory>, String> {
+    let Some(root) = rfd::AsyncFileDialog::new().pick_folder().await else {
+        return Ok(None);
+    };
+    let root = root.path();
+    Ok(Some(WorkspaceDirectory {
+        name: root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("workspace")
+            .to_owned(),
+        path: root.to_string_lossy().into_owned(),
+    }))
 }
 
 #[tauri::command]
@@ -807,9 +930,11 @@ mod tests {
             root.path(),
             &WorkspaceSourceChanges {
                 graph: Some(opened_graph),
+                create_only: false,
                 documents: vec![WorkspaceSourceTextChange {
                     path: "docs/points/a/document.md".to_owned(),
                     content: Some(opened_document),
+                    create_only: false,
                 }],
                 assets: vec![WorkspaceSourceAssetChange {
                     path: "assets/diagram.bin".to_owned(),
@@ -818,6 +943,7 @@ mod tests {
                 companion_metadata: vec![WorkspaceSourceTextChange {
                     path: ".derivon/orientation.json".to_owned(),
                     content: opened_companion,
+                    create_only: false,
                 }],
             },
         )
@@ -848,14 +974,17 @@ mod tests {
         fs::write(root.path().join("docs/original.md"), "original\n").unwrap();
         let changes = WorkspaceSourceChanges {
             graph: None,
+            create_only: false,
             documents: vec![WorkspaceSourceTextChange {
                 path: "docs/original.md".to_owned(),
                 content: Some("changed\n".to_owned()),
+                create_only: false,
             }],
             assets: vec![],
             companion_metadata: vec![WorkspaceSourceTextChange {
                 path: MANIFEST_PATH.to_owned(),
                 content: Some("not metadata\n".to_owned()),
+                create_only: false,
             }],
         };
 
@@ -864,6 +993,286 @@ mod tests {
             fs::read_to_string(root.path().join("docs/original.md")).unwrap(),
             "original\n"
         );
+    }
+
+    #[test]
+    fn workspace_source_changes_defaults_create_only_and_accepts_camel_case() {
+        let regular: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({}))
+            .expect("changes without createOnly should deserialize");
+        assert!(!regular.create_only);
+
+        let initialization: WorkspaceSourceChanges =
+            serde_json::from_value(serde_json::json!({ "createOnly": true }))
+                .expect("camelCase createOnly should deserialize");
+        assert!(initialization.create_only);
+
+        let regular_text: WorkspaceSourceTextChange = serde_json::from_value(
+            serde_json::json!({ "path": "docs/a.md", "content": "regular" }),
+        )
+        .expect("text change without createOnly should deserialize");
+        assert!(!regular_text.create_only);
+
+        let create_only_text: WorkspaceSourceTextChange =
+            serde_json::from_value(serde_json::json!({
+                "path": "docs/a.md",
+                "content": "new",
+                "createOnly": true
+            }))
+            .expect("text change with camelCase createOnly should deserialize");
+        assert!(create_only_text.create_only);
+    }
+
+    #[test]
+    fn regular_commit_refuses_create_only_document_collision_before_writing_graph() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
+        let root = tempfile::tempdir().unwrap();
+        let original_graph = fs::read_to_string(fixture.join(MANIFEST_PATH)).unwrap();
+        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        fs::create_dir_all(root.path().join("docs/points/new-concept")).unwrap();
+        fs::write(root.path().join(MANIFEST_PATH), &original_graph).unwrap();
+        fs::write(
+            root.path().join("docs/points/new-concept/document.md"),
+            "orphan document\n",
+        )
+        .unwrap();
+
+        let mut changed_graph: serde_json::Value = serde_json::from_str(&original_graph).unwrap();
+        changed_graph["graph"]["points"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "new-concept",
+                "data": {
+                    "label": "New concept",
+                    "document": "docs/points/new-concept",
+                    "format": "markdown"
+                }
+            }));
+        let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+            "graph": serde_json::to_string_pretty(&changed_graph).unwrap(),
+            "documents": [{
+                "path": "docs/points/new-concept/document.md",
+                "content": "# New concept\n",
+                "createOnly": true
+            }]
+        }))
+        .unwrap();
+
+        let error = commit_workspace_source_changes_to_disk(root.path(), &changes).unwrap_err();
+
+        assert!(error.contains("already exists"));
+        assert_eq!(
+            fs::read_to_string(root.path().join(MANIFEST_PATH)).unwrap(),
+            original_graph
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("docs/points/new-concept/document.md")).unwrap(),
+            "orphan document\n"
+        );
+    }
+
+    #[test]
+    fn regular_commit_creates_complete_concept_when_new_documents_are_create_only() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
+        let root = tempfile::tempdir().unwrap();
+        let original_graph = fs::read_to_string(fixture.join(MANIFEST_PATH)).unwrap();
+        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        fs::write(root.path().join(MANIFEST_PATH), &original_graph).unwrap();
+
+        let mut changed_graph: serde_json::Value = serde_json::from_str(&original_graph).unwrap();
+        changed_graph["graph"]["points"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "new-concept",
+                "data": {
+                    "label": "New concept",
+                    "document": "docs/points/new-concept",
+                    "format": "markdown"
+                }
+            }));
+        let changed_graph = serde_json::to_string_pretty(&changed_graph).unwrap();
+        let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+            "graph": changed_graph,
+            "documents": [
+                {
+                    "path": "docs/points/new-concept/index.html",
+                    "content": "<article>New concept</article>\n",
+                    "createOnly": true
+                },
+                {
+                    "path": "docs/points/new-concept/document.md",
+                    "content": "# New concept\n",
+                    "createOnly": true
+                }
+            ]
+        }))
+        .unwrap();
+
+        commit_workspace_source_changes_to_disk(root.path(), &changes).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(root.path().join(MANIFEST_PATH)).unwrap(),
+            changed_graph
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("docs/points/new-concept/index.html")).unwrap(),
+            "<article>New concept</article>\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("docs/points/new-concept/document.md")).unwrap(),
+            "# New concept\n"
+        );
+    }
+
+    #[test]
+    fn create_only_text_change_cannot_delete() {
+        let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+            "documents": [{
+                "path": "docs/points/a/document.md",
+                "content": null,
+                "createOnly": true
+            }]
+        }))
+        .unwrap();
+
+        let error = validate_workspace_source_changes(&changes).unwrap_err();
+
+        assert!(error.contains("cannot delete"));
+    }
+
+    #[test]
+    fn create_only_commit_initializes_complete_concept_and_reopens_through_source_readers() {
+        let graph = r#"{
+  "schema": "derivon.authoring/v0.3.0",
+  "document": { "title": "One concept", "description": "Complete workspace" },
+  "graph": {
+    "points": [
+      { "id": "A", "data": { "label": "A", "document": "docs/points/a", "format": "markdown" } }
+    ],
+    "hyperedges": []
+  },
+  "view": {}
+}
+"#
+        .to_owned();
+        let rendered = "<article>Concept A</article>\n".to_owned();
+        let document = "# Concept A\n".to_owned();
+        let root = tempfile::tempdir().unwrap();
+
+        commit_workspace_source_changes_to_disk(
+            root.path(),
+            &WorkspaceSourceChanges {
+                graph: Some(graph.clone()),
+                create_only: true,
+                documents: vec![
+                    WorkspaceSourceTextChange {
+                        path: "docs/points/a/index.html".to_owned(),
+                        content: Some(rendered.clone()),
+                        create_only: false,
+                    },
+                    WorkspaceSourceTextChange {
+                        path: "docs/points/a/document.md".to_owned(),
+                        content: Some(document.clone()),
+                        create_only: false,
+                    },
+                ],
+                assets: vec![],
+                companion_metadata: vec![],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_workspace_source_text(root.path(), MANIFEST_PATH).unwrap(),
+            graph
+        );
+        assert_eq!(
+            read_workspace_source_text(root.path(), "docs/points/a/index.html").unwrap(),
+            rendered
+        );
+        assert_eq!(
+            read_workspace_source_text(root.path(), "docs/points/a/document.md").unwrap(),
+            document
+        );
+    }
+
+    #[test]
+    fn create_only_commit_refuses_to_overwrite_existing_manifest() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        fs::write(root.path().join(MANIFEST_PATH), "existing manifest\n").unwrap();
+
+        let error = commit_workspace_source_changes_to_disk(
+            root.path(),
+            &WorkspaceSourceChanges {
+                graph: Some(
+                    fs::read_to_string(
+                        Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .join("tests/fixtures/complete-workspace")
+                            .join(MANIFEST_PATH),
+                    )
+                    .unwrap(),
+                ),
+                create_only: true,
+                documents: vec![],
+                assets: vec![],
+                companion_metadata: vec![],
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("already exists"));
+        assert_eq!(
+            fs::read_to_string(root.path().join(MANIFEST_PATH)).unwrap(),
+            "existing manifest\n"
+        );
+    }
+
+    #[test]
+    fn create_only_collision_preserves_existing_document_and_removes_attempt_files() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs/points/a")).unwrap();
+        fs::write(
+            root.path().join("docs/points/a/document.md"),
+            "existing document\n",
+        )
+        .unwrap();
+
+        let error = commit_workspace_source_changes_to_disk(
+            root.path(),
+            &WorkspaceSourceChanges {
+                graph: Some(fs::read_to_string(fixture.join(MANIFEST_PATH)).unwrap()),
+                create_only: true,
+                documents: vec![
+                    WorkspaceSourceTextChange {
+                        path: "docs/points/a/index.html".to_owned(),
+                        content: Some("created by attempt\n".to_owned()),
+                        create_only: false,
+                    },
+                    WorkspaceSourceTextChange {
+                        path: "docs/points/a/document.md".to_owned(),
+                        content: Some("replacement\n".to_owned()),
+                        create_only: false,
+                    },
+                ],
+                assets: vec![],
+                companion_metadata: vec![],
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("already exists"));
+        assert_eq!(
+            fs::read_to_string(root.path().join("docs/points/a/document.md")).unwrap(),
+            "existing document\n"
+        );
+        assert!(!root.path().join(MANIFEST_PATH).exists());
+        assert!(!root.path().join("docs/points/a/index.html").exists());
     }
 
     #[test]
