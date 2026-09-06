@@ -1,4 +1,4 @@
-import { DOCUMENT_SCHEMA, type AuthoringDocument } from './domain';
+import { DOCUMENT_SCHEMA, parseDocument, type AuthoringDocument } from './domain';
 import type { AuthoringWorkspace } from './workspace';
 import example from './examples/replace-with/.derivon/workspace.json';
 import navigationExample from './examples/math-reforged/.derivon/workspace.json';
@@ -18,7 +18,9 @@ export const sampleWorkspace: AuthoringWorkspace = {
   ])),
 };
 
-const navigationDocument = navigationExample as AuthoringDocument;
+// The example ships as `derivon.workspace/v1`; the retired screens read it through the
+// boundary reader, which is the only thing here that knows what v1 removed and added.
+const navigationDocument = parseDocument(JSON.stringify(navigationExample));
 
 export const navigationSampleWorkspace: AuthoringWorkspace = {
   manifest: navigationDocument,

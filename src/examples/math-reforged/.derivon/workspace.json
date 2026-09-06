@@ -1,9 +1,66 @@
 {
-  "schema": "derivon.authoring/v0.3.0",
+  "schema": "derivon.workspace/v1",
   "document": {
     "description": "依据 Sheldon Axler《线性代数应该这样学（第四版）》重构的非线性知识图。概念节点仅承载定义；超边承载书中明确的推导关系。",
     "title": "线性代数应该这样学：概念与推导图"
   },
+  "tags": [
+    {
+      "id": "foundations",
+      "label": "基础与向量空间",
+      "description": "数域、坐标空间、子空间及其和与直和。"
+    },
+    {
+      "id": "dimension",
+      "label": "张成与维数",
+      "description": "线性组合到基与维数的这条线。"
+    },
+    {
+      "id": "linear-maps",
+      "label": "线性映射",
+      "description": "映射、矩阵表示、秩与秩零定理。"
+    },
+    {
+      "id": "duality",
+      "label": "对偶",
+      "description": "对偶空间与对偶映射。"
+    },
+    {
+      "id": "polynomials",
+      "label": "多项式与算子",
+      "description": "把多项式作用到算子上所需的东西。"
+    },
+    {
+      "id": "eigen",
+      "label": "特征值与对角化",
+      "description": "特征值、最小多项式、上三角化与对角化。"
+    },
+    {
+      "id": "inner-product",
+      "label": "内积与正交",
+      "description": "内积、范数、正交基、投影与正交补。"
+    },
+    {
+      "id": "spectral",
+      "label": "谱理论",
+      "description": "伴随、自伴、正规算子与谱定理。"
+    },
+    {
+      "id": "svd",
+      "label": "奇异值与应用",
+      "description": "奇异值、SVD、伪逆。"
+    },
+    {
+      "id": "jordan",
+      "label": "幂零与若当",
+      "description": "幂零算子、广义特征空间与若当型。"
+    },
+    {
+      "id": "multilinear",
+      "label": "多重线性与行列式",
+      "description": "双线性型、交错型、行列式、迹、张量积。"
+    }
+  ],
   "graph": {
     "points": [
       {
@@ -11,7 +68,10 @@
         "data": {
           "document": "docs/concept-foundation-fields",
           "format": "markdown",
-          "label": "数域"
+          "label": "数域",
+          "tags": [
+            "foundations"
+          ]
         }
       },
       {
@@ -19,7 +79,10 @@
         "data": {
           "document": "docs/concept-vector-space",
           "format": "markdown",
-          "label": "向量空间"
+          "label": "向量空间",
+          "tags": [
+            "foundations"
+          ]
         }
       },
       {
@@ -27,7 +90,10 @@
         "data": {
           "document": "docs/concept-subspace",
           "format": "markdown",
-          "label": "子空间"
+          "label": "子空间",
+          "tags": [
+            "foundations"
+          ]
         }
       },
       {
@@ -35,7 +101,10 @@
         "data": {
           "document": "docs/concept-direct-sum",
           "format": "markdown",
-          "label": "直和"
+          "label": "直和",
+          "tags": [
+            "foundations"
+          ]
         }
       },
       {
@@ -43,7 +112,10 @@
         "data": {
           "document": "docs/concept-span",
           "format": "markdown",
-          "label": "张成"
+          "label": "张成",
+          "tags": [
+            "dimension"
+          ]
         }
       },
       {
@@ -51,7 +123,10 @@
         "data": {
           "document": "docs/concept-independence",
           "format": "markdown",
-          "label": "线性无关"
+          "label": "线性无关",
+          "tags": [
+            "dimension"
+          ]
         }
       },
       {
@@ -59,7 +134,10 @@
         "data": {
           "document": "docs/concept-basis",
           "format": "markdown",
-          "label": "基"
+          "label": "基",
+          "tags": [
+            "dimension"
+          ]
         }
       },
       {
@@ -67,7 +145,10 @@
         "data": {
           "document": "docs/concept-dimension",
           "format": "markdown",
-          "label": "维数"
+          "label": "维数",
+          "tags": [
+            "dimension"
+          ]
         }
       },
       {
@@ -75,7 +156,10 @@
         "data": {
           "document": "docs/concept-linear-map",
           "format": "markdown",
-          "label": "线性映射"
+          "label": "线性映射",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -83,7 +167,10 @@
         "data": {
           "document": "docs/concept-null-range",
           "format": "markdown",
-          "label": "零空间"
+          "label": "零空间",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -91,7 +178,10 @@
         "data": {
           "document": "docs/concept-injective-surjective",
           "format": "markdown",
-          "label": "单射"
+          "label": "单射",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -99,7 +189,10 @@
         "data": {
           "document": "docs/concept-matrix",
           "format": "markdown",
-          "label": "线性映射的矩阵"
+          "label": "线性映射的矩阵",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -107,7 +200,10 @@
         "data": {
           "document": "docs/concept-rank",
           "format": "markdown",
-          "label": "秩"
+          "label": "秩",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -115,7 +211,10 @@
         "data": {
           "document": "docs/concept-isomorphism",
           "format": "markdown",
-          "label": "同构"
+          "label": "同构",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -123,7 +222,10 @@
         "data": {
           "document": "docs/concept-quotient",
           "format": "markdown",
-          "label": "商空间"
+          "label": "商空间",
+          "tags": [
+            "foundations"
+          ]
         }
       },
       {
@@ -131,7 +233,10 @@
         "data": {
           "document": "docs/concept-dual",
           "format": "markdown",
-          "label": "对偶空间"
+          "label": "对偶空间",
+          "tags": [
+            "duality"
+          ]
         }
       },
       {
@@ -139,7 +244,10 @@
         "data": {
           "document": "docs/concept-polynomial",
           "format": "markdown",
-          "label": "多项式"
+          "label": "多项式",
+          "tags": [
+            "polynomials"
+          ]
         }
       },
       {
@@ -147,7 +255,10 @@
         "data": {
           "document": "docs/concept-operator",
           "format": "markdown",
-          "label": "算子"
+          "label": "算子",
+          "tags": [
+            "polynomials"
+          ]
         }
       },
       {
@@ -155,7 +266,10 @@
         "data": {
           "document": "docs/concept-eigen",
           "format": "markdown",
-          "label": "特征值"
+          "label": "特征值",
+          "tags": [
+            "eigen"
+          ]
         }
       },
       {
@@ -163,7 +277,10 @@
         "data": {
           "document": "docs/concept-minimal-polynomial",
           "format": "markdown",
-          "label": "最小多项式"
+          "label": "最小多项式",
+          "tags": [
+            "eigen"
+          ]
         }
       },
       {
@@ -171,7 +288,10 @@
         "data": {
           "document": "docs/concept-triangular-diagonal",
           "format": "markdown",
-          "label": "上三角化"
+          "label": "上三角化",
+          "tags": [
+            "eigen"
+          ]
         }
       },
       {
@@ -179,7 +299,10 @@
         "data": {
           "document": "docs/concept-inner-product",
           "format": "markdown",
-          "label": "内积空间"
+          "label": "内积空间",
+          "tags": [
+            "inner-product"
+          ]
         }
       },
       {
@@ -187,7 +310,10 @@
         "data": {
           "document": "docs/concept-norm-orthogonal",
           "format": "markdown",
-          "label": "范数"
+          "label": "范数",
+          "tags": [
+            "inner-product"
+          ]
         }
       },
       {
@@ -195,7 +321,10 @@
         "data": {
           "document": "docs/concept-orthonormal",
           "format": "markdown",
-          "label": "规范正交基"
+          "label": "规范正交基",
+          "tags": [
+            "inner-product"
+          ]
         }
       },
       {
@@ -203,7 +332,10 @@
         "data": {
           "document": "docs/concept-orthogonal-projection",
           "format": "markdown",
-          "label": "正交投影"
+          "label": "正交投影",
+          "tags": [
+            "inner-product"
+          ]
         }
       },
       {
@@ -211,7 +343,10 @@
         "data": {
           "document": "docs/concept-adjoint",
           "format": "markdown",
-          "label": "伴随"
+          "label": "伴随",
+          "tags": [
+            "spectral"
+          ]
         }
       },
       {
@@ -219,7 +354,10 @@
         "data": {
           "document": "docs/concept-normal-selfadjoint",
           "format": "markdown",
-          "label": "正规算子"
+          "label": "正规算子",
+          "tags": [
+            "spectral"
+          ]
         }
       },
       {
@@ -227,7 +365,10 @@
         "data": {
           "document": "docs/concept-spectral-theorem",
           "format": "markdown",
-          "label": "谱定理"
+          "label": "谱定理",
+          "tags": [
+            "spectral"
+          ]
         }
       },
       {
@@ -235,7 +376,10 @@
         "data": {
           "document": "docs/concept-isometry-unitary",
           "format": "markdown",
-          "label": "等距映射"
+          "label": "等距映射",
+          "tags": [
+            "spectral"
+          ]
         }
       },
       {
@@ -243,7 +387,10 @@
         "data": {
           "document": "docs/concept-svd",
           "format": "markdown",
-          "label": "奇异值分解"
+          "label": "奇异值分解",
+          "tags": [
+            "svd"
+          ]
         }
       },
       {
@@ -251,7 +398,10 @@
         "data": {
           "document": "docs/concept-pseudoinverse",
           "format": "markdown",
-          "label": "伪逆"
+          "label": "伪逆",
+          "tags": [
+            "svd"
+          ]
         }
       },
       {
@@ -259,7 +409,10 @@
         "data": {
           "document": "docs/concept-nilpotent",
           "format": "markdown",
-          "label": "幂零算子"
+          "label": "幂零算子",
+          "tags": [
+            "jordan"
+          ]
         }
       },
       {
@@ -267,7 +420,10 @@
         "data": {
           "document": "docs/concept-characteristic",
           "format": "markdown",
-          "label": "特征多项式"
+          "label": "特征多项式",
+          "tags": [
+            "eigen"
+          ]
         }
       },
       {
@@ -275,7 +431,10 @@
         "data": {
           "document": "docs/concept-jordan",
           "format": "markdown",
-          "label": "若当基"
+          "label": "若当基",
+          "tags": [
+            "jordan"
+          ]
         }
       },
       {
@@ -283,7 +442,10 @@
         "data": {
           "document": "docs/concept-trace",
           "format": "markdown",
-          "label": "迹"
+          "label": "迹",
+          "tags": [
+            "multilinear"
+          ]
         }
       },
       {
@@ -291,7 +453,10 @@
         "data": {
           "document": "docs/concept-bilinear",
           "format": "markdown",
-          "label": "双线性型"
+          "label": "双线性型",
+          "tags": [
+            "multilinear"
+          ]
         }
       },
       {
@@ -299,7 +464,10 @@
         "data": {
           "document": "docs/concept-alternating",
           "format": "markdown",
-          "label": "交错多重线性型"
+          "label": "交错多重线性型",
+          "tags": [
+            "multilinear"
+          ]
         }
       },
       {
@@ -307,7 +475,10 @@
         "data": {
           "document": "docs/concept-determinant",
           "format": "markdown",
-          "label": "行列式"
+          "label": "行列式",
+          "tags": [
+            "multilinear"
+          ]
         }
       },
       {
@@ -315,7 +486,10 @@
         "data": {
           "document": "docs/concept-tensor",
           "format": "markdown",
-          "label": "张量积"
+          "label": "张量积",
+          "tags": [
+            "multilinear"
+          ]
         }
       },
       {
@@ -323,7 +497,10 @@
         "data": {
           "document": "docs/concept-finite-tuple",
           "format": "markdown",
-          "label": "有限有序组"
+          "label": "有限有序组",
+          "tags": [
+            "foundations"
+          ]
         }
       },
       {
@@ -331,7 +508,10 @@
         "data": {
           "document": "docs/concept-coordinate-space",
           "format": "markdown",
-          "label": "坐标空间"
+          "label": "坐标空间",
+          "tags": [
+            "foundations"
+          ]
         }
       },
       {
@@ -339,7 +519,10 @@
         "data": {
           "document": "docs/concept-subspace-sum",
           "format": "markdown",
-          "label": "子空间的和"
+          "label": "子空间的和",
+          "tags": [
+            "foundations"
+          ]
         }
       },
       {
@@ -347,7 +530,10 @@
         "data": {
           "document": "docs/concept-linear-combination",
           "format": "markdown",
-          "label": "线性组合"
+          "label": "线性组合",
+          "tags": [
+            "dimension"
+          ]
         }
       },
       {
@@ -355,7 +541,10 @@
         "data": {
           "document": "docs/concept-finite-dimensional",
           "format": "markdown",
-          "label": "有限维"
+          "label": "有限维",
+          "tags": [
+            "dimension"
+          ]
         }
       },
       {
@@ -363,7 +552,10 @@
         "data": {
           "document": "docs/concept-range",
           "format": "markdown",
-          "label": "值域"
+          "label": "值域",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -371,7 +563,10 @@
         "data": {
           "document": "docs/concept-surjective",
           "format": "markdown",
-          "label": "满射"
+          "label": "满射",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -379,7 +574,10 @@
         "data": {
           "document": "docs/concept-invertible",
           "format": "markdown",
-          "label": "可逆线性映射"
+          "label": "可逆线性映射",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -387,7 +585,10 @@
         "data": {
           "document": "docs/concept-rank-nullity",
           "format": "markdown",
-          "label": "线性映射基本定理"
+          "label": "线性映射基本定理",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -395,7 +596,10 @@
         "data": {
           "document": "docs/concept-change-of-basis",
           "format": "markdown",
-          "label": "换基"
+          "label": "换基",
+          "tags": [
+            "linear-maps"
+          ]
         }
       },
       {
@@ -403,7 +607,10 @@
         "data": {
           "document": "docs/concept-dual-map",
           "format": "markdown",
-          "label": "对偶映射"
+          "label": "对偶映射",
+          "tags": [
+            "duality"
+          ]
         }
       },
       {
@@ -411,7 +618,10 @@
         "data": {
           "document": "docs/concept-polynomial-zero",
           "format": "markdown",
-          "label": "多项式的零点"
+          "label": "多项式的零点",
+          "tags": [
+            "polynomials"
+          ]
         }
       },
       {
@@ -419,7 +629,10 @@
         "data": {
           "document": "docs/concept-invariant-subspace",
           "format": "markdown",
-          "label": "不变子空间"
+          "label": "不变子空间",
+          "tags": [
+            "polynomials"
+          ]
         }
       },
       {
@@ -427,7 +640,10 @@
         "data": {
           "document": "docs/concept-eigenvector",
           "format": "markdown",
-          "label": "特征向量"
+          "label": "特征向量",
+          "tags": [
+            "eigen"
+          ]
         }
       },
       {
@@ -435,7 +651,10 @@
         "data": {
           "document": "docs/concept-diagonalization",
           "format": "markdown",
-          "label": "对角化"
+          "label": "对角化",
+          "tags": [
+            "eigen"
+          ]
         }
       },
       {
@@ -443,7 +662,10 @@
         "data": {
           "document": "docs/concept-orthogonality",
           "format": "markdown",
-          "label": "正交"
+          "label": "正交",
+          "tags": [
+            "inner-product"
+          ]
         }
       },
       {
@@ -451,7 +673,10 @@
         "data": {
           "document": "docs/concept-orthogonal-complement",
           "format": "markdown",
-          "label": "正交补"
+          "label": "正交补",
+          "tags": [
+            "inner-product"
+          ]
         }
       },
       {
@@ -459,7 +684,10 @@
         "data": {
           "document": "docs/concept-self-adjoint",
           "format": "markdown",
-          "label": "自伴算子"
+          "label": "自伴算子",
+          "tags": [
+            "spectral"
+          ]
         }
       },
       {
@@ -467,7 +695,10 @@
         "data": {
           "document": "docs/concept-positive-operator",
           "format": "markdown",
-          "label": "正算子"
+          "label": "正算子",
+          "tags": [
+            "spectral"
+          ]
         }
       },
       {
@@ -475,7 +706,10 @@
         "data": {
           "document": "docs/concept-unitary-operator",
           "format": "markdown",
-          "label": "幺正算子"
+          "label": "幺正算子",
+          "tags": [
+            "spectral"
+          ]
         }
       },
       {
@@ -483,7 +717,10 @@
         "data": {
           "document": "docs/concept-singular-value",
           "format": "markdown",
-          "label": "奇异值"
+          "label": "奇异值",
+          "tags": [
+            "svd"
+          ]
         }
       },
       {
@@ -491,7 +728,10 @@
         "data": {
           "document": "docs/concept-generalized-eigenspace",
           "format": "markdown",
-          "label": "广义特征空间"
+          "label": "广义特征空间",
+          "tags": [
+            "jordan"
+          ]
         }
       },
       {
@@ -499,7 +739,10 @@
         "data": {
           "document": "docs/concept-cayley-hamilton",
           "format": "markdown",
-          "label": "Cayley-Hamilton 定理"
+          "label": "Cayley-Hamilton 定理",
+          "tags": [
+            "eigen"
+          ]
         }
       },
       {
@@ -507,7 +750,10 @@
         "data": {
           "document": "docs/concept-jordan-form",
           "format": "markdown",
-          "label": "若当型"
+          "label": "若当型",
+          "tags": [
+            "jordan"
+          ]
         }
       },
       {
@@ -515,14 +761,17 @@
         "data": {
           "document": "docs/concept-quadratic-form",
           "format": "markdown",
-          "label": "二次型"
+          "label": "二次型",
+          "tags": [
+            "multilinear"
+          ]
         }
       }
     ],
     "hyperedges": [
       {
         "id": "given-fields",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "foundation-fields",
           "finite-tuple"
@@ -535,7 +784,7 @@
       },
       {
         "id": "def-vector",
-        "weight": 4.0,
+        "weight": 4,
         "tails": [
           "foundation-fields",
           "coordinate-space"
@@ -548,7 +797,7 @@
       },
       {
         "id": "subspace-test",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "vector-space"
         ],
@@ -560,7 +809,7 @@
       },
       {
         "id": "sum-direct",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "subspace-sum"
         ],
@@ -572,7 +821,7 @@
       },
       {
         "id": "span-minimal",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "linear-combination",
           "subspace"
@@ -585,7 +834,7 @@
       },
       {
         "id": "dependence",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "span"
         ],
@@ -597,7 +846,7 @@
       },
       {
         "id": "basis-criterion",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "span",
           "independence"
@@ -610,7 +859,7 @@
       },
       {
         "id": "basis-exists",
-        "weight": 5.0,
+        "weight": 5,
         "tails": [
           "finite-dimensional",
           "basis"
@@ -623,7 +872,7 @@
       },
       {
         "id": "linear-map-def",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "vector-space"
         ],
@@ -635,7 +884,7 @@
       },
       {
         "id": "null-range-subspaces",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "linear-map",
           "subspace"
@@ -648,7 +897,7 @@
       },
       {
         "id": "fundamental-map",
-        "weight": 4.0,
+        "weight": 4,
         "tails": [
           "null-range",
           "range",
@@ -662,7 +911,7 @@
       },
       {
         "id": "matrix-representation",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "linear-map",
           "basis"
@@ -675,7 +924,7 @@
       },
       {
         "id": "rank-equality",
-        "weight": 4.0,
+        "weight": 4,
         "tails": [
           "matrix",
           "dimension"
@@ -688,7 +937,7 @@
       },
       {
         "id": "isomorphism-dim",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "invertible"
         ],
@@ -700,7 +949,7 @@
       },
       {
         "id": "quotient-space",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "subspace",
           "vector-space"
@@ -713,7 +962,7 @@
       },
       {
         "id": "dual-build",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "dual",
           "linear-map"
@@ -726,7 +975,7 @@
       },
       {
         "id": "given-polynomial",
-        "weight": 5.0,
+        "weight": 5,
         "tails": [
           "foundation-fields"
         ],
@@ -738,7 +987,7 @@
       },
       {
         "id": "operator-invariance",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "operator",
           "subspace"
@@ -751,7 +1000,7 @@
       },
       {
         "id": "eigen-equivalence",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "operator",
           "null-range"
@@ -764,7 +1013,7 @@
       },
       {
         "id": "minimal-exists",
-        "weight": 4.0,
+        "weight": 4,
         "tails": [
           "operator",
           "polynomial",
@@ -778,7 +1027,7 @@
       },
       {
         "id": "triangular",
-        "weight": 5.0,
+        "weight": 5,
         "tails": [
           "eigenvector",
           "basis"
@@ -791,7 +1040,7 @@
       },
       {
         "id": "inner-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "vector-space",
           "foundation-fields"
@@ -804,7 +1053,7 @@
       },
       {
         "id": "norm-cs",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "inner-product"
         ],
@@ -816,7 +1065,7 @@
       },
       {
         "id": "gram-schmidt",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "basis",
           "norm-orthogonal",
@@ -830,7 +1079,7 @@
       },
       {
         "id": "projection",
-        "weight": 4.0,
+        "weight": 4,
         "tails": [
           "subspace",
           "orthonormal",
@@ -844,7 +1093,7 @@
       },
       {
         "id": "adjoint-riesz",
-        "weight": 4.0,
+        "weight": 4,
         "tails": [
           "linear-map",
           "inner-product",
@@ -858,7 +1107,7 @@
       },
       {
         "id": "normal-classes",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "self-adjoint"
         ],
@@ -870,7 +1119,7 @@
       },
       {
         "id": "spectral",
-        "weight": 5.0,
+        "weight": 5,
         "tails": [
           "triangular-diagonal",
           "orthonormal",
@@ -884,7 +1133,7 @@
       },
       {
         "id": "unitary",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "isometry-unitary",
           "adjoint",
@@ -898,7 +1147,7 @@
       },
       {
         "id": "svd-step",
-        "weight": 4.0,
+        "weight": 4,
         "tails": [
           "singular-value",
           "adjoint",
@@ -912,7 +1161,7 @@
       },
       {
         "id": "pinv-step",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "svd",
           "orthogonal-projection"
@@ -925,7 +1174,7 @@
       },
       {
         "id": "nilpotent-generalized",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "null-range",
           "finite-dimensional",
@@ -940,7 +1189,7 @@
       },
       {
         "id": "charpoly",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "characteristic",
           "generalized-eigenspace",
@@ -954,7 +1203,7 @@
       },
       {
         "id": "jordan-chains",
-        "weight": 5.0,
+        "weight": 5,
         "tails": [
           "nilpotent",
           "generalized-eigenspace",
@@ -971,7 +1220,7 @@
       },
       {
         "id": "trace-invariant",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "matrix",
           "characteristic",
@@ -985,7 +1234,7 @@
       },
       {
         "id": "bilinear-matrix",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "bilinear"
         ],
@@ -997,7 +1246,7 @@
       },
       {
         "id": "alternating-space",
-        "weight": 4.0,
+        "weight": 4,
         "tails": [
           "bilinear",
           "dimension"
@@ -1010,7 +1259,7 @@
       },
       {
         "id": "det-build",
-        "weight": 3.0,
+        "weight": 3,
         "tails": [
           "alternating",
           "operator"
@@ -1023,7 +1272,7 @@
       },
       {
         "id": "tensor-linearize",
-        "weight": 4.0,
+        "weight": 4,
         "tails": [
           "dual",
           "bilinear"
@@ -1036,7 +1285,7 @@
       },
       {
         "id": "subspace-sum-def",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "subspace"
         ],
@@ -1048,7 +1297,7 @@
       },
       {
         "id": "linear-combination-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "vector-space"
         ],
@@ -1060,7 +1309,7 @@
       },
       {
         "id": "finite-dimensional-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "span"
         ],
@@ -1072,7 +1321,7 @@
       },
       {
         "id": "range-subspace",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "linear-map",
           "subspace"
@@ -1085,7 +1334,7 @@
       },
       {
         "id": "injective-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "linear-map"
         ],
@@ -1097,7 +1346,7 @@
       },
       {
         "id": "surjective-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "linear-map"
         ],
@@ -1109,7 +1358,7 @@
       },
       {
         "id": "invertible-bijection",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "injective-surjective",
           "surjective"
@@ -1122,7 +1371,7 @@
       },
       {
         "id": "change-of-basis-build",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "isomorphism",
           "basis",
@@ -1136,7 +1385,7 @@
       },
       {
         "id": "dual-space-build",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "linear-map"
         ],
@@ -1148,7 +1397,7 @@
       },
       {
         "id": "polynomial-zero-factor",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "polynomial"
         ],
@@ -1160,7 +1409,7 @@
       },
       {
         "id": "operator-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "linear-map"
         ],
@@ -1172,7 +1421,7 @@
       },
       {
         "id": "eigenvector-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "operator",
           "eigen"
@@ -1185,7 +1434,7 @@
       },
       {
         "id": "diagonalization-eigenbasis",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "eigenvector",
           "basis",
@@ -1199,7 +1448,7 @@
       },
       {
         "id": "orthogonality-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "inner-product"
         ],
@@ -1211,7 +1460,7 @@
       },
       {
         "id": "orthogonal-complement-def",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "subspace",
           "orthogonality"
@@ -1224,7 +1473,7 @@
       },
       {
         "id": "normal-operator-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "adjoint",
           "operator"
@@ -1237,7 +1486,7 @@
       },
       {
         "id": "self-adjoint-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "adjoint",
           "operator"
@@ -1250,7 +1499,7 @@
       },
       {
         "id": "self-adjoint-normal",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "self-adjoint"
         ],
@@ -1262,7 +1511,7 @@
       },
       {
         "id": "spectral-self-adjoint",
-        "weight": 5.0,
+        "weight": 5,
         "tails": [
           "orthonormal",
           "self-adjoint"
@@ -1275,7 +1524,7 @@
       },
       {
         "id": "isometry-def",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "inner-product",
           "linear-map"
@@ -1288,7 +1537,7 @@
       },
       {
         "id": "singular-values-spectral",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "adjoint",
           "positive-operator",
@@ -1302,7 +1551,7 @@
       },
       {
         "id": "nilpotent-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "operator"
         ],
@@ -1314,7 +1563,7 @@
       },
       {
         "id": "characteristic-build",
-        "weight": 2.0,
+        "weight": 2,
         "tails": [
           "generalized-eigenspace",
           "dimension"
@@ -1327,7 +1576,7 @@
       },
       {
         "id": "jordan-form-build",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "jordan",
           "matrix"
@@ -1340,7 +1589,7 @@
       },
       {
         "id": "bilinear-form-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "vector-space",
           "foundation-fields"
@@ -1353,7 +1602,7 @@
       },
       {
         "id": "null-space-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "linear-map"
         ],
@@ -1365,7 +1614,7 @@
       },
       {
         "id": "range-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "linear-map"
         ],
@@ -1377,7 +1626,7 @@
       },
       {
         "id": "eigenvalue-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "operator"
         ],
@@ -1389,7 +1638,7 @@
       },
       {
         "id": "triangularization-def",
-        "weight": 1.0,
+        "weight": 1,
         "tails": [
           "operator",
           "basis",
@@ -1402,8 +1651,5 @@
         }
       }
     ]
-  },
-  "view": {
-    "replacements": []
   }
 }

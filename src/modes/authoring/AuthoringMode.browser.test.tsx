@@ -7,7 +7,7 @@ import type { WorkspaceContent } from '../../workspace/index';
 import { AuthoringMode } from './AuthoringMode';
 
 const emptyContent: WorkspaceContent = {
-  graphText: '', title: 'Test', graph: { points: [], hyperedges: [] }, documents: {}, companionMetadata: {}, diagnostics: [], requiresMigrationConsent: false,
+  graphText: '', title: 'Test', graph: { points: [], hyperedges: [] }, documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [], requiresMigrationConsent: false,
 };
 let container: HTMLDivElement;
 let root: Root | undefined;
@@ -35,7 +35,7 @@ function render(content: WorkspaceContent, authoring?: AuthoringCommands, onSele
 }
 
 it('submits a complete creation intent and selects its result without a body field', async () => {
-  const authoring: AuthoringCommands = { createConcept: vi.fn(() => 'c-1'), updateDocument: vi.fn(), protectDraft: vi.fn() };
+  const authoring: AuthoringCommands = { createConcept: vi.fn(() => 'c-1'), updateDocument: vi.fn(), updateConceptTags: vi.fn(), updateTagDeclarations: vi.fn(), updateOrientation: vi.fn(), protectDraft: vi.fn() };
   const onSelect = render(emptyContent, authoring);
   await page.getByRole('button', { name: '新建概念', exact: true }).click();
   await page.getByLabelText('名称').fill('Vector space');
@@ -47,7 +47,7 @@ it('submits a complete creation intent and selects its result without a body fie
 });
 
 it('reports an empty required label inline', async () => {
-  const authoring: AuthoringCommands = { createConcept: vi.fn(() => 'unused'), updateDocument: vi.fn(), protectDraft: vi.fn() };
+  const authoring: AuthoringCommands = { createConcept: vi.fn(() => 'unused'), updateDocument: vi.fn(), updateConceptTags: vi.fn(), updateTagDeclarations: vi.fn(), updateOrientation: vi.fn(), protectDraft: vi.fn() };
   render(emptyContent, authoring);
   await page.getByRole('button', { name: '新建概念', exact: true }).click();
   await page.getByRole('button', { name: '创建' }).click();
@@ -56,7 +56,7 @@ it('reports an empty required label inline', async () => {
 });
 
 it('keeps an unfinished form when hidden and reports command failures inline', async () => {
-  const authoring: AuthoringCommands = { createConcept: vi.fn(() => { throw new Error('ID 已存在'); }), updateDocument: vi.fn(), protectDraft: vi.fn() };
+  const authoring: AuthoringCommands = { createConcept: vi.fn(() => { throw new Error('ID 已存在'); }), updateDocument: vi.fn(), updateConceptTags: vi.fn(), updateTagDeclarations: vi.fn(), updateOrientation: vi.fn(), protectDraft: vi.fn() };
   render(emptyContent, authoring);
   await page.getByRole('button', { name: '新建概念', exact: true }).click();
   await page.getByLabelText('名称').fill('Kept draft');

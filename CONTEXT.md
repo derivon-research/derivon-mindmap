@@ -92,6 +92,10 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 把端口映射到具体宿主能力的适配器。v1 包含 web 内置工作区只读实现和桌面本地文件系统读写实现，并保留未来远端实现的位置而不实现远端能力；只有经桌面创作写权限接受的内容变更可由工作区同步落盘，切换模式不撤销已有保存工作，web 与学习侧不因此获得写权限。
 
+**`RouteSolver` 端口**
+
+应用求解一条路线的唯一接口。调用方给出图、目标概念与已知概念，得到一个已解子图、可执行顺序与阻塞诊断；接口只说产品词汇（概念、推导），把它们投影为数学模型是实现的事。它是宿主能力：桌面实现经 `derivon-core` 求解，web 在接入前没有实现，预览因此明说“还不能求解路线”，而不自己算一个近似解。
+
 **渲染层（rendering layer）**
 
 图形渲染模块。它接收完整的渲染视图模型并输出选中与激活两类领域事件；平移、缩放与悬停留在模块内部，应用既看不见也不控制。它不读取 `WorkspaceSource`，不认识应用状态类型，也不自行改变目标、已知或进度；它只读，不可能产生一次工作区变更。G6、布局与细节层次藏在这个边界之后，并位于懒加载边界内。视图模型按领域视图种类判别（全图、关联布局、路线子图），不按布局算法判别；新增一种判别先要在本文档里成为一个词。视图模型只携带图的结构与标记，不携带对象文档内容；标记是可叠加的集合，标记到颜色的映射与叠加规则属于模块内部，接口上不出现颜色。
@@ -110,11 +114,11 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 图作者为上述入口过程随工作区提供的可选、声明式设置。它可以给出默认目标与默认已知（两者合称默认路线种子），按顺序提出开场问题，为每道题提供单选或多选选项，并把选项限制性地映射为“设置/追加目标”或“设置/追加已知”。例如，选择“我要看懂一篇用到 SVD 的论文”可以追加对应的目标概念；配置只声明这个结果，不执行代码，也不直接操作应用状态。
 
-开局配置属于工作区内容，以独立伴随文档存在，不向 `derivon.authoring/v0.3.0` manifest 增加字段。没有配置时，应用使用通用入口询问目标与已知。
+开局配置属于工作区内容，以独立伴随文档 `.derivon/orientation.json` 存在，协议为 `derivon.orientation/v1`，不向工作区清单增加字段，清单版本也不随它移动。没有配置时，应用使用通用入口询问目标与已知；配置里出现会让路线出错的问题（悬空引用、匹配不到概念的标签、多选题上的选项级跳转）时，它不进入有效开局，学习侧带着诊断回到通用入口。
 
 **开局流程（orientation flow）**
 
-实际带学习者完成开局的应用状态机。它读取开局配置，把回答转换成经过校验的状态转换，并更新本次目标、已知和进度。确定性问答和自然语言对话都只能走这同一套转换。开局流程本身不依赖 AI；没有 `ConversationProvider` 时，web 和桌面仍能用确定性问答完成开局。
+实际带学习者完成开局的应用状态机。它读取开局配置，把回答转换成经过校验的状态转换，并更新本次目标、已知和进度。确定性问答和自然语言对话都只能走这同一套转换：转换的入口是一组**开局意图（orientation intent）**——回答、跳过、直接设定目标或已知、重来——确定性界面与 `ConversationProvider` 各自把交互翻译成意图，此外没有第二条路径。开局流程本身不依赖 AI；没有 `ConversationProvider` 时，web 和桌面仍能用确定性问答完成开局。
 
 **`ConversationProvider`**
 
@@ -146,7 +150,17 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 v0.4.2 曾用 authoring manifest 的 `view.replacements` 把一组对象显示为另一组对象。实践表明它没有有效降低模型复杂度，反而增加了编辑、渲染和文档行为的分支，因此 v1 不再把替换视图作为产品能力，不建立新增、编辑或显示路径。
 
-为保持 `derivon.authoring/v0.3.0` 工作区兼容，既有字段只在工作区边界作为旧数据处理，不进入 v1 的产品状态或模块设计。需要组织和筛选概念时使用 tag；tag 只做分类，不声称对象之间等价，也不改变图语义。
+为保持既有工作区兼容，`view.replacements` 只在工作区边界作为旧数据读入，不进入 v1 的产品状态或模块设计，也不会被写回。需要组织和筛选概念时使用 tag；tag 只做分类，不声称对象之间等价，也不改变图语义。
+
+### 工作区协议
+
+**工作区清单（workspace manifest）**
+
+工作区内容的目录：文档元数据、概念与推导、tag 声明。协议是 `derivon.workspace/v1`，按产物而不是按写方命名（见 `docs/adr/0007-name-the-workspace-protocol-after-the-artifact.md`）。
+
+**输入方言（input dialect）**
+
+仍可读入、但不会被写出的旧协议串。`derivon.authoring/v0.3.0` 直接读为 v1，不需要作者确认；`derivon.authoring/v0.2.0` 仍需升级确认。方言只存在于 `src/workspace/` 的边界，边界之上没有任何模块见得到协议串或旧字段。
 
 authoring manifest 的盘上结构见 [README 的“工作区格式”](README.md#工作区格式)。
 
@@ -172,7 +186,7 @@ authoring manifest 的盘上结构见 [README 的“工作区格式”](README.m
 | `src/modes/learning/` | `src/modes/learning/index.ts` | 开局状态机、路线预览、路线学习，以及大图浏览中的学习者操作与应用状态 | 改目标/已知/进度行为或学习侧界面 |
 | `src/modes/authoring/` | `src/modes/authoring/index.ts` | 桌面创作工作流、编辑界面，以及大图浏览中的作者操作 | 增加创作功能或 tag 编辑；同时检查工作区提交契约 |
 | `src/workspace/` | `src/workspace/index.ts` | authoring manifest、对象文档、tag、伴随文档及旧字段的解析、校验与完整内容变更，不做宿主 I/O | 改工作区内容模型、引用影响规则或开局配置 |
-| `src/ports/` | `src/ports/WorkspaceSource.ts`, `src/ports/ConversationProvider.ts` | `WorkspaceSource`、`ConversationProvider` 及求解等小接口 | 改跨边界能力；随后检查每个实现和契约测试 |
+| `src/ports/` | `src/ports/WorkspaceSource.ts`, `src/ports/ConversationProvider.ts`, `src/ports/RouteSolver.ts` | `WorkspaceSource`、`ConversationProvider`、`RouteSolver` 及其它小接口 | 改跨边界能力；随后检查每个实现和契约测试 |
 | `src/hosts/web/` | `src/hosts/web/index.ts` | web composition 与只读端口实现 | 改 web 能力、内置工作区加载或确定性 provider |
 | `src/hosts/desktop/` | `src/hosts/desktop/index.ts` | desktop composition、本地工作区和 Pi SDK bridge | 改本地文件、桌面 IPC 或桌面对话实现 |
 | `src/rendering/` | `src/rendering/index.ts` | 渲染视图模型、事件契约和懒加载的 G6 实现 | 改图的可视表达或图交互事件 |

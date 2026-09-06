@@ -26,7 +26,7 @@ it('opens the overview, selects neighbourhood objects, and opens the selected ob
   ].map((edge) => ({ ...edge, weight: 1, data: { document: `docs/${edge.id}`, format: 'html' as const } }));
   const content: WorkspaceContent = { title: 'Relations', graphText: '', graph: { points, hyperedges },
     documents: Object.fromEntries([...points, ...hyperedges].map((item) => [`${item.data.document}/index.html`, { status: 'ready', text: '<p>Body</p>' }])),
-    companionMetadata: {}, diagnostics: [], requiresMigrationConsent: false };
+    companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [], requiresMigrationConsent: false };
   container = document.createElement('div'); container.style.cssText = 'width:1100px;height:700px'; document.body.append(container);
   root = createRoot(container);
   await act(async () => root!.render(<AuthoringMode workspace={{ id: 'test', name: 'Relations' }} content={content} selectedConceptId={null} onSelectConcept={vi.fn()} />));

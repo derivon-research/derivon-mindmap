@@ -1,0 +1,274 @@
+{
+  "schema": "derivon.orientation/v1",
+  "seed": {
+    "targets": [
+      "basis"
+    ],
+    "known": [
+      "foundation-fields",
+      "finite-tuple"
+    ]
+  },
+  "questions": [
+    {
+      "id": "why",
+      "prompt": "这张图有 64 个概念。别看图——先说你为什么来。",
+      "select": "one",
+      "options": [
+        {
+          "id": "svd-paper",
+          "label": "要看懂一篇用到 SVD 的论文",
+          "actions": [
+            {
+              "op": "set-targets",
+              "points": [
+                "svd",
+                "pseudoinverse"
+              ]
+            }
+          ],
+          "next": "svd-background"
+        },
+        {
+          "id": "spectral-class",
+          "label": "课上讲到谱定理，跟不上",
+          "actions": [
+            {
+              "op": "set-targets",
+              "points": [
+                "spectral-theorem"
+              ]
+            }
+          ],
+          "next": "spectral-background"
+        },
+        {
+          "id": "determinant-why",
+          "label": "想知道行列式到底是什么，不想再背公式",
+          "actions": [
+            {
+              "op": "set-targets",
+              "points": [
+                "determinant"
+              ]
+            }
+          ],
+          "next": "general-background"
+        },
+        {
+          "id": "read-axler",
+          "label": "在自学 Axler，想有条主线走完",
+          "actions": [
+            {
+              "op": "set-targets",
+              "points": [
+                "jordan-form",
+                "spectral-theorem",
+                "singular-value"
+              ]
+            }
+          ],
+          "next": "general-background"
+        },
+        {
+          "id": "browse",
+          "label": "还不确定，先随便逛逛",
+          "actions": [],
+          "next": "finish"
+        }
+      ]
+    },
+    {
+      "id": "svd-background",
+      "prompt": "读 SVD 最省时间的问法是：下面这些你已经会哪些？会的点亮。",
+      "select": "many",
+      "next": "finish",
+      "options": [
+        {
+          "id": "has-eigen",
+          "label": "特征值、特征向量、对角化",
+          "actions": [
+            {
+              "op": "add-known",
+              "points": [
+                "eigen",
+                "eigenvector",
+                "diagonalization"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "has-inner",
+          "label": "内积、正交基、正交投影",
+          "actions": [
+            {
+              "op": "add-known",
+              "tags": [
+                "inner-product"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "has-spectral",
+          "label": "自伴算子和谱定理",
+          "actions": [
+            {
+              "op": "add-known",
+              "points": [
+                "self-adjoint",
+                "normal-selfadjoint",
+                "spectral-theorem"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "has-none",
+          "label": "都不太有把握",
+          "actions": []
+        }
+      ]
+    },
+    {
+      "id": "spectral-background",
+      "prompt": "谱定理卡住的地方一般不在谱定理本身。这些呢？",
+      "select": "many",
+      "next": "finish",
+      "options": [
+        {
+          "id": "has-operators",
+          "label": "算子、不变子空间、特征值这一套",
+          "actions": [
+            {
+              "op": "add-known",
+              "tags": [
+                "polynomials",
+                "eigen"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "has-inner-basics",
+          "label": "内积空间和规范正交基",
+          "actions": [
+            {
+              "op": "add-known",
+              "points": [
+                "inner-product",
+                "norm-orthogonal",
+                "orthonormal"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "has-adjoint",
+          "label": "伴随算子",
+          "actions": [
+            {
+              "op": "add-known",
+              "points": [
+                "adjoint"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "general-background",
+      "prompt": "线性代数你走到哪儿了？挑最接近的一个。",
+      "select": "one",
+      "options": [
+        {
+          "id": "only-matrices",
+          "label": "只算过矩阵，没系统学过",
+          "actions": [
+            {
+              "op": "set-known",
+              "tags": [
+                "foundations"
+              ]
+            }
+          ],
+          "next": "finish"
+        },
+        {
+          "id": "to-basis",
+          "label": "会到基和维数",
+          "actions": [
+            {
+              "op": "set-known",
+              "tags": [
+                "foundations",
+                "dimension"
+              ]
+            }
+          ],
+          "next": "finish"
+        },
+        {
+          "id": "to-rank",
+          "label": "线性映射、秩零定理都没问题",
+          "actions": [
+            {
+              "op": "set-known",
+              "tags": [
+                "foundations",
+                "dimension",
+                "linear-maps"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "deeper",
+      "prompt": "那再往下问一层，这些会哪些？",
+      "select": "many",
+      "next": "finish",
+      "options": [
+        {
+          "id": "has-eigen-block",
+          "label": "特征值与对角化",
+          "actions": [
+            {
+              "op": "add-known",
+              "tags": [
+                "eigen"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "has-inner-block",
+          "label": "内积与正交",
+          "actions": [
+            {
+              "op": "add-known",
+              "tags": [
+                "inner-product"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "has-det-block",
+          "label": "行列式与迹",
+          "actions": [
+            {
+              "op": "add-known",
+              "tags": [
+                "multilinear"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

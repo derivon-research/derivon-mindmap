@@ -25,3 +25,22 @@
   .learning-main.has-document { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(180px, 42%) minmax(0, 1fr); }
   .learning-document { border-top: 1px solid var(--app-line); border-left: 0; }
 }
+.learning-orientation { overflow: auto; padding: 24px 16px; background: #f8fafc; }
+.orientation { width: min(680px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.orientation h2 { margin: 0; font-size: 19px; line-height: 1.45; font-weight: 600; }
+.orientation-question, .orientation-summary { display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1px solid var(--app-line); background: #fff; }
+.orientation-options { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.orientation-options button { width: 100%; padding: 11px 14px; border: 1px solid var(--app-line); background: #fff; color: var(--app-ink); font: inherit; text-align: left; cursor: pointer; }
+.orientation-options button:hover { border-color: #087f5b; }
+.orientation-options button[aria-pressed="true"] { border-color: #087f5b; background: #ecfdf5; }
+.orientation-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.orientation-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 6px 12px; border: 1px solid var(--app-line); background: #fff; color: var(--app-ink); font: inherit; cursor: pointer; }
+.orientation-actions button:disabled { color: var(--app-muted); cursor: not-allowed; }
+.orientation-actions .orientation-primary { border-color: #087f5b; background: #087f5b; color: #fff; }
+.orientation-actions .orientation-primary:disabled { border-color: var(--app-line); background: #e2e8f0; color: var(--app-muted); }
+.orientation-result { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; }
+.orientation-result dt { color: var(--app-muted); font-size: 12px; }
+.orientation-result dd { margin: 0; overflow-wrap: anywhere; }
+.orientation-route { margin: 0; padding: 9px 12px; border: 1px solid var(--app-line); background: #f8fafc; color: var(--app-muted); font-size: 13px; }
+.orientation-warning { display: flex; align-items: flex-start; gap: 7px; margin: 0; padding: 9px 12px; border: 1px solid #fed7aa; background: #fff7ed; color: #9a3412; font-size: 13px; }
+.orientation-warning svg { flex: 0 0 auto; margin-top: 2px; }

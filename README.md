@@ -30,7 +30,7 @@ cargo install derivon-cli
 curl -fsSL https://docs.derivon.net/cli/install.sh | sh
 ```
 
-CLI 是无状态 JSON 处理器，不会自行修改文件。它使用 `derivon.graph/v1` 核心协议；Mindmap 工作区使用 `derivon.authoring/v0.3.0`。在工作区中调用 CLI 时，建议让 `derivon-mindmap` Skill 负责两种协议之间的结构化转换、校验和原子写入。
+CLI 是无状态 JSON 处理器，不会自行修改文件。它使用 `derivon.graph/v1` 核心协议；Mindmap 工作区使用 `derivon.workspace/v1`（`derivon.authoring/v0.3.0` 仍可作为输入方言读入）。在工作区中调用 CLI 时，建议让 `derivon-mindmap` Skill 负责两种协议之间的结构化转换、校验和原子写入。
 
 ### 安装 Agent Skills
 
@@ -228,15 +228,18 @@ my-workspace/
 - 自动保存会检测磁盘修订变化；发生外部修改冲突时暂停写入并要求用户选择版本。
 - 图片引用保留作者写下的相对路径；运行时 Blob URL 和绝对磁盘路径不会写入 Markdown。
 
-以下是当前 v0.4.2 的最小 manifest，也是 `derivon.authoring/v0.3.0` 兼容示例；其中的 `view.replacements` 是旧字段，不代表 v1 仍提供替换视图产品能力：
+以下是最小的 `derivon.workspace/v1` 清单。`tags` 与 `points[].data.tags` 都是可选的；标签不带颜色，标记到颜色的映射属于渲染模块内部：
 
 ```json
 {
-  "schema": "derivon.authoring/v0.3.0",
+  "schema": "derivon.workspace/v1",
   "document": {
     "title": "示例知识图",
     "description": "从 A 推导 B"
   },
+  "tags": [
+    { "id": "basics", "label": "基础", "description": "不需要前提就能开始的概念。" }
+  ],
   "graph": {
     "points": [
       {
@@ -244,7 +247,8 @@ my-workspace/
         "data": {
           "label": "概念 A",
           "document": "docs/concept-a",
-          "format": "markdown"
+          "format": "markdown",
+          "tags": ["basics"]
         }
       },
       {
@@ -268,12 +272,39 @@ my-workspace/
         }
       }
     ]
-  },
-  "view": {
-    "replacements": []
   }
 }
 ```
+
+`derivon.authoring/v0.3.0` 工作区无需迁移即可打开：它在工作区边界被读为 v1，`view.replacements`
+作为旧数据读入后不进入产品状态，也不会被写回。`derivon.authoring/v0.2.0` 仍需要用户确认升级。
+
+### 开局配置
+
+工作区可以带一份可选的伴随文档 `.derivon/orientation.json`，协议为 `derivon.orientation/v1`。它声明
+默认路线种子（默认目标与默认已知）、有顺序的开场问题、单选或多选选项，以及选项到「设置/追加目标」
+「设置/追加已知」这四个受限动作的映射。动作可以点名概念，也可以按标签指定、在载入时展开。
+
+```json
+{
+  "schema": "derivon.orientation/v1",
+  "seed": { "targets": ["B"], "known": [] },
+  "questions": [
+    {
+      "id": "why",
+      "prompt": "先说你想走到哪里。",
+      "select": "one",
+      "options": [
+        { "id": "to-b", "label": "走到 B", "actions": [{ "op": "set-targets", "points": ["B"] }], "next": "finish" }
+      ]
+    }
+  ]
+}
+```
+
+规则：`next` 缺省表示顺文档顺序落到下一题，`finish` 是结束开局的保留 id；多选题的跳转挂在题上，
+选项不能各自跳转。清单不为这份文档增加字段，清单版本也不随它移动；没有配置的工作区仍然有效，
+学习侧走通用入口。
 
 仓库内的 v0.4.2 兼容工作区 fixture 位于 [`src/examples/replace-with`](src/examples/replace-with)，其中包含 v1 不再提供产品行为的旧 replacement 数据；原生路线验收 fixture 位于 [`src-tauri/tests/fixtures/complete-workspace`](src-tauri/tests/fixtures/complete-workspace)。
 

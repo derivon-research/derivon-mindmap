@@ -1,5 +1,6 @@
 import type { WorkspaceSource } from '../../ports/WorkspaceSource';
 import exampleGraph from '../../examples/replace-with/.derivon/workspace.json?raw';
+import exampleOrientation from '../../examples/replace-with/.derivon/orientation.json?raw';
 
 const exampleDocuments = import.meta.glob('../../examples/replace-with/docs/**/*.{md,html}', {
   eager: true,
@@ -41,6 +42,9 @@ export function createBundledWorkspaceSource(bundle: BundledWorkspace): Workspac
 
 export const bundledExampleWorkspaceSource = createBundledWorkspaceSource({
   graph: exampleGraph,
+  // The one bundled workspace ships an orientation configuration, so the web build's
+  // deterministic entry is exercised by the product itself and not only by tests.
+  companionMetadata: { '.derivon/orientation.json': exampleOrientation },
   documents: Object.fromEntries(Object.entries(exampleDocuments).map(([path, content]) => [
     path.replace('../../examples/replace-with/', ''),
     content,

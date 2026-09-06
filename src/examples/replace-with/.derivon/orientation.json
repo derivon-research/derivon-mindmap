@@ -1,0 +1,88 @@
+{
+  "schema": "derivon.orientation/v1",
+  "seed": {
+    "targets": [
+      "B"
+    ],
+    "known": []
+  },
+  "questions": [
+    {
+      "id": "why",
+      "prompt": "这张示例图有五个概念。先说你想走到哪里。",
+      "select": "one",
+      "options": [
+        {
+          "id": "to-d",
+          "label": "想看 D 是怎么被推出来的",
+          "actions": [
+            {
+              "op": "set-targets",
+              "points": [
+                "D"
+              ]
+            }
+          ],
+          "next": "known"
+        },
+        {
+          "id": "to-b",
+          "label": "先走一条最短的路到 B",
+          "actions": [
+            {
+              "op": "set-targets",
+              "points": [
+                "B"
+              ]
+            }
+          ],
+          "next": "known"
+        },
+        {
+          "id": "browse",
+          "label": "还不确定，先随便逛逛",
+          "actions": [],
+          "next": "finish"
+        }
+      ]
+    },
+    {
+      "id": "known",
+      "prompt": "下面这些你已经会哪些？会的点亮。",
+      "select": "many",
+      "next": "finish",
+      "options": [
+        {
+          "id": "has-base",
+          "label": "不需要前提的 C，和它旁边的 X",
+          "actions": [
+            {
+              "op": "add-known",
+              "points": [
+                "C",
+                "X"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "has-a",
+          "label": "只会 A",
+          "actions": [
+            {
+              "op": "add-known",
+              "points": [
+                "A"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "has-none",
+          "label": "都不太有把握",
+          "actions": []
+        }
+      ]
+    }
+  ]
+}

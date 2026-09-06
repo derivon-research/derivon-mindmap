@@ -21,7 +21,21 @@ new object's document editor.
 - An object page without a selection offers graph browsing when concepts exist. Only a genuinely
   empty writable workspace offers creation of its first concept.
 
-Document drafts and the Agent conversation survive centre-view and mode changes. Merely selecting
+### The orientation view
+
+A third centre view, 开局, sits beside 对象 and 图浏览. It is not a mode: orientation is a stage
+of the learning side, and editing its configuration is an authoring action. It is not an object
+either — there is one configuration per workspace and it is always there — so it is not reachable
+through search or the create command. Selecting this view changes the centre and the content of
+the left pane, which shows the orientation outline in the same role it plays for relations: the
+context navigation for what the centre is showing. The pane keeps its independent collapse, and
+the Agent pane is untouched.
+
+Orientation edits live in a draft until explicitly accepted, and a configuration carrying an
+error cannot be accepted at all. Creating the configuration is a centre-view action, so the
+outline never owns it. See [orientation](orientation.md).
+
+Document drafts, the orientation draft and the Agent conversation survive centre-view and mode changes. Merely selecting
 an object in the graph does not mount its document editor or parse its body. The last opened
 document stays mounted while the graph is visible, until another document is explicitly opened.
 The simulated Agent is labelled and never invokes a model or executes its plans.

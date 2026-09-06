@@ -58,6 +58,25 @@ Markdown/HTML link or image path. Renderers show unavailable images locally. Com
 reference integrity, inventory and repair remain #53/#55 work; no complete reference index
 or arbitrary-file existence guarantee is claimed.
 
+## Delivered In #57 And #58
+
+- `src/workspace/manifest.ts` owns `derivon.workspace/v1` and the `derivon.authoring/*` input
+  dialects. `derivon.authoring/v0.3.0` opens without consent and is written back as v1;
+  `derivon.authoring/v0.2.0` still requires it. Retired replacement views are read as legacy
+  data at the boundary and are not written back.
+- `src/workspace/orientation.ts` owns the `derivon.orientation/v1` companion document:
+  structure, validation against the graph, canonical text, and the concept-reference
+  inventory a deletion plan needs. Configuration carrying an error never becomes effective
+  orientation.
+- Complete content operations now cover concept tags, the workspace tag registry and the
+  orientation configuration, all through the same session and commit path. Writing the
+  companion document does not touch the manifest.
+- Orientation editing stays in an authoring draft until accepted, so an unfinished question
+  enters neither effective content nor the autosave queue while remaining protected against
+  external updates. See [orientation](orientation.md).
+- Deletion impact for configuration references is available as `orientationConceptImpact`
+  plus an executable repair; the unified deletion plan and its GUI remain #52.
+
 ## Module responsibilities
 
 | Module | Interface responsibility | Does not own |

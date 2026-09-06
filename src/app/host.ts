@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import type { RouteSolver } from '../ports/RouteSolver';
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import type { AuthoringCommands } from '../synchronization';
 import type { WorkspaceContent } from '../workspace/index';
@@ -37,6 +38,8 @@ export type AuthoringModeProps = {
   readonly content: WorkspaceContent;
   readonly authoring?: AuthoringCommands;
   readonly readAsset?: (path: string) => Promise<Uint8Array>;
+  /** Absent on hosts without a solver; a preview says so rather than inventing a route. */
+  readonly routeSolver?: RouteSolver;
   readonly selectedConceptId: string | null;
   readonly onSelectConcept: (conceptId: string | null) => void;
   readonly syncStatus?: { readonly state: 'saved' | 'pending' | 'saving' | 'error'; readonly label: string };
@@ -49,8 +52,11 @@ export type LearningModeProps = {
   readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
   readonly content: WorkspaceContent;
   readonly readAsset?: (path: string) => Promise<Uint8Array>;
+  readonly routeSolver?: RouteSolver;
   readonly targetIds: readonly string[];
+  readonly knownIds: readonly string[];
   readonly onChangeTargets: (conceptIds: readonly string[]) => void;
+  readonly onChangeKnown: (conceptIds: readonly string[]) => void;
 };
 
 /**
@@ -77,4 +83,6 @@ export type Host = {
   createWorkspace?(): Promise<WorkspaceHandle | null>;
   loadLearningMode(): Promise<ComponentType<LearningModeProps>>;
   loadAuthoringMode?(): Promise<ComponentType<AuthoringModeProps>>;
+  /** Route solving is a host capability; a host without an engine simply omits it. */
+  loadRouteSolver?(): Promise<RouteSolver>;
 };

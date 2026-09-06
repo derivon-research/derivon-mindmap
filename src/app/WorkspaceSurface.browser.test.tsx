@@ -52,7 +52,7 @@ async function render(workspace: WorkspaceHandle, mode: 'authoring' | 'learning'
   root = createRoot(container);
   const state = initialAppState({ hostId: 'desktop', modes: [mode], workspace });
   await act(async () => root!.render(<WorkspaceSurface workspace={workspace} state={state} modes={modes}
-    onSelectConcept={vi.fn()} onChangeTargets={vi.fn()} onProtectionChange={vi.fn()} />));
+    onSelectConcept={vi.fn()} onChangeTargets={vi.fn()} onChangeKnown={vi.fn()} onProtectionChange={vi.fn()} />));
 }
 
 it('refreshes unchanged document markup when only its external image changes', async () => {

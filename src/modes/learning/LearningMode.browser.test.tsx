@@ -15,35 +15,36 @@ afterEach(async () => { if (root) await act(async () => root?.unmount()); root =
 
 it('retains an unchanged hidden overview and invalidates changed topology until return', async () => {
   const first: WorkspaceContent = { graphText: '', title: 'First', graph: { points: [{ id: 'first', data: { label: 'First', document: 'docs/first', format: 'html' } }], hyperedges: [] },
-    documents: {}, companionMetadata: {}, diagnostics: [], requiresMigrationConsent: false };
+    documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [], requiresMigrationConsent: false };
   const latest: WorkspaceContent = { ...first, graph: { points: [{ id: 'latest', data: { label: 'Latest', document: 'docs/latest', format: 'html' } }], hyperedges: [] } };
   const onChangeTargets = vi.fn();
   root = createRoot(container);
   act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={first}
-    targetIds={[]} onChangeTargets={onChangeTargets} active />));
+    targetIds={['first']} knownIds={[]} onChangeKnown={vi.fn()} onChangeTargets={onChangeTargets} active />));
   await expect.element(page.getByRole('button', { name: 'select graph concept' })).toBeVisible();
   act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={first}
-    targetIds={[]} onChangeTargets={onChangeTargets} active={false} />));
-  expect(container.querySelector('button')).not.toBeNull();
+    targetIds={['first']} knownIds={[]} onChangeKnown={vi.fn()} onChangeTargets={onChangeTargets} active={false} />));
+  expect(container.textContent).toContain('select graph concept');
   act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={latest}
-    targetIds={[]} onChangeTargets={onChangeTargets} active={false} />));
-  expect(container.querySelector('button')).toBeNull();
+    targetIds={['first']} knownIds={[]} onChangeKnown={vi.fn()} onChangeTargets={onChangeTargets} active={false} />));
+  expect(container.textContent).not.toContain('select graph concept');
   act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={latest}
-    targetIds={[]} onChangeTargets={onChangeTargets} active />));
+    targetIds={['first']} knownIds={[]} onChangeKnown={vi.fn()} onChangeTargets={onChangeTargets} active />));
   await page.getByRole('button', { name: 'select graph concept' }).click();
   expect(container.textContent).toContain('Latest');
 });
 
 it('renders the effective content document and changes targets without reading a source', async () => {
-  const content: WorkspaceContent = { graphText: '', title: 'Effective', graph: { points: [{ id: 'fresh', data: { label: 'Fresh concept', document: 'docs/fresh', format: 'html' } }], hyperedges: [] },
-    documents: { 'docs/fresh/index.html': { status: 'ready', text: '<main>Unsaved effective body</main>' } }, companionMetadata: {}, diagnostics: [], requiresMigrationConsent: false };
+  const content: WorkspaceContent = { graphText: '', title: 'Effective', graph: { points: [{ id: 'fresh', data: { label: 'Fresh concept', document: 'docs/fresh', format: 'html' } },
+      { id: 'other', data: { label: 'Other concept', document: 'docs/other', format: 'html' } }], hyperedges: [] },
+    documents: { 'docs/fresh/index.html': { status: 'ready', text: '<main>Unsaved effective body</main>' } }, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [], requiresMigrationConsent: false };
   const onChangeTargets = vi.fn();
   root = createRoot(container);
-  act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={content} targetIds={[]} onChangeTargets={onChangeTargets} />));
+  act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={content} targetIds={['other']} knownIds={[]} onChangeKnown={vi.fn()} onChangeTargets={onChangeTargets} />));
   await page.getByRole('button', { name: 'select graph concept' }).click();
   const frame = container.querySelector('iframe');
   expect(frame?.getAttribute('sandbox')).toBe('');
   expect(frame?.srcdoc).toContain('Unsaved effective body');
   await page.getByRole('button', { name: '设为目标' }).click();
-  expect(onChangeTargets).toHaveBeenCalledWith(['fresh']);
+  expect(onChangeTargets).toHaveBeenCalledWith(['other', 'fresh']);
 });
