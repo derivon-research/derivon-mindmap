@@ -1,7 +1,10 @@
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import {
-  createConcept, objectDocumentPaths, parseWorkspaceContent, parseWorkspaceGraph, updateObjectDocument,
-  type ContentChange, type CreateConceptIntent, type TextResource, type UpdateDocumentIntent, type WorkspaceContent,
+  ORIENTATION_PATH, createConcept, objectDocumentPaths, parseWorkspaceContent, parseWorkspaceGraph,
+  updateConceptTags, updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
+  type ContentChange, type CreateConceptIntent, type OrientationConfig, type TagDeclaration,
+  type TextResource, type UpdateConceptTagsIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
+  type WorkspaceContent,
 } from '../workspace/index';
 
 type AcquiredContent = { readonly content: WorkspaceContent; readonly revision: string | null };
@@ -28,6 +31,11 @@ export type WorkspaceReader = {
 export type AuthoringCommands = {
   createConcept(intent: CreateConceptIntent): string;
   updateDocument(intent: UpdateDocumentIntent): void;
+  updateObjectMetadata(intent: UpdateMetadataIntent): void;
+  updateConceptTags(intent: UpdateConceptTagsIntent): void;
+  updateTagDeclarations(tags: readonly TagDeclaration[]): void;
+  /** `null` removes the companion document; the workspace stays valid without one. */
+  updateOrientation(config: OrientationConfig | null): void;
   protectDraft(key: string, dirty: boolean): void;
 };
 
@@ -60,10 +68,10 @@ async function readContent(source: WorkspaceSource): Promise<WorkspaceContent> {
   }));
   let orientation: TextResource | null;
   try {
-    const text = await source.readCompanionMetadata('.derivon/orientation.json');
+    const text = await source.readCompanionMetadata(ORIENTATION_PATH);
     orientation = text === null ? null : { status: 'ready', text };
   } catch (error) { orientation = { status: 'error', message: message(error) }; }
-  return parseWorkspaceContent({ graph, documents, companionMetadata: { '.derivon/orientation.json': orientation } });
+  return parseWorkspaceContent({ graph, documents, companionMetadata: { [ORIENTATION_PATH]: orientation } });
 }
 
 async function readStableContent(source: WorkspaceSource): Promise<AcquiredContent> {
@@ -237,6 +245,10 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
         return change.objectId;
       },
       updateDocument(intent) { assertCurrent(); accept(updateObjectDocument(snapshot.content, intent)); },
+      updateObjectMetadata(intent) { assertCurrent(); accept(updateObjectMetadata(snapshot.content, intent)); },
+      updateConceptTags(intent) { assertCurrent(); accept(updateConceptTags(snapshot.content, intent)); },
+      updateTagDeclarations(tags) { assertCurrent(); accept(updateTagDeclarations(snapshot.content, tags)); },
+      updateOrientation(config) { assertCurrent(); accept(updateOrientation(snapshot.content, config)); },
       protectDraft(key, dirty) {
         if (disposed || snapshot.authoringEpoch !== epoch) return;
         if (dirty) drafts.add(key); else drafts.delete(key);

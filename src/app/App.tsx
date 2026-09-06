@@ -1,10 +1,12 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { emitInteractiveTestHook } from '../testHooks';
+import type { RouteSolver } from '../ports/RouteSolver';
 import {
   enterMode,
   initialAppState,
   openWorkspace,
   selectConcept,
+  setLearningKnown,
   setLearningTargets,
   type AppState,
 } from './appState';
@@ -25,6 +27,7 @@ export default function App({ host }: { host: Host }) {
   const [failure, setFailure] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
   const [openFailure, setOpenFailure] = useState<string | null>(null);
+  const [routeSolver, setRouteSolver] = useState<RouteSolver>();
   const protectedChanges = useRef(false);
   const announcedInteractive = useRef(false);
   const applicationElement = useRef<HTMLDivElement>(null);
@@ -47,6 +50,15 @@ export default function App({ host }: { host: Host }) {
     return () => {
       cancelled = true;
     };
+  }, [host]);
+
+  // Loading the solver never gates the first frame.
+  useEffect(() => {
+    const load = host.loadRouteSolver;
+    if (!load) return;
+    let cancelled = false;
+    void load().then((solver) => { if (!cancelled) setRouteSolver(() => solver); }).catch(() => {});
+    return () => { cancelled = true; };
   }, [host]);
 
   // The runtime performance contract: one `interactive` signal, after the first frame
@@ -111,6 +123,10 @@ export default function App({ host }: { host: Host }) {
     setState((current) => (current ? setLearningTargets(current, conceptIds) : current));
   }, []);
 
+  const handleChangeKnown = useCallback((conceptIds: readonly string[]) => {
+    setState((current) => (current ? setLearningKnown(current, conceptIds) : current));
+  }, []);
+
   if (failure) {
     return <main className="app-failure" role="alert">应用没能启动：{failure}</main>;
   }
@@ -132,8 +148,8 @@ export default function App({ host }: { host: Host }) {
       {workspace ? (
         <Suspense fallback={<div role="status">正在载入工作区…</div>}>
           <WorkspaceSurface key={workspace.id} workspace={workspace} state={state} modes={modes}
-            onSelectConcept={handleSelectConcept} onChangeTargets={handleChangeTargets}
-            onProtectionChange={handleProtectionChange} />
+            routeSolver={routeSolver} onSelectConcept={handleSelectConcept} onChangeTargets={handleChangeTargets}
+            onChangeKnown={handleChangeKnown} onProtectionChange={handleProtectionChange} />
         </Suspense>
       ) : (
         <WorkspaceLaunch recentWorkspaces={recentWorkspaces} busy={opening} failure={openFailure}

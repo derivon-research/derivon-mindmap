@@ -49,9 +49,9 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 `derivon-research` is an organisation of related repos, not a monorepo. Each repo tracks
 its own issues.
 
-- **Protocol changes** (`derivon.graph/v1`, `derivon.authoring/v0.3.0`) belong in the repo
+- **Protocol changes** (`derivon.graph/v1`, `derivon.workspace/v1`, `derivon.orientation/v1`) belong in the repo
   that owns the protocol: `derivon-research/derivon` for the graph protocol,
-  `derivon-research/derivon-mindmap` for the authoring protocol. Link dependent work from
+  `derivon-research/derivon-mindmap` for the workspace and orientation protocols. Link dependent work from
   the other repos rather than duplicating the issue.
 - **Strategy, roadmap, monetisation, legal and licensing questions** belong in the private
   `derivon-research/planning` repo. Every other repo in this organisation is public. Do not

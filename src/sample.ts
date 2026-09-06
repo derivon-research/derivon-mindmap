@@ -1,4 +1,4 @@
-import { DOCUMENT_SCHEMA, type AuthoringDocument } from './domain';
+import { DOCUMENT_SCHEMA, type AuthoringDocument, type Point, type ViewReplacement } from './domain';
 import type { AuthoringWorkspace } from './workspace';
 import example from './examples/replace-with/.derivon/workspace.json';
 import navigationExample from './examples/math-reforged/.derivon/workspace.json';
@@ -9,7 +9,23 @@ const bundledDocuments = import.meta.glob('./examples/replace-with/docs/**/*.{md
   query: '?raw',
 }) as Record<string, string>;
 
-export const sampleDocument = example as AuthoringDocument;
+/** Project a workspace example into the shape these v0.4.2 screens read. */
+function asRetiredDocument(manifest: unknown, replacements: ViewReplacement[] = []): AuthoringDocument {
+  const { tags: _tags, ...rest } = manifest as AuthoringDocument & { tags?: unknown };
+  return {
+    ...rest,
+    schema: DOCUMENT_SCHEMA,
+    graph: {
+      points: rest.graph.points.map(({ id, data: { tags: _pointTags, ...data } }: Point & { data: { tags?: unknown } }) =>
+        ({ id, data: { ...data, format: 'markdown' as const } })),
+      hyperedges: rest.graph.hyperedges.map((edge) => ({ ...edge, data: { ...edge.data, format: 'markdown' as const } })),
+    },
+    view: { replacements },
+  };
+}
+
+export const sampleDocument = asRetiredDocument(example,
+  [{ points: ['A', 'B'], replaceWith: 'X', show: 'points' }]);
 export const sampleWorkspace: AuthoringWorkspace = {
   manifest: sampleDocument,
   files: Object.fromEntries(Object.entries(bundledDocuments).map(([path, content]) => [
@@ -18,7 +34,7 @@ export const sampleWorkspace: AuthoringWorkspace = {
   ])),
 };
 
-const navigationDocument = navigationExample as AuthoringDocument;
+const navigationDocument = asRetiredDocument(navigationExample);
 
 export const navigationSampleWorkspace: AuthoringWorkspace = {
   manifest: navigationDocument,

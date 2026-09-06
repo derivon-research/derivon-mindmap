@@ -15,9 +15,11 @@ const MAX_MILLIS: u64 = 5_000;
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceDocument {
     pub schema: String,
+    /// Only the graph is projected onto the mathematical model; manifest metadata is
+    /// optional, so a request may carry the graph alone.
+    #[serde(default)]
     pub document: Value,
     pub graph: WorkspaceGraph,
-    pub view: Value,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -315,7 +317,7 @@ mod tests {
 
     fn workspace(points: &[&str], edges: &[(&str, f64, &[&str], &str)]) -> WorkspaceDocument {
         WorkspaceDocument {
-            schema: "derivon.authoring/v0.3.0".to_owned(),
+            schema: "derivon.workspace/v1".to_owned(),
             document: serde_json::json!({}),
             graph: WorkspaceGraph {
                 points: points
@@ -336,7 +338,6 @@ mod tests {
                     })
                     .collect(),
             },
-            view: serde_json::json!({}),
         }
     }
 

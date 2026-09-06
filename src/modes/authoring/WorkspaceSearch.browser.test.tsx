@@ -9,15 +9,16 @@ let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 afterEach(async () => { await act(async () => root?.unmount()); container?.remove(); vi.unstubAllGlobals(); });
 const fixture: WorkspaceContent = {
-  title: 'Search', graphText: '', requiresMigrationConsent: false, diagnostics: [], companionMetadata: {},
+  title: 'Search', graphText: '', diagnostics: [], companionMetadata: {}, tags: [], orientation: { status: 'absent' },
   graph: { points: [
-    { id: 'c-1', data: { label: 'Vector space', document: 'docs/c-1', format: 'markdown' } },
-    { id: 'c-2', data: { label: '积分', document: 'docs/c-2', format: 'html' } },
-  ], hyperedges: [{ id: 'h-1', tails: ['c-1'], head: 'c-2', weight: 1, data: { document: 'docs/h-1', format: 'markdown' } }] },
+    { id: 'c-1', data: { label: 'Vector space', document: 'docs/c-1' } },
+    { id: 'c-2', data: { label: '积分', document: 'docs/c-2' } },
+  ], hyperedges: [{ id: 'h-1', tails: ['c-1'], head: 'c-2', weight: 1, data: { document: 'docs/h-1' } }] },
   documents: {
     'docs/c-1/document.md': { status: 'ready', text: `${'Introduction. '.repeat(200)}needleAtDocumentEnd` },
     'docs/c-1/index.html': { status: 'ready', text: '<style>forbiddenGeneratedStyle</style>' },
-    'docs/c-2/index.html': { status: 'ready', text: '<head><style>secretStylesheet</style></head><p>连续函数与微积分</p><script>secretJavascript</script>' },
+    'docs/c-2/document.md': { status: 'ready', text: '连续函数与微积分' },
+    'docs/c-2/index.html': { status: 'ready', text: '<head><style>secretStylesheet</style></head><p>连续函数与微积分</p>' },
     'docs/h-1/document.md': { status: 'ready', text: '# Derivation\n\n独特推导证明 integral construction' },
   },
 };

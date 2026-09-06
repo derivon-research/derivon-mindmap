@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDocument } from '../../domain';
+import { parseWorkspaceManifest } from '../../workspace/manifest';
 import type { DesktopInvoke } from './desktopWorkspaceSource';
 import { createDesktopWorkspaceActions } from './desktopWorkspaces';
 
@@ -23,7 +23,7 @@ describe('desktop workspace entry workflow', () => {
     const created = await actions.createWorkspace();
     expect(created!.id).toBe('/tmp/graph');
     expect(created!.authoringSource).toBe(created!.source);
-    expect(parseDocument(await created!.source.readGraph()).graph).toEqual({ points: [], hyperedges: [] });
+    expect(parseWorkspaceManifest(await created!.source.readGraph()).manifest.graph).toEqual({ points: [], hyperedges: [] });
     expect(writes).toEqual([{ rootPath: '/tmp/graph', changes: {
       createOnly: true, graph: expect.any(String), documents: [], assets: [], companionMetadata: [],
     } }]);
@@ -31,7 +31,7 @@ describe('desktop workspace entry workflow', () => {
     expect(reopened!.id).toBe(created!.id);
     expect(await reopened!.source.readGraph()).toBe(graph);
     await expect(actions.createWorkspace()).rejects.toThrow('Already a workspace');
-    expect(parseDocument(graph!).document.title).toBe('My graph');
+    expect(parseWorkspaceManifest(graph!).manifest.document.title).toBe('My graph');
   });
 
   it('keeps a newly persisted workspace usable when the optional recent-list storage is unavailable', async () => {
@@ -47,7 +47,7 @@ describe('desktop workspace entry workflow', () => {
       setItem: () => { throw new Error('Storage unavailable'); },
     });
     const created = await actions.createWorkspace();
-    expect(parseDocument(await created!.source.readGraph()).document.title).toBe('My graph');
+    expect(parseWorkspaceManifest(await created!.source.readGraph()).manifest.document.title).toBe('My graph');
     expect((await actions.chooseWorkspace())!.id).toBe(created!.id);
   });
 

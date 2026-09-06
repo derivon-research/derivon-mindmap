@@ -6,7 +6,7 @@ import {
 
 describe('desktop WorkspaceSource', () => {
   it('preserves every byte when a workspace is read and committed unchanged', async () => {
-    const graph = '{\n\t"schema":"derivon.authoring/v0.3.0", "graph": {}\n}\n';
+    const graph = '{\n\t"schema":"derivon.workspace/v1", "graph": {}\n}\n';
     const document = '# Concept A\r\n\r\nOriginal spacing.\r\n';
     const asset = new Uint8Array([0, 1, 2, 127, 128, 255]);
     const companion = '{ "questions" : [ ] }\n';

@@ -14,8 +14,8 @@ let releaseWrites: (() => void) | undefined;
 let writesInFlight: Promise<void>[];
 const manifestPath = '.derivon/workspace.json';
 const emptyGraph = JSON.stringify({
-  schema: 'derivon.authoring/v0.3.0', document: { title: 'GUI fixture', description: '' },
-  graph: { points: [], hyperedges: [] }, view: { replacements: [] },
+  schema: 'derivon.workspace/v1', document: { title: 'GUI fixture', description: '' },
+  graph: { points: [], hyperedges: [] },
 });
 
 test.beforeEach(async ({ page }) => {

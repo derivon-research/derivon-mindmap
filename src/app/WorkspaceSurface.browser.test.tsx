@@ -19,7 +19,8 @@ afterEach(async () => {
 });
 
 function fixture() {
-  const content = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A', format: 'html' }).content;
+  const content = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A' }).content;
+  const documentPath = `${content.graph.points[0].data.document}/index.html`;
   let revision = 'initial';
   let bytes = new Uint8Array([1]);
   const commit = vi.fn(async () => revision);
@@ -32,13 +33,14 @@ function fixture() {
     commit,
   };
   const workspace: WorkspaceHandle = { id: 'test', name: 'Test', source, authoringSource: source };
-  return { workspace, commit, update() { revision = 'external'; bytes = new Uint8Array([2]); } };
+  return { workspace, commit, documentPath, update() { revision = 'external'; bytes = new Uint8Array([2]); } };
 }
 
+let documentPath = '';
 const modes = {
   learning: lazy(async () => ({ default: ({ content, readAsset }: LearningModeProps) =>
-    <DocumentPreview title="Document" html={(content.documents['docs/concept-c-1/index.html'] as { text: string }).text}
-      documentPath="docs/concept-c-1/index.html" readAsset={readAsset} /> })),
+    <DocumentPreview title="Document" html={(content.documents[documentPath] as { text: string }).text}
+      documentPath={documentPath} readAsset={readAsset} /> })),
   authoring: lazy(async () => ({ default: function Draft({ authoring }: AuthoringModeProps) {
     const [draft, setDraft] = useState('');
     return <input aria-label="Draft" value={draft} onChange={(event) => {
@@ -52,11 +54,13 @@ async function render(workspace: WorkspaceHandle, mode: 'authoring' | 'learning'
   root = createRoot(container);
   const state = initialAppState({ hostId: 'desktop', modes: [mode], workspace });
   await act(async () => root!.render(<WorkspaceSurface workspace={workspace} state={state} modes={modes}
-    onSelectConcept={vi.fn()} onChangeTargets={vi.fn()} onProtectionChange={vi.fn()} />));
+    onSelectConcept={vi.fn()} onChangeTargets={vi.fn()} onChangeKnown={vi.fn()} onProtectionChange={vi.fn()} />));
 }
 
 it('refreshes unchanged document markup when only its external image changes', async () => {
-  const { workspace, update, commit } = fixture();
+  const fixed = fixture();
+  const { workspace, update, commit } = fixed;
+  documentPath = fixed.documentPath;
   await render(workspace, 'learning');
   await expect.poll(() => container.querySelector('iframe')?.srcdoc).toContain('base64,AQ==');
   update();

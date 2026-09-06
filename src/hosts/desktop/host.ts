@@ -55,4 +55,9 @@ export const host: Host = {
     const { AuthoringMode } = await import('../../modes/authoring');
     return AuthoringMode;
   },
+
+  async loadRouteSolver() {
+    const { createDesktopRouteSolver } = await import('./desktopRouteSolver');
+    return createDesktopRouteSolver();
+  },
 };

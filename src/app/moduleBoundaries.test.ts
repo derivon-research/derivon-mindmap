@@ -151,4 +151,16 @@ describe('authoring in a web build', () => {
     const { modules } = await wholeBuild('desktop');
     expect([...modules].some((module) => module.startsWith('modes/authoring'))).toBe(true);
   });
+
+  it('leaves the orientation editor out of the module graph, with the rest of authoring', async () => {
+    const { modules } = await wholeBuild('web');
+    expect([...modules].filter((module) => module.startsWith('modes/authoring/orientation'))).toEqual([]);
+  });
+});
+
+describe('orientation on the web', () => {
+  it('carries the flow, so a workspace without a conversation provider still opens', async () => {
+    const { modules } = await wholeBuild('web');
+    expect(modules).toContain('modes/learning/orientation.ts');
+  });
 });

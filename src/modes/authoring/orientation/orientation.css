@@ -1,0 +1,52 @@
+.orientation-outline { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; }
+.orientation-outline > button.authoring-primary { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 11px; border: 1px solid #087f5b; background: #087f5b; color: #fff; font: inherit; cursor: pointer; }
+.orientation-outline-question { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; }
+.orientation-outline-options { display: flex; flex-direction: column; gap: 3px; margin: 0 0 0 14px; padding: 0; list-style: none; }
+.orientation-row-group { display: flex; align-items: stretch; gap: 2px; }
+.orientation-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 6px 9px; border: 1px solid transparent; background: #fff; color: var(--app-ink); font: inherit; text-align: left; cursor: pointer; }
+.orientation-row:hover { background: #f1f5f9; }
+.orientation-row.is-selected { border-color: #087f5b; background: #ecfdf5; }
+.orientation-row.is-warning { border-left: 3px solid #d97706; }
+.orientation-row.is-error { border-left: 3px solid #b91c1c; }
+.orientation-row > span:nth-child(2), .orientation-row.is-option > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orientation-row small { flex: 0 0 auto; color: var(--app-muted); font-size: 11px; }
+.orientation-row-index { width: 18px; flex: 0 0 auto; color: var(--app-muted); font-size: 11px; }
+.orientation-row-tools { display: flex; gap: 1px; }
+.orientation-row-tools button { width: 24px; border: 0; background: transparent; color: var(--app-muted); cursor: pointer; }
+.orientation-row-tools button:hover { color: #b91c1c; }
+.orientation-steps { margin: 0 0 4px 24px; color: #0f766e; font-size: 11px; }
+.orientation-steps.is-muted { color: var(--app-muted); }
+.orientation-steps.is-flat { color: #b45309; }
+.orientation-add { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px dashed var(--app-line); background: transparent; color: var(--app-muted); font: inherit; cursor: pointer; }
+.orientation-add:hover { color: var(--app-ink); border-color: var(--app-ink); }
+
+.orientation-workbench { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto; background: #fff; }
+.orientation-workbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--app-line); }
+.orientation-workbar button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 10px; border: 1px solid var(--app-line); background: #fff; color: var(--app-ink); font: inherit; cursor: pointer; }
+.orientation-workbar button:disabled { color: var(--app-muted); cursor: not-allowed; }
+.orientation-workbar .authoring-primary:not(:disabled) { border-color: #087f5b; background: #087f5b; color: #fff; }
+.orientation-state { padding: 3px 8px; border: 1px solid var(--app-line); color: var(--app-muted); font-size: 11px; }
+.orientation-state.is-draft { border-color: #fed7aa; background: #fff7ed; color: #9a3412; }
+
+.orientation-inspector, .orientation-route-tab, .orientation-learner { display: flex; flex-direction: column; gap: 14px; padding: 16px; min-width: 0; }
+.orientation-inspector h2, .orientation-route-tab h2 { margin: 0; font-size: 15px; }
+.orientation-inspector textarea, .orientation-inspector input, .orientation-inspector select { font: inherit; padding: 5px 7px; border: 1px solid var(--app-line); background: #fff; }
+.orientation-fieldset { display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 8px 10px; border: 1px solid var(--app-line); }
+.orientation-fieldset legend { padding: 0 4px; color: var(--app-muted); font-size: 12px; }
+.orientation-fieldset label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.orientation-actions-editor { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--app-line); background: #f8fafc; }
+.orientation-actions-editor header { display: flex; align-items: baseline; gap: 8px; }
+.orientation-actions-editor h3 { margin: 0; font-size: 13px; }
+.orientation-actions-editor small { color: var(--app-muted); font-size: 11px; }
+.orientation-action { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--app-line); background: #fff; }
+.orientation-action-head { display: flex; align-items: center; gap: 8px; }
+.orientation-action-head select { flex: 1; font: inherit; padding: 4px 6px; }
+.orientation-action-head button { border: 0; background: transparent; color: var(--app-muted); cursor: pointer; }
+.orientation-route-graph { height: 280px; border: 1px solid var(--app-line); }
+.orientation-route-steps { margin: 0; padding-left: 20px; color: var(--app-ink); font-size: 13px; }
+.orientation-route-steps li { margin: 3px 0; }
+.orientation-diagnostics { margin: 0 16px 16px; padding: 8px 10px; border: 1px solid var(--app-line); background: #f8fafc; font-size: 12px; }
+.orientation-diagnostics p { display: flex; gap: 8px; margin: 5px 0; }
+.orientation-diagnostics p.is-error { color: #b91c1c; }
+.orientation-diagnostics p.is-warning { color: #9a3412; }
+.orientation-diagnostics button { flex: 0 0 auto; padding: 1px 6px; border: 1px solid var(--app-line); background: #fff; color: inherit; font: inherit; font-size: 11px; cursor: pointer; }

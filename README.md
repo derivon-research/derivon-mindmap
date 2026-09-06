@@ -30,7 +30,7 @@ cargo install derivon-cli
 curl -fsSL https://docs.derivon.net/cli/install.sh | sh
 ```
 
-CLI 是无状态 JSON 处理器，不会自行修改文件。它使用 `derivon.graph/v1` 核心协议；Mindmap 工作区使用 `derivon.authoring/v0.3.0`。在工作区中调用 CLI 时，建议让 `derivon-mindmap` Skill 负责两种协议之间的结构化转换、校验和原子写入。
+CLI 是无状态 JSON 处理器，不会自行修改文件。它使用 `derivon.graph/v1` 核心协议；Mindmap 工作区使用 `derivon.workspace/v1`。在工作区中调用 CLI 时，建议让 `derivon-mindmap` Skill 负责两种协议之间的结构化转换、校验和原子写入。
 
 ### 安装 Agent Skills
 
@@ -223,36 +223,41 @@ my-workspace/
 
 - `.derivon/workspace.json` 是图结构和共享视图的事实来源。
 - 每个概念和推导独占一个文档目录；不同对象不能共享目录。
-- `document.md` 是 Markdown 源文件，`index.html` 是可直接访问的发布入口。
-- 新对象默认使用 Markdown；旧工作区的 `format: html` 仍可读取。
+- 每个对象都有 `document.md`（Markdown 源）和 `index.html`（由它渲染、可直接访问的发布入口）。
+  文档只有 Markdown 一种。
+- 对象 ID 由应用生成，形如 `c-k7f3q2` / `h-2m9dxb`：`c-` 或 `h-` 前缀加六位小写字符，字母表去掉
+  `0 1 i l o u`。它永不重用，图内唯一即可；协议本身接受任意 ASCII ID，手写的图可以用 `svd` 这样的名字。
 - 自动保存会检测磁盘修订变化；发生外部修改冲突时暂停写入并要求用户选择版本。
 - 图片引用保留作者写下的相对路径；运行时 Blob URL 和绝对磁盘路径不会写入 Markdown。
 
-以下是当前 v0.4.2 的最小 manifest，也是 `derivon.authoring/v0.3.0` 兼容示例；其中的 `view.replacements` 是旧字段，不代表 v1 仍提供替换视图产品能力：
+以下是最小的 `derivon.workspace/v1` 清单。`tags` 与 `points[].data.tags` 都是可选的；标签不带颜色，标记到颜色的映射属于渲染模块内部：
 
 ```json
 {
-  "schema": "derivon.authoring/v0.3.0",
+  "schema": "derivon.workspace/v1",
   "document": {
     "title": "示例知识图",
     "description": "从 A 推导 B"
   },
+  "tags": [
+    { "id": "basics", "label": "基础" }
+  ],
   "graph": {
     "points": [
       {
         "id": "A",
         "data": {
           "label": "概念 A",
+          "description": "一句话说明它在这张图里担什么角色。",
           "document": "docs/concept-a",
-          "format": "markdown"
+          "tags": ["basics"]
         }
       },
       {
         "id": "B",
         "data": {
           "label": "概念 B",
-          "document": "docs/concept-b",
-          "format": "markdown"
+          "document": "docs/concept-b"
         }
       }
     ],
@@ -263,17 +268,47 @@ my-workspace/
         "tails": ["A"],
         "head": "B",
         "data": {
-          "document": "docs/derivation-a-to-b",
-          "format": "markdown"
+          "label": "从 A 得到 B",
+          "document": "docs/derivation-a-to-b"
         }
       }
     ]
-  },
-  "view": {
-    "replacements": []
   }
 }
 ```
+
+`description` 在概念和推导上都可选，是给选择器、搜索结果和列表用的一句话，不是文档的摘要。
+推导的 `label` 也可选；不写就按端点显示成「A + B → C」。
+
+v1 是唯一的工作区协议，没有旧版本需要迁移：schema 串不是 `derivon.workspace/v1`、或者清单里
+还留着 `view` 或 `format`，都会被当作一份坏工作区照实报错。
+
+### 开局配置
+
+工作区可以带一份可选的伴随文档 `.derivon/orientation.json`，协议为 `derivon.orientation/v1`。它声明
+默认路线种子（默认目标与默认已知）、有顺序的开场问题、单选或多选选项，以及选项到「设置/追加目标」
+「设置/追加已知」这四个受限动作的映射。动作可以点名概念，也可以按标签指定、在载入时展开。
+
+```json
+{
+  "schema": "derivon.orientation/v1",
+  "seed": { "targets": ["B"], "known": [] },
+  "questions": [
+    {
+      "id": "why",
+      "prompt": "先说你想走到哪里。",
+      "select": "one",
+      "options": [
+        { "id": "to-b", "label": "走到 B", "actions": [{ "op": "set-targets", "points": ["B"] }], "next": "finish" }
+      ]
+    }
+  ]
+}
+```
+
+规则：`next` 缺省表示顺文档顺序落到下一题，`finish` 是结束开局的保留 id；多选题的跳转挂在题上，
+选项不能各自跳转。清单不为这份文档增加字段，清单版本也不随它移动；没有配置的工作区仍然有效，
+学习侧走通用入口。
 
 仓库内的 v0.4.2 兼容工作区 fixture 位于 [`src/examples/replace-with`](src/examples/replace-with)，其中包含 v1 不再提供产品行为的旧 replacement 数据；原生路线验收 fixture 位于 [`src-tauri/tests/fixtures/complete-workspace`](src-tauri/tests/fixtures/complete-workspace)。
 

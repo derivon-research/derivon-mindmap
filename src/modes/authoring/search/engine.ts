@@ -1,24 +1,11 @@
 import MiniSearch from 'minisearch';
-import { Parser } from 'htmlparser2';
 
 export type SearchObject = { readonly kind: 'concept' | 'derivation'; readonly id: string };
 export type SearchFilter = 'all' | SearchObject['kind'];
-export type SearchDocument = SearchObject & { label: string; description: string; body: string; format: 'markdown' | 'html' };
+export type SearchDocument = SearchObject & { label: string; description: string; body: string };
 export type SearchHit = SearchObject & { label: string; snippet: string };
 export type SearchPage = { hits: SearchHit[]; total: number };
 type IndexedDocument = SearchDocument & { key: string };
-
-function readableHtml(source: string): string {
-  const text: string[] = [];
-  let hidden = 0;
-  const parser = new Parser({
-    onopentag(name) { if (['script', 'style', 'head'].includes(name)) hidden++; else if (!hidden) text.push(' '); },
-    onclosetag(name) { if (['script', 'style', 'head'].includes(name)) hidden--; else if (!hidden) text.push(' '); },
-    ontext(value) { if (!hidden) text.push(value); },
-  }, { decodeEntities: true });
-  parser.end(source);
-  return text.join('').replace(/\s+/g, ' ').trim();
-}
 
 // Intl segmentation gives Chinese word boundaries without a second language dictionary.
 const segmenter = new Intl.Segmenter('zh', { granularity: 'word' });
@@ -38,7 +25,7 @@ export function createSearchIndex() {
     add(batch: readonly SearchDocument[]) {
       for (const source of batch) {
         const document = { ...source, key: `${source.kind}:${source.id}`,
-          body: source.format === 'html' ? readableHtml(source.body) : source.body.replace(/\s+/g, ' ').trim() };
+          body: source.body.replace(/\s+/g, ' ').trim() };
         documents.set(document.key, document);
         index.add(document);
       }

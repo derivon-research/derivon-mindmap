@@ -1,4 +1,5 @@
 import { Suspense, useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type LazyExoticComponent } from 'react';
+import type { RouteSolver } from '../ports/RouteSolver';
 import { openWorkspaceSession, type WorkspaceSession } from '../synchronization';
 import type { AppState } from './appState';
 import type { AuthoringModeProps, LearningModeProps, WorkspaceHandle } from './host';
@@ -10,8 +11,10 @@ export type WorkspaceSurfaceProps = {
     authoring: LazyExoticComponent<ComponentType<AuthoringModeProps>> | null;
     learning: LazyExoticComponent<ComponentType<LearningModeProps>>;
   };
+  routeSolver?: RouteSolver;
   onSelectConcept(id: string | null): void;
   onChangeTargets(ids: readonly string[]): void;
+  onChangeKnown(ids: readonly string[]): void;
   onProtectionChange(protectedChanges: boolean): void;
 };
 
@@ -31,7 +34,7 @@ export default function WorkspaceSurface(props: WorkspaceSurfaceProps) {
   return <SessionModes {...props} session={session} />;
 }
 
-function SessionModes({ session, state, workspace, modes, onSelectConcept, onChangeTargets, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
+function SessionModes({ session, state, workspace, modes, routeSolver, onSelectConcept, onChangeTargets, onChangeKnown, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
   const snapshot = useSyncExternalStore(session.reader.subscribe, session.reader.getSnapshot);
   const [closeGuardError, setCloseGuardError] = useState<string>();
   const readAsset = useMemo(() => async (path: string) => {
@@ -75,9 +78,10 @@ function SessionModes({ session, state, workspace, modes, onSelectConcept, onCha
     {state.visitedModes.map((mode) => <div className="app-mode" key={mode} hidden={mode !== state.mode}>
       <Suspense fallback={<div className="app-mode-loading" role="status">正在载入…</div>}>
         {mode === 'learning' ? <LearningMode active={mode === state.mode} workspace={identity} content={snapshot.content}
-          targetIds={state.learningTargetIds} onChangeTargets={onChangeTargets} readAsset={readAsset} />
+          targetIds={state.learningTargetIds} knownIds={state.learningKnownIds} onChangeTargets={onChangeTargets}
+          onChangeKnown={onChangeKnown} routeSolver={routeSolver} readAsset={readAsset} />
           : AuthoringMode && <AuthoringMode key={snapshot.authoringEpoch} active={mode === state.mode} workspace={identity} content={snapshot.content}
-            authoring={session.authoring} readAsset={readAsset} selectedConceptId={state.selectedConceptId} onSelectConcept={onSelectConcept}
+            authoring={session.authoring} readAsset={readAsset} routeSolver={routeSolver} selectedConceptId={state.selectedConceptId} onSelectConcept={onSelectConcept}
             syncStatus={workspace.authoringSource && state.mode === 'authoring' ? { state: snapshot.saveState, label: saveLabel } : undefined}
             onRetrySync={snapshot.saveState === 'error' ? () => { void session.flush(); } : undefined} />}
       </Suspense>
