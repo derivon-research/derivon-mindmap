@@ -1,4 +1,4 @@
-import type { WorkspaceContent } from '../../../workspace/index';
+import { objectSourcePath, type WorkspaceContent } from '../../../workspace/index';
 import type { SearchDocument, SearchFilter, SearchPage } from './engine';
 import type { SearchRequest } from './search.worker';
 export type { SearchObject, SearchHit, SearchFilter, SearchPage } from './engine';
@@ -37,10 +37,10 @@ export function createWorkspaceSearch(content: WorkspaceContent, onReady: () => 
         if (disposed || failed) return;
         const documents = objects.slice(offset, offset + 24).map(({ object, kind }): SearchDocument => {
           const data = object.data as typeof object.data & { label?: unknown; description?: unknown };
-          const source = content.documents[`${data.document}/${data.format === 'markdown' ? 'document.md' : 'index.html'}`];
+          const source = content.documents[objectSourcePath(data)];
           return { kind, id: object.id, label: typeof data.label === 'string' && data.label ? data.label : object.id,
             description: typeof data.description === 'string' ? data.description : '',
-            format: data.format, body: source?.status === 'ready' ? source.text : '' };
+            body: source?.status === 'ready' ? source.text : '' };
         });
         post({ type: 'add', documents });
         await new Promise((resolve) => setTimeout(resolve, 0));

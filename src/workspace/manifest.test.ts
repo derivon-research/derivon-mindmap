@@ -12,13 +12,13 @@ import {
 const v1 = (extra: Record<string, unknown> = {}) => JSON.stringify({
   schema: WORKSPACE_SCHEMA,
   document: { title: 'Linear algebra', description: '' },
-  tags: [{ id: 'algebra', label: '代数', description: '基础代数' }],
+  tags: [{ id: 'algebra', label: '代数' }],
   graph: {
     points: [
-      { id: 'a', data: { label: 'A', document: 'docs/a', format: 'markdown', tags: ['algebra'] } },
-      { id: 'b', data: { label: 'B', document: 'docs/b', format: 'html' } },
+      { id: 'a', data: { label: 'A', document: 'docs/a', tags: ['algebra'] } },
+      { id: 'b', data: { label: 'B', document: 'docs/b' } },
     ],
-    hyperedges: [{ id: 'h', weight: 2, tails: ['a'], head: 'b', data: { document: 'docs/h', format: 'markdown' } }],
+    hyperedges: [{ id: 'h', weight: 2, tails: ['a'], head: 'b', data: { document: 'docs/h' } }],
   },
   ...extra,
 });
@@ -26,7 +26,7 @@ const v1 = (extra: Record<string, unknown> = {}) => JSON.stringify({
 describe('derivon.workspace/v1 manifest', () => {
   it('parses a v1 manifest with declared tags and per-concept tags', () => {
     const parsed = parseWorkspaceManifest(v1());
-    expect(parsed.manifest.tags).toEqual([{ id: 'algebra', label: '代数', description: '基础代数' }]);
+    expect(parsed.manifest.tags).toEqual([{ id: 'algebra', label: '代数' }]);
     expect(conceptTags(parsed.manifest.graph.points[0])).toEqual(['algebra']);
     expect(conceptTags(parsed.manifest.graph.points[1])).toEqual([]);
     expect(conceptsWithTag(parsed.manifest.graph, 'algebra').map((point) => point.id)).toEqual(['a']);

@@ -5,10 +5,10 @@ import { createDesktopRouteSolver } from './desktopRouteSolver';
 
 const graph: WorkspaceGraph = {
   points: [
-    { id: 'a', data: { label: 'A', document: 'docs/a', format: 'markdown', tags: ['basics'] } },
-    { id: 'b', data: { label: 'B', document: 'docs/b', format: 'markdown' } },
+    { id: 'a', data: { label: 'A', document: 'docs/a', tags: ['basics'] } },
+    { id: 'b', data: { label: 'B', document: 'docs/b' } },
   ],
-  hyperedges: [{ id: 'h', weight: 2, tails: ['a'], head: 'b', data: { document: 'docs/h', format: 'markdown' } }],
+  hyperedges: [{ id: 'h', weight: 2, tails: ['a'], head: 'b', data: { document: 'docs/h' } }],
 };
 
 const response = {

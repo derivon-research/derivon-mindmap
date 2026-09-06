@@ -46,7 +46,6 @@ pub struct WorkspaceDirectory {
 #[serde(rename_all = "camelCase")]
 struct DocumentReference {
     document: String,
-    format: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -495,9 +494,7 @@ fn referenced_files(manifest: &WorkspaceDocument) -> Result<Vec<String>, String>
             .map_err(|error| format!("invalid document reference: {error}"))?;
         safe_relative_path(&reference.document)?;
         paths.push(format!("{}/index.html", reference.document));
-        if reference.format == "markdown" {
-            paths.push(format!("{}/document.md", reference.document));
-        }
+        paths.push(format!("{}/document.md", reference.document));
     }
     paths.sort();
     paths.dedup();
@@ -1729,7 +1726,7 @@ mod tests {
         .unwrap();
         let saved = read_snapshot(destination.path(), true).unwrap();
         assert_eq!(saved.workspace.manifest.graph.points.len(), 6);
-        assert_eq!(saved.workspace.files.len(), 26);
+        assert_eq!(saved.workspace.files.len(), 28);
 
         let error = write_new_workspace_files(destination.path(), source.manifest, source.files)
             .unwrap_err();
@@ -1758,20 +1755,20 @@ mod tests {
 
         assert_eq!(manifest.graph.points.len(), 6);
         assert_eq!(manifest.graph.hyperedges.len(), 8);
-        assert_eq!(snapshot.workspace.files.len(), 26);
+        assert_eq!(snapshot.workspace.files.len(), 28);
         assert!(snapshot
             .workspace
             .files
             .contains_key("docs/points/a/document.md"));
+        // Every object owns a Markdown source and the page rendered from it.
         assert!(snapshot
             .workspace
             .files
             .contains_key("docs/points/y/index.html"));
-        assert!(!snapshot
+        assert!(snapshot
             .workspace
             .files
             .contains_key("docs/points/y/document.md"));
-        assert!(!root.join("docs/points/y/document.md").exists());
 
         assert_eq!(manifest.schema, "derivon.workspace/v1");
         assert_eq!(

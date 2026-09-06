@@ -223,8 +223,10 @@ my-workspace/
 
 - `.derivon/workspace.json` 是图结构和共享视图的事实来源。
 - 每个概念和推导独占一个文档目录；不同对象不能共享目录。
-- `document.md` 是 Markdown 源文件，`index.html` 是可直接访问的发布入口。
-- 新对象默认使用 Markdown；旧工作区的 `format: html` 仍可读取。
+- 每个对象都有 `document.md`（Markdown 源）和 `index.html`（由它渲染、可直接访问的发布入口）。
+  文档只有 Markdown 一种。
+- 对象 ID 由应用生成，形如 `c-k7f3q2` / `h-2m9dxb`：`c-` 或 `h-` 前缀加六位小写字符，字母表去掉
+  `0 1 i l o u`。它永不重用，图内唯一即可；协议本身接受任意 ASCII ID，手写的图可以用 `svd` 这样的名字。
 - 自动保存会检测磁盘修订变化；发生外部修改冲突时暂停写入并要求用户选择版本。
 - 图片引用保留作者写下的相对路径；运行时 Blob URL 和绝对磁盘路径不会写入 Markdown。
 
@@ -238,7 +240,7 @@ my-workspace/
     "description": "从 A 推导 B"
   },
   "tags": [
-    { "id": "basics", "label": "基础", "description": "不需要前提就能开始的概念。" }
+    { "id": "basics", "label": "基础" }
   ],
   "graph": {
     "points": [
@@ -246,8 +248,8 @@ my-workspace/
         "id": "A",
         "data": {
           "label": "概念 A",
+          "description": "一句话说明它在这张图里担什么角色。",
           "document": "docs/concept-a",
-          "format": "markdown",
           "tags": ["basics"]
         }
       },
@@ -255,8 +257,7 @@ my-workspace/
         "id": "B",
         "data": {
           "label": "概念 B",
-          "document": "docs/concept-b",
-          "format": "markdown"
+          "document": "docs/concept-b"
         }
       }
     ],
@@ -267,8 +268,8 @@ my-workspace/
         "tails": ["A"],
         "head": "B",
         "data": {
-          "document": "docs/derivation-a-to-b",
-          "format": "markdown"
+          "label": "从 A 得到 B",
+          "document": "docs/derivation-a-to-b"
         }
       }
     ]
@@ -276,8 +277,11 @@ my-workspace/
 }
 ```
 
+`description` 在概念和推导上都可选，是给选择器、搜索结果和列表用的一句话，不是文档的摘要。
+推导的 `label` 也可选；不写就按端点显示成「A + B → C」。
+
 v1 是唯一的工作区协议，没有旧版本需要迁移：schema 串不是 `derivon.workspace/v1`、或者清单里
-还留着 `view`，都会被当作一份坏工作区照实报错。
+还留着 `view` 或 `format`，都会被当作一份坏工作区照实报错。
 
 ### 开局配置
 

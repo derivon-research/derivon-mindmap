@@ -6,8 +6,7 @@ import type { AuthoringCommands } from '../../../synchronization';
 import type { GraphRendererProps } from '../../../rendering';
 import type { RouteSolver } from '../../../ports/RouteSolver';
 import {
-  createConcept, createWorkspace, updateConceptTags, updateOrientation, updateTagDeclarations,
-  type WorkspaceContent,
+  WORKSPACE_SCHEMA, parseWorkspaceContent, updateOrientation, type WorkspaceContent,
 } from '../../../workspace/index';
 
 vi.mock('../../../rendering', () => ({ GraphRenderer: ({ view }: GraphRendererProps) => <div>路线子图 {view.concepts.length}</div> }));
@@ -23,10 +22,15 @@ const solver: RouteSolver = { solve: async () => ({
 }) };
 
 function workspace(): WorkspaceContent {
-  let content = createWorkspace({ title: '开局工作区' }).content;
-  for (const label of ['A', 'B']) content = createConcept(content, { label, format: 'markdown' }).content;
-  content = updateTagDeclarations(content, [{ id: 'basics', label: '基础' }]).content;
-  return updateConceptTags(content, { conceptId: 'c-1', tags: ['basics'] }).content;
+  return parseWorkspaceContent({ graph: JSON.stringify({
+    schema: WORKSPACE_SCHEMA,
+    document: { title: '开局工作区', description: '' },
+    tags: [{ id: 'basics', label: '基础' }],
+    graph: { points: [
+      { id: 'a', data: { label: 'A', document: 'docs/a', tags: ['basics'] } },
+      { id: 'b', data: { label: 'B', document: 'docs/b' } },
+    ], hyperedges: [] },
+  }), documents: {} });
 }
 
 /** A session stand-in: content operations really run, so a save has to be a valid one. */
@@ -38,6 +42,7 @@ function harness() {
   const authoring: AuthoringCommands = {
     createConcept: vi.fn(() => 'unused'),
     updateDocument: vi.fn(),
+    updateObjectMetadata: vi.fn(),
     updateConceptTags: vi.fn(),
     updateTagDeclarations: vi.fn(),
     updateOrientation: vi.fn((config) => { content = updateOrientation(content, config).content; render(); }),
@@ -79,7 +84,7 @@ it('maintains an orientation configuration through the shared content operations
   await click('保存开局配置');
   await expect.poll(() => session.content.orientation.status).toBe('ready');
   const saved = session.content.orientation.status === 'ready' ? session.content.orientation.config : null;
-  expect(saved!.seed).toEqual({ targets: ['c-2'], known: [] });
+  expect(saved!.seed).toEqual({ targets: ['b'], known: [] });
   expect(saved!.questions[0].options[0].label).toBe('要看懂一篇论文');
   await expect.poll(() => session.protectDraft.mock.calls.at(-1)).toEqual(['w:orientation', false]);
 

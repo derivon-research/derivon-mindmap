@@ -5,8 +5,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
 import type { RouteSolver } from '../../ports/RouteSolver';
 import {
-  ORIENTATION_SCHEMA, createConcept, createWorkspace, parseWorkspaceContent, updateConceptTags,
-  updateOrientation, updateTagDeclarations, type OrientationConfig, type WorkspaceContent,
+  ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, parseWorkspaceContent, updateOrientation,
+  type OrientationConfig, type WorkspaceContent,
 } from '../../workspace/index';
 
 vi.mock('../../rendering', () => ({ GraphRenderer: ({ view }: GraphRendererProps) => <div>已进入路线：{view.concepts.length} 个概念</div> }));
@@ -19,10 +19,10 @@ afterEach(async () => { if (root) await act(async () => root?.unmount()); root =
 
 const CONFIG: OrientationConfig = {
   schema: ORIENTATION_SCHEMA,
-  seed: { targets: ['c-3'], known: ['c-1'] },
+  seed: { targets: ['c'], known: ['a'] },
   questions: [
     { id: 'why', prompt: '你为什么来', select: 'one', options: [
-      { id: 'paper', label: '要看懂一篇论文', actions: [{ op: 'set-targets', points: ['c-4'] }], next: 'known' },
+      { id: 'paper', label: '要看懂一篇论文', actions: [{ op: 'set-targets', points: ['d'] }], next: 'known' },
     ] },
     { id: 'known', prompt: '会哪些', select: 'many', next: 'finish', options: [
       { id: 'basics', label: '基础', actions: [{ op: 'add-known', tags: ['basics'] }] },
@@ -31,15 +31,21 @@ const CONFIG: OrientationConfig = {
 };
 
 function workspace(): WorkspaceContent {
-  let content = createWorkspace({ title: '开局工作区' }).content;
-  for (const label of ['A', 'B', 'C', 'D']) content = createConcept(content, { label, format: 'markdown' }).content;
-  content = updateTagDeclarations(content, [{ id: 'basics', label: '基础' }]).content;
-  content = updateConceptTags(content, { conceptId: 'c-1', tags: ['basics'] }).content;
-  return updateConceptTags(content, { conceptId: 'c-2', tags: ['basics'] }).content;
+  return parseWorkspaceContent({ graph: JSON.stringify({
+    schema: WORKSPACE_SCHEMA,
+    document: { title: '开局工作区', description: '' },
+    tags: [{ id: 'basics', label: '基础' }],
+    graph: { points: [
+      { id: 'a', data: { label: 'A', document: 'docs/a', tags: ['basics'] } },
+      { id: 'b', data: { label: 'B', document: 'docs/b', tags: ['basics'] } },
+      { id: 'c', data: { label: 'C', document: 'docs/c' } },
+      { id: 'd', data: { label: 'D', document: 'docs/d' } },
+    ], hyperedges: [] },
+  }), documents: {} });
 }
 
 const solver: RouteSolver = { solve: async () => ({
-  reachable: true, conceptIds: ['c-1', 'c-4'], derivationIds: [], order: [], cost: 3, provenOptimal: true, blocked: [],
+  reachable: true, conceptIds: ['a', 'd'], derivationIds: [], order: [], cost: 3, provenOptimal: true, blocked: [],
 }) };
 
 function render(content: WorkspaceContent, handlers: {
@@ -56,15 +62,15 @@ it('initializes a route from the seed and completes orientation without any conv
   render(updateOrientation(workspace(), CONFIG).content, { onChangeTargets, onChangeKnown });
 
   // The seed reaches application state before a question is answered.
-  expect(onChangeTargets).toHaveBeenCalledWith(['c-3']);
-  expect(onChangeKnown).toHaveBeenCalledWith(['c-1']);
+  expect(onChangeTargets).toHaveBeenCalledWith(['c']);
+  expect(onChangeKnown).toHaveBeenCalledWith(['a']);
 
   await page.getByRole('button', { name: '要看懂一篇论文' }).click();
   await page.getByRole('button', { name: '基础' }).click();
   await page.getByRole('button', { name: '继续' }).click();
 
-  expect(onChangeTargets).toHaveBeenLastCalledWith(['c-4']);
-  expect(onChangeKnown).toHaveBeenLastCalledWith(['c-1', 'c-2']);
+  expect(onChangeTargets).toHaveBeenLastCalledWith(['d']);
+  expect(onChangeKnown).toHaveBeenLastCalledWith(['a', 'b']);
   await expect.element(page.getByText('初始路线')).toBeVisible();
   await page.getByRole('button', { name: '进入路线' }).click();
   await expect.element(page.getByText('已进入路线')).toBeVisible();
@@ -84,5 +90,5 @@ it('falls back to the generic entry with a diagnosis when the configuration is b
   const choice = [...container.querySelectorAll('ul[aria-label="目标概念"] button')]
     .find((button) => button.textContent?.startsWith('B'));
   await act(async () => (choice as HTMLButtonElement).click());
-  expect(onChangeTargets).toHaveBeenLastCalledWith(['c-2']);
+  expect(onChangeTargets).toHaveBeenLastCalledWith(['b']);
 });

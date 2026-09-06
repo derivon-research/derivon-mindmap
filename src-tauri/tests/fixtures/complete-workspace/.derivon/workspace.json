@@ -5,26 +5,152 @@
     "description": "Stable in-repository fixture covering the complete Derivon workspace surface."
   },
   "tags": [
-    { "id": "given", "label": "Given", "description": "Concepts an empty tail already reaches." }
+    {
+      "id": "given",
+      "label": "Given"
+    }
   ],
   "graph": {
     "points": [
-      { "id": "A", "data": { "label": "A", "document": "docs/points/a", "format": "markdown", "tags": ["given"] } },
-      { "id": "B", "data": { "label": "B", "document": "docs/points/b", "format": "markdown", "tags": ["given"] } },
-      { "id": "C", "data": { "label": "C", "document": "docs/points/c", "format": "markdown" } },
-      { "id": "D", "data": { "label": "D", "document": "docs/points/d", "format": "markdown" } },
-      { "id": "X", "data": { "label": "X", "document": "docs/points/x", "format": "markdown" } },
-      { "id": "Y", "data": { "label": "Y", "document": "docs/points/y", "format": "html" } }
+      {
+        "id": "A",
+        "data": {
+          "label": "A",
+          "document": "docs/points/a",
+          "tags": [
+            "given"
+          ],
+          "description": "A starting point with no premises."
+        }
+      },
+      {
+        "id": "B",
+        "data": {
+          "label": "B",
+          "document": "docs/points/b",
+          "tags": [
+            "given"
+          ]
+        }
+      },
+      {
+        "id": "C",
+        "data": {
+          "label": "C",
+          "document": "docs/points/c"
+        }
+      },
+      {
+        "id": "D",
+        "data": {
+          "label": "D",
+          "document": "docs/points/d"
+        }
+      },
+      {
+        "id": "X",
+        "data": {
+          "label": "X",
+          "document": "docs/points/x"
+        }
+      },
+      {
+        "id": "Y",
+        "data": {
+          "label": "Y",
+          "document": "docs/points/y"
+        }
+      }
     ],
     "hyperedges": [
-      { "id": "given-a", "weight": 0.4, "tails": [], "head": "A", "data": { "document": "docs/edges/given-a", "format": "markdown" } },
-      { "id": "given-b", "weight": 0.6, "tails": [], "head": "B", "data": { "document": "docs/edges/given-b", "format": "markdown" } },
-      { "id": "a-to-c", "weight": 1, "tails": ["A"], "head": "C", "data": { "document": "docs/edges/a-to-c", "format": "markdown" } },
-      { "id": "ab-to-d", "weight": 2, "tails": ["A", "B"], "head": "D", "data": { "document": "docs/edges/ab-to-d", "format": "markdown" } },
-      { "id": "ab-to-d-alt", "weight": 4, "tails": ["A", "B"], "head": "D", "data": { "document": "docs/edges/ab-to-d-alt", "format": "html" } },
-      { "id": "cd-to-x", "weight": 1.5, "tails": ["C", "D"], "head": "X", "data": { "document": "docs/edges/cd-to-x", "format": "markdown" } },
-      { "id": "a-to-y", "weight": 8, "tails": ["A"], "head": "Y", "data": { "document": "docs/edges/a-to-y", "format": "markdown" } },
-      { "id": "x-to-y", "weight": 1, "tails": ["X"], "head": "Y", "data": { "document": "docs/edges/x-to-y", "format": "markdown" } }
+      {
+        "id": "given-a",
+        "weight": 0.4,
+        "tails": [],
+        "head": "A",
+        "data": {
+          "document": "docs/edges/given-a"
+        }
+      },
+      {
+        "id": "given-b",
+        "weight": 0.6,
+        "tails": [],
+        "head": "B",
+        "data": {
+          "document": "docs/edges/given-b"
+        }
+      },
+      {
+        "id": "a-to-c",
+        "weight": 1,
+        "tails": [
+          "A"
+        ],
+        "head": "C",
+        "data": {
+          "document": "docs/edges/a-to-c"
+        }
+      },
+      {
+        "id": "ab-to-d",
+        "weight": 2,
+        "tails": [
+          "A",
+          "B"
+        ],
+        "head": "D",
+        "data": {
+          "document": "docs/edges/ab-to-d",
+          "label": "A and B give D"
+        }
+      },
+      {
+        "id": "ab-to-d-alt",
+        "weight": 4,
+        "tails": [
+          "A",
+          "B"
+        ],
+        "head": "D",
+        "data": {
+          "document": "docs/edges/ab-to-d-alt"
+        }
+      },
+      {
+        "id": "cd-to-x",
+        "weight": 1.5,
+        "tails": [
+          "C",
+          "D"
+        ],
+        "head": "X",
+        "data": {
+          "document": "docs/edges/cd-to-x"
+        }
+      },
+      {
+        "id": "a-to-y",
+        "weight": 8,
+        "tails": [
+          "A"
+        ],
+        "head": "Y",
+        "data": {
+          "document": "docs/edges/a-to-y"
+        }
+      },
+      {
+        "id": "x-to-y",
+        "weight": 1,
+        "tails": [
+          "X"
+        ],
+        "head": "Y",
+        "data": {
+          "document": "docs/edges/x-to-y"
+        }
+      }
     ]
   }
 }

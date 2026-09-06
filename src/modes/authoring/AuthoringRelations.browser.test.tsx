@@ -18,14 +18,17 @@ afterEach(async () => { await act(async () => root?.unmount()); container.remove
 
 it('opens the overview, selects neighbourhood objects, and opens the selected object on a repeated click', async () => {
   await page.viewport(1100, 800);
-  const points = ['A', 'Focus', 'B'].map((id) => ({ id, data: { label: id, document: `docs/${id}`, format: 'html' as const } }));
+  const points = ['A', 'Focus', 'B'].map((id) => ({ id, data: { label: id, document: `docs/${id}` } }));
   const hyperedges = [
     { id: 'incoming', tails: ['A'], head: 'Focus' },
     { id: 'outgoing', tails: ['Focus'], head: 'B' },
     { id: 'unrelated', tails: ['A'], head: 'B' },
-  ].map((edge) => ({ ...edge, weight: 1, data: { document: `docs/${edge.id}`, format: 'html' as const } }));
+  ].map((edge) => ({ ...edge, weight: 1, data: { document: `docs/${edge.id}`, label: `推导 ${edge.id}` } }));
   const content: WorkspaceContent = { title: 'Relations', graphText: '', graph: { points, hyperedges },
-    documents: Object.fromEntries([...points, ...hyperedges].map((item) => [`${item.data.document}/index.html`, { status: 'ready', text: '<p>Body</p>' }])),
+    documents: Object.fromEntries([...points, ...hyperedges].flatMap((item) => [
+      [`${item.data.document}/document.md`, { status: 'ready' as const, text: 'Body' }],
+      [`${item.data.document}/index.html`, { status: 'ready' as const, text: '<p>Body</p>' }],
+    ])),
     companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [] };
   container = document.createElement('div'); container.style.cssText = 'width:1100px;height:700px'; document.body.append(container);
   root = createRoot(container);
@@ -45,7 +48,7 @@ it('opens the overview, selects neighbourhood objects, and opens the selected ob
   expect(page.getByLabelText('Rendered edges').element().textContent).not.toContain('unrelated');
   await expect.element(page.getByRole('button', { name: '图浏览', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: '画布推导 outgoing', exact: true }).click();
-  await expect.element(page.getByRole('heading', { name: '推导 outgoing', exact: true })).toBeVisible();
+  expect(container.querySelector('.authoring-title-line')?.textContent).toBe('推导 outgoing');
   await expect.element(page.getByRole('heading', { name: '联合前提 1', exact: true })).toBeVisible();
   await expect.element(page.getByRole('heading', { name: '结果概念 1', exact: true })).toBeVisible();
   const relations = container.querySelector('.authoring-context-body')!;
@@ -59,18 +62,18 @@ it('opens the overview, selects neighbourhood objects, and opens the selected ob
   await expect.element(page.getByLabelText('Selected graph objects')).toHaveTextContent('A');
   await expect.element(page.getByRole('button', { name: '图浏览', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: '画布概念 A', exact: true }).click();
-  await expect.element(page.getByRole('heading', { name: 'A', exact: true })).toBeVisible();
+  await expect.poll(() => container.querySelector('.authoring-title-line')?.textContent).toBe('A');
   await page.getByRole('button', { name: '图浏览', exact: true }).click();
   await page.getByRole('button', { name: '推导 unrelated', exact: true }).click();
-  await expect.element(page.getByRole('heading', { name: '推导 unrelated', exact: true })).toBeVisible();
+  await expect.poll(() => container.querySelector('.authoring-title-line')?.textContent).toBe('推导 unrelated');
   await page.getByRole('button', { name: '图浏览', exact: true }).click();
   await expect.element(page.getByLabelText('Rendered edges')).toHaveTextContent('incoming unrelated');
   expect(page.getByLabelText('Rendered edges').element().textContent).not.toContain('outgoing');
   await page.getByRole('button', { name: '全图', exact: true }).click();
   await page.getByRole('button', { name: '激活概念 B', exact: true }).click();
-  await expect.element(page.getByRole('heading', { name: 'B', exact: true })).toBeVisible();
+  await expect.poll(() => container.querySelector('.authoring-title-line')?.textContent).toBe('B');
   await page.getByRole('button', { name: '图浏览', exact: true }).click();
   await page.getByRole('button', { name: '画布概念 Focus', exact: true }).click();
   await page.getByRole('button', { name: '激活推导 incoming', exact: true }).click();
-  await expect.element(page.getByRole('heading', { name: '推导 incoming', exact: true })).toBeVisible();
+  await expect.poll(() => container.querySelector('.authoring-title-line')?.textContent).toBe('推导 incoming');
 });

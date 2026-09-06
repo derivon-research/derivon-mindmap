@@ -2,8 +2,8 @@ import { markdownToHtml } from '../documentContent';
 import type { WorkspaceCommit } from '../ports/WorkspaceSource';
 import { imageMimeType } from './imageReference';
 import {
-  WORKSPACE_SCHEMA, parseWorkspaceManifest, serializeWorkspaceManifest, uniqueId,
-  type ConceptPoint, type DocumentFormat, type DocumentReference, type ManifestGraph, type TagDeclaration,
+  WORKSPACE_SCHEMA, generateObjectId, parseWorkspaceManifest, serializeWorkspaceManifest,
+  type ConceptPoint, type DocumentReference, type ManifestGraph, type TagDeclaration,
   type WorkspaceManifest,
 } from './manifest';
 import {
@@ -49,8 +49,13 @@ export type ContentChange = {
 
 export type CreateConceptIntent = {
   readonly label: string;
-  readonly id?: string;
-  readonly format: DocumentFormat;
+};
+
+/** The object's own metadata. Its identity and its document location are not editable. */
+export type UpdateMetadataIntent = {
+  readonly object: { readonly kind: 'concept' | 'derivation'; readonly id: string };
+  readonly label?: string;
+  readonly description?: string;
 };
 
 export type UpdateDocumentIntent = {
@@ -72,10 +77,13 @@ function copyAssets(assets: Readonly<Record<string, Uint8Array>> | undefined): R
   return Object.fromEntries(Object.entries(assets ?? {}).map(([path, bytes]) => [path, new Uint8Array(bytes)]));
 }
 
+/** Every object owns a Markdown source and the page rendered from it. */
 export function objectDocumentPaths(reference: DocumentReference): readonly string[] {
-  return reference.format === 'markdown'
-    ? [`${reference.document}/document.md`, `${reference.document}/index.html`]
-    : [`${reference.document}/index.html`];
+  return [`${reference.document}/document.md`, `${reference.document}/index.html`];
+}
+
+export function objectSourcePath(reference: DocumentReference): string {
+  return `${reference.document}/document.md`;
 }
 
 export function objectDocumentPreview(content: WorkspaceContent, reference: DocumentReference): TextResource {
@@ -136,6 +144,15 @@ export function parseWorkspaceContent(input: {
   };
 }
 
+type AnyObject = { readonly id: string; readonly data: DocumentReference & { readonly label?: string; readonly description?: string } };
+
+function findObject(content: WorkspaceContent, ref: { kind: 'concept' | 'derivation'; id: string }): AnyObject {
+  const objects: readonly AnyObject[] = ref.kind === 'concept' ? content.graph.points : content.graph.hyperedges;
+  const object = objects.find(({ id }) => id === ref.id);
+  if (!object) throw new Error(`未找到${ref.kind === 'concept' ? '概念' : '推导'}: ${ref.id}`);
+  return object;
+}
+
 /** Re-read the manifest so a graph change starts from validated shapes. */
 function manifestOf(content: WorkspaceContent): WorkspaceManifest {
   return parseWorkspaceManifest(content.graphText).manifest;
@@ -153,12 +170,8 @@ function withGraphText(content: WorkspaceContent, graph: string): WorkspaceConte
 
 export function updateObjectDocument(content: WorkspaceContent, intent: UpdateDocumentIntent): ContentChange {
   if (typeof intent.source !== 'string') throw new Error('文档内容必须是字符串');
-  const objects: readonly { id: string; data: DocumentReference & { label?: string } }[] =
-    intent.object.kind === 'concept' ? content.graph.points
-      : intent.object.kind === 'derivation' ? content.graph.hyperedges : [];
-  const object = objects.find(({ id }) => id === intent.object.id);
-  if (!object) throw new Error(`未找到${intent.object.kind === 'concept' ? '概念' : '推导'}: ${intent.object.id}`);
-  const sourcePath = `${object.data.document}/${object.data.format === 'markdown' ? 'document.md' : 'index.html'}`;
+  const object = findObject(content, intent.object);
+  const sourcePath = objectSourcePath(object.data);
   const existingSource = content.documents[sourcePath];
   if (!existingSource || existingSource.status !== 'ready') {
     throw new Error(existingSource?.status === 'error' ? existingSource.message : `Missing document: ${sourcePath}`);
@@ -175,10 +188,10 @@ export function updateObjectDocument(content: WorkspaceContent, intent: UpdateDo
     return { path, content: new Uint8Array(bytes) };
   });
   const title = object.data.label ?? `推导 ${object.id}`;
-  const documentChanges = object.data.format === 'markdown'
-    ? [{ path: sourcePath, content: intent.source },
-      { path: `${object.data.document}/index.html`, content: markdownToHtml(intent.source, title) }]
-    : [{ path: sourcePath, content: intent.source }];
+  const documentChanges = [
+    { path: sourcePath, content: intent.source },
+    { path: `${object.data.document}/index.html`, content: markdownToHtml(intent.source, title) },
+  ];
   const documents = { ...content.documents, ...Object.fromEntries(documentChanges.map(({ path, content: text }) =>
     [path, { status: 'ready' as const, text }])) };
   const changedPaths = new Set(documentChanges.map(({ path }) => path));
@@ -205,12 +218,9 @@ export function createWorkspace(intent: { title: string }): ContentChange {
 export function createConcept(content: WorkspaceContent, intent: CreateConceptIntent): ContentChange & { objectId: string } {
   const label = intent.label.trim();
   if (!label) throw new Error('概念名称不能为空');
-  if (intent.format !== 'markdown' && intent.format !== 'html') throw new Error('文档格式无效');
   const usedIds = new Set([...content.graph.points, ...content.graph.hyperedges].map((object) => object.id));
-  const id = intent.id === undefined || intent.id === '' ? uniqueId('c', usedIds) : intent.id.trim();
-  if (!id || usedIds.has(id)) throw new Error('概念 ID 为空或已被使用');
-  const segment = id.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'document';
-  const base = `docs/concept-${segment}`;
+  const id = generateObjectId('c', usedIds);
+  const base = `docs/concept-${id.slice(2)}`;
   const usedDirectories = [...content.graph.points, ...content.graph.hyperedges].map((object) => object.data.document);
   let directory = base;
   let suffix = 2;
@@ -218,13 +228,13 @@ export function createConcept(content: WorkspaceContent, intent: CreateConceptIn
     || Object.keys(content.documents).some((path) => path.startsWith(`${directory}/`))) {
     directory = `${base}-${suffix++}`;
   }
-  const point: ConceptPoint = { id, data: { label, document: directory, format: intent.format } };
+  const point: ConceptPoint = { id, data: { label, document: directory } };
   const manifest = manifestOf(content);
   const graph = serializeWorkspaceManifest({ ...manifest, graph: {
     ...manifest.graph, points: [...manifest.graph.points, point],
   } });
   const documents = [
-    ...(intent.format === 'markdown' ? [{ path: `${directory}/document.md`, content: '', createOnly: true as const }] : []),
+    { path: `${directory}/document.md`, content: '', createOnly: true as const },
     { path: `${directory}/index.html`, content: markdownToHtml('', label), createOnly: true as const },
   ];
   return {
@@ -238,6 +248,29 @@ export function createConcept(content: WorkspaceContent, intent: CreateConceptIn
     }),
     changes: { graph, documents },
   };
+}
+
+/**
+ * Rename an object or reword its one-line description. A concept needs a name; a derivation
+ * may drop back to reading from its endpoints.
+ */
+export function updateObjectMetadata(content: WorkspaceContent, intent: UpdateMetadataIntent): ContentChange {
+  findObject(content, intent.object);
+  const label = intent.label?.trim();
+  const description = intent.description?.trim();
+  if (intent.object.kind === 'concept' && label !== undefined && !label) throw new Error('概念名称不能为空');
+  const manifest = manifestOf(content);
+  const apply = <T extends { id: string; data: Record<string, unknown> }>(object: T): T => (object.id === intent.object.id
+    ? { ...object, data: {
+      ...object.data,
+      ...(label === undefined ? {} : { label: label || undefined }),
+      ...(description === undefined ? {} : { description: description || undefined }),
+    } }
+    : object);
+  const graph = serializeWorkspaceManifest({ ...manifest, graph: intent.object.kind === 'concept'
+    ? { ...manifest.graph, points: manifest.graph.points.map(apply) }
+    : { ...manifest.graph, hyperedges: manifest.graph.hyperedges.map(apply) } });
+  return { content: withGraphText(content, graph), changes: { graph }, objectId: intent.object.id };
 }
 
 /** Tag a concept. */
@@ -263,9 +296,8 @@ export function updateTagDeclarations(content: WorkspaceContent, tags: readonly 
     if (declared.has(id)) throw new Error(`标签 ID 重复: ${id}`);
     declared.add(id);
   }
-  const graph = serializeWorkspaceManifest({ ...manifestOf(content), tags: tags.map((tag) => ({
-    id: tag.id.trim(), label: tag.label.trim(), ...(tag.description?.trim() ? { description: tag.description.trim() } : {}),
-  })) });
+  const graph = serializeWorkspaceManifest({ ...manifestOf(content),
+    tags: tags.map((tag) => ({ id: tag.id.trim(), label: tag.label.trim() })) });
   return { content: withGraphText(content, graph), changes: { graph } };
 }
 

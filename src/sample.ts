@@ -16,9 +16,9 @@ function asRetiredDocument(manifest: unknown, replacements: ViewReplacement[] = 
     ...rest,
     schema: DOCUMENT_SCHEMA,
     graph: {
-      ...rest.graph,
       points: rest.graph.points.map(({ id, data: { tags: _pointTags, ...data } }: Point & { data: { tags?: unknown } }) =>
-        ({ id, data })),
+        ({ id, data: { ...data, format: 'markdown' as const } })),
+      hyperedges: rest.graph.hyperedges.map((edge) => ({ ...edge, data: { ...edge.data, format: 'markdown' as const } })),
     },
     view: { replacements },
   };

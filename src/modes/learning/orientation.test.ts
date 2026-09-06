@@ -1,28 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ORIENTATION_SCHEMA, createConcept, createWorkspace, parseWorkspaceContent, updateConceptTags,
-  updateOrientation, updateTagDeclarations, type OrientationConfig, type WorkspaceContent,
+  ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, parseWorkspaceContent, updateOrientation,
+  type OrientationConfig, type WorkspaceContent,
 } from '../../workspace/index';
 import {
   applyOrientationIntent, beginOrientation, currentQuestion, isOrientationComplete, planOrientation,
 } from './orientation';
 
 function workspace(): WorkspaceContent {
-  let content = createWorkspace({ title: 'T' }).content;
-  for (const label of ['A', 'B', 'C', 'D']) content = createConcept(content, { label, format: 'markdown' }).content;
-  content = updateTagDeclarations(content, [{ id: 'basics', label: '基础' }]).content;
-  content = updateConceptTags(content, { conceptId: 'c-1', tags: ['basics'] }).content;
-  return updateConceptTags(content, { conceptId: 'c-2', tags: ['basics'] }).content;
+  // A hand-written manifest, so the ids in CONFIG below are the ids a real graph has.
+  return parseWorkspaceContent({ graph: JSON.stringify({
+    schema: WORKSPACE_SCHEMA,
+    document: { title: 'T', description: '' },
+    tags: [{ id: 'basics', label: '基础' }],
+    graph: { points: [
+      { id: 'a', data: { label: 'A', document: 'docs/a', tags: ['basics'] } },
+      { id: 'b', data: { label: 'B', document: 'docs/b', tags: ['basics'] } },
+      { id: 'c', data: { label: 'C', document: 'docs/c' } },
+      { id: 'd', data: { label: 'D', document: 'docs/d' } },
+    ], hyperedges: [] },
+  }), documents: {} });
 }
 
 const CONFIG: OrientationConfig = {
   schema: ORIENTATION_SCHEMA,
-  seed: { targets: ['c-3'], known: ['c-1'] },
+  seed: { targets: ['c'], known: ['a'] },
   questions: [
     { id: 'why', prompt: '为什么来', select: 'one', options: [
-      { id: 'paper', label: '论文', actions: [{ op: 'set-targets', points: ['c-4'] }], next: 'known' },
+      { id: 'paper', label: '论文', actions: [{ op: 'set-targets', points: ['d'] }], next: 'known' },
       { id: 'browse', label: '随便逛逛', actions: [], next: 'finish' },
-      { id: 'course', label: '上课', actions: [{ op: 'add-targets', points: ['c-3'] }] },
+      { id: 'course', label: '上课', actions: [{ op: 'add-targets', points: ['c'] }] },
     ] },
     { id: 'known', prompt: '会哪些', select: 'many', next: 'finish', options: [
       { id: 'basics', label: '基础', actions: [{ op: 'add-known', tags: ['basics'] }] },
@@ -64,8 +71,8 @@ describe('orientation transitions', () => {
 
   it('initializes a route from the default seed before any question is answered', () => {
     const run = beginOrientation(plan());
-    expect(run.targets).toEqual(['c-3']);
-    expect(run.known).toEqual(['c-1']);
+    expect(run.targets).toEqual(['c']);
+    expect(run.known).toEqual(['a']);
     expect(currentQuestion(plan(), run)?.id).toBe('why');
     expect(isOrientationComplete(plan(), run)).toBe(false);
   });
@@ -73,7 +80,7 @@ describe('orientation transitions', () => {
   it('applies a single-select answer, follows its branch and records the trail', () => {
     const p = plan();
     const run = applyOrientationIntent(p, beginOrientation(p), { kind: 'answer', optionIds: ['paper'] });
-    expect(run.targets).toEqual(['c-4']);
+    expect(run.targets).toEqual(['d']);
     expect(currentQuestion(p, run)?.id).toBe('known');
     expect(run.trail).toEqual([{ questionId: 'why', optionIds: ['paper'], optionLabels: ['论文'] }]);
   });
@@ -82,7 +89,7 @@ describe('orientation transitions', () => {
     const p = plan();
     const answered = applyOrientationIntent(p, beginOrientation(p), { kind: 'answer', optionIds: ['paper'] });
     const run = applyOrientationIntent(p, answered, { kind: 'answer', optionIds: ['basics', 'none'] });
-    expect(run.known).toEqual(['c-1', 'c-2']);
+    expect(run.known).toEqual(['a', 'b']);
     expect(isOrientationComplete(p, run)).toBe(true);
     expect(currentQuestion(p, run)).toBeNull();
   });
@@ -90,7 +97,7 @@ describe('orientation transitions', () => {
   it('falls through to the next question in document order when an option names no branch', () => {
     const p = plan();
     const run = applyOrientationIntent(p, beginOrientation(p), { kind: 'answer', optionIds: ['course'] });
-    expect(run.targets).toEqual(['c-3']);
+    expect(run.targets).toEqual(['c']);
     expect(currentQuestion(p, run)?.id).toBe('known');
   });
 
@@ -112,8 +119,8 @@ describe('orientation transitions', () => {
 
   it('takes direct target and known changes, keeping only concepts the graph has', () => {
     const p = plan();
-    const run = applyOrientationIntent(p, beginOrientation(p), { kind: 'set-targets', conceptIds: ['c-2', 'ghost'] });
-    expect(run.targets).toEqual(['c-2']);
+    const run = applyOrientationIntent(p, beginOrientation(p), { kind: 'set-targets', conceptIds: ['b', 'ghost'] });
+    expect(run.targets).toEqual(['b']);
     expect(applyOrientationIntent(p, run, { kind: 'set-known', conceptIds: ['ghost'] }).known).toEqual([]);
   });
 
@@ -125,8 +132,8 @@ describe('orientation transitions', () => {
 
   it('drives the generic fallback through the same transitions', () => {
     const p = planOrientation(workspace());
-    const run = applyOrientationIntent(p, beginOrientation(p), { kind: 'set-targets', conceptIds: ['c-1'] });
-    expect(run.targets).toEqual(['c-1']);
+    const run = applyOrientationIntent(p, beginOrientation(p), { kind: 'set-targets', conceptIds: ['a'] });
+    expect(run.targets).toEqual(['a']);
     expect(() => applyOrientationIntent(p, run, { kind: 'answer', optionIds: ['paper'] })).toThrow();
   });
 });

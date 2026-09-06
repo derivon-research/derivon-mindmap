@@ -1,15 +1,17 @@
 import { parseWorkspaceManifest, type ManifestGraph } from './manifest';
 
 export {
-  createConcept, createWorkspace, objectDocumentPaths, objectDocumentPreview, orientationConceptImpact,
-  parseWorkspaceContent, updateConceptTags, updateObjectDocument, updateOrientation, updateTagDeclarations,
+  createConcept, createWorkspace, objectDocumentPaths, objectDocumentPreview, objectSourcePath,
+  orientationConceptImpact, parseWorkspaceContent, updateConceptTags, updateObjectDocument,
+  updateObjectMetadata, updateOrientation, updateTagDeclarations,
   type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type TextResource,
-  type UpdateConceptTagsIntent, type UpdateDocumentIntent, type WorkspaceContent, type WorkspaceOrientation,
+  type UpdateConceptTagsIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
+  type WorkspaceContent, type WorkspaceOrientation,
 } from './content';
 
 export {
   WORKSPACE_SCHEMA, conceptTags, conceptsWithTag,
-  type ConceptPoint, type DerivationHyperedge, type DocumentFormat, type DocumentReference,
+  type ConceptPoint, type DerivationHyperedge, type DocumentReference,
   type ManifestGraph, type TagDeclaration, type WorkspaceManifest,
 } from './manifest';
 

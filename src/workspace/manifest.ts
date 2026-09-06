@@ -15,36 +15,38 @@ function isValidWeight(value: unknown): value is number {
   return Number.isSafeInteger(scaled) && Math.abs(value - scaled / WEIGHT_SCALE) < 1e-10;
 }
 
-export type DocumentFormat = 'markdown' | 'html';
-
 export type DocumentReference = {
   readonly document: string;
-  readonly format: DocumentFormat;
+};
+
+/** A one-line gloss, for pickers, search results and listings. The document is the content. */
+type Described = {
+  readonly description?: string;
 };
 
 /** A concept, recorded as a point: stable id, label, owned document, author tags. */
 export type ConceptPoint = {
   readonly id: string;
-  readonly data: DocumentReference & {
+  readonly data: DocumentReference & Described & {
     readonly label: string;
     readonly tags?: readonly string[];
   };
 };
 
-/** A product derivation, recorded as a hyperedge. */
+/** A product derivation, recorded as a hyperedge. Unnamed ones read from their endpoints. */
 export type DerivationHyperedge = {
   readonly id: string;
   readonly weight: number;
   readonly tails: readonly string[];
   readonly head: string;
-  readonly data: DocumentReference;
+  readonly data: DocumentReference & Described & {
+    readonly label?: string;
+  };
 };
 
-/** A workspace-level tag declaration. */
 export type TagDeclaration = {
   readonly id: string;
   readonly label: string;
-  readonly description?: string;
 };
 
 export type ManifestGraph = {
@@ -95,14 +97,11 @@ function validateTags(value: unknown, issues: ManifestIssue[]) {
       issues.push({ path, message: '必须是对象' });
       return;
     }
-    reportUnknownKeys(tag, new Set(['id', 'label', 'description']), path, issues);
+    reportUnknownKeys(tag, new Set(['id', 'label']), path, issues);
     if (typeof tag.id !== 'string' || !tag.id.trim()) issues.push({ path: `${path}.id`, message: '需要非空字符串' });
     else if (declared.has(tag.id)) issues.push({ path: `${path}.id`, message: '标签 ID 重复' });
     else declared.add(tag.id);
     if (typeof tag.label !== 'string' || !tag.label.trim()) issues.push({ path: `${path}.label`, message: '需要非空字符串' });
-    if (tag.description !== undefined && typeof tag.description !== 'string') {
-      issues.push({ path: `${path}.description`, message: '必须是字符串' });
-    }
   });
 }
 
@@ -148,12 +147,13 @@ export function validateWorkspaceManifest(value: unknown): ManifestIssue[] {
   const pointIds = new Set<string>();
   const documentOwner = new Map<string, string>();
   const validateDocumentReference = (data: Record<string, unknown>, path: string, owner: string) => {
+    if (data.format !== undefined) issues.push({ path: `${path}.format`, message: '文档只有 Markdown 一种，请移除 format' });
+    if (data.description !== undefined && typeof data.description !== 'string') {
+      issues.push({ path: `${path}.description`, message: '必须是字符串' });
+    }
     if (!isDocumentDirectory(data.document)) {
       issues.push({ path: `${path}.document`, message: '必须是工作区内的文档目录相对路径' });
       return;
-    }
-    if (data.format !== 'markdown' && data.format !== 'html') {
-      issues.push({ path: `${path}.format`, message: '必须为 markdown 或 html' });
     }
     const existingOwner = documentOwner.get(data.document);
     if (existingOwner) issues.push({ path: `${path}.document`, message: `${data.document} 已由 ${existingOwner} 拥有` });
@@ -202,6 +202,9 @@ export function validateWorkspaceManifest(value: unknown): ManifestIssue[] {
     if (!isRecord(hyperedge.data)) issues.push({ path: `${path}.data`, message: '必须是对象' });
     else {
       if (hyperedge.data.tags !== undefined) issues.push({ path: `${path}.data.tags`, message: '标签只属于概念，推导没有标签' });
+      if (hyperedge.data.label !== undefined && typeof hyperedge.data.label !== 'string') {
+        issues.push({ path: `${path}.data.label`, message: '必须是字符串' });
+      }
       validateDocumentReference(hyperedge.data, `${path}.data`, `超边 ${String(hyperedge.id)}`);
     }
   });
@@ -239,7 +242,7 @@ export function serializeWorkspaceManifest(manifest: WorkspaceManifest): string 
         id: point.id,
         data: { ...point.data, tags: point.data.tags?.length ? [...point.data.tags] : undefined },
       })),
-      hyperedges: manifest.graph.hyperedges,
+      hyperedges: manifest.graph.hyperedges.map((edge) => ({ ...edge, data: { ...edge.data } })),
     },
   }, null, 2)}\n`;
 }
@@ -252,9 +255,21 @@ export function conceptsWithTag(graph: ManifestGraph, tag: string): readonly Con
   return graph.points.filter((point) => conceptTags(point).includes(tag));
 }
 
-export function uniqueId(prefix: 'c' | 'h', existing: Iterable<string>): string {
+/**
+ * The generated-id shape, documented in the README so the app and the authoring skills can
+ * each implement it. Digits and letters that survive being read aloud or copied by hand:
+ * no `0 1 i l o u`. The protocol itself accepts any ASCII id, so a hand-written graph keeps
+ * names like `svd`.
+ */
+const ID_ALPHABET = '23456789abcdefghjkmnpqrstvwxyz';
+const ID_LENGTH = 6;
+
+/** Random rather than counted: a counter's high-water mark cannot survive a deletion. */
+export function generateObjectId(prefix: 'c' | 'h', existing: Iterable<string>): string {
   const used = new Set(existing);
-  let index = 1;
-  while (used.has(`${prefix}-${index}`)) index += 1;
-  return `${prefix}-${index}`;
+  for (;;) {
+    const bytes = crypto.getRandomValues(new Uint8Array(ID_LENGTH));
+    const id = `${prefix}-${[...bytes].map((byte) => ID_ALPHABET[byte % ID_ALPHABET.length]).join('')}`;
+    if (!used.has(id)) return id;
+  }
 }

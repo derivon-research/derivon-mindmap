@@ -7,13 +7,11 @@
   "tags": [
     {
       "id": "base",
-      "label": "起点一侧",
-      "description": "不需要前提就能开始的概念。"
+      "label": "起点一侧"
     },
     {
       "id": "upper",
-      "label": "上层结果",
-      "description": "需要先走过起点一侧才能到达的概念。"
+      "label": "上层结果"
     }
   ],
   "graph": {
@@ -23,7 +21,6 @@
         "data": {
           "label": "A",
           "document": "docs/concept-a",
-          "format": "markdown",
           "tags": [
             "upper"
           ]
@@ -34,7 +31,6 @@
         "data": {
           "label": "B",
           "document": "docs/concept-b",
-          "format": "markdown",
           "tags": [
             "upper"
           ]
@@ -45,7 +41,6 @@
         "data": {
           "label": "C",
           "document": "docs/concept-c",
-          "format": "markdown",
           "tags": [
             "base"
           ]
@@ -56,7 +51,6 @@
         "data": {
           "label": "D",
           "document": "docs/concept-d",
-          "format": "markdown",
           "tags": [
             "upper"
           ]
@@ -67,7 +61,6 @@
         "data": {
           "label": "X",
           "document": "docs/concept-x",
-          "format": "markdown",
           "tags": [
             "base"
           ]
@@ -81,8 +74,7 @@
         "tails": [],
         "head": "C",
         "data": {
-          "document": "docs/derivation-h-c",
-          "format": "markdown"
+          "document": "docs/derivation-h-c"
         }
       },
       {
@@ -93,8 +85,7 @@
         ],
         "head": "A",
         "data": {
-          "document": "docs/derivation-h-a",
-          "format": "markdown"
+          "document": "docs/derivation-h-a"
         }
       },
       {
@@ -105,8 +96,7 @@
         ],
         "head": "B",
         "data": {
-          "document": "docs/derivation-h-b",
-          "format": "markdown"
+          "document": "docs/derivation-h-b"
         }
       },
       {
@@ -117,8 +107,7 @@
         ],
         "head": "B",
         "data": {
-          "document": "docs/derivation-h-b-alt",
-          "format": "markdown"
+          "document": "docs/derivation-h-b-alt"
         }
       },
       {
@@ -130,8 +119,7 @@
         ],
         "head": "D",
         "data": {
-          "document": "docs/derivation-h-d-points",
-          "format": "markdown"
+          "document": "docs/derivation-h-d-points"
         }
       },
       {
@@ -142,8 +130,7 @@
         ],
         "head": "X",
         "data": {
-          "document": "docs/derivation-h-x",
-          "format": "markdown"
+          "document": "docs/derivation-h-x"
         }
       },
       {
@@ -155,8 +142,7 @@
         ],
         "head": "D",
         "data": {
-          "document": "docs/derivation-h-d-x",
-          "format": "markdown"
+          "document": "docs/derivation-h-d-x"
         }
       },
       {
@@ -167,8 +153,7 @@
         ],
         "head": "D",
         "data": {
-          "document": "docs/derivation-h-d-direct",
-          "format": "markdown"
+          "document": "docs/derivation-h-d-direct"
         }
       }
     ]

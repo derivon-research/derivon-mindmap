@@ -44,11 +44,12 @@ describe('application-scoped workspace synchronization', () => {
     files.set('.derivon/orientation.json', '{ "questions": [] }');
     const session = await openWorkspaceSession(source, { authoring: source, autosaveDelayMs: 50 });
     const reader = session.reader;
-    const id = session.authoring!.createConcept({ label: 'Vector space', format: 'markdown' });
+    const id = session.authoring!.createConcept({ label: 'Vector space' });
     const preview = reader.getSnapshot();
-    expect(id).toBe('c-1');
+    const directory = preview.content.graph.points[0].data.document;
+    expect(id).toMatch(/^c-[23456789abcdefghjkmnpqrstvwxyz]{6}$/);
     expect(preview.content.graph.points[0].data.label).toBe('Vector space');
-    expect(preview.content.documents['docs/concept-c-1/document.md']).toEqual({ status: 'ready', text: '' });
+    expect(preview.content.documents[`${directory}/document.md`]).toEqual({ status: 'ready', text: '' });
     expect(preview.content.companionMetadata['.derivon/orientation.json']).toEqual({ status: 'ready', text: '{ "questions": [] }' });
     expect(preview.persistedContent.graph.points).toEqual([]);
     expect(preview.saveState).toBe('pending');
@@ -98,7 +99,7 @@ describe('application-scoped workspace synchronization', () => {
       content: { title: 'Conflict' }, persistedContent: { title: 'Conflict' }, externalChange: null,
       hasDrafts: false, hasProtectedChanges: false, authoringEpoch: 1,
     });
-    expect(() => staleCommands.createConcept({ label: 'Late draft', format: 'html' })).toThrow('编辑会话');
+    expect(() => staleCommands.createConcept({ label: 'Late draft' })).toThrow('编辑会话');
     await vi.advanceTimersByTimeAsync(50);
     expect(session.reader.getSnapshot().content.title).toBe('Conflict');
     session.dispose();
@@ -112,7 +113,7 @@ describe('application-scoped workspace synchronization', () => {
     const path = 'docs/a/assets/image.png';
     assets.set(path, new Uint8Array([1]));
     const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50 });
-    session.authoring!.createConcept({ label: 'Local', format: 'html' });
+    session.authoring!.createConcept({ label: 'Local' });
     files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
     assets.set(path, new Uint8Array([2]));
     revision = 'external';
@@ -137,7 +138,7 @@ describe('application-scoped workspace synchronization', () => {
     const commit = source.commit;
     source.commit = async (changes) => { await commit(changes); revision = 'saved'; return revision; };
     const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50, autosaveDelayMs: 100 });
-    session.authoring!.createConcept({ label: 'Local', format: 'html' });
+    session.authoring!.createConcept({ label: 'Local' });
     files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
     revision = 'external';
     await vi.advanceTimersByTimeAsync(200);
@@ -165,7 +166,7 @@ describe('application-scoped workspace synchronization', () => {
     const readAsset = source.readAsset;
     source.readAsset = async (path) => { started(); await gate; return readAsset(path); };
     const session = await openWorkspaceSession(source, { authoring: source });
-    session.authoring!.createConcept({ label: 'Local', format: 'html' });
+    session.authoring!.createConcept({ label: 'Local' });
     const effective = session.reader.getSnapshot().content;
     const pending = session.reader.readAsset(path);
     await reading;
@@ -193,7 +194,7 @@ describe('application-scoped workspace synchronization', () => {
       return revision;
     };
     const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50 });
-    session.authoring!.createConcept({ label: 'Local', format: 'markdown' });
+    session.authoring!.createConcept({ label: 'Local' });
     const saving = session.flush();
     await vi.advanceTimersByTimeAsync(50);
     const duringSave = session.reader.getSnapshot().externalChange;
@@ -235,7 +236,7 @@ describe('application-scoped workspace synchronization', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(session.reader.getSnapshot().content.graph.points).toEqual([]);
     expect(commits).toEqual([]);
-    expect(() => session.authoring!.createConcept({ label: ' ', format: 'markdown' })).toThrow();
+    expect(() => session.authoring!.createConcept({ label: ' ' })).toThrow();
     expect(session.reader.getSnapshot().hasDrafts).toBe(true);
     session.authoring!.protectDraft('new-concept', false);
     expect(await session.reload()).toBe('loaded');
@@ -256,7 +257,7 @@ describe('application-scoped workspace synchronization', () => {
       return String(revision);
     };
     const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 10_000 });
-    session.authoring!.createConcept({ label: 'Local', format: 'markdown' });
+    session.authoring!.createConcept({ label: 'Local' });
     files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
     revision += 1;
 
@@ -275,7 +276,7 @@ describe('application-scoped workspace synchronization', () => {
     const commit = source.commit;
     source.commit = async (changes) => { if (fail) throw new Error('Disk full'); await commit(changes); };
     const session = await openWorkspaceSession(source, { authoring: source });
-    session.authoring!.createConcept({ label: 'Unsaved', format: 'html' });
+    session.authoring!.createConcept({ label: 'Unsaved' });
     await session.flush();
     expect(session.reader.getSnapshot()).toMatchObject({ saveState: 'error', error: 'Disk full', hasProtectedChanges: true });
     expect(session.reader.getSnapshot().content.graph.points).toHaveLength(1);
@@ -294,9 +295,9 @@ describe('application-scoped workspace synchronization', () => {
     const commit = source.commit;
     source.commit = async (changes) => { await gate; await commit(changes); };
     const session = await openWorkspaceSession(source, { authoring: source });
-    session.authoring!.createConcept({ label: 'A', format: 'markdown' });
+    session.authoring!.createConcept({ label: 'A' });
     const saving = session.flush();
-    session.authoring!.createConcept({ label: 'B', format: 'html' });
+    session.authoring!.createConcept({ label: 'B' });
     expect(session.reader.getSnapshot().content.graph.points).toHaveLength(2);
     expect(session.reader.getSnapshot().persistedContent.graph.points).toEqual([]);
     release();
@@ -310,18 +311,19 @@ describe('application-scoped workspace synchronization', () => {
   it('keeps a valid graph with local read diagnostics and rejects an invalid manifest', async () => {
     const { source, files } = memorySource();
     const session = await openWorkspaceSession(source, { authoring: source });
-    session.authoring!.createConcept({ label: 'A', format: 'markdown' });
+    session.authoring!.createConcept({ label: 'A' });
+    const source_path = `${session.reader.getSnapshot().content.graph.points[0].data.document}/document.md`;
     await session.flush();
     session.dispose();
-    files.delete('docs/concept-c-1/document.md');
+    files.delete(source_path);
     const reopened = await openWorkspaceSession(source, { authoring: source });
     expect(reopened.reader.getSnapshot().content.graph.points).toHaveLength(1);
     expect(reopened.reader.getSnapshot().content.diagnostics).toEqual([
-      { path: 'docs/concept-c-1/document.md', message: 'Missing: docs/concept-c-1/document.md' },
+      { path: source_path, message: `Missing: ${source_path}` },
     ]);
-    reopened.authoring!.createConcept({ label: 'B', format: 'html' });
+    reopened.authoring!.createConcept({ label: 'B' });
     await reopened.flush();
-    expect(files.has('docs/concept-c-1/document.md')).toBe(false);
+    expect(files.has(source_path)).toBe(false);
     reopened.dispose();
     files.set('.derivon/workspace.json', '{ "graph": { "points": [] } }');
     await expect(openWorkspaceSession(source)).rejects.toThrow();
@@ -371,17 +373,18 @@ describe('application-scoped workspace synchronization', () => {
     vi.useFakeTimers();
     const { source, assets, commits } = memorySource();
     const session = await openWorkspaceSession(source, { authoring: source, autosaveDelayMs: 50 });
-    session.authoring!.createConcept({ label: 'A', format: 'markdown' });
+    const id = session.authoring!.createConcept({ label: 'A' });
+    const directory = session.reader.getSnapshot().content.graph.points[0].data.document;
     await session.flush();
     const input = new Uint8Array([3, 4, 5]);
     const name = '123e4567-e89b-42d3-a456-426614174000.png';
-    session.authoring!.updateDocument({ object: { kind: 'concept', id: 'c-1' },
+    session.authoring!.updateDocument({ object: { kind: 'concept', id },
       source: `# Edited\n\n![x](assets/${name})`, assets: [{ name, content: input }] });
     input[0] = 99;
-    expect(session.reader.getSnapshot().content.documents['docs/concept-c-1/document.md']).toEqual({
+    expect(session.reader.getSnapshot().content.documents[`${directory}/document.md`]).toEqual({
       status: 'ready', text: `# Edited\n\n![x](assets/${name})`,
     });
-    const assetPath = `docs/concept-c-1/assets/${name}`;
+    const assetPath = `${directory}/assets/${name}`;
     const previewBytes = await session.reader.readAsset(assetPath);
     expect(previewBytes).toEqual(new Uint8Array([3, 4, 5]));
     previewBytes[1] = 88;
@@ -393,7 +396,7 @@ describe('application-scoped workspace synchronization', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(commits).toHaveLength(2);
     const reopened = await openWorkspaceSession(source);
-    expect(reopened.reader.getSnapshot().content.documents['docs/concept-c-1/index.html']).toEqual({
+    expect(reopened.reader.getSnapshot().content.documents[`${directory}/index.html`]).toEqual({
       status: 'ready', text: expect.stringContaining(`assets/${name}`),
     });
     expect(await reopened.reader.readAsset(assetPath)).toEqual(new Uint8Array([3, 4, 5]));

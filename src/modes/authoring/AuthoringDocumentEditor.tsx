@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Code2, Eye, Pencil, Undo2 } from 'lucide-react';
 import type { GraphObject } from '../../rendering';
-import type { WorkspaceContent } from '../../workspace/index';
+import { objectSourcePath, type WorkspaceContent } from '../../workspace/index';
 import type { AuthoringCommands } from '../../synchronization';
 import type { EditorReferenceTarget } from '../../editorReferences';
 import { resolveWorkspaceImageReference, IMAGE_FILE_EXTENSIONS, imageMimeType } from '../../workspace/imageReference';
@@ -21,12 +21,12 @@ export function AuthoringDocumentEditor({ object, content, authoring, drafts, on
   const owner = object.kind === 'concept' ? content.graph.points.find((item) => item.id === object.id)
     : content.graph.hyperedges.find((item) => item.id === object.id);
   const reference = owner?.data;
-  const sourcePath = reference ? `${reference.document}/${reference.format === 'markdown' ? 'document.md' : 'index.html'}` : '';
+  const sourcePath = reference ? objectSourcePath(reference) : '';
   const resource = content.documents[sourcePath];
   const accepted = resource?.status === 'ready' ? resource.text : '';
   const key = `${object.kind}:${object.id}`;
   const [value, setValue] = useState(() => drafts.get(key)?.source ?? accepted);
-  const [view, setView] = useState<'edit' | 'source' | 'preview'>(() => reference?.format === 'html' ? 'source' : 'edit');
+  const [view, setView] = useState<'edit' | 'source' | 'preview'>('edit');
   const [failure, setFailure] = useState('');
   const [applying, setApplying] = useState(false);
   const dirty = value !== accepted;
@@ -104,9 +104,9 @@ export function AuthoringDocumentEditor({ object, content, authoring, drafts, on
   function discard() { drafts.delete(key); setValue(accepted); setFailure(''); authoring.protectDraft(`document:${key}`, false); }
   if (!reference || resource?.status !== 'ready') return <p role="alert">{resource?.status === 'error' ? resource.message : '对象源文档不存在'}</p>;
   return <section className="authoring-document-editor" aria-label="对象文档编辑器">
-    <header className="document-viewbar"><span>{reference.format === 'markdown' ? 'Markdown' : 'HTML'}</span>
+    <header className="document-viewbar">
       <div role="group" aria-label="文档视图">
-        {reference.format === 'markdown' && <button type="button" title="编辑文档" aria-label="编辑文档" aria-pressed={view === 'edit'} onClick={() => setView('edit')}><Pencil size={15} /></button>}
+        <button type="button" title="编辑文档" aria-label="编辑文档" aria-pressed={view === 'edit'} onClick={() => setView('edit')}><Pencil size={15} /></button>
         <button type="button" title="源文档" aria-label="源文档" aria-pressed={view === 'source'} onClick={() => setView('source')}><Code2 size={15} /></button>
         <button type="button" title="预览文档" aria-label="预览文档" aria-pressed={view === 'preview'} onClick={() => setView('preview')}><Eye size={15} /></button>
       </div><small>{dirty ? '编辑草稿' : '有效内容'}</small></header>
@@ -115,7 +115,7 @@ export function AuthoringDocumentEditor({ object, content, authoring, drafts, on
       label={title} currentId={object.id} documentPath={sourcePath} referenceTargets={targets} onOpenReference={openReference}
       resolveImage={resolveImage} storeImage={storeImage} onImageError={onImageError} /></Suspense>
       : view === 'source' ? <textarea className="document-source" aria-label="文档源码" value={value} onChange={(event) => change(event.target.value)} spellCheck={false} />
-        : <DraftPreview source={value} title={title} format={reference.format} documentPath={sourcePath} resolveImage={resolveImage} />}
+        : <DraftPreview source={value} title={title} documentPath={sourcePath} resolveImage={resolveImage} />}
     <footer className="document-editor-actions"><small>{value.length} 字符正文</small><span />
       <button type="button" disabled={!dirty || applying} onClick={discard}><Undo2 size={15} />放弃草稿</button>
       <button type="button" className="authoring-primary" disabled={!dirty || applying} onClick={() => { void apply(); }}><Check size={15} />{applying ? '正在应用…' : '应用修改'}</button>
@@ -123,8 +123,8 @@ export function AuthoringDocumentEditor({ object, content, authoring, drafts, on
   </section>;
 }
 
-function DraftPreview({ source, title, format, documentPath, resolveImage }: { source: string; title: string; format: string; documentPath: string;
+function DraftPreview({ source, title, documentPath, resolveImage }: { source: string; title: string; documentPath: string;
   resolveImage: (source: string) => Promise<{ url: string; release?: () => void }> }) {
-  const html = useMemo(() => format === 'markdown' ? markdownToHtml(source, title) : source, [format, source, title]);
+  const html = useMemo(() => markdownToHtml(source, title), [source, title]);
   return <DocumentPreview title={`${title} 文档预览`} html={html} documentPath={documentPath} resolveImage={resolveImage} className="document-preview" allowScripts />;
 }

@@ -1,9 +1,10 @@
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import {
   ORIENTATION_PATH, createConcept, objectDocumentPaths, parseWorkspaceContent, parseWorkspaceGraph,
-  updateConceptTags, updateObjectDocument, updateOrientation, updateTagDeclarations,
+  updateConceptTags, updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
   type ContentChange, type CreateConceptIntent, type OrientationConfig, type TagDeclaration,
-  type TextResource, type UpdateConceptTagsIntent, type UpdateDocumentIntent, type WorkspaceContent,
+  type TextResource, type UpdateConceptTagsIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
+  type WorkspaceContent,
 } from '../workspace/index';
 
 type AcquiredContent = { readonly content: WorkspaceContent; readonly revision: string | null };
@@ -30,6 +31,7 @@ export type WorkspaceReader = {
 export type AuthoringCommands = {
   createConcept(intent: CreateConceptIntent): string;
   updateDocument(intent: UpdateDocumentIntent): void;
+  updateObjectMetadata(intent: UpdateMetadataIntent): void;
   updateConceptTags(intent: UpdateConceptTagsIntent): void;
   updateTagDeclarations(tags: readonly TagDeclaration[]): void;
   /** `null` removes the companion document; the workspace stays valid without one. */
@@ -243,6 +245,7 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
         return change.objectId;
       },
       updateDocument(intent) { assertCurrent(); accept(updateObjectDocument(snapshot.content, intent)); },
+      updateObjectMetadata(intent) { assertCurrent(); accept(updateObjectMetadata(snapshot.content, intent)); },
       updateConceptTags(intent) { assertCurrent(); accept(updateConceptTags(snapshot.content, intent)); },
       updateTagDeclarations(tags) { assertCurrent(); accept(updateTagDeclarations(snapshot.content, tags)); },
       updateOrientation(config) { assertCurrent(); accept(updateOrientation(snapshot.content, config)); },

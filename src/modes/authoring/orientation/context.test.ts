@@ -1,32 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ORIENTATION_SCHEMA, createConcept, createWorkspace, updateOrientation, type OrientationConfig,
+  ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, parseWorkspaceContent, updateOrientation, type OrientationConfig,
 } from '../../../workspace/index';
 import { planOrientation } from '../../learning/orientation';
 import { arrivalState, entriesReaching, entryOptions, optionContext } from './context';
 
 const CONFIG: OrientationConfig = {
   schema: ORIENTATION_SCHEMA,
-  seed: { targets: ['c-1'], known: [] },
+  seed: { targets: ['a'], known: [] },
   questions: [
     { id: 'why', prompt: '为什么', select: 'one', options: [
-      { id: 'paper', label: '论文', actions: [{ op: 'set-targets', points: ['c-4'] }], next: 'svd-background' },
-      { id: 'class', label: '上课', actions: [{ op: 'set-targets', points: ['c-3'] }], next: 'general' },
+      { id: 'paper', label: '论文', actions: [{ op: 'set-targets', points: ['d'] }], next: 'svd-background' },
+      { id: 'class', label: '上课', actions: [{ op: 'set-targets', points: ['c'] }], next: 'general' },
       { id: 'browse', label: '逛逛', actions: [], next: 'finish' },
     ] },
     { id: 'svd-background', prompt: '会哪些', select: 'many', next: 'finish', options: [
-      { id: 'has-basics', label: '基础', actions: [{ op: 'add-known', points: ['c-1', 'c-2'] }] },
+      { id: 'has-basics', label: '基础', actions: [{ op: 'add-known', points: ['a', 'b'] }] },
       { id: 'none', label: '不确定', actions: [] },
     ] },
     { id: 'general', prompt: '走到哪儿', select: 'one', options: [
-      { id: 'start', label: '刚开始', actions: [{ op: 'set-known', points: ['c-1'] }], next: 'finish' },
+      { id: 'start', label: '刚开始', actions: [{ op: 'set-known', points: ['a'] }], next: 'finish' },
     ] },
   ],
 };
 
 function plan() {
-  let content = createWorkspace({ title: 'T' }).content;
-  for (const label of ['A', 'B', 'C', 'D']) content = createConcept(content, { label, format: 'markdown' }).content;
+  const content = parseWorkspaceContent({ graph: JSON.stringify({
+    schema: WORKSPACE_SCHEMA,
+    document: { title: 'T', description: '' },
+    graph: { points: ['a', 'b', 'c', 'd'].map((id) => ({ id, data: { label: id.toUpperCase(), document: `docs/${id}` } })),
+      hyperedges: [] },
+  }), documents: {} });
   return planOrientation(updateOrientation(content, CONFIG).content);
 }
 
@@ -36,7 +40,7 @@ describe('the assumption behind a follow-up route', () => {
   });
 
   it('reaches the opening question with no assumption at all', () => {
-    expect(arrivalState(plan(), 'why', null)).toEqual({ targets: ['c-1'], known: [], at: 0, trail: [] });
+    expect(arrivalState(plan(), 'why', null)).toEqual({ targets: ['a'], known: [], at: 0, trail: [] });
   });
 
   it('offers only the entries that can actually reach a follow-up', () => {
@@ -48,14 +52,14 @@ describe('the assumption behind a follow-up route', () => {
 
   it('carries the entry answer into the arrival state and stops guessing there', () => {
     const arrived = arrivalState(plan(), 'svd-background', 'paper');
-    expect(arrived).toEqual(expect.objectContaining({ targets: ['c-4'], known: [] }));
+    expect(arrived).toEqual(expect.objectContaining({ targets: ['d'], known: [] }));
   });
 
   it('shows what one follow-up option adds on top of that arrival', () => {
     const context = optionContext(plan(), 'svd-background', 'has-basics', 'paper');
     expect(context!.before.known).toEqual([]);
-    expect(context!.after.known).toEqual(['c-1', 'c-2']);
-    expect(context!.after.targets).toEqual(['c-4']);
+    expect(context!.after.known).toEqual(['a', 'b']);
+    expect(context!.after.targets).toEqual(['d']);
     // The author is inspecting a row, so the flow stays where it is.
     expect(context!.after.at).toBe(context!.before.at);
   });

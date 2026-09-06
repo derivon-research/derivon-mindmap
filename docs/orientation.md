@@ -106,7 +106,7 @@ is always there, so it is a fixed side of the workspace rather than a search res
   seed and the entry are assumed (`context.ts`); answers in between are never guessed.
 - Concept references are built with a picker: search, or tick the tags that narrow it.
   An action points at tags with the same ticks. Tags themselves are a concept's metadata
-  and are edited on the object page, not here.
+  and are edited on the object page.
 - Editing happens in a **draft**. An unfinished question is not effective content, is not
   auto-saved, and is protected against an external update. Accepting it is one content
   operation through the shared session (`AuthoringCommands.updateOrientation`), which

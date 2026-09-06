@@ -35,10 +35,19 @@ Orientation edits live in a draft until explicitly accepted, and a configuration
 error cannot be accepted at all. Creating the configuration is a centre-view action, so the
 outline never owns it. See [orientation](orientation.md).
 
-A concept's tags are part of its document metadata, so they are edited on the object page,
-beside the format and document path. Ticking a tag is complete on its own and goes straight
-into content; a new tag can be declared and attached in the same action. Everywhere else —
-the concept picker's filter, an orientation action's targets — tags are ticked, not defined.
+### Object metadata
+
+An object's own properties sit above its document, one per line and in the same quiet
+register as the document itself: a name that reads as the title and edits in place, a
+one-line description, and — for a concept — its tags. Ticking a tag is complete on its own
+and goes straight into content; a new tag can be declared and attached in one action.
+Everywhere else — the concept picker's filter, an orientation action's targets — tags are
+ticked, not defined.
+
+The id and the document directory are not shown. They are identity and storage, not
+authored metadata; the directory appears only in the error that reports an unreadable
+document. Creating a concept is a name and a return key in the workbar, which opens the new
+object's page.
 
 Document drafts, the orientation draft and the Agent conversation survive centre-view and mode changes. Merely selecting
 an object in the graph does not mount its document editor or parse its body. The last opened
