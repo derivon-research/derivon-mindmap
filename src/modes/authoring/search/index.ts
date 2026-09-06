@@ -1,9 +1,11 @@
+import type { WorkspaceReader } from '../../../synchronization';
 import { objectSourcePath, type WorkspaceContent } from '../../../workspace/index';
 import type { SearchDocument, SearchFilter, SearchPage } from './engine';
 import type { SearchRequest } from './search.worker';
 export type { SearchObject, SearchHit, SearchFilter, SearchPage } from './engine';
 
-export function createWorkspaceSearch(content: WorkspaceContent, onReady: () => void, onError: (message: string) => void) {
+export function createWorkspaceSearch(content: WorkspaceContent, onReady: () => void, onError: (message: string) => void,
+  readDocuments?: WorkspaceReader['readDocuments']) {
   const worker = new Worker(new URL('./search.worker.ts', import.meta.url), { type: 'module' });
   let disposed = false;
   let failed = false;
@@ -48,9 +50,28 @@ export function createWorkspaceSearch(content: WorkspaceContent, onReady: () => 
       if (!disposed && !failed) post({ type: 'ready' });
     } catch (error) { fail(String(error)); }
   })();
+  let bodies: Promise<void> | undefined;
+  async function ensureBodies() {
+    if (!readDocuments) return;
+    const resources = await readDocuments(objects.map(({ object }) => objectSourcePath(object.data)));
+    for (let offset = 0; offset < objects.length; offset += 24) {
+      if (disposed || failed) return;
+      post({ type: 'add', documents: objects.slice(offset, offset + 24).map(({ object, kind }) => {
+        const source = resources[objectSourcePath(object.data)];
+        return { kind, id: object.id, label: object.data.label || object.id,
+          description: object.data.description ?? '', body: source?.status === 'ready' ? source.text : '' };
+      }) });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
   return {
-    search(query: string, filter: SearchFilter): Promise<SearchPage> {
-      if (disposed || failed) return Promise.resolve(empty);
+    async search(query: string, filter: SearchFilter): Promise<SearchPage> {
+      if (disposed || failed) return empty;
+      if (query.trim()) {
+        try { await (bodies ??= ensureBodies()); }
+        catch (error) { fail(String(error)); return empty; }
+      }
+      if (disposed || failed) return empty;
       const id = ++nextId;
       return new Promise((resolve) => {
         pending.set(id, resolve);

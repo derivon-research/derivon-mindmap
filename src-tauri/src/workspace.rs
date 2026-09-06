@@ -1042,6 +1042,24 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "runtime budget; run separately from parallel filesystem tests"]
+    fn workspace_opening_revision_budget() {
+        let root = tempfile::tempdir().unwrap();
+        // Generated HTML-sized payload; no external workspace content is redistributed.
+        fs::write(root.path().join("index.html"), vec![b'x'; 64 * 1024 * 1024]).unwrap();
+        let start = std::time::Instant::now();
+        let before = workspace_source_revision_for_root(root.path()).unwrap();
+        let after = workspace_source_revision_for_root(root.path()).unwrap();
+        let elapsed = start.elapsed();
+        println!("two opening revisions (64 MiB): {elapsed:?}");
+        assert_eq!(before, after);
+        assert!(
+            elapsed <= std::time::Duration::from_millis(2500),
+            "opening revisions exceed 2.5s: {elapsed:?}"
+        );
+    }
+
+    #[test]
     fn rejects_paths_outside_workspace() {
         assert!(safe_relative_path("../secret").is_err());
         assert!(safe_relative_path("/tmp/secret").is_err());

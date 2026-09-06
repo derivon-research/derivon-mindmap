@@ -6,7 +6,8 @@ import { createConcept, createWorkspace } from '../workspace/index';
 import type { WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import type { AuthoringModeProps, LearningModeProps, WorkspaceHandle } from './host';
 import { initialAppState } from './appState';
-import { DocumentPreview } from './DocumentPreview';
+import { MarkdownPreview } from './DocumentPreview';
+import { useObjectDocument } from './useObjectDocument';
 import WorkspaceSurface from './WorkspaceSurface';
 
 let root: Root | undefined;
@@ -20,7 +21,7 @@ afterEach(async () => {
 
 function fixture() {
   const content = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A' }).content;
-  const documentPath = `${content.graph.points[0].data.document}/index.html`;
+  const documentPath = `${content.graph.points[0].data.document}/document.md`;
   let revision = 'initial';
   let bytes = new Uint8Array([1]);
   const commit = vi.fn(async () => revision);
@@ -38,9 +39,11 @@ function fixture() {
 
 let documentPath = '';
 const modes = {
-  learning: lazy(async () => ({ default: ({ content, readAsset }: LearningModeProps) =>
-    <DocumentPreview title="Document" html={(content.documents[documentPath] as { text: string }).text}
-      documentPath={documentPath} readAsset={readAsset} /> })),
+  learning: lazy(async () => ({ default: function Document({ content, readAsset, readDocuments }: LearningModeProps) {
+    const resource = useObjectDocument(documentPath, content.documents[documentPath], readDocuments);
+    return resource?.status === 'ready' ? <MarkdownPreview title="Document" markdown={resource.text}
+      documentPath={documentPath} readAsset={readAsset} /> : <p role="status">Loading</p>;
+  } })),
   authoring: lazy(async () => ({ default: function Draft({ authoring }: AuthoringModeProps) {
     const [draft, setDraft] = useState('');
     return <input aria-label="Draft" value={draft} onChange={(event) => {

@@ -1,9 +1,10 @@
 import { ChevronRight, Compass, FileText, GitBranch, Layers, List, Network, PanelLeftClose, PanelLeftOpen, Plus, X } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { DocumentPreview } from '../../app/DocumentPreview';
+import { MarkdownPreview } from '../../app/DocumentPreview';
+import { useObjectDocument } from '../../app/useObjectDocument';
 import type { AuthoringModeProps } from '../../app/host';
 import type { GraphEvent, GraphObject, GraphView } from '../../rendering';
-import { objectDocumentPreview, type TextResource } from '../../workspace/index';
+import { objectDocumentSource, type TextResource } from '../../workspace/index';
 import { RetainedGraph } from '../RetainedGraph';
 import { WorkspaceSearch } from './WorkspaceSearch';
 import { AuthoringDocumentEditor, type DocumentDrafts } from './AuthoringDocumentEditor';
@@ -19,13 +20,17 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
   return <button type="button" className="authoring-icon" title={label} aria-label={label} onClick={onClick}>{children}</button>;
 }
 
-function DocumentView({ title, resource, documentPath, readAsset }: { title: string; resource: TextResource; documentPath: string; readAsset?: AuthoringModeProps['readAsset'] }) {
-  return <section className="authoring-document" aria-label={`${title} 文档`}>{resource.status === 'ready'
-    ? <DocumentPreview title={`${title} 文档`} html={resource.text} documentPath={documentPath} readAsset={readAsset} />
-    : <div className="authoring-document-error" role="alert"><FileText /><div><strong>无法读取对象文档</strong><p>{resource.message}</p></div></div>}</section>;
+function DocumentView({ title, resource, documentPath, readAsset, readDocuments, active }: {
+  title: string; resource: TextResource | undefined; documentPath: string; active: boolean;
+  readAsset?: AuthoringModeProps['readAsset']; readDocuments?: AuthoringModeProps['readDocuments'];
+}) {
+  const current = useObjectDocument(documentPath, resource, readDocuments, active);
+  return <section className="authoring-document" aria-label={`${title} 文档`}>{!current ? <p role="status">正在载入文档…</p> : current.status === 'ready'
+    ? <MarkdownPreview title={`${title} 文档`} markdown={current.text} documentPath={documentPath} readAsset={readAsset} />
+    : <div className="authoring-document-error" role="alert"><FileText /><div><strong>无法读取对象文档</strong><p>{current.message}</p></div></div>}</section>;
 }
 
-export function AuthoringMode({ active = true, workspace, content, authoring, routeSolver, selectedConceptId, onSelectConcept, syncStatus, onRetrySync, readAsset }: AuthoringModeProps) {
+export function AuthoringMode({ active = true, workspace, content, authoring, routeSolver, selectedConceptId, onSelectConcept, syncStatus, onRetrySync, readAsset, readDocuments }: AuthoringModeProps) {
   const draftKey = `${workspace.id}:create-concept`;
   const canCreate = Boolean(authoring);
   const [selected, setSelected] = useState<GraphObject | null>(selectedConceptId ? { kind: 'concept', id: selectedConceptId } : null);
@@ -109,7 +114,7 @@ export function AuthoringMode({ active = true, workspace, content, authoring, ro
     <div className="authoring-workspace">
       <aside className={`authoring-context-pane ${relationsOpen ? '' : 'is-collapsed'}`} aria-label={view === 'orientation' ? '开局大纲' : '关系区'}><header><IconButton label={relationsOpen ? '收起上下文区' : '展开上下文区'} onClick={() => setRelationsOpen(!relationsOpen)}>{relationsOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</IconButton>{relationsOpen && <strong>{view === 'orientation' ? '开局大纲' : '关系'}</strong>}</header><div className="authoring-context-body" hidden={!relationsOpen}>{view === 'orientation' ? <OrientationOutline content={content} state={orientation} routeSolver={routeSolver} editable={canCreate} /> : derivation ? <DerivationEndpoints edge={derivation} pointById={pointById} onOpen={openObject} /> : <><RelationGroup title="前提推导" eyebrow="如何得到" edges={incoming} direction="incoming" pointById={pointById} onOpen={openObject} /><RelationGroup title="后续推导" eyebrow="能够到达哪里" edges={outgoing} direction="outgoing" pointById={pointById} onOpen={openObject} />{!concept && <p className="authoring-empty-note">选择概念后查看关系</p>}</>}</div></aside>
       <div className="authoring-content">{view === 'orientation' && <OrientationWorkbench active={active} content={content} state={orientation} authoring={authoring} routeSolver={routeSolver} />}{view === 'graph' && <main className="authoring-graph-page"><header><div className="authoring-tabs" role="group" aria-label="图视图"><button type="button" aria-pressed={graphKind === 'overview'} onClick={() => setGraphKind('overview')}>全图</button><button type="button" aria-pressed={graphKind === 'neighbourhood'} disabled={!focusId} onClick={() => setGraphKind('neighbourhood')}>关联布局</button></div><span className="authoring-flex" />{selected && <button type="button" onClick={() => setView('objects')}><FileText size={15} />回到对象</button>}</header><div className="authoring-graph"><RetainedGraph active={active} view={graphView} onEvent={graphEvent} /></div><div className="authoring-graph-caption"><span>{title || '未选择对象'}</span><span>{graphView.concepts.length} 个概念 · {graphView.hyperedges.length} 条推导</span></div></main>
-        }<main className="authoring-focus-page" hidden={view !== 'objects'}><header className="authoring-focus-nav"><Layers size={17} /><WorkspaceSearch content={content} onOpenObject={openObject} /><span className="authoring-current-object">{title}</span></header><div className="authoring-focus-editor">{reference ? <article className="authoring-object"><ObjectMetadata object={documentConcept ? { kind: 'concept', point: documentConcept } : { kind: 'derivation', edge: documentDerivation! }} graph={content.graph} tags={content.tags} authoring={authoring} />{authoring && documentObject ? <AuthoringDocumentEditor key={`${documentObject.kind}:${documentObject.id}`} object={documentObject} content={content} authoring={authoring} readAsset={readAsset} drafts={documentDrafts} onOpenObject={openObject} /> : <DocumentView title={documentTitle} documentPath={`${reference.document}/index.html`} readAsset={readAsset} resource={objectDocumentPreview(content, reference)} />}</article> : <div className="authoring-empty"><FileText size={30} strokeWidth={1.3} /><h1>{points.length ? '选择一个对象' : canCreate ? '创建第一个概念' : '工作区中还没有概念'}</h1><p>{formError || workspace.name}</p>{points.length > 0 && <button type="button" onClick={() => { setGraphKind('overview'); setView('graph'); }}><Network size={16} />浏览全图</button>}</div>}</div></main></div>
+        }<main className="authoring-focus-page" hidden={view !== 'objects'}><header className="authoring-focus-nav"><Layers size={17} /><WorkspaceSearch content={content} readDocuments={readDocuments} onOpenObject={openObject} /><span className="authoring-current-object">{title}</span></header><div className="authoring-focus-editor">{reference ? <article className="authoring-object"><ObjectMetadata object={documentConcept ? { kind: 'concept', point: documentConcept } : { kind: 'derivation', edge: documentDerivation! }} graph={content.graph} tags={content.tags} authoring={authoring} />{authoring && documentObject ? <AuthoringDocumentEditor key={`${documentObject.kind}:${documentObject.id}`} object={documentObject} content={content} authoring={authoring} readAsset={readAsset} readDocuments={readDocuments} active={active && view === 'objects'} drafts={documentDrafts} onOpenObject={openObject} /> : <DocumentView title={documentTitle} documentPath={`${reference.document}/document.md`} active={active && view === 'objects'} readAsset={readAsset} readDocuments={readDocuments} resource={objectDocumentSource(content, reference)} />}</article> : <div className="authoring-empty"><FileText size={30} strokeWidth={1.3} /><h1>{points.length ? '选择一个对象' : canCreate ? '创建第一个概念' : '工作区中还没有概念'}</h1><p>{formError || workspace.name}</p>{points.length > 0 && <button type="button" onClick={() => { setGraphKind('overview'); setView('graph'); }}><Network size={16} />浏览全图</button>}</div>}</div></main></div>
       <AuthoringAgentPane open={agentOpen} onToggle={() => setAgentOpen(!agentOpen)} contextLabel={title || workspace.name} />
     </div>
     {content.diagnostics.length > 0 && <details className="authoring-diagnostics"><summary>{content.diagnostics.length} 个本地内容问题</summary>{content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}><code>{item.path}</code> {item.message}</p>)}</details>}

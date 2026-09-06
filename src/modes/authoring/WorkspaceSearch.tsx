@@ -1,11 +1,12 @@
 import { FileText, GitBranch, LoaderCircle, Search, X } from 'lucide-react';
 import { memo, useEffect, useId, useRef, useState } from 'react';
+import type { WorkspaceReader } from '../../synchronization';
 import type { WorkspaceContent } from '../../workspace/index';
 import { createWorkspaceSearch, type SearchFilter, type SearchObject, type SearchPage } from './search';
 import './workspace-search.css';
 
-export const WorkspaceSearch = memo(function WorkspaceSearch({ content, onOpenObject }: {
-  content: WorkspaceContent; onOpenObject: (object: SearchObject) => void;
+export const WorkspaceSearch = memo(function WorkspaceSearch({ content, onOpenObject, readDocuments }: {
+  content: WorkspaceContent; onOpenObject: (object: SearchObject) => void; readDocuments?: WorkspaceReader['readDocuments'];
 }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<SearchFilter>('all');
@@ -27,11 +28,11 @@ export const WorkspaceSearch = memo(function WorkspaceSearch({ content, onOpenOb
     setError('');
     setPage({ hits: [], total: 0 });
     try {
-      const next = createWorkspaceSearch(content, () => setReady(true), (message) => { setError(message); setPending(false); });
+      const next = createWorkspaceSearch(content, () => setReady(true), (message) => { setError(message); setPending(false); }, readDocuments);
       service.current = next;
       return () => { revision.current++; next.dispose(); service.current = null; };
     } catch (failure) { setError(String(failure)); }
-  }, [content]);
+  }, [content, readDocuments]);
   useEffect(() => {
     const ticket = ++revision.current;
     setPage({ hits: [], total: 0 });

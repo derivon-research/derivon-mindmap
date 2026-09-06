@@ -91,16 +91,16 @@ test('inserts portable object references and opens them inside the app', async (
   await picker.getByRole('combobox', { name: '搜索引用对象' }).fill('B');
   await picker.getByRole('option', { name: /^B/ }).click();
 
-  await expect.poll(() => activeDocumentMarkdown(page, 'A')).toContain('[B](../concept-b/index.html)');
-  const reference = page.locator('.tiptap-content a[href="../concept-b/index.html"]');
+  await expect.poll(() => activeDocumentMarkdown(page, 'A')).toContain('[B](../concept-b/document.md)');
+  const reference = page.locator('.tiptap-content a[href="../concept-b/document.md"]');
   await expect(reference).toHaveText('B');
   await reference.click();
   await page.getByRole('button', { name: '修改对象引用' }).click();
   await picker.getByRole('combobox', { name: '搜索引用对象' }).fill('X');
   await picker.getByRole('option', { name: /^X/ }).click();
-  const redirectedReference = page.locator('.tiptap-content a[href="../concept-x/index.html"]');
+  const redirectedReference = page.locator('.tiptap-content a[href="../concept-x/document.md"]');
   await expect(redirectedReference).toHaveText('B');
-  await expect.poll(() => activeDocumentMarkdown(page, 'A')).toContain('[B](../concept-x/index.html)');
+  await expect.poll(() => activeDocumentMarkdown(page, 'A')).toContain('[B](../concept-x/document.md)');
 
   await redirectedReference.click({ modifiers: ['Meta'] });
   await expect(page.getByRole('region', { name: 'X 文档编辑器' })).toBeVisible();
@@ -127,7 +127,7 @@ test('keeps a cancelled reference trigger and edits ordinary links without promp
   await expect(picker).toBeVisible();
   await picker.getByRole('combobox', { name: '搜索引用对象' }).fill('X');
   await picker.getByRole('option', { name: /^X/ }).click();
-  await expect.poll(() => activeDocumentMarkdown(page, 'A')).toContain('[X](../concept-x/index.html)');
+  await expect.poll(() => activeDocumentMarkdown(page, 'A')).toContain('[X](../concept-x/document.md)');
 
   await body.locator('h1').click();
   await page.keyboard.press('End');

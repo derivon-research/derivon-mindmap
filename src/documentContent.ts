@@ -1,11 +1,20 @@
 import { Marked } from 'marked';
 import markedKatex from 'marked-katex-extension';
+import katexSourceCss from 'katex/dist/katex.min.css?raw';
 import type { DocumentFormat } from './domain';
 
 const markdownRenderer = new Marked(
   { gfm: true },
   markedKatex({ throwOnError: false, strict: false }),
 );
+
+// Opaque-origin previews cannot rely on parent styles or external font requests.
+const fonts = import.meta.glob<string>('/node_modules/katex/dist/fonts/*.woff2', {
+  eager: true, query: '?inline', import: 'default',
+});
+const katexCss = katexSourceCss
+  .replace(/src:(url\([^)]+\.woff2\) format\("woff2"\))(?:,[^}]*)}/g, 'src:$1}')
+  .replace(/url\((fonts\/[^)]+)\)/g, (_, file: string) => `url(${fonts[`/node_modules/katex/dist/${file}`]})`);
 
 const DEFAULT_STYLE = `
 :root { color: #202422; background: #fff; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -32,8 +41,8 @@ export function htmlDocument(body: string, title: string): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(title)}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.0/dist/katex.min.css" crossorigin="anonymous">
   <style>
+${katexCss}
 ${DEFAULT_STYLE.split('\n').map((line) => `    ${line}`).join('\n')}
   </style>
 </head>

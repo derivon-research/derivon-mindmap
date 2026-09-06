@@ -99,11 +99,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Chromium for current workspace opening
+        run: npx playwright install --with-deps chromium
+
       - name: Install Tauri WebDriver
         run: cargo install tauri-driver --locked
 
       - name: Build desktop application
         run: npm run tauri:build -- --debug --no-bundle -- --locked
+
+      - name: Measure current workspace opening
+        id: opening
+        continue-on-error: true
+        env:
+          PERF_SIZE: "360"
+        run: npm run bench:workspace-opening
 
       - name: Measure runtime performance
         id: benchmark
@@ -129,5 +139,5 @@ jobs:
           path: test-results
 
       - name: Enforce performance budgets
-        if: steps.benchmark.outcome != 'success'
+        if: steps.benchmark.outcome != 'success' || steps.opening.outcome != 'success'
         run: exit 1

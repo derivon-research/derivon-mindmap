@@ -37,7 +37,7 @@ it('retains an unchanged hidden overview and invalidates changed topology until 
 it('renders the effective content document and changes targets without reading a source', async () => {
   const content: WorkspaceContent = { graphText: '', title: 'Effective', graph: { points: [{ id: 'fresh', data: { label: 'Fresh concept', document: 'docs/fresh' } },
       { id: 'other', data: { label: 'Other concept', document: 'docs/other' } }], hyperedges: [] },
-    documents: { 'docs/fresh/index.html': { status: 'ready', text: '<main>Unsaved effective body</main>' } }, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [] };
+    documents: { 'docs/fresh/document.md': { status: 'ready', text: '<main>Unsaved effective body</main>' } }, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [] };
   const onChangeTargets = vi.fn();
   root = createRoot(container);
   act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={content} targetIds={['other']} knownIds={[]} onChangeKnown={vi.fn()} onChangeTargets={onChangeTargets} />));

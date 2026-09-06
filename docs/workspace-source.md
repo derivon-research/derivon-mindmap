@@ -34,14 +34,23 @@ modes. Learning receives effective content and learner-state callbacks, not a so
 an authoring command capability. Desktop folder selection carries only path/name; content
 creation and subsequent saves use this port.
 
-Object text and `.derivon/orientation.json` are acquired together before publishing an
-in-memory snapshot. Document read failures remain explicit localized diagnostics; a bad
-manifest fails opening. Revision checks bracket acquisition, with at most three attempts.
-This is an in-memory publication boundary, not an externally atomic filesystem read.
-Lazy asset reads are checked against that same basis and fail if it changes, rather than
-retrying indefinitely or returning new bytes into an old preview. Asset-only external updates
-also invalidate preview readers. Companion configuration is preserved as opaque text here;
-#58 owns its semantics.
+Opening acquires only the graph and `.derivon/orientation.json`, with revision checks
+bracketing acquisition and at most three attempts. It does not read any object documents.
+A bad manifest fails opening; unread document bodies are not silently diagnosed as missing.
+
+Objects persist only `document.md` and assets (ADR-0008). `WorkspaceReader.readDocuments`
+acquires explicitly requested Markdown through the source, bracketing the whole batch with
+revision checks. Viewing requests one document; a user-triggered full-text search requests
+the bodies it needs. There is no startup body prefetch. Loaded resources and local read
+failures are cached outside subscribed content, so browsing does not republish graph state.
+Accepted edits take precedence over cached disk text; an edit requires a readable acquired
+basis. Reloading or adopting an external version invalidates the cache.
+
+Both lazy document and asset reads reject external-version changes rather than mixing new
+bytes into a protected preview. Known overlapping local saves may be retried, at most three
+times. Cached old text can still serve its accepted basis; unseen old text cannot be recovered
+from an externally overwritten file and must fail explicitly. These checks are not an atomic
+filesystem snapshot. Asset-only external updates also invalidate preview readers.
 
 Only changes accepted through desktop authoring write authority may be persisted. A queued
 save can finish after switching to learning; learning actions still cannot create workspace

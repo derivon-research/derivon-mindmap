@@ -2,7 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { Check, Code2, Eye, Pencil, Undo2 } from 'lucide-react';
 import type { GraphObject } from '../../rendering';
 import { objectSourcePath, type WorkspaceContent } from '../../workspace/index';
-import type { AuthoringCommands } from '../../synchronization';
+import type { AuthoringCommands, WorkspaceReader } from '../../synchronization';
+import { useObjectDocument } from '../../app/useObjectDocument';
 import type { EditorReferenceTarget } from '../../editorReferences';
 import { resolveWorkspaceImageReference, IMAGE_FILE_EXTENSIONS, imageMimeType } from '../../workspace/imageReference';
 import { DocumentPreview } from '../../app/DocumentPreview';
@@ -13,16 +14,17 @@ const DocumentEditor = lazy(async () => ({ default: (await import('../../Documen
 export type DocumentDraft = { source: string; images: Map<string, File> };
 export type DocumentDrafts = Map<string, DocumentDraft>;
 
-export function AuthoringDocumentEditor({ object, content, authoring, drafts, onOpenObject, readAsset }: {
+export function AuthoringDocumentEditor({ object, content, authoring, drafts, onOpenObject, readAsset, readDocuments, active = true }: {
   object: GraphObject; content: WorkspaceContent; authoring: AuthoringCommands;
   drafts: DocumentDrafts; onOpenObject: (object: GraphObject) => void;
   readAsset?: (path: string) => Promise<Uint8Array>;
+  readDocuments?: WorkspaceReader['readDocuments']; active?: boolean;
 }) {
   const owner = object.kind === 'concept' ? content.graph.points.find((item) => item.id === object.id)
     : content.graph.hyperedges.find((item) => item.id === object.id);
   const reference = owner?.data;
   const sourcePath = reference ? objectSourcePath(reference) : '';
-  const resource = content.documents[sourcePath];
+  const resource = useObjectDocument(sourcePath, content.documents[sourcePath], readDocuments, active);
   const accepted = resource?.status === 'ready' ? resource.text : '';
   const key = `${object.kind}:${object.id}`;
   const [value, setValue] = useState(() => drafts.get(key)?.source ?? accepted);
@@ -102,6 +104,7 @@ export function AuthoringDocumentEditor({ object, content, authoring, drafts, on
     finally { setApplying(false); }
   }
   function discard() { drafts.delete(key); setValue(accepted); setFailure(''); authoring.protectDraft(`document:${key}`, false); }
+  if (reference && !resource) return <p role="status">正在载入文档…</p>;
   if (!reference || resource?.status !== 'ready') return <p role="alert">{resource?.status === 'error' ? resource.message : '对象源文档不存在'}</p>;
   return <section className="authoring-document-editor" aria-label="对象文档编辑器">
     <header className="document-viewbar">

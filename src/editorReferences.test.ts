@@ -39,26 +39,26 @@ describe('editor object references', () => {
     expect(relativeReferenceHref(
       'docs/concept-a/document.md',
       'docs/concept-common-mode-feedback',
-    )).toBe('../concept-common-mode-feedback/index.html');
+    )).toBe('../concept-common-mode-feedback/document.md');
     expect(relativeReferenceHref(
       'docs/nested/concept-a/document.md',
       'docs/concept-common-mode-feedback',
-    )).toBe('../../concept-common-mode-feedback/index.html');
+    )).toBe('../../concept-common-mode-feedback/document.md');
     expect(relativeReferenceHref(
       'docs/concept-a/document.md',
       'docs/nested/concept output range',
-    )).toBe('../nested/concept%20output%20range/index.html');
+    )).toBe('../nested/concept%20output%20range/document.md');
   });
 
   it('resolves only known workspace object links', () => {
     expect(resolveReferenceTarget(
       'docs/concept-a/document.md',
-      '../concept-common-mode-feedback/index.html#details',
+      '../concept-common-mode-feedback/document.md#details',
       targets,
     )?.id).toBe('common-mode-feedback');
-    expect(resolveReferenceTarget('docs/concept-a/document.md', '../../outside/index.html', targets)).toBeNull();
+    expect(resolveReferenceTarget('docs/concept-a/document.md', '../../outside/document.md', targets)).toBeNull();
     expect(resolveReferenceTarget('docs/concept-a/document.md', 'https://example.com', targets)).toBeNull();
-    expect(resolveReferenceTarget('docs/concept-a/document.md', '../notes/index.html', targets)).toBeNull();
+    expect(resolveReferenceTarget('docs/concept-a/document.md', '../notes/document.md', targets)).toBeNull();
   });
 
   it('validates ordinary links without allowing executable or escaping URLs', () => {

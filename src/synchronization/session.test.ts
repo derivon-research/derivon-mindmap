@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceCommit, WritableWorkspaceSource } from '../ports/WorkspaceSource';
-import { createWorkspace } from '../workspace/index';
+import { createConcept, createWorkspace } from '../workspace/index';
 import { openWorkspaceSession } from './index';
 
 function memorySource(graph = createWorkspace({ title: 'Test' }).content.graphText) {
@@ -37,7 +37,92 @@ function memorySource(graph = createWorkspace({ title: 'Test' }).content.graphTe
 
 afterEach(() => vi.useRealTimers());
 
+function lazyDocumentSource() {
+  const content = createConcept(createWorkspace({ title: 'Lazy' }).content, { label: 'A' }).content;
+  const fixture = memorySource(content.graphText);
+  const path = `${content.graph.points[0].data.document}/document.md`;
+  fixture.files.set(path, 'Original');
+  return { ...fixture, path, id: content.graph.points[0].id };
+}
+
 describe('application-scoped workspace synchronization', () => {
+  it('caches requested Markdown without publishing content, deduplicates demand, and invalidates on reload', async () => {
+    const { source, files, path } = lazyDocumentSource();
+    const read = vi.spyOn(source, 'readDocument');
+    const session = await openWorkspaceSession(source);
+    const before = session.reader.getSnapshot();
+    try {
+      expect(read).not.toHaveBeenCalled();
+      const [left, right] = await Promise.all([session.reader.readDocuments([path]), session.reader.readDocuments([path])]);
+      expect(left).toEqual(right);
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(session.reader.getSnapshot()).toBe(before);
+      files.set(path, 'External');
+      expect((await session.reader.readDocuments([path]))[path]).toEqual({ status: 'ready', text: 'Original' });
+      await session.reload();
+      expect((await session.reader.readDocuments([path]))[path]).toEqual({ status: 'ready', text: 'External' });
+      await expect(session.reader.readDocuments(['docs/arbitrary/index.html'])).rejects.toThrow();
+    } finally { session.dispose(); }
+  });
+
+  it.each(['before', 'during'])('rejects unseen external document bytes changed %s a protected read', async (when) => {
+    const { source, files, path } = lazyDocumentSource();
+    let revision = 'initial';
+    source.revision = async () => revision;
+    const session = await openWorkspaceSession(source, { authoring: source });
+    session.authoring!.protectDraft('A', true);
+    if (when === 'before') { files.set(path, 'External'); revision = 'external'; }
+    else source.readDocument = async () => { revision = 'external'; return 'External'; };
+    try {
+      await expect(session.reader.readDocuments([path])).rejects.toThrow(/更新/);
+      expect(session.reader.getSnapshot().hasDrafts).toBe(true);
+      expect(session.reader.getSnapshot().content.documents).toEqual({});
+    } finally { session.dispose(); }
+  });
+
+  it('requires an acquired editing basis and serves accepted Markdown before saving without reading the disk', async () => {
+    const { source, files, path, id } = lazyDocumentSource();
+    const session = await openWorkspaceSession(source, { authoring: source });
+    try {
+      expect(() => session.authoring!.updateDocument({ object: { kind: 'concept', id }, source: 'Draft' })).toThrow();
+      await session.reader.readDocuments([path]);
+      session.authoring!.updateDocument({ object: { kind: 'concept', id }, source: 'Accepted' });
+      const read = vi.spyOn(source, 'readDocument');
+      expect((await session.reader.readDocuments([path]))[path]).toEqual({ status: 'ready', text: 'Accepted' });
+      expect(read).not.toHaveBeenCalled();
+      expect(files.get(path)).toBe('Original');
+      await session.flush();
+      expect(files.get(path)).toBe('Accepted');
+    } finally { session.dispose(); }
+  });
+
+  it('opens and edits Markdown-only documents without reading or persisting rendered HTML', async () => {
+    const { source, files, commits } = memorySource();
+    const first = await openWorkspaceSession(source, { authoring: source });
+    const id = first.authoring!.createConcept({ label: 'A' });
+    const directory = first.reader.getSnapshot().content.graph.points[0].data.document;
+    await first.flush();
+    first.dispose();
+    const markdown = '# A\n\n<details><summary>Why</summary>Because.</details>\n';
+    files.set(`${directory}/document.md`, markdown);
+    files.delete(`${directory}/index.html`);
+    const readDocument = vi.spyOn(source, 'readDocument');
+    const reopened = await openWorkspaceSession(source, { authoring: source });
+    try {
+      expect(readDocument).not.toHaveBeenCalled();
+      expect(await reopened.reader.readDocuments([`${directory}/document.md`])).toEqual({
+        [`${directory}/document.md`]: { status: 'ready', text: markdown },
+      });
+      expect(readDocument.mock.calls).toEqual([[`${directory}/document.md`]]);
+      expect(reopened.reader.getSnapshot().content.diagnostics).toEqual([]);
+      reopened.authoring!.updateDocument({ object: { kind: 'concept', id }, source: `${markdown}Changed\n` });
+      await reopened.flush();
+      expect(commits.flatMap((commit) => commit.documents ?? []).every(({ path }) => path.endsWith('/document.md'))).toBe(true);
+      expect(files.has(`${directory}/index.html`)).toBe(false);
+      expect(files.get(`${directory}/document.md`)).toBe(`${markdown}Changed\n`);
+    } finally { reopened.dispose(); }
+  });
+
   it('previews a complete accepted concept before automatic persistence and reopens it intact', async () => {
     vi.useFakeTimers();
     const { source, files, commits } = memorySource();
@@ -63,7 +148,8 @@ describe('application-scoped workspace synchronization', () => {
     expect(commits).toHaveLength(1);
     const reopened = await openWorkspaceSession(source);
     expect(reopened.authoring).toBeUndefined();
-    expect(reopened.reader.getSnapshot().content).toEqual(preview.content);
+    expect(reopened.reader.getSnapshot().content).toEqual({ ...preview.content, documents: {} });
+    expect(await reopened.reader.readDocuments([`${directory}/document.md`])).toEqual(preview.content.documents);
     await vi.advanceTimersByTimeAsync(1000);
     expect(commits).toHaveLength(1);
     session.dispose();
@@ -318,9 +404,10 @@ describe('application-scoped workspace synchronization', () => {
     files.delete(source_path);
     const reopened = await openWorkspaceSession(source, { authoring: source });
     expect(reopened.reader.getSnapshot().content.graph.points).toHaveLength(1);
-    expect(reopened.reader.getSnapshot().content.diagnostics).toEqual([
-      { path: source_path, message: `Missing: ${source_path}` },
-    ]);
+    expect(reopened.reader.getSnapshot().content.diagnostics).toEqual([]);
+    expect(await reopened.reader.readDocuments([source_path])).toEqual({
+      [source_path]: { status: 'error', message: `Missing: ${source_path}` },
+    });
     reopened.authoring!.createConcept({ label: 'B' });
     await reopened.flush();
     expect(files.has(source_path)).toBe(false);
@@ -396,8 +483,8 @@ describe('application-scoped workspace synchronization', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(commits).toHaveLength(2);
     const reopened = await openWorkspaceSession(source);
-    expect(reopened.reader.getSnapshot().content.documents[`${directory}/index.html`]).toEqual({
-      status: 'ready', text: expect.stringContaining(`assets/${name}`),
+    expect(await reopened.reader.readDocuments([`${directory}/document.md`])).toEqual({
+      [`${directory}/document.md`]: { status: 'ready', text: expect.stringContaining(`assets/${name}`) },
     });
     expect(await reopened.reader.readAsset(assetPath)).toEqual(new Uint8Array([3, 4, 5]));
     session.dispose();

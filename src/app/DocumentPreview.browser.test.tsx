@@ -1,11 +1,25 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it } from 'vitest';
-import { DocumentPreview } from './DocumentPreview';
+import { DocumentPreview, MarkdownPreview } from './DocumentPreview';
 
 let root: Root | undefined;
 let container: HTMLDivElement;
 afterEach(async () => { await act(async () => root?.unmount()); container.remove(); });
+
+it('renders Markdown and embedded HTML only in the preview without a persisted page', async () => {
+  container = document.createElement('div'); document.body.append(container);
+  root = createRoot(container);
+  const markdown = '# Heading\n\n**Bold**\n\n<details><summary>Proof</summary>Inline HTML</details>\n';
+  await act(async () => root!.render(<MarkdownPreview markdown={markdown} title="Source" documentPath="docs/a/document.md" />));
+  const frame = container.querySelector('iframe')!;
+  await expect.poll(() => frame.srcdoc).toContain('<h1>Heading</h1>');
+  expect(frame.srcdoc).toContain('<strong>Bold</strong>');
+  expect(frame.srcdoc).toContain('data:font/woff2;base64,');
+  expect(frame.srcdoc).not.toContain('cdn.jsdelivr.net');
+  expect(frame.srcdoc).toContain('<summary>Proof</summary>Inline HTML');
+  expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin');
+});
 
 it('clears old image bytes when the content reader changes without changing HTML', async () => {
   container = document.createElement('div'); document.body.append(container);

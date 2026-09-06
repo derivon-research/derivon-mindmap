@@ -2,15 +2,14 @@ import type { WorkspaceSource } from '../../ports/WorkspaceSource';
 import exampleGraph from '../../examples/replace-with/.derivon/workspace.json?raw';
 import exampleOrientation from '../../examples/replace-with/.derivon/orientation.json?raw';
 
-const exampleDocuments = import.meta.glob('../../examples/replace-with/docs/**/*.{md,html}', {
-  eager: true,
+const exampleDocuments = import.meta.glob('../../examples/replace-with/docs/**/document.md', {
   import: 'default',
   query: '?raw',
-}) as Record<string, string>;
+}) as Record<string, () => Promise<string>>;
 
 export type BundledWorkspace = {
   graph: string;
-  documents?: Readonly<Record<string, string>>;
+  documents?: Readonly<Record<string, string | (() => Promise<string>)>>;
   assets?: Readonly<Record<string, Uint8Array>>;
   companionMetadata?: Readonly<Record<string, string>>;
 };
@@ -27,7 +26,7 @@ export function createBundledWorkspaceSource(bundle: BundledWorkspace): Workspac
     async readDocument(path) {
       const document = bundle.documents?.[path];
       if (document === undefined) throw missing('document', path);
-      return document;
+      return typeof document === 'function' ? document() : document;
     },
     async readAsset(path) {
       const asset = bundle.assets?.[path];

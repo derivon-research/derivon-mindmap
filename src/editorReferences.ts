@@ -41,14 +41,14 @@ function resolveWorkspacePath(documentPath: string, href: string): string | null
 
 export function relativeReferenceHref(documentPath: string, targetDirectory: string): string {
   const source = pathSegments(documentPath).slice(0, -1);
-  const target = [...pathSegments(targetDirectory), 'index.html'];
+  const target = [...pathSegments(targetDirectory), 'document.md'];
   let shared = 0;
   while (shared < source.length && shared < target.length && source[shared] === target[shared]) shared += 1;
   const relative = [
     ...Array.from({ length: source.length - shared }, () => '..'),
     ...target.slice(shared).map((segment) => encodeURIComponent(segment)),
   ];
-  return relative.join('/') || 'index.html';
+  return relative.join('/') || 'document.md';
 }
 
 export function resolveReferenceTarget(
@@ -62,7 +62,7 @@ export function resolveReferenceTarget(
   }
   const resolved = resolveWorkspacePath(documentPath, value);
   if (!resolved) return null;
-  return targets.find((target) => `${target.document}/index.html` === resolved) ?? null;
+  return targets.find((target) => `${target.document}/document.md` === resolved) ?? null;
 }
 
 export function validateEditorLinkHref(documentPath: string, href: string): string | null {

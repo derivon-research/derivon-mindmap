@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { markdownToHtml } from '../documentContent';
 import { resolveWorkspaceImageReference, imageMimeType } from '../workspace/imageReference';
 import type { ResolvedEditorImage, EditorImageResolver } from '../editorImage';
 
@@ -9,6 +10,12 @@ function imageDataUrl(blob: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
+}
+
+/** Render only the document being viewed; generated HTML never enters workspace content. */
+export function MarkdownPreview({ markdown, ...props }: Omit<ComponentProps<typeof DocumentPreview>, 'html'> & { markdown: string }) {
+  const html = useMemo(() => markdownToHtml(markdown, props.title), [markdown, props.title]);
+  return <DocumentPreview {...props} html={html} />;
 }
 
 /** Sandboxed object HTML; workspace images use the reader, never a native URL. */

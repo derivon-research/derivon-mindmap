@@ -31,6 +31,21 @@ async function mount(content = fixture) {
   return onOpenObject;
 }
 
+it('loads bodies only for an explicit search, then reuses the acquired index', async () => {
+  container = document.createElement('div'); document.body.append(container);
+  root = createRoot(container);
+  const readDocuments = vi.fn(async () => fixture.documents);
+  await act(async () => root!.render(<WorkspaceSearch content={{ ...fixture, documents: {} }} readDocuments={readDocuments} onOpenObject={() => {}} />));
+  await expect.poll(() => container!.querySelector('.ws-search')?.getAttribute('data-search-ready')).toBe('true');
+  expect(readDocuments).not.toHaveBeenCalled();
+  await page.getByRole('combobox').fill('needleAtDocumentEnd');
+  await expect.element(page.getByRole('option')).toHaveTextContent('Vector space');
+  expect(readDocuments).toHaveBeenCalledTimes(1);
+  await page.getByRole('combobox').fill('连续函数');
+  await expect.element(page.getByRole('option')).toHaveTextContent('积分');
+  expect(readDocuments).toHaveBeenCalledTimes(1);
+});
+
 it('keeps input-to-frame latency below 100ms with 1800 long source documents', async () => {
   const points = Array.from({ length: 1800 }, (_, index) => ({ id: `long-${index}`, data: {
     label: `Long ${index}`, document: `docs/long-${index}`, format: 'markdown' as const,

@@ -2,7 +2,7 @@
   "extends": "./tsconfig.app.json",
   "compilerOptions": {
     "composite": false,
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
@@ -10,6 +10,7 @@
     "benchmarks/**/*.ts",
     "src/file-system.d.ts",
     "playwright.performance.config.ts",
+    "playwright.workspace-opening.config.ts",
     "vite.performance.config.ts"
   ]
 }

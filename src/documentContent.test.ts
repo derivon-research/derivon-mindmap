@@ -11,7 +11,9 @@ $$`, 'Formula document');
 
     expect(html).toContain('class="katex"');
     expect(html).toContain('class="katex-display"');
-    expect(html).toContain('katex@0.18.0/dist/katex.min.css');
+    expect(html).not.toContain('cdn.jsdelivr.net');
+    expect(html).toContain('data:font/woff2;base64,');
+    expect(html).not.toMatch(/url\((?!data:)[^)]*\)/);
     expect(html).not.toContain('$E = mc^2$');
   });
 });
