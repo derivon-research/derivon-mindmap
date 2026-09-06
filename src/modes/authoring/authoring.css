@@ -131,3 +131,10 @@
   .authoring-agent-context { padding: 5px 12px; }
   .authoring-agent-transcript { padding: 10px 12px; }
 }
+
+.authoring-tags { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--app-line); background: #f8fafc; }
+.authoring-tags h2 { margin: 0; color: var(--app-muted); font-size: 12px; font-weight: 600; }
+.authoring-tag-new { display: flex; gap: 6px; }
+.authoring-tag-new input { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--app-line); background: #fff; font: inherit; font-size: 13px; }
+.authoring-tag-new button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid var(--app-line); background: #fff; color: var(--app-ink); font: inherit; font-size: 13px; cursor: pointer; }
+.authoring-tag-new button:disabled { color: var(--app-muted); cursor: not-allowed; }

@@ -93,6 +93,31 @@ it('maintains an orientation configuration through the shared content operations
   await expect.element(page.getByText('路线子图')).toBeVisible();
 });
 
+it('narrows the concept picker by ticking tags, and offers the same tags to an action', async () => {
+  harness();
+  await click('开局');
+  await openOutline();
+  await click('新建开局配置');
+
+  const targets = () => [...container.querySelectorAll('ul[aria-label="默认目标"] button > span:nth-of-type(2)')]
+    .map((label) => label.textContent);
+  expect(targets()).toEqual(['A', 'B']);
+
+  const filter = container.querySelector('[aria-label="默认目标标签筛选"] button') as HTMLButtonElement;
+  expect(filter.textContent).toBe('基础');
+  await act(async () => filter.click());
+  expect(targets()).toEqual(['A']);
+  await act(async () => filter.click());
+  expect(targets()).toEqual(['A', 'B']);
+
+  // The same tags are what an action points at, so they are ticked the same way.
+  await click('添加问题');
+  await click('添加选项');
+  await click(/没有文案/);
+  await click('添加动作');
+  await expect.element(page.getByRole('group', { name: '动作 1 的标签' })).toBeVisible();
+});
+
 it('refuses to save a configuration that would leave a dangling reference in a route', async () => {
   const session = harness();
   await click('开局');

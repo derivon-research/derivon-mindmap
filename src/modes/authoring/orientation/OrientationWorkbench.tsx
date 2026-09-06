@@ -3,11 +3,12 @@ import { useMemo, useState } from 'react';
 import type { RouteSolver } from '../../../ports/RouteSolver';
 import type { AuthoringCommands } from '../../../synchronization';
 import {
-  ORIENTATION_ACTION_OPS, ORIENTATION_FINISH, conceptTags,
-  type OrientationAction, type OrientationActionOp, type TagDeclaration, type WorkspaceContent,
+  ORIENTATION_ACTION_OPS, ORIENTATION_FINISH,
+  type OrientationAction, type OrientationActionOp, type WorkspaceContent,
 } from '../../../workspace/index';
 import { ConceptPicker, labelOf } from '../../ConceptPicker';
 import { RetainedGraph } from '../../RetainedGraph';
+import { TagChips } from '../../TagChips';
 import { OrientationPanel, RouteSummary } from '../../learning/OrientationPanel';
 import {
   applyOrientationIntent, beginOrientation, planOrientation, type OrientationRun,
@@ -64,7 +65,7 @@ export function OrientationWorkbench({ active, content, state, authoring, routeS
       <p className="authoring-empty-note">没有配置的工作区仍然有效，学习侧走通用入口。</p>
       {editable && <button type="button" className="orientation-add" onClick={state.create}><Plus size={14} />新建开局配置</button>}
     </div>
-      : tab === 'inspect' ? <Inspector content={content} state={state} authoring={authoring} editable={editable} />
+      : tab === 'inspect' ? <Inspector content={content} state={state} editable={editable} />
         : tab === 'route' ? <RouteTab active={active} content={content} state={state} routeSolver={routeSolver} />
           : <LearnerTab content={content} state={state} routeSolver={routeSolver} />}
 
@@ -87,20 +88,19 @@ function Diagnostics({ state }: { state: OrientationDraft }) {
   </details>;
 }
 
-function Inspector({ content, state, authoring, editable }: {
-  content: WorkspaceContent; state: OrientationDraft; authoring?: AuthoringCommands; editable: boolean;
+function Inspector({ content, state, editable }: {
+  content: WorkspaceContent; state: OrientationDraft; editable: boolean;
 }) {
   const draft = state.draft!;
   const selection = state.selection;
   if (selection.kind === 'seed') {
     return <div className="orientation-inspector">
       <h2>默认路线种子</h2>
-      <p className="authoring-empty-note">打开工作区立即生效，一道题都还没问。按标签选择时概念会当场展开写入，不是活的标签查询。</p>
+      <p className="authoring-empty-note">打开工作区立即生效，一道题都还没问。按标签筛选出的概念会当场展开写入。</p>
       <ConceptPicker label="默认目标" graph={content.graph} tags={content.tags} selected={draft.seed.targets}
         emptyNote="没有默认目标" onChange={(targets) => state.edit((config) => setSeed(config, { ...config.seed, targets }))} />
       <ConceptPicker label="默认已知" graph={content.graph} tags={content.tags} selected={draft.seed.known}
         emptyNote="没有默认已知" onChange={(known) => state.edit((config) => setSeed(config, { ...config.seed, known }))} />
-      <TagManager content={content} authoring={authoring} editable={editable} />
     </div>;
   }
 
@@ -177,66 +177,14 @@ function ActionEditor({ content, option, editable, onChange }: {
       <ConceptPicker label={`动作 ${index + 1} 的概念`} graph={content.graph} tags={content.tags}
         selected={action.points ?? []} emptyNote="没有点名概念"
         onChange={(points) => replace(index, { ...action, points })} />
-      <label className="authoring-field">按标签（载入时展开）
-        <select multiple value={[...(action.tags ?? [])]} disabled={!editable} aria-label={`动作 ${index + 1} 的标签`}
-          onChange={(event) => replace(index, { ...action,
-            tags: [...event.target.selectedOptions].map((selected) => selected.value) })}>
-          {content.tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.label}</option>)}
-        </select>
-      </label>
+      <div className="authoring-field">按标签（载入时展开）
+        <TagChips label={`动作 ${index + 1} 的标签`} tags={content.tags} selected={action.tags ?? []}
+          emptyNote="这个工作区还没有标签，在对象页面给概念打标签后可以在这里选。"
+          onChange={(tags) => replace(index, { ...action, tags })} />
+      </div>
     </article>)}
     {editable && <button type="button" className="orientation-add"
       onClick={() => onChange([...option.actions, { op: 'add-known', points: [] }])}><Plus size={13} />添加动作</button>}
-  </section>;
-}
-
-/** Tagging happens where the author needs a tag: while writing the action that uses it. */
-function TagManager({ content, authoring, editable }: { content: WorkspaceContent; authoring?: AuthoringCommands; editable: boolean }) {
-  const [selectedTag, setSelectedTag] = useState('');
-  const [newTag, setNewTag] = useState('');
-  const [failure, setFailure] = useState('');
-  const tagged = useMemo(() => content.graph.points.filter((point) => conceptTags(point).includes(selectedTag)).map((point) => point.id),
-    [content.graph.points, selectedTag]);
-
-  const guard = (action: () => void) => {
-    setFailure('');
-    try { action(); } catch (error) { setFailure(error instanceof Error ? error.message : String(error)); }
-  };
-  const declare = (tags: readonly TagDeclaration[]) => guard(() => authoring?.updateTagDeclarations(tags));
-
-  return <section className="orientation-tags">
-    <header><h3>标签</h3><small>标签只做分类，不改变可达性、推导或成本</small></header>
-    <ul className="orientation-tag-list">
-      {content.tags.map((tag) => <li key={tag.id}>
-        <button type="button" aria-pressed={selectedTag === tag.id} onClick={() => setSelectedTag(selectedTag === tag.id ? '' : tag.id)}>
-          {tag.label} <small>{content.graph.points.filter((point) => conceptTags(point).includes(tag.id)).length}</small>
-        </button>
-        {editable && <button type="button" aria-label={`删除标签 ${tag.id}`}
-          onClick={() => declare(content.tags.filter((candidate) => candidate.id !== tag.id))}><Trash2 size={12} /></button>}
-      </li>)}
-      {!content.tags.length && <li className="authoring-empty-note">还没有声明标签</li>}
-    </ul>
-    {editable && <div className="orientation-tag-new">
-      <input value={newTag} aria-label="新标签名称" placeholder="新标签名称" onChange={(event) => setNewTag(event.target.value)} />
-      <button type="button" disabled={!newTag.trim()} onClick={() => {
-        const id = newTag.trim().toLowerCase().replace(/\s+/g, '-');
-        declare([...content.tags, { id, label: newTag.trim() }]);
-        setNewTag('');
-      }}><Plus size={13} />新建标签</button>
-    </div>}
-    {selectedTag && editable && <ConceptPicker label={`${selectedTag} 的概念`} graph={content.graph} tags={content.tags}
-      selected={tagged} emptyNote="这个标签还没有概念" onChange={(next) => guard(() => {
-        const before = new Set(tagged);
-        const after = new Set(next);
-        for (const point of content.graph.points) {
-          if (before.has(point.id) === after.has(point.id)) continue;
-          const tags = after.has(point.id)
-            ? [...conceptTags(point), selectedTag]
-            : conceptTags(point).filter((tag) => tag !== selectedTag);
-          authoring?.updateConceptTags({ conceptId: point.id, tags });
-        }
-      })} />}
-    {failure && <p className="orientation-warning" role="alert"><AlertTriangle size={14} />{failure}</p>}
   </section>;
 }
 

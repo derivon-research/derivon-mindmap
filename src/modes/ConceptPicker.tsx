@@ -1,6 +1,7 @@
 import { Check, Search, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { conceptTags, type TagDeclaration, type WorkspaceGraph } from '../workspace/index';
+import { TagChips } from './TagChips';
 import './concept-picker.css';
 
 export type ConceptPickerProps = {
@@ -15,13 +16,13 @@ export type ConceptPickerProps = {
 /** Choose concepts by name or by tag. Every concept reference in either mode is built here. */
 export function ConceptPicker({ label, graph, tags, selected, onChange, emptyNote }: ConceptPickerProps) {
   const [query, setQuery] = useState('');
-  const [tag, setTag] = useState('');
+  const [filter, setFilter] = useState<readonly string[]>([]);
   const chosen = useMemo(() => new Set(selected), [selected]);
   const term = query.trim().toLowerCase();
   const matches = useMemo(() => graph.points.filter((point) =>
-    (!tag || conceptTags(point).includes(tag))
+    (!filter.length || conceptTags(point).some((tag) => filter.includes(tag)))
     && (!term || point.data.label.toLowerCase().includes(term) || point.id.toLowerCase().includes(term))),
-  [graph.points, tag, term]);
+  [filter, graph.points, term]);
   const toggle = (id: string) => onChange(chosen.has(id) ? selected.filter((item) => item !== id) : [...selected, id]);
 
   return <div className="concept-picker">
@@ -30,17 +31,10 @@ export function ConceptPicker({ label, graph, tags, selected, onChange, emptyNot
         aria-label={`移除 ${labelOf(graph, id)}`}>{labelOf(graph, id)}<X size={12} /></button>)}
       {!selected.length && <span className="concept-picker-empty">{emptyNote ?? '尚未选择概念'}</span>}
     </div>
-    <div className="concept-picker-controls">
-      <label className="concept-picker-search"><Search size={14} aria-hidden="true" />
-        <input value={query} aria-label={`搜索${label}`} placeholder="搜索概念" onChange={(event) => setQuery(event.target.value)} />
-      </label>
-      <label className="concept-picker-tag">按标签
-        <select value={tag} aria-label={`${label}标签筛选`} onChange={(event) => setTag(event.target.value)}>
-          <option value="">全部</option>
-          {tags.map((declaration) => <option key={declaration.id} value={declaration.id}>{declaration.label}</option>)}
-        </select>
-      </label>
-    </div>
+    <label className="concept-picker-search"><Search size={14} aria-hidden="true" />
+      <input value={query} aria-label={`搜索${label}`} placeholder="搜索概念" onChange={(event) => setQuery(event.target.value)} />
+    </label>
+    {tags.length > 0 && <TagChips label={`${label}标签筛选`} tags={tags} selected={filter} onChange={setFilter} />}
     <ul className="concept-picker-list" aria-label={label}>
       {matches.slice(0, 200).map((point) => <li key={point.id}>
         <button type="button" aria-pressed={chosen.has(point.id)} onClick={() => toggle(point.id)}>
