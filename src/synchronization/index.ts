@@ -1,6 +1,6 @@
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import {
-  ORIENTATION_PATH, createConcept, objectDocumentPaths, parseWorkspaceContent, parseWorkspaceGraph,
+  ORIENTATION_PATH, createConcept, objectSourcePath, parseWorkspaceContent,
   updateConceptTags, updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
   type ContentChange, type CreateConceptIntent, type OrientationConfig, type TagDeclaration,
   type TextResource, type UpdateConceptTagsIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
@@ -26,6 +26,8 @@ export type WorkspaceReader = {
   getSnapshot(): WorkspaceSnapshot;
   subscribe(listener: () => void): () => void;
   readAsset(path: string): Promise<Uint8Array>;
+  /** Explicit demand (object viewing or a body search), checked against the accepted basis. */
+  readDocuments(paths: readonly string[]): Promise<Readonly<Record<string, TextResource>>>;
 };
 
 export type AuthoringCommands = {
@@ -54,24 +56,12 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 
 async function readContent(source: WorkspaceSource): Promise<WorkspaceContent> {
   const graph = await source.readGraph();
-  const structure = parseWorkspaceGraph(graph);
-  const paths = [...new Set([...structure.points, ...structure.hyperedges].flatMap((object) => objectDocumentPaths(object.data)))];
-  const documents: Record<string, TextResource> = {};
-  // Bound native IPC fan-out when opening workspaces with thousands of documents.
-  let cursor = 0;
-  await Promise.all(Array.from({ length: Math.min(8, paths.length) }, async () => {
-    while (cursor < paths.length) {
-      const path = paths[cursor++];
-      try { documents[path] = { status: 'ready', text: await source.readDocument(path) }; }
-      catch (error) { documents[path] = { status: 'error', message: message(error) }; }
-    }
-  }));
   let orientation: TextResource | null;
   try {
     const text = await source.readCompanionMetadata(ORIENTATION_PATH);
     orientation = text === null ? null : { status: 'ready', text };
   } catch (error) { orientation = { status: 'error', message: message(error) }; }
-  return parseWorkspaceContent({ graph, documents, companionMetadata: { [ORIENTATION_PATH]: orientation } });
+  return parseWorkspaceContent({ graph, documents: {}, companionMetadata: { [ORIENTATION_PATH]: orientation } });
 }
 
 async function readStableContent(source: WorkspaceSource): Promise<AcquiredContent> {
@@ -100,6 +90,8 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
   const listeners = new Set<() => void>();
   const drafts = new Set<string>();
   const loadedAssets = new Map<string, Uint8Array>();
+  const loadedDocuments = new Map<string, TextResource>();
+  let readingDocuments: Promise<unknown> = Promise.resolve();
   const queue: ContentChange[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
   let saving: Promise<void> | undefined;
@@ -118,6 +110,7 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
     acceptedRevision = next.revision;
     generation++;
     loadedAssets.clear();
+    loadedDocuments.clear();
     publish({ content: next.content, persistedContent: next.content, externalChange: null, saveState: 'saved', error: null });
   }
 
@@ -177,6 +170,48 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
     if (accepted) return new Uint8Array(accepted);
     const cached = loadedAssets.get(path);
     if (cached) return new Uint8Array(cached);
+    const bytes = await readChecked('资产', () => source.readAsset(path));
+    loadedAssets.set(path, new Uint8Array(bytes));
+    return new Uint8Array(bytes);
+  }
+
+  async function readDocuments(paths: readonly string[]): Promise<Readonly<Record<string, TextResource>>> {
+    const content = snapshot.content;
+    const requested = [...new Set(paths)];
+    const owned = new Set([...content.graph.points, ...content.graph.hyperedges].map(({ data }) => objectSourcePath(data)));
+    if (requested.some((path) => !owned.has(path))) throw new Error('不是当前工作区的 Markdown 对象文档');
+    const result = readingDocuments.catch(() => {}).then(async () => {
+      if (disposed || snapshot.content !== content) throw new Error('工作区预览已更新');
+      const documents: Record<string, TextResource> = {};
+      const missing = requested.filter((path) => {
+        const resource = content.documents[path] ?? loadedDocuments.get(path);
+        if (resource) documents[path] = resource;
+        return !resource;
+      });
+      if (missing.length) {
+        const acquired = await readChecked('文档', async () => {
+          const resources: Record<string, TextResource> = {};
+          let cursor = 0;
+          await Promise.all(Array.from({ length: Math.min(8, missing.length) }, async () => {
+            while (cursor < missing.length) {
+              const path = missing[cursor++];
+              try { resources[path] = { status: 'ready', text: await source.readDocument(path) }; }
+              catch (error) { resources[path] = { status: 'error', message: message(error) }; }
+            }
+          }));
+          return resources;
+        });
+        Object.assign(documents, acquired);
+        for (const [path, resource] of Object.entries(acquired)) loadedDocuments.set(path, resource);
+      }
+      return documents;
+    });
+    readingDocuments = result;
+    return result;
+  }
+
+  async function readChecked<T>(kind: '文档' | '资产', read: () => Promise<T>): Promise<T> {
+    const content = snapshot.content;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (saving) await saving;
       if (disposed || snapshot.content !== content) throw new Error('工作区预览已更新');
@@ -186,9 +221,9 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
       if (saving || beforeWrite !== writeGeneration) continue;
       if (beforeRevision !== undefined && beforeRevision !== revision) {
         await checkExternalChange();
-        throw new Error('外部工作区内容已更新，无法把新资产混入受保护的有效内容');
+        throw new Error(`外部工作区内容已更新，无法把新${kind}混入受保护的有效内容`);
       }
-      const bytes = new Uint8Array(await source.readAsset(path));
+      const resource = await read();
       const afterRevision = await source.revision?.();
       // A successful local save changes the disk token, not the effective preview. Retry
       // only this known overlap; external failures never enter an unbounded reload loop.
@@ -196,12 +231,11 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
       if (disposed || snapshot.content !== content || acceptedRevision !== revision
         || (beforeRevision !== undefined && afterRevision !== beforeRevision)) {
         void checkExternalChange();
-        throw new Error('工作区内容已在资产读取期间更新');
+        throw new Error(`工作区内容已在${kind}读取期间更新`);
       }
-      loadedAssets.set(path, bytes);
-      return new Uint8Array(bytes);
+      return resource;
     }
-    throw new Error('工作区在资产读取期间持续保存，无法取得一致资产');
+    throw new Error(`工作区在${kind}读取期间持续保存，无法取得一致${kind}`);
   }
 
   async function flush(): Promise<void> {
@@ -244,7 +278,17 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
         accept(change);
         return change.objectId;
       },
-      updateDocument(intent) { assertCurrent(); accept(updateObjectDocument(snapshot.content, intent)); },
+      updateDocument(intent) {
+        assertCurrent();
+        const content = snapshot.content;
+        const objects = intent.object.kind === 'concept' ? content.graph.points : content.graph.hyperedges;
+        const owner = objects.find(({ id }) => id === intent.object.id);
+        const path = owner && objectSourcePath(owner.data);
+        const cached = path && loadedDocuments.get(path);
+        const basis = path && cached && !content.documents[path]
+          ? { ...content, documents: { ...content.documents, [path]: cached } } : content;
+        accept(updateObjectDocument(basis, intent));
+      },
       updateObjectMetadata(intent) { assertCurrent(); accept(updateObjectMetadata(snapshot.content, intent)); },
       updateConceptTags(intent) { assertCurrent(); accept(updateConceptTags(snapshot.content, intent)); },
       updateTagDeclarations(tags) { assertCurrent(); accept(updateTagDeclarations(snapshot.content, tags)); },
@@ -264,6 +308,7 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
       getSnapshot: () => snapshot,
       subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
       readAsset,
+      readDocuments,
     },
     get authoring() { return commands; },
     flush,
@@ -290,6 +335,7 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
       disposed = true;
       listeners.clear();
       loadedAssets.clear();
+      loadedDocuments.clear();
       clearTimeout(timer);
       clearInterval(externalPollTimer);
       // The application warns before closing; already-authorized work is not cancelled.

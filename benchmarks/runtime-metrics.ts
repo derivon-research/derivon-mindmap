@@ -32,7 +32,7 @@ function percentile(values: number[], ratio: number): number {
   return ordered[Math.max(0, Math.ceil(ordered.length * ratio) - 1)];
 }
 
-function distribution(values: number[]): Distribution {
+export function distribution(values: number[]): Distribution {
   return {
     samples: values.length,
     min: Math.min(...values),

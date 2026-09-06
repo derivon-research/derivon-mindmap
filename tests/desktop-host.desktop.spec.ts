@@ -3,15 +3,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { RECENT_WORKSPACES_KEY } from '../src/hosts/desktop/recentWorkspaces';
-import { parseDocument } from '../src/domain';
+import { parseWorkspaceManifest } from '../src/workspace/manifest';
 import { findCanvasPixel } from '../src/testing/canvasPixels';
 import { collectHooks, collectedHooks } from './hookProbe';
+
+const parseManifest = (text: string) => parseWorkspaceManifest(text).manifest;
 
 let directory: string;
 let commits: number;
 let holdWrites: Promise<void> | undefined;
 let releaseWrites: (() => void) | undefined;
-let writesInFlight: Promise<void>[];
+let writesInFlight: Promise<unknown>[];
 const manifestPath = '.derivon/workspace.json';
 const emptyGraph = JSON.stringify({
   schema: 'derivon.workspace/v1', document: { title: 'GUI fixture', description: '' },
@@ -30,8 +32,10 @@ test.beforeEach(async ({ page }) => {
     rootPath: string; relativePath?: string;
     changes?: { graph?: string; createOnly?: boolean; documents: Array<{ path: string; content: string | null }>; assets?: Array<{ path: string; content: number[] | null }> };
   }) => {
+    if (command.startsWith('plugin:event|')) return 0;
     if (command === 'choose_workspace_source_directory') return { path: directory, name: path.basename(directory) };
     if (args?.rootPath !== directory) throw new Error('Unexpected fixture root');
+    if (command === 'workspace_source_revision') return String(commits);
     if (command === 'read_workspace_source_graph') return readFile(path.join(directory, manifestPath), 'utf8');
     if (command === 'read_workspace_source_document') return readFile(path.join(directory, args.relativePath!), 'utf8');
     if (command === 'read_workspace_source_asset') return [...await readFile(path.join(directory, args.relativePath!))];
@@ -58,6 +62,7 @@ test.beforeEach(async ({ page }) => {
         else await writeFile(target, new Uint8Array(asset.content));
       }
       commits++;
+      return String(commits);
       })();
       writesInFlight.push(write);
       return write;
@@ -66,7 +71,12 @@ test.beforeEach(async ({ page }) => {
   });
   await page.addInitScript(() => {
     const runtime = window as unknown as { __nativeWorkspaceInvoke: (command: string, args?: unknown) => Promise<unknown> };
-    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: { invoke: runtime.__nativeWorkspaceInvoke } });
+    Object.defineProperty(window, '__TAURI_EVENT_PLUGIN_INTERNALS__', { value: { unregisterListener() {} } });
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {
+      invoke: runtime.__nativeWorkspaceInvoke,
+      metadata: { currentWindow: { label: 'main' } },
+      transformCallback: () => 0,
+    } });
   });
 });
 
@@ -91,7 +101,8 @@ async function openWorkspace(page: Page): Promise<void> {
   await page.goto('/');
   await page.getByRole('button', { name: /GUI fixture/ }).click();
   await expect(page.locator('[data-derivon-mode="authoring"]')).toBeVisible();
-  await page.getByRole('button', { name: '新建概念', exact: true }).click();
+  await page.getByLabel('新建概念', { exact: true }).focus();
+  await expect(page.getByText('原生关闭保护未能启用', { exact: false })).toHaveCount(0);
 }
 
 test('opens on recent workspaces with native open/create commands, not a mode chooser', async ({ page }) => {
@@ -108,7 +119,7 @@ test('opens on recent workspaces with native open/create commands, not a mode ch
 
 test('preserves an unfinished draft across whole-window mode switches without saving it', async ({ page }) => {
   await openWorkspace(page);
-  await page.getByLabel('名称', { exact: true }).fill('Unfinished');
+  await page.getByLabel('新建概念', { exact: true }).fill('Unfinished');
   await page.getByRole('button', { name: '学习', exact: true }).click();
   await expect(page.locator('[data-derivon-mode="authoring"]')).toBeHidden();
   await expect(page.locator('[data-derivon-mode="learning"]')).toContainText('0 个概念');
@@ -116,8 +127,8 @@ test('preserves an unfinished draft across whole-window mode switches without sa
   await page.waitForTimeout(1100);
   expect(commits).toBe(0);
   await page.getByRole('button', { name: '创作', exact: true }).click();
-  await expect(page.getByLabel('名称', { exact: true })).toHaveValue('Unfinished');
-  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page.getByLabel('新建概念', { exact: true })).toHaveValue('Unfinished');
+  await page.getByLabel('新建概念', { exact: true }).press('Escape');
   await expect(page.getByLabel('保存状态')).toHaveText('已保存');
 });
 
@@ -132,9 +143,9 @@ for (const width of [1440, 390, 320]) {
       const agentHeight = () => page.locator('.authoring-agent-pane').evaluate((element) => element.getBoundingClientRect().height);
       await expect.poll(relationHeight).toBe(38);
       await expect.poll(agentHeight).toBe(38);
-      await page.getByRole('button', { name: '展开关系区', exact: true }).click();
+      await page.getByRole('button', { name: '展开上下文区', exact: true }).click();
       await expect.poll(relationHeight).toBe(118);
-      await page.getByRole('button', { name: '收起关系区', exact: true }).click();
+      await page.getByRole('button', { name: '收起上下文区', exact: true }).click();
       await expect.poll(relationHeight).toBe(38);
       await page.getByRole('button', { name: '展开 Agent', exact: true }).click();
       await expect.poll(agentHeight).toBe(260);
@@ -142,13 +153,14 @@ for (const width of [1440, 390, 320]) {
       await expect.poll(agentHeight).toBe(38);
     }
     holdWrites = new Promise<void>((resolve) => { releaseWrites = resolve; });
-    await page.getByRole('button', { name: '新建概念', exact: true }).click();
-    await page.getByLabel('名称', { exact: true }).fill('Vector space');
-    await page.getByRole('button', { name: '创建', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Vector space', exact: true })).toBeVisible();
-    expect(parseDocument(await readFile(path.join(directory, manifestPath), 'utf8')).graph.points).toEqual([]);
-    const titleBounds = await page.getByRole('heading', { name: 'Vector space', exact: true }).boundingBox();
+    await page.getByLabel('新建概念', { exact: true }).focus();
+    await page.getByLabel('新建概念', { exact: true }).fill('Vector space');
+    await page.getByLabel('新建概念', { exact: true }).press('Enter');
+    await expect(page.getByLabel('名称', { exact: true })).toHaveValue('Vector space');
+    expect(parseManifest(await readFile(path.join(directory, manifestPath), 'utf8')).graph.points).toEqual([]);
+    const titleBounds = await page.getByLabel('名称', { exact: true }).boundingBox();
     expect(titleBounds!.x + titleBounds!.width).toBeLessThanOrEqual(width);
+    await expect(page.getByLabel('Markdown 正文', { exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('first-concept.png') });
     await page.getByRole('button', { name: '学习', exact: true }).click();
     const learning = page.locator('[data-derivon-mode="learning"]');
@@ -161,10 +173,10 @@ for (const width of [1440, 390, 320]) {
     releaseWrites!();
     await expect(page.getByLabel('保存状态')).toHaveText('已保存');
     expect(commits).toBe(2);
-    const manifest = parseDocument(await readFile(path.join(directory, manifestPath), 'utf8'));
+    const manifest = parseManifest(await readFile(path.join(directory, manifestPath), 'utf8'));
     expect(manifest.graph.points[0].data.label).toBe('Vector space');
     expect(await readFile(path.join(directory, manifest.graph.points[0].data.document, 'document.md'), 'utf8')).toBe('');
-    expect(await readFile(path.join(directory, manifest.graph.points[0].data.document, 'index.html'), 'utf8')).toContain('<title>Vector space</title>');
+    await expect(readFile(path.join(directory, manifest.graph.points[0].data.document, 'index.html'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
     await page.getByRole('button', { name: '关闭工作区', exact: true }).click();
     await page.reload();
@@ -186,7 +198,7 @@ for (const width of [1440, 390, 320]) {
     await expect(page.getByRole('button', { name: '对象', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.getByLabel('搜索概念与推导文档').fill('Vector');
     await page.getByRole('option', { name: /Vector space/ }).click();
-    await expect(page.getByRole('heading', { name: 'Vector space', exact: true })).toBeVisible();
+    await expect(page.getByLabel('名称', { exact: true })).toHaveValue('Vector space');
     await expect(page.getByLabel('Markdown 正文', { exact: true })).toBeVisible();
     expect(commits).toBe(2);
   });
@@ -194,23 +206,23 @@ for (const width of [1440, 390, 320]) {
 
 test('warns before closing a protected draft and does not restore an explicitly discarded session', async ({ page }) => {
   await openWorkspace(page);
-  await page.getByLabel('名称', { exact: true }).fill('Discard this draft');
+  await page.getByLabel('新建概念', { exact: true }).fill('Discard this draft');
   page.once('dialog', (dialog) => { void dialog.dismiss(); });
   await page.getByRole('button', { name: '关闭工作区', exact: true }).click();
-  await expect(page.getByLabel('名称', { exact: true })).toHaveValue('Discard this draft');
+  await expect(page.getByLabel('新建概念', { exact: true })).toHaveValue('Discard this draft');
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: '关闭工作区', exact: true }).click();
   await page.getByRole('button', { name: '打开文件夹…', exact: true }).click();
-  await page.getByRole('button', { name: '新建概念', exact: true }).click();
-  await expect(page.getByLabel('名称', { exact: true })).toHaveValue('');
+  await page.getByLabel('新建概念', { exact: true }).focus();
+  await expect(page.getByLabel('新建概念', { exact: true })).toHaveValue('');
   expect(commits).toBe(0);
 });
 
 test('edits rich documents with protected drafts, atomic images, effective preview and reopen', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await openWorkspace(page);
-  await page.getByLabel('名称', { exact: true }).fill('Vector space');
-  await page.getByRole('button', { name: '创建', exact: true }).click();
+  await page.getByLabel('新建概念', { exact: true }).fill('Vector space');
+  await page.getByLabel('新建概念', { exact: true }).press('Enter');
   await expect(page.getByLabel('保存状态')).toHaveText('已保存');
   const editor = page.getByLabel('Markdown 正文', { exact: true });
   await editor.fill('Draft body');
@@ -276,7 +288,7 @@ test('edits rich documents with protected drafts, atomic images, effective previ
   expect(commits).toBe(1);
   releaseWrites!();
   await expect(page.getByLabel('保存状态')).toHaveText('已保存');
-  const manifest = parseDocument(await readFile(path.join(directory, manifestPath), 'utf8'));
+  const manifest = parseManifest(await readFile(path.join(directory, manifestPath), 'utf8'));
   const documentDirectory = manifest.graph.points[0].data.document;
   const markdown = await readFile(path.join(directory, documentDirectory, 'document.md'), 'utf8');
   expect(markdown).toContain('**Draft body**');
@@ -295,19 +307,18 @@ test('edits rich documents with protected drafts, atomic images, effective previ
   expect(commits).toBe(2);
 });
 
-test('retains object references, HTML source editing and interactive Markdown widgets', async ({ page }) => {
+test('retains Markdown object references and renders inline HTML without persisting HTML files', async ({ page }) => {
   await seedRecentWorkspace(page);
   const graph = JSON.parse(emptyGraph);
   graph.graph.points = [
-    { id: 'markdown', data: { label: 'Markdown concept', document: 'docs/markdown', format: 'markdown' } },
-    { id: 'html', data: { label: 'HTML concept', document: 'docs/html', format: 'html' } },
+    { id: 'markdown', data: { label: 'Markdown concept', document: 'docs/markdown' } },
+    { id: 'html', data: { label: 'HTML concept', document: 'docs/html' } },
   ];
   await writeFile(path.join(directory, manifestPath), JSON.stringify(graph));
   await mkdir(path.join(directory, 'docs/markdown'), { recursive: true });
   await mkdir(path.join(directory, 'docs/html'), { recursive: true });
   await writeFile(path.join(directory, 'docs/markdown/document.md'), 'Start');
-  await writeFile(path.join(directory, 'docs/markdown/index.html'), '<p>Start</p>');
-  await writeFile(path.join(directory, 'docs/html/index.html'), '<p>HTML entry</p>');
+  await writeFile(path.join(directory, 'docs/html/document.md'), '<p>HTML entry</p>');
   await page.goto('/');
   await page.getByRole('button', { name: /GUI fixture/ }).click();
   await page.getByRole('button', { name: '对象', exact: true }).click();
@@ -319,9 +330,10 @@ test('retains object references, HTML source editing and interactive Markdown wi
   await page.getByLabel('搜索引用对象').fill('HTML concept');
   await page.getByRole('option', { name: /HTML concept/ }).click();
   const reference = editor.getByRole('link', { name: 'HTML concept', exact: true });
-  await expect(reference).toHaveAttribute('href', '../html/index.html');
+  await expect(reference).toHaveAttribute('href', '../html/document.md');
   await expect(editor).toBeFocused();
   await reference.click({ modifiers: ['ControlOrMeta'] });
+  await page.getByRole('button', { name: '源文档', exact: true }).click();
   await expect(page.getByLabel('文档源码')).toHaveValue('<p>HTML entry</p>');
   await page.getByLabel('文档源码').fill('<h1>Edited HTML</h1><button id="count">0</button><script>document.querySelector("button").onclick = e => e.target.textContent = "1"</script>');
   await page.getByRole('button', { name: '预览文档', exact: true }).click();
@@ -342,9 +354,11 @@ test('retains object references, HTML source editing and interactive Markdown wi
   await expect(widget.locator('#demo-output')).toHaveText('20');
   await page.getByRole('button', { name: '应用修改', exact: true }).click();
   await expect(page.getByLabel('保存状态')).toHaveText('已保存');
-  expect(await readFile(path.join(directory, 'docs/markdown/document.md'), 'utf8')).toContain('../html/index.html');
+  expect(await readFile(path.join(directory, 'docs/markdown/document.md'), 'utf8')).toContain('../html/document.md');
   expect(await readFile(path.join(directory, 'docs/markdown/document.md'), 'utf8')).toContain('demo-level');
-  expect(await readFile(path.join(directory, 'docs/html/index.html'), 'utf8')).toContain('Edited HTML');
+  expect(await readFile(path.join(directory, 'docs/html/document.md'), 'utf8')).toContain('Edited HTML');
+  await expect(readFile(path.join(directory, 'docs/html/index.html'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(readFile(path.join(directory, 'docs/markdown/index.html'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 test('announces interactive on the desktop launch frame', async ({ page }) => {

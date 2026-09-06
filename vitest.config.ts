@@ -10,6 +10,7 @@ export default defineConfig({
         test: {
           name: 'node',
           environment: 'node',
+          css: { include: [/katex/] },
           include: ['src/**/*.test.{ts,tsx}'],
           exclude: ['src/**/*.browser.test.{ts,tsx}'],
         },

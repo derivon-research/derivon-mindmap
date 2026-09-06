@@ -1,9 +1,10 @@
 import { Compass, FileText, Network, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { DocumentPreview } from '../../app/DocumentPreview';
+import { MarkdownPreview } from '../../app/DocumentPreview';
+import { useObjectDocument } from '../../app/useObjectDocument';
 import type { LearningModeProps } from '../../app/host';
 import type { GraphEvent, GraphView } from '../../rendering';
-import { objectDocumentPreview, type TextResource } from '../../workspace/index';
+import { objectDocumentSource, type TextResource } from '../../workspace/index';
 import { RetainedGraph } from '../RetainedGraph';
 import './learning.css';
 import { OrientationPanel } from './OrientationPanel';
@@ -12,7 +13,7 @@ import {
   type OrientationIntent, type OrientationRun,
 } from './orientation';
 
-export function LearningMode({ active = true, workspace, content, targetIds, knownIds, onChangeTargets, onChangeKnown, routeSolver, readAsset }: LearningModeProps) {
+export function LearningMode({ active = true, workspace, content, targetIds, knownIds, onChangeTargets, onChangeKnown, routeSolver, readAsset, readDocuments }: LearningModeProps) {
   const [selectedId, setSelectedId] = useState<string | null>(() => targetIds[0] ?? null);
   const plan = useMemo(() => planOrientation(content), [content]);
   // Targets already in application state came from a mode switch: orientation is over for
@@ -59,7 +60,7 @@ export function LearningMode({ active = true, workspace, content, targetIds, kno
     </header>
     {oriented ? <div className={`learning-main${selected ? ' has-document' : ''}`}>
       <div className="learning-graph-canvas"><RetainedGraph active={active} view={view} onEvent={handleEvent} /></div>
-      {selected && <section className="learning-document" aria-label={`${selected.data.label} 文档`}><Document title={selected.data.label} documentPath={`${selected.data.document}/index.html`} readAsset={readAsset} resource={objectDocumentPreview(content, selected.data)} /></section>}
+      {selected && <section className="learning-document" aria-label={`${selected.data.label} 文档`}><Document title={selected.data.label} documentPath={`${selected.data.document}/document.md`} active={active} readAsset={readAsset} readDocuments={readDocuments} resource={objectDocumentSource(content, selected.data)} /></section>}
     </div> : <div className="learning-main learning-orientation">
       <OrientationPanel graph={content.graph} tags={content.tags} plan={plan} run={run} routeSolver={routeSolver}
         onIntent={intent} onEnter={() => setOriented(true)} />
@@ -68,7 +69,12 @@ export function LearningMode({ active = true, workspace, content, targetIds, kno
   </section>;
 }
 
-function Document({ title, resource, documentPath, readAsset }: { title: string; resource: TextResource; documentPath: string; readAsset?: LearningModeProps['readAsset'] }) {
-  return resource.status === 'ready' ? <DocumentPreview title={`${title} 文档`} html={resource.text} documentPath={documentPath} readAsset={readAsset} />
-    : <div className="learning-document-error" role="alert"><FileText aria-hidden="true" /><div><strong>无法读取对象文档</strong><p>{resource.message}</p></div></div>;
+function Document({ title, resource, documentPath, readAsset, readDocuments, active }: {
+  title: string; resource: TextResource | undefined; documentPath: string; active: boolean;
+  readAsset?: LearningModeProps['readAsset']; readDocuments?: LearningModeProps['readDocuments'];
+}) {
+  const current = useObjectDocument(documentPath, resource, readDocuments, active);
+  if (!current) return <p role="status">正在载入文档…</p>;
+  return current.status === 'ready' ? <MarkdownPreview title={`${title} 文档`} markdown={current.text} documentPath={documentPath} readAsset={readAsset} />
+    : <div className="learning-document-error" role="alert"><FileText aria-hidden="true" /><div><strong>无法读取对象文档</strong><p>{current.message}</p></div></div>;
 }

@@ -1,4 +1,3 @@
-import { markdownToHtml } from '../documentContent';
 import type { WorkspaceCommit } from '../ports/WorkspaceSource';
 import { imageMimeType } from './imageReference';
 import {
@@ -34,6 +33,7 @@ export type WorkspaceContent = {
   readonly title: string;
   /** Workspace-level tag declarations. */
   readonly tags: readonly TagDeclaration[];
+  /** Accepted/available Markdown. An absent entry is unread, not a missing-file diagnostic. */
   readonly documents: Readonly<Record<string, TextResource>>;
   readonly assets?: Readonly<Record<string, Uint8Array>>;
   readonly companionMetadata: Readonly<Record<string, TextResource | null>>;
@@ -77,18 +77,17 @@ function copyAssets(assets: Readonly<Record<string, Uint8Array>> | undefined): R
   return Object.fromEntries(Object.entries(assets ?? {}).map(([path, bytes]) => [path, new Uint8Array(bytes)]));
 }
 
-/** Every object owns a Markdown source and the page rendered from it. */
+/** Markdown is the only persisted object document. */
 export function objectDocumentPaths(reference: DocumentReference): readonly string[] {
-  return [`${reference.document}/document.md`, `${reference.document}/index.html`];
+  return [objectSourcePath(reference)];
 }
 
 export function objectSourcePath(reference: DocumentReference): string {
   return `${reference.document}/document.md`;
 }
 
-export function objectDocumentPreview(content: WorkspaceContent, reference: DocumentReference): TextResource {
-  const path = `${reference.document}/index.html`;
-  return content.documents[path] ?? { status: 'error', message: `Missing document: ${path}` };
+export function objectDocumentSource(content: WorkspaceContent, reference: DocumentReference): TextResource | undefined {
+  return content.documents[objectSourcePath(reference)];
 }
 
 function readOrientation(
@@ -118,11 +117,7 @@ export function parseWorkspaceContent(input: {
   companionMetadata?: Readonly<Record<string, TextResource | null>>;
 }): WorkspaceContent {
   const parsed = parseWorkspaceManifest(input.graph);
-  const references = [...parsed.manifest.graph.points, ...parsed.manifest.graph.hyperedges].map((object) => object.data);
   const documents = { ...input.documents };
-  for (const path of references.flatMap(objectDocumentPaths)) {
-    documents[path] ??= { status: 'error', message: `Missing document: ${path}` };
-  }
   const companionMetadata = { ...input.companionMetadata };
   const orientation = readOrientation(companionMetadata[ORIENTATION_PATH], parsed.manifest.graph, parsed.manifest.tags);
   const diagnostics = [
@@ -187,11 +182,7 @@ export function updateObjectDocument(content: WorkspaceContent, intent: UpdateDo
     acceptedAssets[path] = bytes;
     return { path, content: new Uint8Array(bytes) };
   });
-  const title = object.data.label ?? `推导 ${object.id}`;
-  const documentChanges = [
-    { path: sourcePath, content: intent.source },
-    { path: `${object.data.document}/index.html`, content: markdownToHtml(intent.source, title) },
-  ];
+  const documentChanges = [{ path: sourcePath, content: intent.source }];
   const documents = { ...content.documents, ...Object.fromEntries(documentChanges.map(({ path, content: text }) =>
     [path, { status: 'ready' as const, text }])) };
   const changedPaths = new Set(documentChanges.map(({ path }) => path));
@@ -235,7 +226,6 @@ export function createConcept(content: WorkspaceContent, intent: CreateConceptIn
   } });
   const documents = [
     { path: `${directory}/document.md`, content: '', createOnly: true as const },
-    { path: `${directory}/index.html`, content: markdownToHtml('', label), createOnly: true as const },
   ];
   return {
     objectId: id,

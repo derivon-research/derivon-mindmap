@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, createConcept, createWorkspace, emptyOrientationConfig,
-  objectDocumentPreview, orientationConceptImpact, parseWorkspaceContent, updateConceptTags,
+  objectDocumentSource, orientationConceptImpact, parseWorkspaceContent, updateConceptTags,
   updateObjectDocument, updateOrientation, updateTagDeclarations,
   type OrientationConfig, type WorkspaceContent,
 } from './index';
@@ -29,11 +29,10 @@ describe('complete workspace content operations', () => {
     expect(created.content.graph.points).toEqual([concept]);
     expect(created.changes.documents).toEqual([
       { path: `${concept.data.document}/document.md`, content: '', createOnly: true },
-      { path: `${concept.data.document}/index.html`, content: expect.stringContaining('<title>Vector space</title>'), createOnly: true },
     ]);
     expect(created.content.documents[`${concept.data.document}/document.md`]).toEqual({ status: 'ready', text: '' });
     expect(created.content.diagnostics).toEqual([]);
-    expect(objectDocumentPreview(created.content, concept.data)).toEqual({ status: 'ready', text: created.changes.documents![1].content });
+    expect(objectDocumentSource(created.content, concept.data)).toEqual({ status: 'ready', text: '' });
     expect(initial.content.graph.points).toEqual([]);
   });
 
@@ -48,16 +47,16 @@ describe('complete workspace content operations', () => {
     });
     const damaged = parseWorkspaceContent({ graph, documents: {
       'docs/concept-kept/document.md': { status: 'error', message: 'Permission denied' },
-      'docs/other/index.html': { status: 'ready', text: '<p>Original</p>' },
+      'docs/other/document.md': { status: 'ready', text: 'Original' },
     }, companionMetadata: { '.derivon/orientation.json': { status: 'ready', text: '{ "defaults": [] }' } } });
     const created = createConcept(damaged, { label: 'New' });
 
     expect(created.content.diagnostics).toEqual(damaged.diagnostics);
-    expect(objectDocumentPreview(created.content, created.content.graph.points[0].data)).toEqual({
-      status: 'error', message: 'Missing document: docs/concept-kept/index.html',
+    expect(objectDocumentSource(created.content, created.content.graph.points[0].data)).toEqual({
+      status: 'error', message: 'Permission denied',
     });
     expect(created.content.graph.points[2].data.document).toBe(`docs/concept-${created.objectId.slice(2)}`);
-    expect(created.changes.documents).toHaveLength(2);
+    expect(created.changes.documents).toHaveLength(1);
     expect(created.content.documents['docs/concept-kept/document.md']).toEqual({ status: 'error', message: 'Permission denied' });
     expect(created.content.companionMetadata).toEqual(damaged.companionMetadata);
     expect(JSON.parse(created.changes.graph!).tags).toEqual([{ id: 'algebra', label: '代数' }]);
@@ -82,7 +81,7 @@ describe('complete workspace content operations', () => {
     })).toThrow(/schema/);
   });
 
-  it('atomically updates Markdown source, rendered HTML and owned image bytes', () => {
+  it('atomically updates only Markdown source and owned image bytes', () => {
     const original = new Uint8Array([1, 2, 255]);
     const created = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'Vector' });
     const id = created.objectId;
@@ -95,7 +94,6 @@ describe('complete workspace content operations', () => {
 
     expect(updated.changes.documents).toEqual([
       { path: `${directory}/document.md`, content: `# Changed\n\n![plot](assets/${name})` },
-      { path: `${directory}/index.html`, content: expect.stringContaining(`<img src="assets/${name}" alt="plot">`) },
     ]);
     expect(updated.changes.assets).toEqual([
       { path: `${directory}/assets/${name}`, content: new Uint8Array([1, 2, 255]) },
@@ -106,7 +104,7 @@ describe('complete workspace content operations', () => {
     expect(updated.content.graph).toBe(created.content.graph);
   });
 
-  it('repairs derived HTML from readable Markdown while retaining unrelated damage and opaque data', () => {
+  it('updates readable Markdown while retaining unrelated damage and opaque data', () => {
     const graph = JSON.stringify({ schema: WORKSPACE_SCHEMA, document: { title: 'T', description: 'opaque' },
       graph: { points: [
         { id: 'a', data: { label: 'A', document: 'docs/a', tags: ['keep'] } },
@@ -114,14 +112,13 @@ describe('complete workspace content operations', () => {
       ], hyperedges: [] } });
     const content = parseWorkspaceContent({ graph, documents: {
       'docs/a/document.md': { status: 'ready', text: 'old' },
-      'docs/a/index.html': { status: 'error', message: 'damaged derived file' },
-      'docs/b/document.md': { status: 'ready', text: 'B' },
-      'docs/b/index.html': { status: 'error', message: 'unrelated' },
+      'docs/b/document.md': { status: 'error', message: 'unrelated' },
     } });
     const updated = updateObjectDocument(content, { object: { kind: 'concept', id: 'a' }, source: 'new' });
-    expect(updated.content.diagnostics).toEqual([{ path: 'docs/b/index.html', message: 'unrelated' }]);
+    expect(updated.content.diagnostics).toEqual([{ path: 'docs/b/document.md', message: 'unrelated' }]);
     expect(JSON.parse(updated.content.graphText).graph.points[0].data.tags).toEqual(['keep']);
-    expect(updated.content.documents['docs/a/index.html']).toEqual({ status: 'ready', text: expect.stringContaining('<p>new</p>') });
+    expect(updated.content.documents['docs/a/document.md']).toEqual({ status: 'ready', text: 'new' });
+    expect(Object.keys(updated.content.documents).every((path) => path.endsWith('/document.md'))).toBe(true);
   });
 
   it('rejects unknown objects, unreadable source, invalid images and asset collisions', () => {

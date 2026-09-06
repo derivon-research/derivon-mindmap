@@ -14,7 +14,7 @@ implemented port behaviour.
 ## Delivered In #51
 
 - `src/workspace/index.ts`: complete empty-workspace and first-concept creation, ID and owned
-  directory allocation, blank Markdown/HTML documents, reference validation and local diagnostics.
+  directory allocation, blank Markdown documents, reference validation and local diagnostics.
   Legacy replacement fields stay in source text at the boundary and survive graph updates.
 - `src/synchronization/index.ts`: a workspace session with separate effective/persisted snapshots,
   a read-only subscription, desktop-authoring commands, serialized automatic saves, draft
@@ -23,7 +23,7 @@ implemented port behaviour.
   Existing manifests and files are not overwritten by initialization. New document changes
   require absent targets during commit preparation. Existing-workspace creation collisions are
   reported without advancing persisted content.
-- Both modes consume the same effective graph and object text. Optional orientation configuration
+- Both modes consume the same effective graph and request object text from the shared session on demand. Optional orientation configuration
   remains opaque text in that snapshot, with interpretation/editing owned by #58. No preview reads
   newer disk files independently. External consistency during acquisition still belongs to #55.
 - The GUI offers metadata-only concept creation and the approved prototype C workbench:
@@ -31,8 +31,8 @@ implemented port behaviour.
   It opens directly in the overview; [workbench navigation](authoring-workbench.md) specifies
   overview selection, neighbourhood selection and opening the selected object's editor.
   A follow-up restores the existing v0.4 Tiptap editor through `updateObjectDocument` and the
-  shared session. Markdown source/rendered HTML and newly staged images form one accepted
-  change set; HTML documents edit their existing entry. Missing sources remain explicit errors.
+  shared session. Markdown source and newly staged images form one accepted change set;
+  HTML is rendered only for viewing and never saved. Missing sources remain explicit errors.
   Graph editing and real Agent integration remain separate. The Agent pane is explicitly
   simulated and never executes a plan. The throwaway prototype remains separate.
 - Search uses a MiniSearch index in a dedicated Worker. It indexes source documents, not
@@ -76,6 +76,17 @@ or arbitrary-file existence guarantee is claimed.
   external updates. See [orientation](orientation.md).
 - Deletion impact for configuration references is available as `orientationConceptImpact`
   plus an executable repair; the unified deletion plan and its GUI remain #52.
+
+## Markdown-Only, On-Demand Documents
+
+[ADR-0008](adr/0008-persist-markdown-not-rendered-pages.md) supersedes the dual-file
+acquisition and persistence assumed by the early #51 implementation. Opening publishes graph
+and companion metadata only. Unread Markdown is absent from `content.documents`, not an
+error. The shared reader acquires requested bodies with revision checks, caches them without
+publishing a new content snapshot, and supplies an acquired basis to document editing.
+Accepted Markdown remains effective before saving; views render it on demand. There is no
+startup body prefetch or generated-page requirement. Full-text indexing reads bodies only
+when a user submits a nonempty search query. Existing unowned files are not removed.
 
 ## Module responsibilities
 

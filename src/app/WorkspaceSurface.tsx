@@ -46,6 +46,15 @@ function SessionModes({ session, state, workspace, modes, routeSolver, onSelectC
     assertCurrent();
     return bytes;
   }, [session, snapshot.content]);
+  const readDocuments = useMemo(() => async (paths: readonly string[]) => {
+    const assertCurrent = () => {
+      if (session.reader.getSnapshot().content !== snapshot.content) throw new Error('工作区预览已更新');
+    };
+    assertCurrent();
+    const documents = await session.reader.readDocuments(paths);
+    assertCurrent();
+    return documents;
+  }, [session, snapshot.content]);
   useEffect(() => {
     onProtectionChange(snapshot.hasProtectedChanges);
     const guard = (event: BeforeUnloadEvent) => {
@@ -79,9 +88,9 @@ function SessionModes({ session, state, workspace, modes, routeSolver, onSelectC
       <Suspense fallback={<div className="app-mode-loading" role="status">正在载入…</div>}>
         {mode === 'learning' ? <LearningMode active={mode === state.mode} workspace={identity} content={snapshot.content}
           targetIds={state.learningTargetIds} knownIds={state.learningKnownIds} onChangeTargets={onChangeTargets}
-          onChangeKnown={onChangeKnown} routeSolver={routeSolver} readAsset={readAsset} />
+          onChangeKnown={onChangeKnown} routeSolver={routeSolver} readAsset={readAsset} readDocuments={readDocuments} />
           : AuthoringMode && <AuthoringMode key={snapshot.authoringEpoch} active={mode === state.mode} workspace={identity} content={snapshot.content}
-            authoring={session.authoring} readAsset={readAsset} routeSolver={routeSolver} selectedConceptId={state.selectedConceptId} onSelectConcept={onSelectConcept}
+            authoring={session.authoring} readAsset={readAsset} readDocuments={readDocuments} routeSolver={routeSolver} selectedConceptId={state.selectedConceptId} onSelectConcept={onSelectConcept}
             syncStatus={workspace.authoringSource && state.mode === 'authoring' ? { state: snapshot.saveState, label: saveLabel } : undefined}
             onRetrySync={snapshot.saveState === 'error' ? () => { void session.flush(); } : undefined} />}
       </Suspense>

@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import type { RouteSolver } from '../ports/RouteSolver';
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
-import type { AuthoringCommands } from '../synchronization';
+import type { AuthoringCommands, WorkspaceReader } from '../synchronization';
 import type { WorkspaceContent } from '../workspace/index';
 
 /**
@@ -37,6 +37,7 @@ export type AuthoringModeProps = {
   readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
   readonly content: WorkspaceContent;
   readonly authoring?: AuthoringCommands;
+  readonly readDocuments?: WorkspaceReader['readDocuments'];
   readonly readAsset?: (path: string) => Promise<Uint8Array>;
   readonly routeSolver?: RouteSolver;
   readonly selectedConceptId: string | null;
@@ -50,6 +51,7 @@ export type LearningModeProps = {
   readonly active?: boolean;
   readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
   readonly content: WorkspaceContent;
+  readonly readDocuments?: WorkspaceReader['readDocuments'];
   readonly readAsset?: (path: string) => Promise<Uint8Array>;
   readonly routeSolver?: RouteSolver;
   readonly targetIds: readonly string[];

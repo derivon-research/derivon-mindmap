@@ -27,7 +27,8 @@ export function createSearchIndex() {
         const document = { ...source, key: `${source.kind}:${source.id}`,
           body: source.body.replace(/\s+/g, ' ').trim() };
         documents.set(document.key, document);
-        index.add(document);
+        if (index.has(document.key)) index.replace(document);
+        else index.add(document);
       }
     },
     search(query: string, filter: SearchFilter): SearchPage {

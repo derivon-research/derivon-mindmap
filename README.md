@@ -196,10 +196,10 @@ Mindmap 自己拥有学习侧与创作侧共有的产品语意。产品推导是
 对象引用使用标准相对 Markdown 链接。点击“引用对象”或输入 `[[` 可以按概念 label/ID，以及推导 ID、前提和结论搜索整个工作区。`[[` 只是编辑器触发器，最终仍保存为可移植链接：
 
 ```markdown
-[共模反馈环路](../concept-common-mode-feedback-loop/index.html)
+[共模反馈环路](../concept-common-mode-feedback-loop/document.md)
 ```
 
-Ctrl/Cmd 点击对象引用会在 Mindmap 内打开目标文档。生成的 `index.html` 中，同一链接可以作为普通静态站点链接使用。
+Ctrl/Cmd 点击对象引用会在 Mindmap 编辑器内打开目标文档。工作区只保存 Markdown，不依赖生成的 HTML 页面。
 
 ## 工作区格式
 
@@ -212,19 +212,19 @@ my-workspace/
 └── docs/
     ├── concept-a/
     │   ├── document.md
-    │   ├── index.html
     │   └── assets/
     └── derivation-h-1/
-        ├── document.md
-        └── index.html
+        └── document.md
 ```
 
 约束：
 
 - `.derivon/workspace.json` 是图结构和共享视图的事实来源。
 - 每个概念和推导独占一个文档目录；不同对象不能共享目录。
-- 每个对象都有 `document.md`（Markdown 源）和 `index.html`（由它渲染、可直接访问的发布入口）。
-  文档只有 Markdown 一种。
+- 每个对象只持久化 `document.md`，其中可以内嵌 HTML/CSS/JavaScript；浏览时才在隔离预览中渲染。
+  工作区清单不引用 HTML 页面，创建、编辑和自动保存也不会生成它。
+- 打开工作区只读取图与必要的伴随元数据，不载入任何对象正文。浏览对象或实际发起全文搜索时，
+  才经共享会话按需读取 Markdown；读取结果经过版本检查并缓存。
 - 对象 ID 由应用生成，形如 `c-k7f3q2` / `h-2m9dxb`：`c-` 或 `h-` 前缀加六位小写字符，字母表去掉
   `0 1 i l o u`。它永不重用，图内唯一即可；协议本身接受任意 ASCII ID，手写的图可以用 `svd` 这样的名字。
 - 自动保存会检测磁盘修订变化；发生外部修改冲突时暂停写入并要求用户选择版本。

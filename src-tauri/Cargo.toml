@@ -27,7 +27,7 @@ derivon-core = { git = "https://github.com/derivon-research/derivon.git", tag = 
 rfd = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
+sha2 = { version = "0.10", features = ["asm"] }
 tauri = { version = "2", features = [] }
 tracing = { version = "0.1", optional = true }
 tracing-chrome = { version = "0.7", optional = true }
@@ -35,3 +35,8 @@ tracing-subscriber = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+
+# Revision checks still cover all workspace bytes, including existing unrelated files.
+# Optimize the SHA-256 fallback in dev/test as well as release builds.
+[profile.dev.package.sha2]
+opt-level = 3
