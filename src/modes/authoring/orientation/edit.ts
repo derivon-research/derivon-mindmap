@@ -1,14 +1,10 @@
 /**
- * Draft edits to an orientation configuration.
+ * Draft edits to an orientation configuration: pure transformations of the document, so
+ * what the author sees is the configuration itself and accepting it is one content
+ * operation. Validation belongs to `src/workspace/`.
  *
- * Pure transformations of the document, so the editor keeps no shadow model of its own:
- * what the author sees is a configuration that would validate, and accepting a draft is
- * one content operation rather than a replay of interface events.
- *
- * These functions never validate — `src/workspace/` owns what a broken configuration is.
- * They do keep the document from contradicting itself: a jump to a question that has just
- * been deleted, or a per-option branch on a question that has just become multi-select,
- * is removed by the same edit that caused it.
+ * An edit that would make the document contradict itself cleans up after itself in the
+ * same call — deleting a question takes the jumps that named it.
  */
 import {
   ORIENTATION_FINISH,
@@ -49,8 +45,7 @@ export type QuestionEdit = Partial<Pick<OrientationQuestion, 'prompt' | 'select'
 export function updateQuestion(config: OrientationConfig, questionId: string, edit: QuestionEdit): OrientationConfig {
   return mapQuestion(config, questionId, (question) => {
     const next = { ...question, ...edit };
-    // A learner can select several options at once, so several jumps would conflict. The
-    // question keeps the single jump and the option-level branches go.
+    // A learner can select several options at once, so the jump moves onto the question.
     return next.select === 'many'
       ? { ...next, options: next.options.map(({ next: _branch, ...option }) => option) }
       : next;
@@ -81,7 +76,7 @@ export function removeOption(config: OrientationConfig, questionId: string, opti
   }));
 }
 
-/** Deleting a question also deletes every jump that named it; nothing dangles afterwards. */
+/** Deleting a question takes every jump that named it. */
 export function removeQuestion(config: OrientationConfig, questionId: string): OrientationConfig {
   const clear = <T extends { next?: string }>(value: T): T =>
     (value.next === questionId ? { ...value, next: undefined } : value);
@@ -94,7 +89,7 @@ export function removeQuestion(config: OrientationConfig, questionId: string): O
   };
 }
 
-/** Move by one place. Questions are ordered, and fall-through reads that order. */
+/** Move by one place. Fall-through reads this order. */
 export function moveQuestion(config: OrientationConfig, questionId: string, delta: -1 | 1): OrientationConfig {
   const index = config.questions.findIndex((question) => question.id === questionId);
   const target = index + delta;
@@ -109,11 +104,8 @@ export function setSeed(config: OrientationConfig, seed: OrientationSeed): Orien
 }
 
 /**
- * Remove concepts that are going away, everywhere the configuration names them.
- *
- * This is the executable half of a deletion plan: an author can see what it would do
- * before confirming, and an action left meaning nothing is dropped rather than saved as an
- * action that would do nothing.
+ * Remove concepts that are going away, everywhere the configuration names them. This is
+ * the executable half of a deletion plan; an action left with nothing to do goes with them.
  */
 export function repairConceptReferences(config: OrientationConfig, conceptIds: readonly string[]): OrientationConfig {
   const removed = new Set(conceptIds);

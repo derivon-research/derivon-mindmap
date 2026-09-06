@@ -38,7 +38,6 @@ export type AuthoringModeProps = {
   readonly content: WorkspaceContent;
   readonly authoring?: AuthoringCommands;
   readonly readAsset?: (path: string) => Promise<Uint8Array>;
-  /** Absent on hosts without a solver; a preview says so rather than inventing a route. */
   readonly routeSolver?: RouteSolver;
   readonly selectedConceptId: string | null;
   readonly onSelectConcept: (conceptId: string | null) => void;
@@ -83,6 +82,6 @@ export type Host = {
   createWorkspace?(): Promise<WorkspaceHandle | null>;
   loadLearningMode(): Promise<ComponentType<LearningModeProps>>;
   loadAuthoringMode?(): Promise<ComponentType<AuthoringModeProps>>;
-  /** Route solving is a host capability; a host without an engine simply omits it. */
+  /** Route solving is a host capability; a host without an engine omits it. */
   loadRouteSolver?(): Promise<RouteSolver>;
 };

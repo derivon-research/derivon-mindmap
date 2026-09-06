@@ -33,7 +33,7 @@ describe('the desktop route solver', () => {
     });
   });
 
-  it('refuses a solve with no target instead of asking the engine', async () => {
+  it('refuses a solve with no target before reaching the engine', async () => {
     const invoke = vi.fn() as unknown as DesktopInvoke;
     await expect(createDesktopRouteSolver(invoke).solve(graph, { targetConceptIds: [], knownConceptIds: [] }))
       .rejects.toThrow(/目标/);

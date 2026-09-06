@@ -19,11 +19,9 @@ export type TextResource =
 export type ContentDiagnostic = { readonly path: string; readonly message: string };
 
 /**
- * The orientation configuration as effective content sees it.
- *
- * `ready` is the only status a route may be seeded from: a configuration carrying any
- * error diagnostic is `invalid`, so a dangling reference cannot reach a learner. An
- * invalid configuration keeps its diagnostics rather than collapsing to a blank state.
+ * The orientation configuration as effective content sees it. `ready` is the only status a
+ * route may be seeded from; anything carrying an error diagnostic is `invalid` and keeps
+ * its diagnostics.
  */
 export type WorkspaceOrientation =
   | { readonly status: 'absent' }
@@ -34,7 +32,7 @@ export type WorkspaceContent = {
   readonly graphText: string;
   readonly graph: ManifestGraph;
   readonly title: string;
-  /** Workspace-level tag declarations. Tag-to-colour mapping belongs to the renderer. */
+  /** Workspace-level tag declarations. */
   readonly tags: readonly TagDeclaration[];
   readonly documents: Readonly<Record<string, TextResource>>;
   readonly assets?: Readonly<Record<string, Uint8Array>>;
@@ -138,7 +136,7 @@ export function parseWorkspaceContent(input: {
   };
 }
 
-/** Re-read the manifest so a graph change starts from validated v1 shapes, not from state. */
+/** Re-read the manifest so a graph change starts from validated shapes. */
 function manifestOf(content: WorkspaceContent): WorkspaceManifest {
   return parseWorkspaceManifest(content.graphText).manifest;
 }
@@ -242,7 +240,7 @@ export function createConcept(content: WorkspaceContent, intent: CreateConceptIn
   };
 }
 
-/** Tag a concept. Tags organize and filter; they never change reachability or cost. */
+/** Tag a concept. */
 export function updateConceptTags(content: WorkspaceContent, intent: UpdateConceptTagsIntent): ContentChange {
   const manifest = manifestOf(content);
   if (!manifest.graph.points.some((point) => point.id === intent.conceptId)) {
@@ -255,10 +253,7 @@ export function updateConceptTags(content: WorkspaceContent, intent: UpdateConce
   return { content: withGraphText(content, graph), changes: { graph }, objectId: intent.conceptId };
 }
 
-/**
- * Replace the workspace tag registry. An undeclared tag stays usable — it only loses its
- * label — so hand-written manifests and the editor never fight over this list.
- */
+/** Replace the workspace tag registry. An undeclared tag still resolves; it only loses its label. */
 export function updateTagDeclarations(content: WorkspaceContent, tags: readonly TagDeclaration[]): ContentChange {
   const declared = new Set<string>();
   for (const tag of tags) {
@@ -275,10 +270,8 @@ export function updateTagDeclarations(content: WorkspaceContent, tags: readonly 
 }
 
 /**
- * Accept, replace or remove the orientation configuration.
- *
- * Errors are refused here rather than at the file boundary: an accepted configuration is
- * one both modes may read, and a dangling reference must never reach effective content.
+ * Accept, replace or remove the orientation configuration. A configuration carrying an
+ * error is refused here, so what is accepted is what both modes may read.
  */
 export function updateOrientation(content: WorkspaceContent, config: OrientationConfig | null): ContentChange {
   const text = config === null ? null : serializeOrientationConfig(config);
@@ -293,10 +286,7 @@ export function updateOrientation(content: WorkspaceContent, config: Orientation
   };
 }
 
-/**
- * Where a set of concepts is named by the orientation configuration. A deletion plan asks
- * this before it can offer a repair, and never writes a dangling configuration instead.
- */
+/** Where the orientation configuration names a given set of concepts, for a deletion plan. */
 export function orientationConceptImpact(
   content: WorkspaceContent,
   conceptIds: readonly string[],

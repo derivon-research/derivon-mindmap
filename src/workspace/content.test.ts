@@ -67,7 +67,7 @@ describe('complete workspace content operations', () => {
     expect(created.graph.points).toHaveLength(1);
   });
 
-  it('refuses to open a workspace written in a shape that is not this protocol', () => {
+  it('refuses to open a workspace written in another protocol', () => {
     expect(() => parseWorkspaceContent({
       graph: JSON.stringify({ schema: 'derivon.authoring/v0.3.0', document: { title: 'Old', description: '' },
         graph: { points: [], hyperedges: [] }, view: { replacements: [] } }), documents: {},

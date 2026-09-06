@@ -38,9 +38,8 @@ export function AuthoringMode({ active = true, workspace, content, authoring, ro
   const [agentOpen, setAgentOpen] = useState(() => !window.matchMedia('(max-width: 700px)').matches);
   const [documentDrafts] = useState<DocumentDrafts>(() => new Map());
   const [view, setView] = useState<'objects' | 'graph' | 'orientation'>('graph');
-  // Orientation is a workspace-level side of this workbench, not an object and not a mode:
-  // there is one configuration and it is always there, so it gets a centre view rather than
-  // a search result or a create command.
+  // A workspace has one orientation configuration and it is always there, so it is a fixed
+  // side of this workbench: a centre view, reached from the workbar.
   const orientation = useOrientationDraft(content, authoring, workspace.id);
   const [lastOpenedObject, setLastOpenedObject] = useState<GraphObject | null>(null);
   const [neighbourhoodFocusId, setNeighbourhoodFocusId] = useState<string | null>(selectedConceptId);

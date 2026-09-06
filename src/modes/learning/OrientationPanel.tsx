@@ -17,11 +17,8 @@ export type OrientationPanelProps = {
 };
 
 /**
- * The deterministic orientation screen: the author's questions as buttons.
- *
- * This is the whole non-AI path, and it is complete on its own. It drives the same
- * transitions a conversation adapter would, so a workspace opened without any provider
- * still ends with a confirmed set of targets and known concepts.
+ * The deterministic orientation screen: the author's questions as buttons, driving the
+ * same transitions a conversation adapter drives.
  */
 export function OrientationPanel({ graph, tags, plan, run, routeSolver, onIntent, onEnter }: OrientationPanelProps) {
   const question = currentQuestion(plan, run);

@@ -190,7 +190,7 @@ function ActionEditor({ content, option, editable, onChange }: {
   </section>;
 }
 
-/** Tagging happens where the author needs a tag, not in a separate trip through the graph. */
+/** Tagging happens where the author needs a tag: while writing the action that uses it. */
 function TagManager({ content, authoring, editable }: { content: WorkspaceContent; authoring?: AuthoringCommands; editable: boolean }) {
   const [selectedTag, setSelectedTag] = useState('');
   const [newTag, setNewTag] = useState('');
@@ -285,13 +285,12 @@ function RouteTab({ active, content, state, routeSolver }: {
   </div>;
 }
 
-/** The author walks the learner's own deterministic run — the same transitions, no copy. */
+/** The author walks the learner's own deterministic run. */
 function LearnerTab({ content, state, routeSolver }: { content: WorkspaceContent; state: OrientationDraft; routeSolver?: RouteSolver }) {
   const draft = state.draft!;
   const plan = useMemo(() => planOrientation({ ...content, orientation: { status: 'ready', config: draft, diagnostics: [] } }),
     [content, draft]);
-  // Mounting this tab starts a fresh run; editing the draft does not throw the author out
-  // of the run they are in the middle of.
+  // Mounting this tab starts a fresh run; editing the draft leaves the current one alone.
   const [run, setRun] = useState<OrientationRun>(() => beginOrientation(plan));
   return <div className="orientation-learner">
     <OrientationPanel graph={content.graph} tags={content.tags} plan={plan} run={run} routeSolver={routeSolver}

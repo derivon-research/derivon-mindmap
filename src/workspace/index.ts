@@ -21,10 +21,9 @@ export {
   type OrientationDiagnostic, type OrientationOption, type OrientationQuestion, type OrientationSeed,
 } from './orientation';
 
-/** The graph as product state sees it: v1 shapes only, no dialect and no retired field. */
+/** The graph as product state sees it. */
 export type WorkspaceGraph = ManifestGraph;
 
-/** Validate/migrate the manifest here; retired replacement views stay out of v1 state. */
 export function parseWorkspaceGraph(text: string): WorkspaceGraph {
   return parseWorkspaceManifest(text).manifest.graph;
 }

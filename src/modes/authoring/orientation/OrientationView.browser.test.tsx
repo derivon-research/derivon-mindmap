@@ -63,11 +63,10 @@ it('maintains an orientation configuration through the shared content operations
   expect(container.textContent).toContain('没有配置的工作区仍然有效');
 
   await click('新建开局配置');
-  // An unfinished configuration is a protected draft, not effective content.
   await expect.poll(() => session.protectDraft.mock.calls.at(-1)).toEqual(['w:orientation', true]);
   expect(session.content.orientation).toEqual({ status: 'absent' });
 
-  // References are built with the picker, never by typing an id.
+  // Every reference is built with the picker.
   const target = [...container.querySelectorAll('ul[aria-label="默认目标"] button')]
     .find((button) => button.textContent?.startsWith('B'));
   await act(async () => (target as HTMLButtonElement).click());
@@ -84,7 +83,7 @@ it('maintains an orientation configuration through the shared content operations
   expect(saved!.questions[0].options[0].label).toBe('要看懂一篇论文');
   await expect.poll(() => session.protectDraft.mock.calls.at(-1)).toEqual(['w:orientation', false]);
 
-  // The author walks the learner's own run without leaving the authoring mode.
+  // The author walks the learner's own run from inside the authoring mode.
   await click('学习者');
   const answer = container.querySelector('.orientation-learner .orientation-options button') as HTMLButtonElement;
   expect(answer.textContent).toBe('要看懂一篇论文');
@@ -104,7 +103,7 @@ it('refuses to save a configuration that would leave a dangling reference in a r
   await click(/没有文案/);
   await click('添加动作');
 
-  // An action that resolves to no concept at all cannot become effective content.
+  // An action that resolves to no concept keeps the draft out of effective content.
   await expect.element(page.getByRole('button', { name: '保存开局配置' })).toBeDisabled();
   expect(container.textContent).toContain('修好之前无法保存');
   expect(session.authoring.updateOrientation).not.toHaveBeenCalled();

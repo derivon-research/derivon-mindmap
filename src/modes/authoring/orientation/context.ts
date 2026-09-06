@@ -2,13 +2,10 @@
  * What an author is looking at when a row in the outline shows a route.
  *
  * An entry option answers "how long is this route" by itself: it sets the targets, and
- * targets are all a solve needs. A follow-up option cannot — "you already know inner
- * products" means nothing until you know which learner is being asked. So a follow-up is
- * always shown under a stated assumption: which opening answer this learner gave.
+ * targets are all a solve needs. A follow-up option depends on which learner is being
+ * asked, so it is shown under a stated assumption: which opening answer they gave.
  *
- * The assumption is deliberately shallow. Only the seed and the entry are assumed; answers
- * to the questions in between are not guessed. A number resting on a guess would be worse
- * than a number with its premise printed next to it.
+ * The assumption stays shallow — the seed and the entry — and the interface prints it.
  */
 import {
   applyOrientationIntent, beginOrientation, currentQuestion,
@@ -35,7 +32,7 @@ function skipTo(plan: OrientationPlan, from: OrientationRun, questionId: string)
 
 /**
  * The state a learner is in on arrival at a question, having answered only the opening
- * question with `entryOptionId`. `null` when that entry cannot reach the question at all.
+ * question with `entryOptionId`. `null` when that entry cannot reach the question.
  */
 export function arrivalState(plan: OrientationPlan, questionId: string, entryOptionId: string | null): OrientationRun | null {
   const start = beginOrientation(plan);
@@ -47,7 +44,7 @@ export function arrivalState(plan: OrientationPlan, questionId: string, entryOpt
   return skipTo(plan, entered, questionId);
 }
 
-/** Which openings can reach this question. An outline row offers exactly these. */
+/** Which openings can reach this question; an outline row offers these. */
 export function entriesReaching(plan: OrientationPlan, questionId: string): readonly OrientationOption[] {
   return entryOptions(plan).filter((option) => arrivalState(plan, questionId, option.id) !== null);
 }
@@ -59,7 +56,7 @@ export type OptionContext = {
   readonly after: OrientationRun;
 };
 
-/** Apply one option's actions on top of the arrival state, without moving the flow on. */
+/** Apply one option's actions on top of the arrival state, leaving the flow where it is. */
 export function optionContext(
   plan: OrientationPlan, questionId: string, optionId: string, entryOptionId: string | null,
 ): OptionContext | null {

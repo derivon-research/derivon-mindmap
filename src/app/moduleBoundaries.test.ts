@@ -152,7 +152,7 @@ describe('authoring in a web build', () => {
     expect([...modules].some((module) => module.startsWith('modes/authoring'))).toBe(true);
   });
 
-  it('cannot edit the orientation configuration, because that editor is authoring code', async () => {
+  it('leaves the orientation editor out of the module graph, with the rest of authoring', async () => {
     const { modules } = await wholeBuild('web');
     expect([...modules].filter((module) => module.startsWith('modes/authoring/orientation'))).toEqual([]);
   });

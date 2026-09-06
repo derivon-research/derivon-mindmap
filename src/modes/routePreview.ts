@@ -1,9 +1,6 @@
 /**
- * Route previews, shared by the two modes.
- *
- * A route subgraph appears on the learner's confirmation screen and in the author's
- * preview of an orientation configuration, so neither side may own this. The view model
- * carries structure and marks only — how a mark is drawn stays inside the renderer.
+ * Route previews, shared by the two modes: a route subgraph appears both on the learner's
+ * confirmation screen and in the author's preview of an orientation configuration.
  */
 import { useEffect, useState } from 'react';
 import type { RouteSolution, RouteSolver } from '../ports/RouteSolver';
@@ -11,7 +8,7 @@ import type { GraphView } from '../rendering';
 import type { WorkspaceGraph } from '../workspace/index';
 
 export type RoutePreview =
-  /** No host solver: say so rather than showing an invented route. */
+  /** The host offers no solver. */
   | { readonly status: 'unavailable' }
   | { readonly status: 'empty' }
   | { readonly status: 'solving' }
@@ -42,7 +39,7 @@ export function useRoutePreview(
   return preview;
 }
 
-/** The solved route as a view model. Targets and known concepts keep their meaning. */
+/** The solved route as a view model, with targets and known concepts marked. */
 export function routeGraphView(
   graph: WorkspaceGraph,
   solution: RouteSolution,

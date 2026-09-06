@@ -11,17 +11,13 @@ export type OrientationOutlineProps = {
   readonly content: WorkspaceContent;
   readonly state: OrientationDraft;
   readonly routeSolver?: RouteSolver;
-  /** Creating the configuration is a centre-view action; this pane never owns it. */
   readonly editable: boolean;
 };
 
 /**
- * The outline: the whole configuration as something an author can read top to bottom.
- *
- * Each option carries the route it produces, because "where does this answer land the
- * learner" is the decision an author is actually making. An opening option shows the
- * absolute length of that route; a follow-up shows what it changes, which is the only way
- * to see that a question is not worth asking.
+ * The outline: the whole configuration read top to bottom, with the route each option
+ * produces beside it. An opening option shows that route's length; a follow-up shows the
+ * difference it makes, which is how an author sees a question worth `±0`.
  */
 export function OrientationOutline({ content, state, routeSolver, editable }: OrientationOutlineProps) {
   const draft = state.draft;
@@ -115,7 +111,7 @@ function describe(status: 'unavailable' | 'empty' | 'solving' | 'error'): string
       : status === 'solving' ? '求解中…' : '求解失败';
 }
 
-/** The route the seed alone produces, before any question has been asked. */
+/** The route the seed alone produces. */
 function RouteBadge({ content, routeSolver, targets, known }: {
   content: WorkspaceContent; routeSolver?: RouteSolver; targets: readonly string[]; known: readonly string[];
 }) {

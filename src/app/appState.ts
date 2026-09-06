@@ -14,7 +14,7 @@ export type AppState = {
   readonly visitedModes: readonly AppMode[];
   readonly selectedConceptId: string | null;
   readonly learningTargetIds: readonly string[];
-  /** This session's known concepts, produced by orientation and never written back. */
+  /** This session's known concepts, produced by orientation. */
   readonly learningKnownIds: readonly string[];
   /** The selection already handed to learning, so a return trip does not re-carry it. */
   readonly carriedConceptId: string | null;
@@ -70,10 +70,7 @@ export function setLearningTargets(state: AppState, conceptIds: readonly string[
   return { ...state, learningTargetIds: [...conceptIds] };
 }
 
-/**
- * The known set orientation produced. It is session state next to the targets: an author
- * can seed it from workspace content, but a learner's answers never travel back to disk.
- */
+/** The known set orientation produced; session state alongside the targets. */
 export function setLearningKnown(state: AppState, conceptIds: readonly string[]): AppState {
   return { ...state, learningKnownIds: [...conceptIds] };
 }

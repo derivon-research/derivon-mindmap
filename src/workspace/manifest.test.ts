@@ -32,9 +32,7 @@ describe('derivon.workspace/v1 manifest', () => {
     expect(conceptsWithTag(parsed.manifest.graph, 'algebra').map((point) => point.id)).toEqual(['a']);
   });
 
-  it('refuses the shapes that preceded v1 instead of migrating them', () => {
-    // v1.0.0 has no released predecessor. A schema string this module does not know is a
-    // broken workspace, not an old one, and saying so beats silently reinterpreting it.
+  it('refuses a schema string it does not know', () => {
     for (const schema of ['derivon.authoring/v0.3.0', 'derivon.authoring/v0.2.0']) {
       expect(() => parseWorkspaceManifest(JSON.stringify({
         schema,
@@ -84,7 +82,7 @@ describe('derivon.workspace/v1 manifest', () => {
     expect(conceptsWithTag(parsed.manifest.graph, 'given').map((point) => point.id)).toEqual(['A', 'B']);
   });
 
-  it('reports structural failures instead of throwing an opaque error', () => {
+  it('reports structural failures with their location', () => {
     expect(() => parseWorkspaceManifest('{')).toThrow();
     expect(() => parseWorkspaceManifest(JSON.stringify({ schema: 'derivon.workspace/v2' }))).toThrow(/schema/);
   });

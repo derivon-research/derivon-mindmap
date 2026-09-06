@@ -2,13 +2,10 @@
  * The orientation flow: the state machine that walks a learner from "I do not know where
  * to start" to a confirmed set of targets and known concepts.
  *
- * There is exactly one set of transitions here, and every interaction style goes through
- * it. The deterministic question-and-answer screen calls `applyOrientationIntent`; a
- * `ConversationProvider` calls the same function with the same intents. Neither owns the
- * flow, and a missing provider cannot change its behaviour.
+ * Every interaction style drives it through `applyOrientationIntent`: the deterministic
+ * screen and a `ConversationProvider` translate their own input into the same intents.
  *
- * What comes out is application state: this session's targets, known and trail. None of it
- * is ever written back to workspace content.
+ * What comes out is application state — this session's targets, known and trail.
  */
 import {
   ORIENTATION_FINISH, resolveOrientationAction,
@@ -23,7 +20,7 @@ export type OrientationPlan = {
   readonly config: OrientationConfig | null;
   /** Why the generic entry is running, when it is. */
   readonly fallbackReason?: 'absent' | 'invalid';
-  /** What was wrong with the configuration, for a diagnosable fallback. */
+  /** What was wrong with the configuration. */
   readonly message?: string;
 };
 
@@ -41,10 +38,7 @@ export type OrientationRun = {
   readonly trail: readonly OrientationAnswer[];
 };
 
-/**
- * Intents are the whole vocabulary of the flow. A conversation adapter may express an
- * answer in any words it likes; it still arrives here as one of these.
- */
+/** The whole vocabulary of the flow. A conversation adapter's input arrives as one of these. */
 export type OrientationIntent =
   | { readonly kind: 'answer'; readonly optionIds: readonly string[] }
   | { readonly kind: 'skip' }
@@ -128,8 +122,8 @@ function answer(plan: OrientationPlan, run: OrientationRun, optionIds: readonly 
 }
 
 /**
- * The single transition function. Every concept id that lands in the run is checked
- * against the graph first, so no dangling reference can reach a route.
+ * The single transition function. Concept ids are checked against the graph on the way in,
+ * so what lands in the run is always reachable from it.
  */
 export function applyOrientationIntent(plan: OrientationPlan, run: OrientationRun, intent: OrientationIntent): OrientationRun {
   switch (intent.kind) {

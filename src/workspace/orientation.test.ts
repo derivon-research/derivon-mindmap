@@ -42,7 +42,7 @@ describe('derivon.orientation/v1 parsing', () => {
     expect(parsed.questions[0].options[0].actions).toEqual([{ op: 'set-targets', points: ['svd'] }]);
   });
 
-  it('refuses shapes that are not this schema, including unknown operations', () => {
+  it('refuses malformed documents and operations outside the action vocabulary', () => {
     expect(() => parseOrientationConfig('{')).toThrow();
     expect(() => parseOrientationConfig(JSON.stringify({ schema: 'derivon.orientation/v2', seed: { targets: [], known: [] }, questions: [] })))
       .toThrow(/schema/);
@@ -84,7 +84,7 @@ describe('derivon.orientation/v1 validation against the graph', () => {
       .toEqual(['dangling-concept', 'dangling-concept', 'empty-action']);
   });
 
-  it('reports jumps to questions that do not exist and to the reserved finish id used as a question', () => {
+  it('reports a jump to a missing question and the reserved id used as a question id', () => {
     expect(codes(config([
       { id: 'finish', prompt: 'p', select: 'one', options: [{ id: 'o', label: 'l', actions: [], next: 'elsewhere' }] },
     ]))).toEqual(['reserved-id', 'dangling-next']);
@@ -130,7 +130,7 @@ describe('derivon.orientation/v1 validation against the graph', () => {
     expect(undeclared).toEqual([expect.objectContaining({ severity: 'warning', code: 'undeclared-tag' })]);
   });
 
-  it('warns about authoring slips that cannot break a route', () => {
+  it('warns about authoring slips that leave the route intact', () => {
     expect(codes(config([
       { id: 'q', prompt: '  ', select: 'one', next: 'finish', options: [] },
       { id: 'orphan', prompt: 'p', select: 'one', options: [{ id: 'o', label: '', actions: [], next: 'finish' }] },

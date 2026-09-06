@@ -13,10 +13,10 @@ type NativeRouteResponse = {
   targetDiagnoses: { targetPointId: string; blockingPointIds: string[]; cycles: string[][] }[];
 };
 
-/** Keep an interactive preview interactive; a longer search belongs to a deliberate action. */
+/** A preview stays interactive; a longer search belongs to a deliberate action. */
 const PREVIEW_BUDGET = { maxNodes: 200_000, maxMillis: 200 };
 
-/** The desktop host solves through `derivon-core`, over the same IPC as every other capability. */
+/** The desktop host solves through `derivon-core`, over the same IPC as its other capabilities. */
 export function createDesktopRouteSolver(invoke: DesktopInvoke = tauriInvoke): RouteSolver {
   return {
     async solve(graph: WorkspaceGraph, request: RouteRequest): Promise<RouteSolution> {

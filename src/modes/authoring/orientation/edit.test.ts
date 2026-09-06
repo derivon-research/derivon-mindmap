@@ -40,7 +40,7 @@ describe('editing an orientation draft', () => {
   it('drops per-option branches when a question becomes multi-select, because they would conflict', () => {
     const multi = updateQuestion(base, 'why', { select: 'many' });
     expect(multi.questions[0].options[0].next).toBeUndefined();
-    // The question's own jump is left for the author to state, not guessed from the options.
+    // The question's own jump is left for the author to state.
     expect(multi.questions[0].next).toBeUndefined();
     expect(updateQuestion(multi, 'why', { next: 'known' }).questions[0].next).toBe('known');
   });
@@ -83,7 +83,7 @@ describe('editing an orientation draft', () => {
     }, ['gone']);
     expect(repaired.seed).toEqual({ targets: ['a'], known: [] });
     expect(repaired.questions[0].options[0].actions).toEqual([{ op: 'set-targets', points: ['svd'] }]);
-    // An action left with nothing to do is removed rather than kept as an empty action.
+    // An action left with nothing to do goes with the concept.
     expect(repaired.questions[0].options[1].actions).toEqual([]);
   });
 });

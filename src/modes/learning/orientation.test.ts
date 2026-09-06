@@ -48,7 +48,7 @@ describe('the orientation plan', () => {
     expect(isOrientationComplete(plan, beginOrientation(plan))).toBe(true);
   });
 
-  it('falls back with a diagnosis rather than a blank screen when the configuration is broken', () => {
+  it('falls back with a diagnosis when the configuration is broken', () => {
     const content = workspace();
     const broken = parseWorkspaceContent({ graph: content.graphText, documents: content.documents,
       companionMetadata: { '.derivon/orientation.json': { status: 'ready', text: '{ "schema": "nope" }' } } });
@@ -102,7 +102,7 @@ describe('orientation transitions', () => {
     expect(currentQuestion(p, run)?.id).toBe('known');
   });
 
-  it('rejects an answer that does not belong to the question being asked', () => {
+  it('rejects an answer from outside the question being asked', () => {
     const p = plan();
     expect(() => applyOrientationIntent(p, beginOrientation(p), { kind: 'answer', optionIds: ['basics'] }))
       .toThrow(/basics/);
@@ -110,14 +110,14 @@ describe('orientation transitions', () => {
       .toThrow(/单选/);
   });
 
-  it('takes direct target and known changes, and never accepts a concept the graph does not have', () => {
+  it('takes direct target and known changes, keeping only concepts the graph has', () => {
     const p = plan();
     const run = applyOrientationIntent(p, beginOrientation(p), { kind: 'set-targets', conceptIds: ['c-2', 'ghost'] });
     expect(run.targets).toEqual(['c-2']);
     expect(applyOrientationIntent(p, run, { kind: 'set-known', conceptIds: ['ghost'] }).known).toEqual([]);
   });
 
-  it('restarts back to the seed, discarding this run rather than the configuration', () => {
+  it('restarts back to the seed, keeping the configuration', () => {
     const p = plan();
     const answered = applyOrientationIntent(p, beginOrientation(p), { kind: 'answer', optionIds: ['paper'] });
     expect(applyOrientationIntent(p, answered, { kind: 'restart' })).toEqual(beginOrientation(p));

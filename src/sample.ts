@@ -9,12 +9,7 @@ const bundledDocuments = import.meta.glob('./examples/replace-with/docs/**/*.{md
   query: '?raw',
 }) as Record<string, string>;
 
-/**
- * The examples ship as `derivon.workspace/v1`. These retired screens read them in the
- * v0.4.2 shape instead: they still have replacement views, which v1 deleted, and they know
- * nothing about tags, which v1 added. The projection is confined to this module and goes
- * away with the rest of v0.4.2 — it is not a compatibility path for the product.
- */
+/** Project a workspace example into the shape these v0.4.2 screens read. */
 function asRetiredDocument(manifest: unknown, replacements: ViewReplacement[] = []): AuthoringDocument {
   const { tags: _tags, ...rest } = manifest as AuthoringDocument & { tags?: unknown };
   return {

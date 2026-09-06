@@ -56,7 +56,7 @@ describe('the assumption behind a follow-up route', () => {
     expect(context!.before.known).toEqual([]);
     expect(context!.after.known).toEqual(['c-1', 'c-2']);
     expect(context!.after.targets).toEqual(['c-4']);
-    // The flow does not move on: the author is inspecting a row, not answering.
+    // The author is inspecting a row, so the flow stays where it is.
     expect(context!.after.at).toBe(context!.before.at);
   });
 

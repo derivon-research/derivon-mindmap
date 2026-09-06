@@ -42,8 +42,8 @@ export function createBundledWorkspaceSource(bundle: BundledWorkspace): Workspac
 
 export const bundledExampleWorkspaceSource = createBundledWorkspaceSource({
   graph: exampleGraph,
-  // The one bundled workspace ships an orientation configuration, so the web build's
-  // deterministic entry is exercised by the product itself and not only by tests.
+  // The bundled workspace ships an orientation configuration, so the web build opens into
+  // the author's questions.
   companionMetadata: { '.derivon/orientation.json': exampleOrientation },
   documents: Object.fromEntries(Object.entries(exampleDocuments).map(([path, content]) => [
     path.replace('../../examples/replace-with/', ''),

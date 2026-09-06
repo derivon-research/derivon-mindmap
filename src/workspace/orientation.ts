@@ -1,22 +1,16 @@
 /**
- * The `derivon.orientation/v1` companion document: the optional, declarative orientation
- * configuration a graph author ships with a workspace.
- *
- * It is workspace content, so it lives here: this module owns its shape, its canonical
- * text, and what counts as a broken configuration. It owns none of the flow — turning an
- * answer into this session's targets and known lives in `src/modes/learning/`.
- *
- * The action vocabulary is closed on purpose. Four operations, concepts named directly or
- * by tag, and nothing else: no expressions, no conditions, no code.
+ * `derivon.orientation/v1`: the optional orientation configuration a graph author ships
+ * with a workspace. This module owns its shape, its canonical text and what counts as a
+ * broken configuration; the flow that runs it lives in `src/modes/learning/`.
  */
 import { conceptsWithTag, type ManifestGraph, type TagDeclaration } from './manifest';
 
 export const ORIENTATION_SCHEMA = 'derivon.orientation/v1' as const;
 
-/** The companion path; the manifest gains no field for it. */
+/** The companion document path. */
 export const ORIENTATION_PATH = '.derivon/orientation.json';
 
-/** Reserved question id ending orientation. Never usable as a question's own id. */
+/** Reserved question id: ends orientation. */
 export const ORIENTATION_FINISH = 'finish';
 
 export type OrientationActionOp = 'set-targets' | 'add-targets' | 'set-known' | 'add-known';
@@ -34,23 +28,20 @@ export type OrientationOption = {
   readonly id: string;
   readonly label: string;
   readonly actions: readonly OrientationAction[];
-  /**
-   * A question id, or `finish`. Absent falls through to the next question in document
-   * order, so branching stays the exception rather than the shape every author writes in.
-   */
+  /** A question id or `finish`. Absent falls through to the next question in document order. */
   readonly next?: string;
 };
 
 export type OrientationQuestion = {
   readonly id: string;
   readonly prompt: string;
-  /** `one` lets each option branch; `many` cannot, so the question carries the jump. */
+  /** `one` branches per option; `many` carries one jump on the question. */
   readonly select: 'one' | 'many';
   readonly options: readonly OrientationOption[];
   readonly next?: string;
 };
 
-/** The default route seed is a snapshot of concepts, never a live tag query. */
+/** The default route seed: a snapshot of concepts, taken when the author writes it. */
 export type OrientationSeed = {
   readonly targets: readonly string[];
   readonly known: readonly string[];
@@ -169,10 +160,7 @@ function readQuestion(value: unknown, path: string, issues: Issue[]): Orientatio
   };
 }
 
-/**
- * Decode the companion text. Structural failure throws with every location listed, so an
- * unreadable configuration is diagnosable rather than a blank screen.
- */
+/** Decode the companion text. Structural failure throws with every location listed. */
 export function parseOrientationConfig(text: string): OrientationConfig {
   const value: unknown = JSON.parse(text);
   const issues: Issue[] = [];
@@ -232,10 +220,7 @@ export type OrientationConceptReference = {
   readonly at: OrientationLocation & { readonly field: 'seed.targets' | 'seed.known' | 'action' };
 };
 
-/**
- * Every concept id the configuration stores by name. A tag is not listed: deleting a
- * concept changes what a tag expands to, it does not leave a dangling reference behind.
- */
+/** Every concept id the configuration stores by name. Tags resolve against the graph at load. */
 export function orientationConceptReferences(config: OrientationConfig): OrientationConceptReference[] {
   const references: OrientationConceptReference[] = [
     ...config.seed.targets.map((conceptId) => ({ conceptId, at: { field: 'seed.targets' as const } })),
@@ -256,11 +241,8 @@ export function orientationConceptReferences(config: OrientationConfig): Orienta
 // ------------------------------------------------------------------ validation
 
 /**
- * Check a decoded configuration against the graph it ships with.
- *
- * The line between the two severities is the one #57 draws: anything that could put a
- * wrong or dangling concept into a route is an error, anything merely written badly is a
- * warning. Errors keep a configuration out of the effective orientation entirely.
+ * Check a decoded configuration against the graph it ships with. Errors are what could put
+ * a wrong or dangling concept into a route; warnings are everything else.
  */
 export function validateOrientationConfig(
   config: OrientationConfig,

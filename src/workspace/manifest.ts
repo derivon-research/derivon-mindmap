@@ -1,14 +1,8 @@
 /**
- * The `derivon.workspace/v1` manifest: the shared artifact both modes read, named after
- * what it is rather than after the side allowed to write it
- * (see `docs/adr/0007-name-the-workspace-protocol-after-the-artifact.md`).
+ * `derivon.workspace/v1`: the manifest both modes read, and the only workspace protocol.
+ * Naming: `docs/adr/0007-name-the-workspace-protocol-after-the-artifact.md`.
  *
- * v1 is the only protocol. The `derivon.authoring/*` shapes that preceded it are not read
- * here and are not migrated: v1.0.0 has no released predecessor to stay compatible with,
- * so a schema string this module does not know is a broken workspace, not an old one.
- *
- * The v0.4.2 reader in `src/domain.ts` still validates its own retired shapes for the
- * retired screens. That module is removed with the rest of v0.4.2 rather than extended.
+ * An unrecognized schema string is a broken workspace, reported as one.
  */
 
 export const WORKSPACE_SCHEMA = 'derivon.workspace/v1' as const;
@@ -37,7 +31,7 @@ export type ConceptPoint = {
   };
 };
 
-/** A product derivation, recorded as a hyperedge. Tags live on concepts only. */
+/** A product derivation, recorded as a hyperedge. */
 export type DerivationHyperedge = {
   readonly id: string;
   readonly weight: number;
@@ -46,7 +40,7 @@ export type DerivationHyperedge = {
   readonly data: DocumentReference;
 };
 
-/** A workspace-level tag declaration. Colour is a rendering decision, not content. */
+/** A workspace-level tag declaration. */
 export type TagDeclaration = {
   readonly id: string;
   readonly label: string;
@@ -126,7 +120,7 @@ function validateConceptTags(value: unknown, path: string, issues: ManifestIssue
   });
 }
 
-/** Validate a decoded v1 manifest. Dialect upgrades run before this, never around it. */
+/** Validate a decoded manifest. */
 export function validateWorkspaceManifest(value: unknown): ManifestIssue[] {
   const issues: ManifestIssue[] = [];
   if (!isRecord(value)) return [{ path: '$', message: '文档必须是 JSON 对象' }];
@@ -234,7 +228,7 @@ export function parseWorkspaceManifest(text: string): ParsedManifest {
   };
 }
 
-/** Canonical v1 text. Empty optional collections are absent, not written as `[]`. */
+/** Canonical manifest text. Empty optional collections are left out. */
 export function serializeWorkspaceManifest(manifest: WorkspaceManifest): string {
   return `${JSON.stringify({
     schema: WORKSPACE_SCHEMA,

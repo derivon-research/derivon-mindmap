@@ -15,15 +15,14 @@ import {
 export function LearningMode({ active = true, workspace, content, targetIds, knownIds, onChangeTargets, onChangeKnown, routeSolver, readAsset }: LearningModeProps) {
   const [selectedId, setSelectedId] = useState<string | null>(() => targetIds[0] ?? null);
   const plan = useMemo(() => planOrientation(content), [content]);
-  // Targets already in application state came from a mode switch, and orientation is over
-  // for this session; otherwise the run starts from the author's seed.
+  // Targets already in application state came from a mode switch: orientation is over for
+  // this session. Otherwise the run starts from the author's seed.
   const [run, setRun] = useState<OrientationRun>(() => (targetIds.length
     ? { ...beginOrientation(plan), targets: [...targetIds], known: [...knownIds], at: -1 }
     : beginOrientation(plan)));
   const [oriented, setOriented] = useState(() => targetIds.length > 0);
-  // The seed is a route, not a suggestion: it reaches application state on the first frame,
-  // before a single question has been asked. The callbacks are stable application state
-  // setters; watching them instead of the run would publish on every render.
+  // The seed reaches application state on the first frame, before a question is asked. The
+  // callbacks are stable setters; watching them would publish on every render.
   useEffect(() => {
     onChangeTargets(run.targets);
     onChangeKnown(run.known);
@@ -48,8 +47,7 @@ export function LearningMode({ active = true, workspace, content, targetIds, kno
       conceptIds: current.targets.includes(selected.id)
         ? current.targets.filter((id) => id !== selected.id) : [...current.targets, selected.id] }));
   };
-  // Applied eagerly rather than inside the state updater, so a rejected intent surfaces to
-  // the caller that raised it instead of throwing during a later render.
+  // Applied eagerly, so a rejected intent surfaces to the caller that raised it.
   const intent = (value: OrientationIntent) => setRun(applyOrientationIntent(plan, run, value));
 
   return <section className="learning-workbench" data-derivon-mode="learning" data-learning-targets={targetIds.join(' ')} data-learning-known={knownIds.join(' ')} aria-label="学习侧">

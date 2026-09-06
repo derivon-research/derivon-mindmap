@@ -12,11 +12,7 @@ export type ConceptPickerProps = {
   readonly emptyNote?: string;
 };
 
-/**
- * Choose concepts by name or by tag. Both modes build references with this rather than
- * asking anyone to type an id: an id typed by hand is a dangling reference waiting to be
- * written, and the picker cannot produce one.
- */
+/** Choose concepts by name or by tag. Every concept reference in either mode is built here. */
 export function ConceptPicker({ label, graph, tags, selected, onChange, emptyNote }: ConceptPickerProps) {
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState('');

@@ -13,7 +13,7 @@ export type OrientationSelection =
 export type OrientationDraft = {
   readonly draft: OrientationConfig | null;
   readonly saved: OrientationConfig | null;
-  /** Unfinished editing. It is not effective content and it is never auto-saved. */
+  /** Unfinished editing, held outside effective content and outside autosave. */
   readonly dirty: boolean;
   readonly diagnostics: readonly OrientationDiagnostic[];
   readonly blocking: readonly OrientationDiagnostic[];
@@ -30,12 +30,9 @@ export type OrientationDraft = {
 };
 
 /**
- * The author's working copy of the orientation configuration.
- *
- * Editing happens here, in a draft: an unfinished question is not workspace content, so it
- * neither reaches the learner's flow nor the autosave queue. Accepting it is a single
- * content operation through the shared session, which is also what makes the draft
- * protected against an external update while it is unfinished.
+ * The author's working copy of the orientation configuration. Editing happens in a draft;
+ * accepting it is one content operation through the shared session, which is also what
+ * keeps the unfinished draft protected against an external update.
  */
 export function useOrientationDraft(
   content: WorkspaceContent,

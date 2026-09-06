@@ -52,8 +52,7 @@ export default function App({ host }: { host: Host }) {
     };
   }, [host]);
 
-  // The solver is a capability, not a screen: loading it never gates the first frame, and
-  // a host without one leaves every preview honest about having no route.
+  // Loading the solver never gates the first frame.
   useEffect(() => {
     const load = host.loadRouteSolver;
     if (!load) return;
