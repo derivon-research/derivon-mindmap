@@ -1,13 +1,16 @@
 {
-  "schema": "derivon.authoring/v0.3.0",
+  "schema": "derivon.workspace/v1",
   "document": {
     "title": "Complete symbolic workspace",
     "description": "Stable in-repository fixture covering the complete Derivon workspace surface."
   },
+  "tags": [
+    { "id": "given", "label": "Given", "description": "Concepts an empty tail already reaches." }
+  ],
   "graph": {
     "points": [
-      { "id": "A", "data": { "label": "A", "document": "docs/points/a", "format": "markdown" } },
-      { "id": "B", "data": { "label": "B", "document": "docs/points/b", "format": "markdown" } },
+      { "id": "A", "data": { "label": "A", "document": "docs/points/a", "format": "markdown", "tags": ["given"] } },
+      { "id": "B", "data": { "label": "B", "document": "docs/points/b", "format": "markdown", "tags": ["given"] } },
       { "id": "C", "data": { "label": "C", "document": "docs/points/c", "format": "markdown" } },
       { "id": "D", "data": { "label": "D", "document": "docs/points/d", "format": "markdown" } },
       { "id": "X", "data": { "label": "X", "document": "docs/points/x", "format": "markdown" } },
@@ -22,15 +25,6 @@
       { "id": "cd-to-x", "weight": 1.5, "tails": ["C", "D"], "head": "X", "data": { "document": "docs/edges/cd-to-x", "format": "markdown" } },
       { "id": "a-to-y", "weight": 8, "tails": ["A"], "head": "Y", "data": { "document": "docs/edges/a-to-y", "format": "markdown" } },
       { "id": "x-to-y", "weight": 1, "tails": ["X"], "head": "Y", "data": { "document": "docs/edges/x-to-y", "format": "markdown" } }
-    ]
-  },
-  "view": {
-    "replacements": [
-      {
-        "points": ["A", "B"],
-        "replaceWith": "X",
-        "show": "points"
-      }
     ]
   }
 }

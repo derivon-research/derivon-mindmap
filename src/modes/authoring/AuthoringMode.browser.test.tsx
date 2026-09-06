@@ -7,7 +7,7 @@ import type { WorkspaceContent } from '../../workspace/index';
 import { AuthoringMode } from './AuthoringMode';
 
 const emptyContent: WorkspaceContent = {
-  graphText: '', title: 'Test', graph: { points: [], hyperedges: [] }, documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [], requiresMigrationConsent: false,
+  graphText: '', title: 'Test', graph: { points: [], hyperedges: [] }, documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [],
 };
 let container: HTMLDivElement;
 let root: Root | undefined;

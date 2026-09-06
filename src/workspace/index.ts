@@ -8,7 +8,7 @@ export {
 } from './content';
 
 export {
-  WORKSPACE_SCHEMA, conceptTags, conceptsWithTag, manifestDialect,
+  WORKSPACE_SCHEMA, conceptTags, conceptsWithTag,
   type ConceptPoint, type DerivationHyperedge, type DocumentFormat, type DocumentReference,
   type ManifestGraph, type TagDeclaration, type WorkspaceManifest,
 } from './manifest';

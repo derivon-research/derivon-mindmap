@@ -16,24 +16,19 @@ function workspace(directory: string) {
 describe.each(['replace-with', 'math-reforged'])('the %s example workspace', (directory) => {
   const content = workspace(directory);
 
+  it('ships as a v1 manifest whose declared tags all match concepts', () => {
+    expect(JSON.parse(content.graphText).schema).toBe(WORKSPACE_SCHEMA);
+    expect(content.tags.length).toBeGreaterThan(0);
+    for (const tag of content.tags) {
+      expect(content.graph.points.filter((point) => point.data.tags?.includes(tag.id)).length).toBeGreaterThan(0);
+    }
+    expect(content.graph.points.filter((point) => !point.data.tags?.length)).toEqual([]);
+  });
+
   it('ships an orientation configuration the learning side can run as-is', () => {
     expect(content.orientation.status).toBe('ready');
     expect(content.orientation.status !== 'absent' && orientationErrors(content.orientation.diagnostics)).toEqual([]);
   });
-});
-
-/**
- * `replace-with` is the retired replacement-view fixture and stays on its dialect until
- * #56 removes it; the v1 manifest with tags is exercised by the workspace it belongs to.
- */
-it('ships math-reforged as a v1 manifest whose declared tags all match concepts', () => {
-  const content = workspace('math-reforged');
-  expect(JSON.parse(content.graphText).schema).toBe(WORKSPACE_SCHEMA);
-  expect(content.tags.length).toBeGreaterThan(0);
-  for (const tag of content.tags) {
-    expect(content.graph.points.filter((point) => point.data.tags?.includes(tag.id)).length).toBeGreaterThan(0);
-  }
-  expect(content.graph.points.filter((point) => !point.data.tags?.length)).toEqual([]);
 });
 
 it('covers multiple targets and known initialization in the math-reforged case', () => {

@@ -60,10 +60,10 @@ or arbitrary-file existence guarantee is claimed.
 
 ## Delivered In #57 And #58
 
-- `src/workspace/manifest.ts` owns `derivon.workspace/v1` and the `derivon.authoring/*` input
-  dialects. `derivon.authoring/v0.3.0` opens without consent and is written back as v1;
-  `derivon.authoring/v0.2.0` still requires it. Retired replacement views are read as legacy
-  data at the boundary and are not written back.
+- `src/workspace/manifest.ts` owns `derivon.workspace/v1`, and owns nothing else. v1.0.0 has
+  no released predecessor, so there is no dialect to read, nothing to migrate and no upgrade
+  to consent to: an unknown schema string, or a manifest still carrying `view`, is a broken
+  workspace that is reported as one.
 - `src/workspace/orientation.ts` owns the `derivon.orientation/v1` companion document:
   structure, validation against the graph, canonical text, and the concept-reference
   inventory a deletion plan needs. Configuration carrying an error never becomes effective

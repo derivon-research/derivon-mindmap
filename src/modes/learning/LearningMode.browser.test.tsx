@@ -15,7 +15,7 @@ afterEach(async () => { if (root) await act(async () => root?.unmount()); root =
 
 it('retains an unchanged hidden overview and invalidates changed topology until return', async () => {
   const first: WorkspaceContent = { graphText: '', title: 'First', graph: { points: [{ id: 'first', data: { label: 'First', document: 'docs/first', format: 'html' } }], hyperedges: [] },
-    documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [], requiresMigrationConsent: false };
+    documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [] };
   const latest: WorkspaceContent = { ...first, graph: { points: [{ id: 'latest', data: { label: 'Latest', document: 'docs/latest', format: 'html' } }], hyperedges: [] } };
   const onChangeTargets = vi.fn();
   root = createRoot(container);
@@ -37,7 +37,7 @@ it('retains an unchanged hidden overview and invalidates changed topology until 
 it('renders the effective content document and changes targets without reading a source', async () => {
   const content: WorkspaceContent = { graphText: '', title: 'Effective', graph: { points: [{ id: 'fresh', data: { label: 'Fresh concept', document: 'docs/fresh', format: 'html' } },
       { id: 'other', data: { label: 'Other concept', document: 'docs/other', format: 'html' } }], hyperedges: [] },
-    documents: { 'docs/fresh/index.html': { status: 'ready', text: '<main>Unsaved effective body</main>' } }, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [], requiresMigrationConsent: false };
+    documents: { 'docs/fresh/index.html': { status: 'ready', text: '<main>Unsaved effective body</main>' } }, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [] };
   const onChangeTargets = vi.fn();
   root = createRoot(container);
   act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={content} targetIds={['other']} knownIds={[]} onChangeKnown={vi.fn()} onChangeTargets={onChangeTargets} />));

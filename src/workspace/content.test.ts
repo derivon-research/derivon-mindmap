@@ -32,12 +32,12 @@ describe('complete workspace content operations', () => {
 
   it('allows an unrelated concept without replacing damaged documents or losing opaque data', () => {
     const graph = JSON.stringify({
-      schema: 'derivon.authoring/v0.3.0', document: { title: 'Existing', description: 'Keep me' },
+      schema: WORKSPACE_SCHEMA, document: { title: 'Existing', description: 'Keep me' },
+      tags: [{ id: 'algebra', label: '代数' }],
       graph: { points: [
         { id: 'c-1', data: { label: 'Existing', document: 'docs/concept-c-2', format: 'markdown', tags: ['algebra'] } },
         { id: 'x', data: { label: 'Other', document: 'docs/other', format: 'html' } },
       ], hyperedges: [] },
-      view: { replacements: [{ points: ['c-1'], replaceWith: 'x', show: 'points' }] },
     });
     const damaged = parseWorkspaceContent({ graph, documents: {
       'docs/concept-c-2/document.md': { status: 'error', message: 'Permission denied' },
@@ -54,25 +54,24 @@ describe('complete workspace content operations', () => {
     expect(created.changes.documents![0].path).toBe('docs/concept-c-2-2/index.html');
     expect(created.content.documents['docs/concept-c-2/document.md']).toEqual({ status: 'error', message: 'Permission denied' });
     expect(created.content.companionMetadata).toEqual(damaged.companionMetadata);
-    expect(JSON.parse(created.changes.graph!)).not.toHaveProperty('view');
+    expect(JSON.parse(created.changes.graph!).tags).toEqual([{ id: 'algebra', label: '代数' }]);
     expect(JSON.parse(created.changes.graph!).graph.points[0].data.tags).toEqual(['algebra']);
   });
 
-  it('rejects incomplete intents and unauthorized schema migration without modifying effective content', () => {
+  it('rejects incomplete intents without modifying effective content', () => {
     const initial = createWorkspace({ title: 'Original' }).content;
     expect(() => createConcept(initial, { label: '  ', format: 'markdown' })).toThrow();
     const created = createConcept(initial, { label: 'A', format: 'html', id: 'given' }).content;
     expect(() => createConcept(created, { label: 'B', format: 'html', id: 'given' })).toThrow();
-    const old = parseWorkspaceContent({
-      graph: JSON.stringify({ schema: 'derivon.authoring/v0.2.0', document: { title: 'Old', description: '', updatedAt: 'x' },
-        graph: { points: [], hyperedges: [] }, view: { replacements: [] } }), documents: {},
-    });
-    expect(old.requiresMigrationConsent).toBe(true);
-    expect(() => createConcept(old, { label: 'A', format: 'markdown' })).toThrow(/升级/);
-    expect(() => updateOrientation(old, emptyOrientationConfig())).toThrow(/升级/);
-    expect(old.graphText).toContain('v0.2.0');
     expect(initial.graph.points).toEqual([]);
     expect(created.graph.points).toHaveLength(1);
+  });
+
+  it('refuses to open a workspace written in a shape that is not this protocol', () => {
+    expect(() => parseWorkspaceContent({
+      graph: JSON.stringify({ schema: 'derivon.authoring/v0.3.0', document: { title: 'Old', description: '' },
+        graph: { points: [], hyperedges: [] }, view: { replacements: [] } }), documents: {},
+    })).toThrow(/schema/);
   });
 
   it('atomically updates Markdown source, rendered HTML and owned image bytes', () => {

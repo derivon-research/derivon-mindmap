@@ -1504,15 +1504,14 @@ mod tests {
     #[test]
     fn create_only_commit_initializes_complete_concept_and_reopens_through_source_readers() {
         let graph = r#"{
-  "schema": "derivon.authoring/v0.3.0",
+  "schema": "derivon.workspace/v1",
   "document": { "title": "One concept", "description": "Complete workspace" },
   "graph": {
     "points": [
       { "id": "A", "data": { "label": "A", "document": "docs/points/a", "format": "markdown" } }
     ],
     "hyperedges": []
-  },
-  "view": {}
+  }
 }
 "#
         .to_owned();
@@ -1774,15 +1773,10 @@ mod tests {
             .contains_key("docs/points/y/document.md"));
         assert!(!root.join("docs/points/y/document.md").exists());
 
-        assert_eq!(manifest.schema, "derivon.authoring/v0.3.0");
-        assert!(manifest.view.get("positions").is_none());
+        assert_eq!(manifest.schema, "derivon.workspace/v1");
         assert_eq!(
-            manifest.view["replacements"],
-            serde_json::json!([{
-                "points": ["A", "B"],
-                "replaceWith": "X",
-                "show": "points"
-            }])
+            manifest.graph.points[0].data["tags"],
+            serde_json::json!(["given"])
         );
 
         let manifest_only = read_snapshot(&root, false).unwrap();

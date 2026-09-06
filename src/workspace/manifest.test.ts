@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import nativeRouteFixture from '../../src-tauri/tests/fixtures/complete-workspace/.derivon/workspace.json';
 import {
   WORKSPACE_SCHEMA,
   conceptTags,
@@ -25,55 +26,26 @@ const v1 = (extra: Record<string, unknown> = {}) => JSON.stringify({
 describe('derivon.workspace/v1 manifest', () => {
   it('parses a v1 manifest with declared tags and per-concept tags', () => {
     const parsed = parseWorkspaceManifest(v1());
-    expect(parsed.dialect).toBeNull();
-    expect(parsed.requiresConsent).toBe(false);
-    expect(parsed.droppedLegacyFields).toEqual([]);
     expect(parsed.manifest.tags).toEqual([{ id: 'algebra', label: '代数', description: '基础代数' }]);
     expect(conceptTags(parsed.manifest.graph.points[0])).toEqual(['algebra']);
     expect(conceptTags(parsed.manifest.graph.points[1])).toEqual([]);
     expect(conceptsWithTag(parsed.manifest.graph, 'algebra').map((point) => point.id)).toEqual(['a']);
   });
 
-  it('reads derivon.authoring/v0.3.0 as an input dialect without asking for consent', () => {
-    const parsed = parseWorkspaceManifest(JSON.stringify({
-      schema: 'derivon.authoring/v0.3.0',
-      document: { title: 'Old', description: '' },
-      graph: { points: [{ id: 'a', data: { label: 'A', document: 'docs/a', format: 'markdown' } }], hyperedges: [] },
-      view: { replacements: [] },
-    }));
-    expect(parsed.dialect).toBe('derivon.authoring/v0.3.0');
-    expect(parsed.requiresConsent).toBe(false);
-    expect(parsed.manifest.schema).toBe(WORKSPACE_SCHEMA);
-    expect(parsed.manifest.tags).toEqual([]);
-    expect(parsed.droppedLegacyFields).toEqual([]);
+  it('refuses the shapes that preceded v1 instead of migrating them', () => {
+    // v1.0.0 has no released predecessor. A schema string this module does not know is a
+    // broken workspace, not an old one, and saying so beats silently reinterpreting it.
+    for (const schema of ['derivon.authoring/v0.3.0', 'derivon.authoring/v0.2.0']) {
+      expect(() => parseWorkspaceManifest(JSON.stringify({
+        schema,
+        document: { title: 'Old', description: '' },
+        graph: { points: [], hyperedges: [] },
+        view: { replacements: [] },
+      }))).toThrow(/schema/);
+    }
   });
 
-  it('reports retired replacement views as dropped rather than dropping them silently', () => {
-    const parsed = parseWorkspaceManifest(JSON.stringify({
-      schema: 'derivon.authoring/v0.3.0',
-      document: { title: 'Old', description: '' },
-      graph: { points: [
-        { id: 'a', data: { label: 'A', document: 'docs/a', format: 'markdown' } },
-        { id: 'x', data: { label: 'X', document: 'docs/x', format: 'markdown' } },
-      ], hyperedges: [] },
-      view: { replacements: [{ points: ['a'], replaceWith: 'x', show: 'points' }] },
-    }));
-    expect(parsed.droppedLegacyFields).toEqual(['view.replacements']);
-    expect(serializeWorkspaceManifest(parsed.manifest)).not.toContain('replacements');
-  });
-
-  it('still requires consent for the schema before the last compatible dialect', () => {
-    const parsed = parseWorkspaceManifest(JSON.stringify({
-      schema: 'derivon.authoring/v0.2.0',
-      document: { title: 'Older', description: '', updatedAt: 'x' },
-      graph: { points: [], hyperedges: [] },
-      view: { replacements: [] },
-    }));
-    expect(parsed.dialect).toBe('derivon.authoring/v0.2.0');
-    expect(parsed.requiresConsent).toBe(true);
-  });
-
-  it('rejects a v1 manifest that still carries a replacement view', () => {
+  it('rejects a manifest that still carries a replacement view', () => {
     expect(validateWorkspaceManifest(JSON.parse(v1({ view: { replacements: [] } }))))
       .toEqual([{ path: 'view', message: expect.stringContaining('替换视图') }]);
   });
@@ -101,6 +73,15 @@ describe('derivon.workspace/v1 manifest', () => {
     expect(text.endsWith('\n')).toBe(true);
     expect(JSON.parse(text).graph.points[1].data).not.toHaveProperty('tags');
     expect(parseWorkspaceManifest(text).manifest).toEqual(parsed.manifest);
+  });
+
+  it('accepts the fixture the native route tests run against, so both sides read one protocol', () => {
+    const parsed = parseWorkspaceManifest(JSON.stringify(nativeRouteFixture));
+    expect(parsed.manifest.graph.points).toHaveLength(6);
+    expect(parsed.manifest.graph.hyperedges).toHaveLength(8);
+    expect(parsed.manifest.graph.hyperedges.some((edge) => edge.tails.length === 0)).toBe(true);
+    expect(parsed.manifest.graph.hyperedges.some((edge) => edge.tails.length === 2)).toBe(true);
+    expect(conceptsWithTag(parsed.manifest.graph, 'given').map((point) => point.id)).toEqual(['A', 'B']);
   });
 
   it('reports structural failures instead of throwing an opaque error', () => {

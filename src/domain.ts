@@ -1,12 +1,5 @@
 export const DOCUMENT_SCHEMA = 'derivon.authoring/v0.3.0' as const;
 export const PREVIOUS_DOCUMENT_SCHEMA = 'derivon.authoring/v0.2.0' as const;
-/**
- * The v1 protocol this retired application does not implement. It is read here only so
- * that a `derivon.workspace/v1` workspace still opens in the v0.4.2 screens while they are
- * being removed: what v1 deleted reads as absent, and what v1 added is ignored. The v1
- * implementation lives in `src/workspace/manifest.ts`.
- */
-const WORKSPACE_SCHEMA_V1 = 'derivon.workspace/v1' as const;
 export const WEIGHT_DECIMAL_PLACES = 1;
 const WEIGHT_SCALE = 10 ** WEIGHT_DECIMAL_PLACES;
 
@@ -239,11 +232,6 @@ export function validateDocument(value: unknown): DocumentIssue[] {
   return validateCurrentDocument(value);
 }
 
-function readWorkspaceV1(value: Record<string, unknown>): Record<string, unknown> {
-  const { tags: _tags, ...rest } = value;
-  return { ...rest, schema: DOCUMENT_SCHEMA, view: { replacements: [] } };
-}
-
 function migratePreviousDocument(value: Record<string, unknown>): Record<string, unknown> {
   const metadata = isRecord(value.document) ? value.document : {};
   const view = isRecord(value.view) ? value.view : {};
@@ -270,9 +258,7 @@ export function parseDocumentWithMigration(text: string): ParsedDocument {
   const parsed: unknown = JSON.parse(text);
   const needsMigration = isRecord(parsed) && parsed.schema === PREVIOUS_DOCUMENT_SCHEMA;
   const migratedFrom = needsMigration ? PREVIOUS_DOCUMENT_SCHEMA : null;
-  const value = needsMigration ? migratePreviousDocument(parsed)
-    : isRecord(parsed) && parsed.schema === WORKSPACE_SCHEMA_V1 ? readWorkspaceV1(parsed)
-      : parsed;
+  const value = needsMigration ? migratePreviousDocument(parsed) : parsed;
   const issues = validateCurrentDocument(value);
   if (issues.length) throw new Error(issues.slice(0, 4).map((issue) => `${issue.path}: ${issue.message}`).join('\n'));
   return { document: value as AuthoringDocument, migratedFrom };

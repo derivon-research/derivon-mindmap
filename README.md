@@ -30,7 +30,7 @@ cargo install derivon-cli
 curl -fsSL https://docs.derivon.net/cli/install.sh | sh
 ```
 
-CLI 是无状态 JSON 处理器，不会自行修改文件。它使用 `derivon.graph/v1` 核心协议；Mindmap 工作区使用 `derivon.workspace/v1`（`derivon.authoring/v0.3.0` 仍可作为输入方言读入）。在工作区中调用 CLI 时，建议让 `derivon-mindmap` Skill 负责两种协议之间的结构化转换、校验和原子写入。
+CLI 是无状态 JSON 处理器，不会自行修改文件。它使用 `derivon.graph/v1` 核心协议；Mindmap 工作区使用 `derivon.workspace/v1`。在工作区中调用 CLI 时，建议让 `derivon-mindmap` Skill 负责两种协议之间的结构化转换、校验和原子写入。
 
 ### 安装 Agent Skills
 
@@ -276,8 +276,8 @@ my-workspace/
 }
 ```
 
-`derivon.authoring/v0.3.0` 工作区无需迁移即可打开：它在工作区边界被读为 v1，`view.replacements`
-作为旧数据读入后不进入产品状态，也不会被写回。`derivon.authoring/v0.2.0` 仍需要用户确认升级。
+v1 是唯一的工作区协议，没有旧版本需要迁移：schema 串不是 `derivon.workspace/v1`、或者清单里
+还留着 `view`，都会被当作一份坏工作区照实报错。
 
 ### 开局配置
 

@@ -41,7 +41,6 @@ export type WorkspaceContent = {
   readonly companionMetadata: Readonly<Record<string, TextResource | null>>;
   readonly orientation: WorkspaceOrientation;
   readonly diagnostics: readonly ContentDiagnostic[];
-  readonly requiresMigrationConsent: boolean;
 };
 
 export type ContentChange = {
@@ -136,17 +135,12 @@ export function parseWorkspaceContent(input: {
     companionMetadata,
     orientation,
     diagnostics,
-    requiresMigrationConsent: parsed.requiresConsent,
   };
 }
 
 /** Re-read the manifest so a graph change starts from validated v1 shapes, not from state. */
 function manifestOf(content: WorkspaceContent): WorkspaceManifest {
   return parseWorkspaceManifest(content.graphText).manifest;
-}
-
-function assertWritable(content: WorkspaceContent) {
-  if (content.requiresMigrationConsent) throw new Error('此工作区需要确认格式升级，当前仅可浏览');
 }
 
 /** Re-derive effective content from a new manifest text, keeping everything else. */
@@ -160,7 +154,6 @@ function withGraphText(content: WorkspaceContent, graph: string): WorkspaceConte
 }
 
 export function updateObjectDocument(content: WorkspaceContent, intent: UpdateDocumentIntent): ContentChange {
-  assertWritable(content);
   if (typeof intent.source !== 'string') throw new Error('文档内容必须是字符串');
   const objects: readonly { id: string; data: DocumentReference & { label?: string } }[] =
     intent.object.kind === 'concept' ? content.graph.points
@@ -212,7 +205,6 @@ export function createWorkspace(intent: { title: string }): ContentChange {
 }
 
 export function createConcept(content: WorkspaceContent, intent: CreateConceptIntent): ContentChange & { objectId: string } {
-  assertWritable(content);
   const label = intent.label.trim();
   if (!label) throw new Error('概念名称不能为空');
   if (intent.format !== 'markdown' && intent.format !== 'html') throw new Error('文档格式无效');
@@ -252,7 +244,6 @@ export function createConcept(content: WorkspaceContent, intent: CreateConceptIn
 
 /** Tag a concept. Tags organize and filter; they never change reachability or cost. */
 export function updateConceptTags(content: WorkspaceContent, intent: UpdateConceptTagsIntent): ContentChange {
-  assertWritable(content);
   const manifest = manifestOf(content);
   if (!manifest.graph.points.some((point) => point.id === intent.conceptId)) {
     throw new Error(`未找到概念: ${intent.conceptId}`);
@@ -269,7 +260,6 @@ export function updateConceptTags(content: WorkspaceContent, intent: UpdateConce
  * label — so hand-written manifests and the editor never fight over this list.
  */
 export function updateTagDeclarations(content: WorkspaceContent, tags: readonly TagDeclaration[]): ContentChange {
-  assertWritable(content);
   const declared = new Set<string>();
   for (const tag of tags) {
     const id = tag.id.trim();
@@ -291,7 +281,6 @@ export function updateTagDeclarations(content: WorkspaceContent, tags: readonly 
  * one both modes may read, and a dangling reference must never reach effective content.
  */
 export function updateOrientation(content: WorkspaceContent, config: OrientationConfig | null): ContentChange {
-  assertWritable(content);
   const text = config === null ? null : serializeOrientationConfig(config);
   if (config !== null) {
     const errors = orientationErrors(validateOrientationConfig(config, content.graph, content.tags));

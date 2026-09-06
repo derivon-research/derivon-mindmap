@@ -15,14 +15,11 @@ const MAX_MILLIS: u64 = 5_000;
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceDocument {
     pub schema: String,
-    /// Only the graph is projected onto the mathematical model. Manifest metadata and
-    /// retired `derivon.authoring/*` fields are accepted when present and never required,
-    /// so a `derivon.workspace/v1` request needs to carry neither.
+    /// Only the graph is projected onto the mathematical model. Manifest metadata is
+    /// accepted when present and never required, so a request may carry the graph alone.
     #[serde(default)]
     pub document: Value,
     pub graph: WorkspaceGraph,
-    #[serde(default)]
-    pub view: Value,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -341,7 +338,6 @@ mod tests {
                     })
                     .collect(),
             },
-            view: serde_json::json!({}),
         }
     }
 

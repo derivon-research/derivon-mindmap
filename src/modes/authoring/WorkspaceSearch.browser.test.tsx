@@ -9,7 +9,7 @@ let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 afterEach(async () => { await act(async () => root?.unmount()); container?.remove(); vi.unstubAllGlobals(); });
 const fixture: WorkspaceContent = {
-  title: 'Search', graphText: '', requiresMigrationConsent: false, diagnostics: [], companionMetadata: {}, tags: [], orientation: { status: 'absent' },
+  title: 'Search', graphText: '', diagnostics: [], companionMetadata: {}, tags: [], orientation: { status: 'absent' },
   graph: { points: [
     { id: 'c-1', data: { label: 'Vector space', document: 'docs/c-1', format: 'markdown' } },
     { id: 'c-2', data: { label: '积分', document: 'docs/c-2', format: 'html' } },

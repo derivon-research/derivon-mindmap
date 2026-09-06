@@ -3,23 +3,15 @@
  * what it is rather than after the side allowed to write it
  * (see `docs/adr/0007-name-the-workspace-protocol-after-the-artifact.md`).
  *
- * Older `derivon.authoring/*` texts are input dialects handled here, at the workspace
- * boundary. Nothing above this module sees a dialect, a retired replacement view, or a
- * schema string; product state only ever contains v1 shapes.
+ * v1 is the only protocol. The `derivon.authoring/*` shapes that preceded it are not read
+ * here and are not migrated: v1.0.0 has no released predecessor to stay compatible with,
+ * so a schema string this module does not know is a broken workspace, not an old one.
  *
- * The v0.4.2 reader in `src/domain.ts` still validates its own retired shapes, including
- * replacement views. The overlap is deliberate and temporary: v1 belongs to the module
- * that owns workspace content, and the root-level module is removed with the rest of
- * v0.4.2 rather than extended.
+ * The v0.4.2 reader in `src/domain.ts` still validates its own retired shapes for the
+ * retired screens. That module is removed with the rest of v0.4.2 rather than extended.
  */
 
 export const WORKSPACE_SCHEMA = 'derivon.workspace/v1' as const;
-
-/** Readable at the boundary, upgraded on the way in, never written back out. */
-export const COMPATIBLE_DIALECT = 'derivon.authoring/v0.3.0' as const;
-export const CONSENT_DIALECT = 'derivon.authoring/v0.2.0' as const;
-
-export type InputDialect = typeof COMPATIBLE_DIALECT | typeof CONSENT_DIALECT;
 
 const WEIGHT_SCALE = 10;
 
@@ -77,12 +69,6 @@ export type ManifestIssue = { readonly path: string; readonly message: string };
 
 export type ParsedManifest = {
   readonly manifest: WorkspaceManifest;
-  /** The dialect this text was read as, or null when it was already v1. */
-  readonly dialect: InputDialect | null;
-  /** Dialects older than the compatible one need an author decision before writing. */
-  readonly requiresConsent: boolean;
-  /** Retired fields the upgrade will not carry forward; reported, never dropped in silence. */
-  readonly droppedLegacyFields: readonly string[];
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -145,7 +131,7 @@ export function validateWorkspaceManifest(value: unknown): ManifestIssue[] {
   const issues: ManifestIssue[] = [];
   if (!isRecord(value)) return [{ path: '$', message: '文档必须是 JSON 对象' }];
   if (value.schema !== WORKSPACE_SCHEMA) issues.push({ path: 'schema', message: `必须为 ${WORKSPACE_SCHEMA}` });
-  if (value.view !== undefined) issues.push({ path: 'view', message: 'v1 不再提供替换视图，请移除 view' });
+  if (value.view !== undefined) issues.push({ path: 'view', message: 'v1 没有替换视图，请移除 view' });
   if (!isRecord(value.document)) issues.push({ path: 'document', message: '缺少文档元数据' });
   else {
     for (const key of Object.keys(value.document)) {
@@ -229,45 +215,11 @@ export function validateWorkspaceManifest(value: unknown): ManifestIssue[] {
   return issues;
 }
 
-type Upgrade = { readonly value: unknown; readonly dialect: InputDialect | null; readonly dropped: string[] };
-
-/** Bring an input dialect up to v1. The only place a `derivon.authoring/*` shape exists. */
-function upgrade(value: unknown): Upgrade {
-  if (!isRecord(value) || (value.schema !== COMPATIBLE_DIALECT && value.schema !== CONSENT_DIALECT)) {
-    return { value, dialect: null, dropped: [] };
-  }
-  const dialect = value.schema as InputDialect;
-  const metadata = isRecord(value.document) ? value.document : {};
-  const view = isRecord(value.view) ? value.view : {};
-  const replacements = Array.isArray(view.replacements) ? view.replacements : [];
-  const { view: _view, ...rest } = value;
-  return {
-    value: {
-      ...rest,
-      schema: WORKSPACE_SCHEMA,
-      document: { title: metadata.title, description: metadata.description },
-    },
-    dialect,
-    dropped: replacements.length > 0 ? ['view.replacements'] : [],
-  };
-}
-
-/** The dialect a text would be read as, without paying for full validation. */
-export function manifestDialect(text: string): InputDialect | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    if (!isRecord(value)) return null;
-    return value.schema === COMPATIBLE_DIALECT || value.schema === CONSENT_DIALECT ? value.schema : null;
-  } catch {
-    return null;
-  }
-}
-
 export function parseWorkspaceManifest(text: string): ParsedManifest {
-  const upgraded = upgrade(JSON.parse(text) as unknown);
-  const issues = validateWorkspaceManifest(upgraded.value);
+  const value: unknown = JSON.parse(text);
+  const issues = validateWorkspaceManifest(value);
   if (issues.length) throw new Error(issues.slice(0, 4).map((issue) => `${issue.path}: ${issue.message}`).join('\n'));
-  const decoded = upgraded.value as {
+  const decoded = value as {
     document: WorkspaceManifest['document'];
     tags?: readonly TagDeclaration[];
     graph: ManifestGraph;
@@ -279,9 +231,6 @@ export function parseWorkspaceManifest(text: string): ParsedManifest {
       tags: decoded.tags ?? [],
       graph: decoded.graph,
     },
-    dialect: upgraded.dialect,
-    requiresConsent: upgraded.dialect === CONSENT_DIALECT,
-    droppedLegacyFields: upgraded.dropped,
   };
 }
 

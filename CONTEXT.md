@@ -66,7 +66,7 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **工作区内容（workspace content）**
 
-由图作者提供、可被不同学习者共同读取的材料：authoring manifest、对象文档、资产，以及工作区级可选伴随文档（包括开局配置）。对工作区内容的读取和提交只能经过 `WorkspaceSource`。工作区内容不包含某位学习者的本次目标、已知、路线进度、当前视图或对话生命周期。
+由图作者提供、可被不同学习者共同读取的材料：工作区清单、对象文档、资产，以及工作区级可选伴随文档（包括开局配置）。对工作区内容的读取和提交只能经过 `WorkspaceSource`。工作区内容不包含某位学习者的本次目标、已知、路线进度、当前视图或对话生命周期。
 
 **应用状态（application state）**
 
@@ -130,7 +130,7 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **概念（concept）**
 
-产品中一个可命名、可阅读的理解对象。学习侧把概念用作目标、已知和教材内容；创作侧创建、修改概念及其文档。authoring manifest 用 point 记录概念的稳定 ID 与创作元数据，但概念不是 point 数学定义的替代品。
+产品中一个可命名、可阅读的理解对象。学习侧把概念用作目标、已知和教材内容；创作侧创建、修改概念及其文档。工作区清单用 point 记录概念的稳定 ID 与创作元数据，但概念不是 point 数学定义的替代品。
 
 **推导（derivation，产品语意）**
 
@@ -140,7 +140,7 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **对象文档（object document）**
 
-归属于一个概念或一条产品推导的独立文档及其资产。概念文档承载概念内容；推导文档承载问题引入与推导过程。文档路径由 authoring manifest 引用，不同对象不共享同一个文档目录。
+归属于一个概念或一条产品推导的独立文档及其资产。概念文档承载概念内容；推导文档承载问题引入与推导过程。文档路径由工作区清单引用，不同对象不共享同一个文档目录。
 
 **标签（tag）**
 
@@ -148,9 +148,9 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **替换视图（replacement view，v1 废弃）**
 
-v0.4.2 曾用 authoring manifest 的 `view.replacements` 把一组对象显示为另一组对象。实践表明它没有有效降低模型复杂度，反而增加了编辑、渲染和文档行为的分支，因此 v1 不再把替换视图作为产品能力，不建立新增、编辑或显示路径。
+v0.4.2 曾用清单的 `view.replacements` 把一组对象显示为另一组对象。实践表明它没有有效降低模型复杂度，反而增加了编辑、渲染和文档行为的分支，因此 v1 不再把替换视图作为产品能力，不建立新增、编辑或显示路径。
 
-为保持既有工作区兼容，`view.replacements` 只在工作区边界作为旧数据读入，不进入 v1 的产品状态或模块设计，也不会被写回。需要组织和筛选概念时使用 tag；tag 只做分类，不声称对象之间等价，也不改变图语义。
+v1 的清单里没有 `view.replacements`，读到它就是一份不合法的清单。需要组织和筛选概念时使用 tag；tag 只做分类，不声称对象之间等价，也不改变图语义。
 
 ### 工作区协议
 
@@ -158,11 +158,9 @@ v0.4.2 曾用 authoring manifest 的 `view.replacements` 把一组对象显示�
 
 工作区内容的目录：文档元数据、概念与推导、tag 声明。协议是 `derivon.workspace/v1`，按产物而不是按写方命名（见 `docs/adr/0007-name-the-workspace-protocol-after-the-artifact.md`）。
 
-**输入方言（input dialect）**
+v1 是唯一的工作区协议。v1.0.0 之前没有发布过的版本，因此不存在需要兼容的旧协议：`src/workspace/` 不认识的协议串是一份坏工作区，不是一份旧工作区，边界照实报错而不去重新解释它。协议串只存在于这条边界，边界之上没有任何模块见得到它。
 
-仍可读入、但不会被写出的旧协议串。`derivon.authoring/v0.3.0` 直接读为 v1，不需要作者确认；`derivon.authoring/v0.2.0` 仍需升级确认。方言只存在于 `src/workspace/` 的边界，边界之上没有任何模块见得到协议串或旧字段。
-
-authoring manifest 的盘上结构见 [README 的“工作区格式”](README.md#工作区格式)。
+工作区清单的盘上结构见 [README 的“工作区格式”](README.md#工作区格式)。
 
 ## 外部规范
 
@@ -185,7 +183,7 @@ authoring manifest 的盘上结构见 [README 的“工作区格式”](README.m
 | `src/app/` | `src/app/App.tsx` | composition root、宿主能力选择、应用级模式切换与顶栏，接入不依附模式的工作区同步生命周期 | 增加宿主能力或应用级模式入口 |
 | `src/modes/learning/` | `src/modes/learning/index.ts` | 开局状态机、路线预览、路线学习，以及大图浏览中的学习者操作与应用状态 | 改目标/已知/进度行为或学习侧界面 |
 | `src/modes/authoring/` | `src/modes/authoring/index.ts` | 桌面创作工作流、编辑界面，以及大图浏览中的作者操作 | 增加创作功能或 tag 编辑；同时检查工作区提交契约 |
-| `src/workspace/` | `src/workspace/index.ts` | authoring manifest、对象文档、tag、伴随文档及旧字段的解析、校验与完整内容变更，不做宿主 I/O | 改工作区内容模型、引用影响规则或开局配置 |
+| `src/workspace/` | `src/workspace/index.ts` | 工作区清单、对象文档、tag、伴随文档的解析、校验与完整内容变更，不做宿主 I/O | 改工作区内容模型、引用影响规则或开局配置 |
 | `src/ports/` | `src/ports/WorkspaceSource.ts`, `src/ports/ConversationProvider.ts`, `src/ports/RouteSolver.ts` | `WorkspaceSource`、`ConversationProvider`、`RouteSolver` 及其它小接口 | 改跨边界能力；随后检查每个实现和契约测试 |
 | `src/hosts/web/` | `src/hosts/web/index.ts` | web composition 与只读端口实现 | 改 web 能力、内置工作区加载或确定性 provider |
 | `src/hosts/desktop/` | `src/hosts/desktop/index.ts` | desktop composition、本地工作区和 Pi SDK bridge | 改本地文件、桌面 IPC 或桌面对话实现 |

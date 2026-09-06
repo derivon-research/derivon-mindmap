@@ -32,7 +32,7 @@ const ACTION_LABELS: Record<OrientationActionOp, string> = {
 /** The centre of the orientation view: inspect one row, see its route, or run the whole thing. */
 export function OrientationWorkbench({ active, content, state, authoring, routeSolver }: OrientationWorkbenchProps) {
   const [tab, setTab] = useState<'inspect' | 'route' | 'learner'>('inspect');
-  const editable = Boolean(authoring) && !content.requiresMigrationConsent;
+  const editable = Boolean(authoring);
   const draft = state.draft;
 
   return <main className="orientation-workbench" aria-label="开局配置">
