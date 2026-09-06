@@ -70,6 +70,8 @@ pub struct WorkspaceSourceAssetChange {
 pub struct WorkspaceSourceChanges {
     graph: Option<String>,
     #[serde(default)]
+    expected_revision: Option<String>,
+    #[serde(default)]
     create_only: bool,
     #[serde(default)]
     documents: Vec<WorkspaceSourceTextChange>,
@@ -387,6 +389,10 @@ fn commit_workspace_source_changes_to_disk(
         .map(|(change, _)| change)
         .collect::<Vec<_>>();
 
+    if let Some(expected_revision) = &changes.expected_revision {
+        verify_expected_workspace_source_revision(root, expected_revision)?;
+    }
+
     apply_prepared_workspace_source_changes(&prepared, |change| {
         write_workspace_source_content(&change.target, change.content.as_deref())
     })
@@ -655,6 +661,87 @@ pub async fn read_workspace_source_companion_metadata(
     .map_err(|error| format!("workspace source companion metadata reader task failed: {error}"))?
 }
 
+fn hash_workspace_source_tree(
+    root: &Path,
+    directory: &Path,
+    hasher: &mut Sha256,
+) -> Result<(), String> {
+    let mut entries = fs::read_dir(directory)
+        .map_err(|error| format!("cannot read {}: {error}", directory.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("cannot read workspace entry: {error}"))?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let kind = entry
+            .file_type()
+            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
+        if kind.is_symlink() {
+            return Err(format!(
+                "workspace source contains symlink {}",
+                path.display()
+            ));
+        }
+        if kind.is_dir() {
+            hash_workspace_source_tree(root, &path, hasher)?;
+            continue;
+        }
+        if !kind.is_file() {
+            continue;
+        }
+        let relative = path.strip_prefix(root).map_err(|error| {
+            format!(
+                "cannot resolve {} relative to workspace: {error}",
+                path.display()
+            )
+        })?;
+        let relative = relative
+            .to_str()
+            .ok_or_else(|| format!("workspace path {} is not UTF-8", path.display()))?;
+        hasher.update(relative.as_bytes());
+        hasher.update(
+            fs::read(&path).map_err(|error| format!("cannot read {}: {error}", path.display()))?,
+        );
+    }
+    Ok(())
+}
+
+fn workspace_source_revision_for_root(root: &Path) -> Result<String, String> {
+    let root = fs::canonicalize(root)
+        .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
+    let mut hasher = Sha256::new();
+    for directory in [".derivon", "docs", "assets"] {
+        let path = root.join(directory);
+        if path
+            .try_exists()
+            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?
+        {
+            hasher.update(directory.as_bytes());
+            hash_workspace_source_tree(&root, &path, &mut hasher)?;
+        }
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn verify_expected_workspace_source_revision(
+    root: &Path,
+    expected_revision: &str,
+) -> Result<(), String> {
+    if workspace_source_revision_for_root(root)? != expected_revision {
+        return Err("workspace changed externally before commit".to_owned());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn workspace_source_revision(root_path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        workspace_source_revision_for_root(Path::new(&root_path))
+    })
+    .await
+    .map_err(|error| format!("workspace source revision task failed: {error}"))?
+}
+
 fn read_workspace_asset_bytes(root: &Path, relative_path: &str) -> Result<Vec<u8>, String> {
     let canonical_root = fs::canonicalize(root)
         .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
@@ -825,9 +912,11 @@ pub async fn write_workspace(
 pub async fn commit_workspace_source_changes(
     root_path: String,
     changes: WorkspaceSourceChanges,
-) -> Result<(), String> {
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        commit_workspace_source_changes_to_disk(Path::new(&root_path), &changes)
+        let root = Path::new(&root_path);
+        commit_workspace_source_changes_to_disk(root, &changes)?;
+        workspace_source_revision_for_root(root)
     })
     .await
     .map_err(|error| format!("workspace source commit task failed: {error}"))?
@@ -930,6 +1019,7 @@ mod tests {
             root.path(),
             &WorkspaceSourceChanges {
                 graph: Some(opened_graph),
+                expected_revision: None,
                 create_only: false,
                 documents: vec![WorkspaceSourceTextChange {
                     path: "docs/points/a/document.md".to_owned(),
@@ -974,6 +1064,7 @@ mod tests {
         fs::write(root.path().join("docs/original.md"), "original\n").unwrap();
         let changes = WorkspaceSourceChanges {
             graph: None,
+            expected_revision: None,
             create_only: false,
             documents: vec![WorkspaceSourceTextChange {
                 path: "docs/original.md".to_owned(),
@@ -1073,6 +1164,79 @@ mod tests {
     }
 
     #[test]
+    fn workspace_source_revision_is_stable_for_unchanged_content() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs/nested")).unwrap();
+        fs::write(root.path().join("docs/z.md"), "z\n").unwrap();
+        fs::write(root.path().join("docs/a.md"), "a\n").unwrap();
+        fs::write(root.path().join("docs/nested/b.md"), "b\n").unwrap();
+
+        let revision = workspace_source_revision_for_root(root.path()).unwrap();
+        for _ in 0..10 {
+            assert_eq!(
+                workspace_source_revision_for_root(root.path()).unwrap(),
+                revision
+            );
+        }
+    }
+
+    #[test]
+    fn workspace_source_rejects_an_external_change_before_commit_without_overwriting_it() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        fs::write(root.path().join("docs/concept.md"), "accepted\n").unwrap();
+        let revision = workspace_source_revision_for_root(root.path()).unwrap();
+        fs::write(root.path().join("docs/concept.md"), "external\n").unwrap();
+
+        let error = commit_workspace_source_changes_to_disk(
+            root.path(),
+            &WorkspaceSourceChanges {
+                graph: None,
+                expected_revision: Some(revision),
+                create_only: false,
+                documents: vec![WorkspaceSourceTextChange {
+                    path: "docs/concept.md".to_owned(),
+                    content: Some("local\n".to_owned()),
+                    create_only: false,
+                }],
+                assets: vec![],
+                companion_metadata: vec![],
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("changed externally"));
+        assert_eq!(
+            fs::read_to_string(root.path().join("docs/concept.md")).unwrap(),
+            "external\n"
+        );
+    }
+
+    #[test]
+    fn workspace_source_detects_an_external_change_after_preparation() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        fs::write(root.path().join("docs/concept.md"), "accepted\n").unwrap();
+        let revision = workspace_source_revision_for_root(root.path()).unwrap();
+        let prepared = prepare_workspace_source_change(
+            root.path(),
+            "docs/concept.md",
+            Some(b"local\n".to_vec()),
+        )
+        .unwrap();
+        fs::write(root.path().join("docs/concept.md"), "external\n").unwrap();
+
+        let error = verify_expected_workspace_source_revision(root.path(), &revision).unwrap_err();
+
+        assert!(error.contains("changed externally"));
+        assert_eq!(prepared.previous_content, Some(b"accepted\n".to_vec()));
+        assert_eq!(
+            fs::read_to_string(root.path().join("docs/concept.md")).unwrap(),
+            "external\n"
+        );
+    }
+
+    #[test]
     fn regular_commit_creates_complete_concept_when_new_documents_are_create_only() {
         let fixture =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
@@ -1166,6 +1330,7 @@ mod tests {
             root.path(),
             &WorkspaceSourceChanges {
                 graph: Some(graph.clone()),
+                expected_revision: None,
                 create_only: true,
                 documents: vec![
                     WorkspaceSourceTextChange {
@@ -1216,6 +1381,7 @@ mod tests {
                     )
                     .unwrap(),
                 ),
+                expected_revision: None,
                 create_only: true,
                 documents: vec![],
                 assets: vec![],
@@ -1247,6 +1413,7 @@ mod tests {
             root.path(),
             &WorkspaceSourceChanges {
                 graph: Some(fs::read_to_string(fixture.join(MANIFEST_PATH)).unwrap()),
+                expected_revision: None,
                 create_only: true,
                 documents: vec![
                     WorkspaceSourceTextChange {

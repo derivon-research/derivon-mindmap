@@ -29,7 +29,7 @@ afterEach(async () => {
 
 function render(content: WorkspaceContent, authoring?: AuthoringCommands, onSelectConcept = vi.fn()) {
   root = createRoot(container);
-  act(() => root?.render(<AuthoringMode workspace={{ id: 'fixture', name: 'Fixture' }} content={content}
+  act(() => root?.render(<AuthoringMode active={false} workspace={{ id: 'fixture', name: 'Fixture' }} content={content}
     authoring={authoring} selectedConceptId={null} onSelectConcept={onSelectConcept} />));
   return onSelectConcept;
 }

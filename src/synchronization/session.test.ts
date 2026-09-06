@@ -69,6 +69,39 @@ describe('application-scoped workspace synchronization', () => {
     reopened.dispose();
   });
 
+  it('automatically accepts an external update without local work and buffers it behind a draft', async () => {
+    vi.useFakeTimers();
+    const { source, files } = memorySource();
+    let revision = 0;
+    source.revision = async () => String(revision);
+    const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50 });
+
+    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    revision += 1;
+    await vi.advanceTimersByTimeAsync(50);
+    expect(session.reader.getSnapshot()).toMatchObject({
+      content: { title: 'External' }, persistedContent: { title: 'External' }, externalChange: null,
+    });
+
+    session.authoring!.protectDraft('new-concept', true);
+    files.set('.derivon/workspace.json', createWorkspace({ title: 'Conflict' }).content.graphText);
+    revision += 1;
+    await vi.advanceTimersByTimeAsync(50);
+    expect(session.reader.getSnapshot()).toMatchObject({
+      content: { title: 'External' }, hasDrafts: true, hasProtectedChanges: true,
+      externalChange: { content: { title: 'Conflict' } },
+    });
+
+    session.keepLocalAfterExternalChange();
+    expect(session.reader.getSnapshot().externalChange).toBeNull();
+    session.authoring!.protectDraft('new-concept', false);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(session.reader.getSnapshot()).toMatchObject({
+      content: { title: 'External' }, persistedContent: { title: 'External' }, externalChange: null,
+    });
+    session.dispose();
+  });
+
   it('protects a draft with no queued save and never lets it enter preview or persistence', async () => {
     vi.useFakeTimers();
     const { source, files, commits } = memorySource();
@@ -87,6 +120,32 @@ describe('application-scoped workspace synchronization', () => {
     session.authoring!.protectDraft('new-concept', false);
     expect(await session.reload()).toBe('loaded');
     expect(session.reader.getSnapshot().content.title).toBe('External');
+    session.dispose();
+  });
+
+  it('does not overwrite an external update discovered by a revision-checked save', async () => {
+    const { source, files, commits } = memorySource();
+    let revision = 0;
+    source.revision = async () => String(revision);
+    const commit = source.commit;
+    source.commit = async (changes) => {
+      if (changes.expectedRevision === undefined) throw new Error('missing expected revision');
+      if (changes.expectedRevision !== String(revision)) throw new Error('workspace changed externally');
+      await commit(changes);
+      revision += 1;
+      return String(revision);
+    };
+    const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 10_000 });
+    session.authoring!.createConcept({ label: 'Local', format: 'markdown' });
+    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    revision += 1;
+
+    await session.flush();
+    expect(commits).toEqual([]);
+    expect(session.reader.getSnapshot()).toMatchObject({
+      content: { title: 'Test' }, persistedContent: { title: 'Test' }, saveState: 'error',
+      error: 'workspace changed externally', hasProtectedChanges: true,
+    });
     session.dispose();
   });
 
@@ -165,6 +224,26 @@ describe('application-scoped workspace synchronization', () => {
     await session.reload();
     expect(await session.reader.readAsset(path)).toEqual(new Uint8Array([3, 4]));
     expect(changed).toHaveBeenCalledTimes(1);
+    session.dispose();
+  });
+
+  it('does not mix a newer asset with protected accepted content', async () => {
+    const { source, assets } = memorySource();
+    const path = 'docs/concept/assets/example.png';
+    let revision = 0;
+    source.revision = async () => String(revision);
+    assets.set(path, new Uint8Array([1]));
+    const session = await openWorkspaceSession(source, { authoring: source });
+    session.authoring!.protectDraft('concept', true);
+    assets.set(path, new Uint8Array([2]));
+    revision += 1;
+
+    await expect(session.reader.readAsset(path)).rejects.toThrow('无法把新资产混入受保护的有效内容');
+    expect(session.reader.getSnapshot()).toMatchObject({
+      content: { title: 'Test' },
+      hasProtectedChanges: true,
+      externalChange: { content: { title: 'Test' } },
+    });
     session.dispose();
   });
 

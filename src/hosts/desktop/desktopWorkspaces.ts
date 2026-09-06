@@ -12,7 +12,15 @@ export function createDesktopWorkspaceActions(invoke: DesktopInvoke = tauriInvok
     const source = createDesktopWorkspaceSource(directory.path, invoke);
     try { if (storage) rememberWorkspace(storage, directory); }
     catch { /* A recent-list cache failure must not invalidate a successful workspace open. */ }
-    return { id: directory.path, name: directory.name, source, authoringSource: source };
+    return {
+      id: directory.path, name: directory.name, source, authoringSource: source,
+      async registerCloseGuard(hasProtectedChanges) {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        return getCurrentWindow().onCloseRequested((event) => {
+          if (hasProtectedChanges() && !window.confirm('工作区有未提交草稿或未保存内容，仍要关闭吗？')) event.preventDefault();
+        });
+      },
+    };
   }
 
   async function open(directory: Directory): Promise<WorkspaceHandle> {

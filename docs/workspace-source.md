@@ -2,15 +2,14 @@
 
 `WorkspaceSource` is the application port for workspace content. It reads the authoring graph manifest as exact UTF-8 text, object documents as text, assets as bytes, and optional workspace-level companion metadata as text. Parsing and validating the authoring protocol happen on the application side of the port.
 
-Write access is a separate capability. `WritableWorkspaceSource` adds one operation, `commit`, whose change set has graph, document, asset, and companion-metadata categories. The desktop binding validates and snapshots the whole change set before writing, then attempts to restore touched files if a write fails and reports rollback failures. Keeping the graph as source text lets an unchanged read/commit round trip preserve every byte instead of normalizing JSON formatting.
+Write access is a separate capability. `WritableWorkspaceSource` adds one operation, `commit`, whose change set has graph, document, asset, and companion-metadata categories. A writable desktop source also exposes a revision: it hashes `.derivon`, `docs`, and legacy root `assets`, so graph text, object documents, companion configuration, and delayed asset reads share one observation boundary. A commit may carry the last accepted revision; the desktop binding validates it immediately before writing and rejects an already-observed external update. It then attempts to restore touched files if a write fails and reports rollback failures. Keeping the graph as source text lets an unchanged read/commit round trip preserve every byte instead of normalizing JSON formatting.
 
 A commit with `createOnly: true` initializes a workspace: it requires a graph, forbids
 removals, and uses exclusive creation for every target. On an observed failure it attempts
 to remove only files created by that attempt and reports cleanup failures. A text change
 with `createOnly: true` instead requires that individual target to be absent during commit
 preparation, protecting new concept documents from overwriting pre-existing orphan files.
-That per-file preflight is not protection against an external writer racing the commit.
-Neither operation promises cross-process transactions or crash atomicity.
+That per-file preflight and revision comparison are not protection against an uncooperative external writer racing after the final comparison. Neither operation promises cross-process transactions, filesystem CAS, or crash atomicity.
 
 ## Host bindings
 
@@ -45,11 +44,7 @@ writes. Unfinished drafts are neither previewed nor saved, but they protect thei
 basis from automatic replacement. Automatic saving cannot authorize a schema upgrade that
 has not been confirmed by the user.
 
-The current port does not enumerate owned files, observe revisions, or accept a revision
-precondition on commit. `WorkspaceSession.reload()` is an explicit, draft-protected reload
-entry point; no external watcher invokes it yet. Owned-file deletion and external-update safety require further host
-capability design and tests. The existing rollback is not a promise of concurrency safety
-or crash atomicity; its precise guarantees must be verified rather than inferred.
+The desktop port observes revisions and accepts an optional revision precondition on commits. `WorkspaceSession` polls that capability at application scope: without protected local work it accepts a stable external content read; with a draft or queued save it retains both the effective local content and a buffered external version until the user resolves it. Immutable web sources do not implement revision observation. Owned-file deletion and stronger external-write guarantees still require further host capability design and tests. The existing rollback and revision check are not a promise of concurrency safety or crash atomicity; their precise guarantees must be verified rather than inferred.
 
 ## State boundary
 

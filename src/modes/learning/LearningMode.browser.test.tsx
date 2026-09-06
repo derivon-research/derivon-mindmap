@@ -13,6 +13,24 @@ let root: Root | undefined;
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); });
 afterEach(async () => { if (root) await act(async () => root?.unmount()); root = undefined; container.remove(); vi.restoreAllMocks(); });
 
+it('unmounts a hidden overview and mounts the newest accepted topology on return', async () => {
+  const first: WorkspaceContent = { graphText: '', title: 'First', graph: { points: [{ id: 'first', data: { label: 'First', document: 'docs/first', format: 'html' } }], hyperedges: [] },
+    documents: {}, companionMetadata: {}, diagnostics: [], requiresMigrationConsent: false };
+  const latest: WorkspaceContent = { ...first, graph: { points: [{ id: 'latest', data: { label: 'Latest', document: 'docs/latest', format: 'html' } }], hyperedges: [] } };
+  const onChangeTargets = vi.fn();
+  root = createRoot(container);
+  act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={first}
+    targetIds={[]} onChangeTargets={onChangeTargets} active />));
+  await expect.element(page.getByRole('button', { name: 'select graph concept' })).toBeVisible();
+  act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={first}
+    targetIds={[]} onChangeTargets={onChangeTargets} active={false} />));
+  expect(container.querySelector('button')).toBeNull();
+  act(() => root?.render(<LearningMode workspace={{ id: 'fixture', name: 'Fixture' }} content={latest}
+    targetIds={[]} onChangeTargets={onChangeTargets} active />));
+  await page.getByRole('button', { name: 'select graph concept' }).click();
+  expect(container.textContent).toContain('Latest');
+});
+
 it('renders the effective content document and changes targets without reading a source', async () => {
   const content: WorkspaceContent = { graphText: '', title: 'Effective', graph: { points: [{ id: 'fresh', data: { label: 'Fresh concept', document: 'docs/fresh', format: 'html' } }], hyperedges: [] },
     documents: { 'docs/fresh/index.html': { status: 'ready', text: '<main>Unsaved effective body</main>' } }, companionMetadata: {}, diagnostics: [], requiresMigrationConsent: false };

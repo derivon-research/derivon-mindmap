@@ -29,6 +29,7 @@ describe('desktop WorkspaceSource', () => {
       if (command === 'read_workspace_source_companion_metadata') {
         return files.get(path) ?? null;
       }
+      if (command === 'workspace_source_revision') return 'revision-1';
       if (command === 'commit_workspace_source_changes') {
         const changes = args?.changes as {
           graph?: string;
@@ -50,6 +51,7 @@ describe('desktop WorkspaceSource', () => {
     const openedDocument = await source.readDocument('docs/concept-a/document.md');
     const openedAsset = await source.readAsset('assets/diagram.png');
     const openedCompanion = await source.readCompanionMetadata('.derivon/orientation.json');
+    expect(await source.revision!()).toBe('revision-1');
     await source.commit({
       graph: openedGraph,
       documents: [{ path: 'docs/concept-a/document.md', content: openedDocument }],
