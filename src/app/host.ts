@@ -17,6 +17,8 @@ export type WorkspaceHandle = {
   readonly id: string;
   readonly name: string;
   readonly source: WorkspaceSource;
+  /** Desktop-only native close interception, supplied by the host rather than shared app code. */
+  readonly registerCloseGuard?: (hasProtectedChanges: () => boolean) => Promise<() => void>;
   /** Granted only by the desktop host, never inferred from the visible mode. */
   readonly authoringSource?: WritableWorkspaceSource;
 };
@@ -29,6 +31,8 @@ export type RecentWorkspace = {
 };
 
 export type AuthoringModeProps = {
+  /** The retained mode is currently visible; hidden graph renderers must not keep working. */
+  readonly active?: boolean;
   readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
   readonly content: WorkspaceContent;
   readonly authoring?: AuthoringCommands;
@@ -40,6 +44,8 @@ export type AuthoringModeProps = {
 };
 
 export type LearningModeProps = {
+  /** The retained mode is currently visible; hidden graph renderers must not keep working. */
+  readonly active?: boolean;
   readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
   readonly content: WorkspaceContent;
   readonly readAsset?: (path: string) => Promise<Uint8Array>;

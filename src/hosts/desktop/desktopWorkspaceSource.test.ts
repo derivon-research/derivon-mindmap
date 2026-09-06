@@ -29,6 +29,7 @@ describe('desktop WorkspaceSource', () => {
       if (command === 'read_workspace_source_companion_metadata') {
         return files.get(path) ?? null;
       }
+      if (command === 'workspace_source_revision') return 'revision-1';
       if (command === 'commit_workspace_source_changes') {
         const changes = args?.changes as {
           graph?: string;
@@ -40,7 +41,7 @@ describe('desktop WorkspaceSource', () => {
         for (const change of changes.documents) files.set(change.path, change.content!);
         for (const change of changes.assets) files.set(change.path, new Uint8Array(change.content!));
         for (const change of changes.companionMetadata) files.set(change.path, change.content!);
-        return undefined;
+        return 'revision-2';
       }
       throw new Error(`Unexpected command: ${command}`);
     }) as DesktopInvoke;
@@ -50,13 +51,16 @@ describe('desktop WorkspaceSource', () => {
     const openedDocument = await source.readDocument('docs/concept-a/document.md');
     const openedAsset = await source.readAsset('assets/diagram.png');
     const openedCompanion = await source.readCompanionMetadata('.derivon/orientation.json');
-    await source.commit({
+    expect(await source.revision!()).toBe('revision-1');
+    const committedRevision = await source.commit({
+      expectedRevision: 'revision-1',
       graph: openedGraph,
       documents: [{ path: 'docs/concept-a/document.md', content: openedDocument }],
       assets: [{ path: 'assets/diagram.png', content: openedAsset }],
       companionMetadata: [{ path: '.derivon/orientation.json', content: openedCompanion }],
     });
 
+    expect(committedRevision).toBe('revision-2');
     expect(files.get('.derivon/workspace.json')).toBe(graph);
     expect(files.get('docs/concept-a/document.md')).toBe(document);
     expect(files.get('assets/diagram.png')).toEqual(asset);
@@ -64,6 +68,7 @@ describe('desktop WorkspaceSource', () => {
     expect(invoke).toHaveBeenLastCalledWith('commit_workspace_source_changes', {
       rootPath: '/projects/example',
       changes: {
+        expectedRevision: 'revision-1',
         graph,
         documents: [{ path: 'docs/concept-a/document.md', content: document }],
         assets: [{ path: 'assets/diagram.png', content: [0, 1, 2, 127, 128, 255] }],

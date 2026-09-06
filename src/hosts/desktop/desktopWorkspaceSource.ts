@@ -14,6 +14,7 @@ function asBytes(value: ArrayBuffer | Uint8Array | number[]): Uint8Array {
 
 function commandChanges(changes: WorkspaceCommit) {
   return {
+    ...(changes.expectedRevision === undefined ? {} : { expectedRevision: changes.expectedRevision }),
     ...(changes.createOnly ? { createOnly: true } : {}),
     ...(changes.graph === undefined ? {} : { graph: changes.graph }),
     documents: [...(changes.documents ?? [])],
@@ -42,8 +43,11 @@ export function createDesktopWorkspaceSource(
     readCompanionMetadata(relativePath) {
       return invoke('read_workspace_source_companion_metadata', { rootPath, relativePath });
     },
+    revision() {
+      return invoke('workspace_source_revision', { rootPath });
+    },
     commit(changes) {
-      return invoke('commit_workspace_source_changes', {
+      return invoke<string>('commit_workspace_source_changes', {
         rootPath,
         changes: commandChanges(changes),
       });

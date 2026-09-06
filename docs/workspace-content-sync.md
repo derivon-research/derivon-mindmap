@@ -44,9 +44,12 @@ implemented port behaviour.
   an opaque-origin frame cannot read a parent-origin blob URL.
 
 The session retains failures and supports an explicit retry; the GUI shows save/draft status,
-warns before its close-workspace command or browser unload, and offers retry. Native window-close
-protection, external watching/conflict resolution, schema-upgrade consent and complete failure
-integration remain #55 work. Older schemas open read-only until upgrade consent is implemented.
+warns before its close-workspace command or browser unload, and offers retry. PR #72 adds native
+window-close protection, revision observation and explicit conflict discard, checked lazy assets,
+and file-system failure tests through the same session and port. It clears old diagnostic logs
+at actual frontend/native startup. Unchanged hidden graphs retain their viewport; hidden topology
+changes invalidate the renderer until return. These additions do not complete #55: schema-upgrade
+consent and learning-state integration remain open. Older schemas still open read-only.
 No atomic read/CAS/crash-recovery guarantee is implied by the current port.
 
 The restored editor is not completion of #53. Document updates validate the owning source
@@ -131,10 +134,11 @@ confirmation under #55; automatic saving does not bypass that consent.
 
 ## Capability gaps to resolve
 
-The current TypeScript port reads individual paths and submits path-based changes. It has no
-file inventory, revision precondition on commit, or change observation operation. The desktop
+The current TypeScript port reads individual paths and submits path-based changes. PR #72 adds
+revision observation and commit preconditions, but no owned-file inventory. The desktop
 implementation prepares previous file contents and attempts rollback on a write failure;
-that is not a concurrency or crash-atomicity guarantee.
+that is not a concurrency or crash-atomicity guarantee. See the current
+[WorkspaceSource contract](workspace-source.md) for observation limits and delivered tests.
 
 | Gap | Required investigation and verification | Delivery responsibility |
 | --- | --- | --- |

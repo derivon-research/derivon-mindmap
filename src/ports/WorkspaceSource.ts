@@ -3,6 +3,8 @@ export interface WorkspaceSource {
   readDocument(path: string): Promise<string>;
   readAsset(path: string): Promise<Uint8Array>;
   readCompanionMetadata(path: string): Promise<string | null>;
+  /** Opaque content observation token; absent for immutable sources. Not an atomic filesystem snapshot. */
+  revision?(): Promise<string>;
 }
 
 export type WorkspaceTextChange = {
@@ -18,6 +20,8 @@ export type WorkspaceAssetChange = {
 };
 
 export type WorkspaceCommit = {
+  /** Reject a commit when the source no longer matches the accepted content version. */
+  expectedRevision?: string;
   /** Initialize only absent files; reject collisions instead of overwriting a workspace. */
   createOnly?: true;
   graph?: string;
@@ -27,5 +31,6 @@ export type WorkspaceCommit = {
 };
 
 export interface WritableWorkspaceSource extends WorkspaceSource {
-  commit(changes: WorkspaceCommit): Promise<void>;
+  /** Revision-capable hosts must return the version produced by this write, not a later external observation. */
+  commit(changes: WorkspaceCommit): Promise<string | void>;
 }
