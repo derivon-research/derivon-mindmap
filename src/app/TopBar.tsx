@@ -43,7 +43,7 @@ export function TopBar({
           ))}
         </div>
       )}
-      {/* 模式自己的工具栏在这里接上：创作工具栏、学习侧的定向/路线/浏览。 */}
+      {/* 模式自己的工具栏在这里接上：创作工具栏、学习侧的开局/路线/浏览。 */}
       <div className="app-topbar-mode-slot" />
       {onCloseWorkspace && <button className="app-icon-button" type="button" title="关闭工作区"
         aria-label="关闭工作区" onClick={onCloseWorkspace}><FolderClosed size={18} /></button>}
