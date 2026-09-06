@@ -47,7 +47,7 @@ export function createDesktopWorkspaceSource(
       return invoke('workspace_source_revision', { rootPath });
     },
     commit(changes) {
-      return invoke<string | void>('commit_workspace_source_changes', {
+      return invoke<string>('commit_workspace_source_changes', {
         rootPath,
         changes: commandChanges(changes),
       });

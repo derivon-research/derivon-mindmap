@@ -7,6 +7,23 @@ let root: Root | undefined;
 let container: HTMLDivElement;
 afterEach(async () => { await act(async () => root?.unmount()); container.remove(); });
 
+it('clears old image bytes when the content reader changes without changing HTML', async () => {
+  container = document.createElement('div'); document.body.append(container);
+  root = createRoot(container);
+  const html = '<img src="assets/image.png">';
+  await act(async () => root!.render(<DocumentPreview html={html} title="Document" documentPath="docs/a/index.html"
+    readAsset={async () => new Uint8Array([1])} />));
+  const frame = container.querySelector('iframe')!;
+  await expect.poll(() => frame.srcdoc).toContain('base64,AQ==');
+  let release!: (value: Uint8Array) => void;
+  const pending = new Promise<Uint8Array>((resolve) => { release = resolve; });
+  await act(async () => root!.render(<DocumentPreview html={html} title="Document" documentPath="docs/a/index.html"
+    readAsset={() => pending} />));
+  expect(frame.srcdoc).toBe('');
+  await act(async () => release(new Uint8Array([2])));
+  await expect.poll(() => frame.srcdoc).toContain('base64,Ag==');
+});
+
 it('clears the old version immediately and ignores obsolete image preparation', async () => {
   container = document.createElement('div'); document.body.append(container);
   root = createRoot(container);

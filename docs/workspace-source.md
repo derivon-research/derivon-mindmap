@@ -2,7 +2,9 @@
 
 `WorkspaceSource` is the application port for workspace content. It reads the authoring graph manifest as exact UTF-8 text, object documents as text, assets as bytes, and optional workspace-level companion metadata as text. Parsing and validating the authoring protocol happen on the application side of the port.
 
-Write access is a separate capability. `WritableWorkspaceSource` adds one operation, `commit`, whose change set has graph, document, asset, and companion-metadata categories. A writable desktop source also exposes a revision: it hashes `.derivon`, `docs`, and legacy root `assets`, so graph text, object documents, companion configuration, and delayed asset reads share one observation boundary. A commit may carry the last accepted revision; the desktop binding validates it immediately before writing and rejects an already-observed external update. It then attempts to restore touched files if a write fails and reports rollback failures. Keeping the graph as source text lets an unchanged read/commit round trip preserve every byte instead of normalizing JSON formatting.
+Write access is a separate capability. `WritableWorkspaceSource` adds one operation, `commit`, whose change set has graph, document, asset, and companion-metadata categories. A desktop source also exposes a revision over workspace files, excluding root `.git` metadata. This includes valid document and image paths outside conventional `docs` and `assets` directories. Sorted, length-framed paths and fixed-size file digests make the token deterministic and unambiguous; empty directories do not change it. Unreadable files or directories contribute an access-error/metadata fingerprint so a damaged object document can remain a localized diagnostic, not a workspace-open failure. Such a fingerprint does not claim to verify unreadable bytes. Symlinks are not supported by revision acquisition.
+
+A commit may carry the last accepted revision; the desktop binding validates it after preparation, immediately before writing. Revision-capable hosts return the version predicted from that inspected basis and the complete requested changes, not a post-write observation that could already contain an external update. The binding attempts to restore touched files if a write fails and reports rollback failures. Keeping the graph as source text lets an unchanged read/commit round trip preserve every byte instead of normalizing JSON formatting.
 
 A commit with `createOnly: true` initializes a workspace: it requires a graph, forbids
 removals, and uses exclusive creation for every target. On an observed failure it attempts
@@ -34,9 +36,12 @@ creation and subsequent saves use this port.
 
 Object text and `.derivon/orientation.json` are acquired together before publishing an
 in-memory snapshot. Document read failures remain explicit localized diagnostics; a bad
-manifest fails opening. This is an in-memory publication boundary, not an externally atomic
-filesystem read. Assets, external observation and revision-aware acquisition remain follow-up
-work. Companion configuration is preserved as opaque text here; #58 owns its semantics.
+manifest fails opening. Revision checks bracket acquisition, with at most three attempts.
+This is an in-memory publication boundary, not an externally atomic filesystem read.
+Lazy asset reads are checked against that same basis and fail if it changes, rather than
+retrying indefinitely or returning new bytes into an old preview. Asset-only external updates
+also invalidate preview readers. Companion configuration is preserved as opaque text here;
+#58 owns its semantics.
 
 Only changes accepted through desktop authoring write authority may be persisted. A queued
 save can finish after switching to learning; learning actions still cannot create workspace
@@ -44,7 +49,9 @@ writes. Unfinished drafts are neither previewed nor saved, but they protect thei
 basis from automatic replacement. Automatic saving cannot authorize a schema upgrade that
 has not been confirmed by the user.
 
-The desktop port observes revisions and accepts an optional revision precondition on commits. `WorkspaceSession` polls that capability at application scope: without protected local work it accepts a stable external content read; with a draft or queued save it retains both the effective local content and a buffered external version until the user resolves it. Immutable web sources do not implement revision observation. Owned-file deletion and stronger external-write guarantees still require further host capability design and tests. The existing rollback and revision check are not a promise of concurrency safety or crash atomicity; their precise guarantees must be verified rather than inferred.
+`WorkspaceSession` polls revisions at application scope. Without protected local work it accepts a stable external content read; with a draft or queued save it retains effective local content and buffers a valid external version. Observation is suspended during local writes, and acquisitions that overlap a write are discarded. A conflict pauses the save queue; if the external writer restores the accepted disk version, automatic saving resumes. Keeping local work means leaving the conflict unresolved; the GUI can explicitly confirm discarding drafts and queued changes to adopt the complete buffered external version. This resets only authoring drafts and rejects delayed commands from discarded editors. There is no automatic merge or partial local overwrite under an external revision.
+
+Immutable web sources do not implement revision observation. Owned-file deletion still requires further host capability design. Real temporary-filesystem tests cover preparation, revision rejection, writes after the final check, partial deletion/write failure and rollback failure. An uncooperative writer can still change files after comparison, during multi-file acquisition, or during rollback; repeated matching hashes are not a filesystem snapshot or CAS. Full-file polling also has cost proportional to workspace size. No crash atomicity or recovery is promised.
 
 ## State boundary
 

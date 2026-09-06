@@ -3,7 +3,7 @@ export interface WorkspaceSource {
   readDocument(path: string): Promise<string>;
   readAsset(path: string): Promise<Uint8Array>;
   readCompanionMetadata(path: string): Promise<string | null>;
-  /** Changes whenever source content changes; absent for immutable sources such as the web bundle. */
+  /** Opaque content observation token; absent for immutable sources. Not an atomic filesystem snapshot. */
   revision?(): Promise<string>;
 }
 
@@ -31,6 +31,6 @@ export type WorkspaceCommit = {
 };
 
 export interface WritableWorkspaceSource extends WorkspaceSource {
-  /** Returns the source revision after a successful commit when the host can provide one. */
+  /** Revision-capable hosts must return the version produced by this write, not a later external observation. */
   commit(changes: WorkspaceCommit): Promise<string | void>;
 }

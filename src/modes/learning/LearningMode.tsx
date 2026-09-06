@@ -1,12 +1,11 @@
 import { FileText, Network, X } from 'lucide-react';
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { DocumentPreview } from '../../app/DocumentPreview';
 import type { LearningModeProps } from '../../app/host';
 import type { GraphEvent, GraphView } from '../../rendering';
 import { objectDocumentPreview, type TextResource } from '../../workspace/index';
+import { RetainedGraph } from '../RetainedGraph';
 import './learning.css';
-
-const GraphRenderer = lazy(async () => ({ default: (await import('../../rendering')).GraphRenderer }));
 
 export function LearningMode({ active = true, workspace, content, targetIds, onChangeTargets, readAsset }: LearningModeProps) {
   const [selectedId, setSelectedId] = useState<string | null>(() => targetIds[0] ?? null);
@@ -31,7 +30,7 @@ export function LearningMode({ active = true, workspace, content, targetIds, onC
       {selected && <div className="learning-selection"><output aria-label="Selected concept">{selected.data.label}</output><button type="button" aria-pressed={targetIds.includes(selected.id)} onClick={toggleTarget}>{targetIds.includes(selected.id) ? '取消目标' : '设为目标'}</button><button type="button" className="learning-icon-button" title="关闭文档" onClick={() => setSelectedId(null)}><X aria-hidden="true" /></button></div>}
     </header>
     <div className={`learning-main${selected ? ' has-document' : ''}`}>
-      <div className="learning-graph-canvas">{active && <Suspense fallback={<div role="status">正在载入全图…</div>}><GraphRenderer view={view} onEvent={handleEvent} /></Suspense>}</div>
+      <div className="learning-graph-canvas"><RetainedGraph active={active} view={view} onEvent={handleEvent} /></div>
       {selected && <section className="learning-document" aria-label={`${selected.data.label} 文档`}><Document title={selected.data.label} documentPath={`${selected.data.document}/index.html`} readAsset={readAsset} resource={objectDocumentPreview(content, selected.data)} /></section>}
     </div>
     {content.diagnostics.length > 0 && <details className="learning-diagnostics"><summary>{content.diagnostics.length} 个本地内容问题</summary>{content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}><code>{item.path}</code> {item.message}</p>)}</details>}

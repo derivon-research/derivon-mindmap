@@ -92,14 +92,134 @@ describe('application-scoped workspace synchronization', () => {
       externalChange: { content: { title: 'Conflict' } },
     });
 
-    session.keepLocalAfterExternalChange();
-    expect(session.reader.getSnapshot().externalChange).toBeNull();
-    session.authoring!.protectDraft('new-concept', false);
-    await vi.advanceTimersByTimeAsync(50);
+    const staleCommands = session.authoring!;
+    expect(session.acceptExternalChange()).toBe(true);
     expect(session.reader.getSnapshot()).toMatchObject({
-      content: { title: 'External' }, persistedContent: { title: 'External' }, externalChange: null,
+      content: { title: 'Conflict' }, persistedContent: { title: 'Conflict' }, externalChange: null,
+      hasDrafts: false, hasProtectedChanges: false, authoringEpoch: 1,
     });
+    expect(() => staleCommands.createConcept({ label: 'Late draft', format: 'html' })).toThrow('编辑会话');
+    await vi.advanceTimersByTimeAsync(50);
+    expect(session.reader.getSnapshot().content.title).toBe('Conflict');
     session.dispose();
+  });
+
+  it('pauses conflicted writes until explicit discard and accepts one external asset basis', async () => {
+    vi.useFakeTimers();
+    const { source, files, assets, commits } = memorySource();
+    let revision = 'initial';
+    source.revision = async () => revision;
+    const path = 'docs/a/assets/image.png';
+    assets.set(path, new Uint8Array([1]));
+    const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50 });
+    session.authoring!.createConcept({ label: 'Local', format: 'html' });
+    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    assets.set(path, new Uint8Array([2]));
+    revision = 'external';
+    await vi.advanceTimersByTimeAsync(50);
+    await session.flush();
+    expect(commits).toEqual([]);
+    await expect(session.reader.readAsset(path)).rejects.toThrow();
+    expect(session.acceptExternalChange()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(commits).toEqual([]);
+    expect(session.reader.getSnapshot()).toMatchObject({ content: { title: 'External' }, saveState: 'saved' });
+    expect(await session.reader.readAsset(path)).toEqual(new Uint8Array([2]));
+    session.dispose();
+  });
+
+  it('resumes automatic saving when an external conflict is reverted', async () => {
+    vi.useFakeTimers();
+    const { source, files, commits } = memorySource();
+    const originalGraph = files.get('.derivon/workspace.json')!;
+    let revision = 'initial';
+    source.revision = async () => revision;
+    const commit = source.commit;
+    source.commit = async (changes) => { await commit(changes); revision = 'saved'; return revision; };
+    const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50, autosaveDelayMs: 100 });
+    session.authoring!.createConcept({ label: 'Local', format: 'html' });
+    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    revision = 'external';
+    await vi.advanceTimersByTimeAsync(200);
+    expect(commits).toEqual([]);
+    files.set('.derivon/workspace.json', originalGraph);
+    revision = 'initial';
+    await vi.advanceTimersByTimeAsync(200);
+    expect(commits).toHaveLength(1);
+    expect(session.reader.getSnapshot()).toMatchObject({ saveState: 'saved', externalChange: null });
+    session.dispose();
+  });
+
+  it('retries an asset read overlapping its own save without invalidating unchanged effective content', async () => {
+    const { source, assets } = memorySource();
+    const path = 'docs/a/assets/image.png';
+    assets.set(path, new Uint8Array([1]));
+    let revision = 'initial';
+    source.revision = async () => revision;
+    const commit = source.commit;
+    source.commit = async (changes) => { await commit(changes); revision = 'saved'; return revision; };
+    let started!: () => void;
+    let release!: () => void;
+    const reading = new Promise<void>((resolve) => { started = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const readAsset = source.readAsset;
+    source.readAsset = async (path) => { started(); await gate; return readAsset(path); };
+    const session = await openWorkspaceSession(source, { authoring: source });
+    session.authoring!.createConcept({ label: 'Local', format: 'html' });
+    const effective = session.reader.getSnapshot().content;
+    const pending = session.reader.readAsset(path);
+    await reading;
+    await session.flush();
+    release();
+    await expect(pending).resolves.toEqual(new Uint8Array([1]));
+    expect(session.reader.getSnapshot().content).toBe(effective);
+    session.dispose();
+  });
+
+  it('does not buffer an intermediate version of its own in-flight save', async () => {
+    vi.useFakeTimers();
+    const { source, files } = memorySource();
+    let revision = 'initial';
+    source.revision = async () => revision;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const commit = source.commit;
+    source.commit = async (changes) => {
+      files.set('.derivon/workspace.json', changes.graph!);
+      revision = 'partial';
+      await gate;
+      await commit(changes);
+      revision = 'saved';
+      return revision;
+    };
+    const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50 });
+    session.authoring!.createConcept({ label: 'Local', format: 'markdown' });
+    const saving = session.flush();
+    await vi.advanceTimersByTimeAsync(50);
+    const duringSave = session.reader.getSnapshot().externalChange;
+    release();
+    await saving;
+    const afterSave = session.reader.getSnapshot();
+    session.dispose();
+    expect(duringSave).toBeNull();
+    expect(afterSave).toMatchObject({ externalChange: null, saveState: 'saved' });
+  });
+
+  it('rejects a lazy read when observation fails instead of retrying without a bound', async () => {
+    const { source, files } = memorySource();
+    let changed = false;
+    let reads = 0;
+    source.revision = async () => {
+      if (++reads > 20) throw new Error('unbounded revision reads');
+      return changed ? 'external' : 'initial';
+    };
+    const session = await openWorkspaceSession(source);
+    files.set('.derivon/workspace.json', 'invalid JSON');
+    changed = true;
+    reads = 0;
+    await expect(session.reader.readAsset('docs/a/assets/a.png')).rejects.toThrow();
+    session.dispose();
+    expect(reads).toBeLessThan(10);
   });
 
   it('protects a draft with no queued save and never lets it enter preview or persistence', async () => {

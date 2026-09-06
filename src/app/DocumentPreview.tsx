@@ -16,7 +16,9 @@ export function DocumentPreview({ html, title, documentPath, readAsset, resolveI
   html: string; title: string; documentPath: string; className?: string; allowScripts?: boolean;
   readAsset?: (path: string) => Promise<Uint8Array>; resolveImage?: EditorImageResolver;
 }) {
-  const [prepared, setPrepared] = useState<{ source: string; path: string; markup: string } | null>(null);
+  const [prepared, setPrepared] = useState<{
+    source: string; path: string; markup: string; reader: typeof readAsset; resolver: typeof resolveImage;
+  } | null>(null);
   useEffect(() => {
     let cancelled = false;
     const releases: Array<() => void> = [];
@@ -49,10 +51,12 @@ export function DocumentPreview({ html, title, documentPath, readAsset, resolveI
           image.alt = `${image.alt || '图片'}（无法加载）`;
         }
       }));
-      if (!cancelled) setPrepared({ source: html, path: documentPath, markup: parsed.documentElement.outerHTML });
+      if (!cancelled) setPrepared({ source: html, path: documentPath, markup: parsed.documentElement.outerHTML,
+        reader: readAsset, resolver: resolveImage });
     })();
     return () => { cancelled = true; releases.forEach((release) => release()); };
   }, [documentPath, html, readAsset, resolveImage]);
-  const current = prepared?.source === html && prepared?.path === documentPath;
+  const current = prepared?.source === html && prepared?.path === documentPath
+    && prepared?.reader === readAsset && prepared?.resolver === resolveImage;
   return <iframe title={title} className={className} aria-busy={!current} sandbox={allowScripts ? 'allow-scripts' : ''} srcDoc={current ? prepared.markup : ''} />;
 }

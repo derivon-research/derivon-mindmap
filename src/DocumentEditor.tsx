@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -235,7 +236,7 @@ function createReferenceTrigger(onTrigger: (range: ReferenceTriggerRange) => voi
 function createExtensions(
   onEditMath: (formula: FormulaSelection) => void,
   onReferenceTrigger: (range: ReferenceTriggerRange) => void,
-  resolveImage: EditorImageResolver,
+  images: ReturnType<typeof createEditorImage>,
   storeImage: DocumentEditorProps['storeImage'],
   onImageError: DocumentEditorProps['onImageError'],
 ) {
@@ -253,7 +254,7 @@ function createExtensions(
     TaskList,
     TaskItem.configure({ nested: true }),
     TableKit.configure({ table: { resizable: true } }),
-    createEditorImage(resolveImage),
+    images.extension,
     FileHandler.configure({
       allowedMimeTypes: EDITOR_IMAGE_MIME_TYPES,
       consumePasteEvent: true,
@@ -663,6 +664,12 @@ export function DocumentEditor({
   onImageError,
 }: DocumentEditorProps) {
   const onChangeRef = useRef(onChange);
+  const imageCallbacks = useRef({ storeImage, onImageError });
+  const [images] = useState(() => createEditorImage(resolveImage));
+  useLayoutEffect(() => {
+    imageCallbacks.current = { storeImage, onImageError };
+    images.setResolver(resolveImage);
+  }, [images, resolveImage, storeImage, onImageError]);
   const lastEmittedValue = useRef(value);
   const [formula, setFormula] = useState<FormulaSelection | null>(null);
   const [image, setImage] = useState<ImageSelection | null>(null);
@@ -685,10 +692,10 @@ export function DocumentEditor({
       setLink(null);
       setReference({ ...range, mode: 'trigger', selectedId: null });
     },
-    resolveImage,
-    storeImage,
-    onImageError,
-  ), [onImageError, resolveImage, storeImage]);
+    images,
+    (file) => imageCallbacks.current.storeImage(file),
+    (error) => imageCallbacks.current.onImageError(error),
+  ), [images]);
   onChangeRef.current = onChange;
 
   const editor = useEditor({

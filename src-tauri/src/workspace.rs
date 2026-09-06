@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -317,8 +317,24 @@ where
 fn commit_workspace_source_changes_to_disk(
     root: &Path,
     changes: &WorkspaceSourceChanges,
-) -> Result<(), String> {
+) -> Result<String, String> {
+    commit_workspace_source_changes_using(root, changes, |change| {
+        write_workspace_source_content(&change.target, change.content.as_deref())
+    })
+}
+
+fn commit_workspace_source_changes_using<F>(
+    root: &Path,
+    changes: &WorkspaceSourceChanges,
+    apply: F,
+) -> Result<String, String>
+where
+    F: FnMut(&PreparedWorkspaceSourceChange) -> Result<(), String>,
+{
     validate_workspace_source_changes(changes)?;
+    let canonical_root = fs::canonicalize(root)
+        .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
+    let root = canonical_root.as_path();
     let mut requested = Vec::new();
     if let Some(graph) = &changes.graph {
         requested.push((MANIFEST_PATH, Some(graph.as_bytes().to_vec()), false));
@@ -366,7 +382,14 @@ fn commit_workspace_source_changes_to_disk(
                 prepare_workspace_source_target(root, path).map(|target| (target, content.unwrap()))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        return create_workspace_source_files(&prepared);
+        let mut files = workspace_source_fingerprints(root)?;
+        verify_workspace_source_fingerprints(&files, changes.expected_revision.as_deref())?;
+        for (target, content) in &prepared {
+            files.insert(workspace_source_relative_name(root, target)?, source_file_fingerprint(content));
+        }
+        let revision = workspace_source_revision_from_fingerprints(&files);
+        create_workspace_source_files(&prepared)?;
+        return Ok(revision);
     }
 
     let prepared = requested
@@ -389,13 +412,20 @@ fn commit_workspace_source_changes_to_disk(
         .map(|(change, _)| change)
         .collect::<Vec<_>>();
 
-    if let Some(expected_revision) = &changes.expected_revision {
-        verify_expected_workspace_source_revision(root, expected_revision)?;
+    let mut files = workspace_source_fingerprints(root)?;
+    verify_workspace_source_fingerprints(&files, changes.expected_revision.as_deref())?;
+    // Predict the committed version from the inspected basis, never from a post-write scan
+    // that could already contain another writer's changes.
+    for change in &prepared {
+        let path = workspace_source_relative_name(root, &change.target)?;
+        match &change.content {
+            Some(content) => { files.insert(path, source_file_fingerprint(content)); }
+            None => { files.remove(&path); }
+        }
     }
-
-    apply_prepared_workspace_source_changes(&prepared, |change| {
-        write_workspace_source_content(&change.target, change.content.as_deref())
-    })
+    let revision = workspace_source_revision_from_fingerprints(&files);
+    apply_prepared_workspace_source_changes(&prepared, apply)?;
+    Ok(revision)
 }
 
 // Each target is created exclusively and files created by this attempt are rolled back on
@@ -661,21 +691,63 @@ pub async fn read_workspace_source_companion_metadata(
     .map_err(|error| format!("workspace source companion metadata reader task failed: {error}"))?
 }
 
-fn hash_workspace_source_tree(
+fn source_file_fingerprint(bytes: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"file");
+    hasher.update(bytes);
+    hasher.finalize().to_vec()
+}
+
+fn workspace_source_relative_name(root: &Path, path: &Path) -> Result<String, String> {
+    let relative = path.strip_prefix(root).map_err(|error| error.to_string())?;
+    relative.to_str().map(str::to_owned)
+        .ok_or_else(|| format!("workspace path {} is not UTF-8", path.display()))
+}
+
+fn unreadable_source_fingerprint(path: &Path, error: &std::io::Error) -> Result<Vec<u8>, String> {
+    let mut accessible = path;
+    let metadata = loop {
+        match fs::metadata(accessible) {
+            Ok(metadata) => break metadata,
+            Err(_) => {
+                accessible = accessible.parent()
+                    .ok_or_else(|| format!("cannot inspect inaccessible workspace path {}", path.display()))?;
+            }
+        }
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(format!("unreadable:{:?}:{}:{:?}:{:?}", error.kind(), metadata.len(),
+        metadata.modified(), metadata.permissions()));
+    Ok(hasher.finalize().to_vec())
+}
+
+fn collect_workspace_source_fingerprints(
     root: &Path,
     directory: &Path,
-    hasher: &mut Sha256,
+    files: &mut BTreeMap<String, Vec<u8>>,
 ) -> Result<(), String> {
-    let mut entries = fs::read_dir(directory)
-        .map_err(|error| format!("cannot read {}: {error}", directory.display()))?
-        .collect::<Result<Vec<_>, _>>()
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) => {
+            files.insert(format!("{}/", workspace_source_relative_name(root, directory)?),
+                unreadable_source_fingerprint(directory, &error)?);
+            return Ok(());
+        }
+    };
+    let mut entries = entries.collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("cannot read workspace entry: {error}"))?;
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
         let path = entry.path();
-        let kind = entry
-            .file_type()
-            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
+        if path == root.join(".git") { continue; }
+        let kind = match entry.file_type() {
+            Ok(kind) => kind,
+            Err(error) => {
+                files.insert(workspace_source_relative_name(root, &path)?,
+                    unreadable_source_fingerprint(&path, &error)?);
+                continue;
+            }
+        };
         if kind.is_symlink() {
             return Err(format!(
                 "workspace source contains symlink {}",
@@ -683,51 +755,52 @@ fn hash_workspace_source_tree(
             ));
         }
         if kind.is_dir() {
-            hash_workspace_source_tree(root, &path, hasher)?;
+            collect_workspace_source_fingerprints(root, &path, files)?;
             continue;
         }
         if !kind.is_file() {
             continue;
         }
-        let relative = path.strip_prefix(root).map_err(|error| {
-            format!(
-                "cannot resolve {} relative to workspace: {error}",
-                path.display()
-            )
-        })?;
-        let relative = relative
-            .to_str()
-            .ok_or_else(|| format!("workspace path {} is not UTF-8", path.display()))?;
-        hasher.update(relative.as_bytes());
-        hasher.update(
-            fs::read(&path).map_err(|error| format!("cannot read {}: {error}", path.display()))?,
-        );
+        let fingerprint = match fs::read(&path) {
+            Ok(bytes) => source_file_fingerprint(&bytes),
+            Err(error) => {
+                // Unreadable object text remains a local diagnostic at acquisition. Observe
+                // metadata and access-state changes without pretending to have read its bytes.
+                unreadable_source_fingerprint(&path, &error)?
+            }
+        };
+        files.insert(workspace_source_relative_name(root, &path)?, fingerprint);
     }
     Ok(())
 }
 
-fn workspace_source_revision_for_root(root: &Path) -> Result<String, String> {
+fn workspace_source_fingerprints(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
     let root = fs::canonicalize(root)
         .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
-    let mut hasher = Sha256::new();
-    for directory in [".derivon", "docs", "assets"] {
-        let path = root.join(directory);
-        if path
-            .try_exists()
-            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?
-        {
-            hasher.update(directory.as_bytes());
-            hash_workspace_source_tree(&root, &path, &mut hasher)?;
-        }
-    }
-    Ok(format!("{:x}", hasher.finalize()))
+    let mut files = BTreeMap::new();
+    collect_workspace_source_fingerprints(&root, &root, &mut files)?;
+    Ok(files)
 }
 
-fn verify_expected_workspace_source_revision(
-    root: &Path,
-    expected_revision: &str,
+fn workspace_source_revision_from_fingerprints(files: &BTreeMap<String, Vec<u8>>) -> String {
+    let mut hasher = Sha256::new();
+    for (path, fingerprint) in files {
+        hasher.update((path.len() as u64).to_le_bytes());
+        hasher.update(path.as_bytes());
+        hasher.update(fingerprint);
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+fn workspace_source_revision_for_root(root: &Path) -> Result<String, String> {
+    Ok(workspace_source_revision_from_fingerprints(&workspace_source_fingerprints(root)?))
+}
+
+fn verify_workspace_source_fingerprints(
+    files: &BTreeMap<String, Vec<u8>>,
+    expected_revision: Option<&str>,
 ) -> Result<(), String> {
-    if workspace_source_revision_for_root(root)? != expected_revision {
+    if expected_revision.is_some_and(|expected| workspace_source_revision_from_fingerprints(files) != expected) {
         return Err("workspace changed externally before commit".to_owned());
     }
     Ok(())
@@ -915,8 +988,7 @@ pub async fn commit_workspace_source_changes(
 ) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let root = Path::new(&root_path);
-        commit_workspace_source_changes_to_disk(root, &changes)?;
-        workspace_source_revision_for_root(root)
+        commit_workspace_source_changes_to_disk(root, &changes)
     })
     .await
     .map_err(|error| format!("workspace source commit task failed: {error}"))?
@@ -1164,6 +1236,127 @@ mod tests {
     }
 
     #[test]
+    fn workspace_source_revision_ignores_empty_directory_preparation() {
+        let root = tempfile::tempdir().unwrap();
+        let revision = workspace_source_revision_for_root(root.path()).unwrap();
+        let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+            "expectedRevision": revision,
+            "documents": [{ "path": "docs/new/index.html", "content": "new", "createOnly": true }]
+        })).unwrap();
+        commit_workspace_source_changes_to_disk(root.path(), &changes).unwrap();
+        assert_eq!(fs::read_to_string(root.path().join("docs/new/index.html")).unwrap(), "new");
+    }
+
+    #[test]
+    fn workspace_source_revision_frames_file_names_and_contents() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        fs::write(root.path().join("docs/a"), "bc").unwrap();
+        let revision = workspace_source_revision_for_root(root.path()).unwrap();
+        fs::remove_file(root.path().join("docs/a")).unwrap();
+        fs::write(root.path().join("docs/ab"), "c").unwrap();
+        assert_ne!(workspace_source_revision_for_root(root.path()).unwrap(), revision);
+    }
+
+    #[test]
+    fn workspace_source_revision_covers_paths_outside_conventional_directories() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("chapters/concept")).unwrap();
+        fs::write(root.path().join("chapters/concept/index.html"), "accepted").unwrap();
+        let revision = workspace_source_revision_for_root(root.path()).unwrap();
+        fs::write(root.path().join("chapters/concept/index.html"), "external").unwrap();
+        assert_ne!(workspace_source_revision_for_root(root.path()).unwrap(), revision);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_source_revision_keeps_unreadable_documents_local() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        let path = root.path().join("docs/unreadable.md");
+        fs::write(&path, "body").unwrap();
+        let readable = workspace_source_revision_for_root(root.path()).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        let unreadable = workspace_source_revision_for_root(root.path());
+        let denied = fs::read(&path).is_err();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let unreadable = unreadable.unwrap();
+        if denied { assert_ne!(readable, unreadable); }
+        assert_eq!(readable, workspace_source_revision_for_root(root.path()).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_source_revision_keeps_unreadable_directories_local() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("chapters/a");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("index.html"), "body").unwrap();
+        for mode in [0o000, 0o400, 0o100] {
+            fs::set_permissions(&directory, fs::Permissions::from_mode(mode)).unwrap();
+            let revision = workspace_source_revision_for_root(root.path());
+            let commit = revision.as_ref().ok().map(|revision| {
+                let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+                    "expectedRevision": revision,
+                    "documents": [{ "path": "docs/unrelated.md", "content": "unrelated" }]
+                })).unwrap();
+                commit_workspace_source_changes_to_disk(root.path(), &changes)
+            });
+            fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+            revision.unwrap();
+            commit.unwrap().unwrap();
+        }
+    }
+
+    #[test]
+    fn commit_revision_does_not_adopt_an_external_write_after_the_final_check() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        fs::write(root.path().join("docs/other.md"), "accepted").unwrap();
+        let revision = workspace_source_revision_for_root(root.path()).unwrap();
+        let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+            "expectedRevision": revision,
+            "documents": [{ "path": "docs/local.md", "content": "local" }]
+        })).unwrap();
+        let committed = commit_workspace_source_changes_using(root.path(), &changes, |change| {
+            write_workspace_source_content(&change.target, change.content.as_deref())?;
+            fs::write(root.path().join("docs/other.md"), "external").unwrap();
+            Ok(())
+        }).unwrap();
+        assert_ne!(committed, workspace_source_revision_for_root(root.path()).unwrap());
+        fs::write(root.path().join("docs/other.md"), "accepted").unwrap();
+        assert_eq!(committed, workspace_source_revision_for_root(root.path()).unwrap());
+    }
+
+    #[test]
+    fn commit_reports_partial_delete_and_rollback_failures() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        let deleted = root.path().join("docs/deleted.md");
+        fs::write(&deleted, "original").unwrap();
+        fs::write(root.path().join("docs/updated.md"), "original").unwrap();
+        let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+            "documents": [
+                { "path": "docs/deleted.md", "content": null },
+                { "path": "docs/updated.md", "content": "updated" }
+            ]
+        })).unwrap();
+        let error = commit_workspace_source_changes_using(root.path(), &changes, |change| {
+            write_workspace_source_content(&change.target, change.content.as_deref())?;
+            if change.content.is_some() {
+                fs::create_dir(&deleted).unwrap();
+                return Err("injected partial write failure".to_owned());
+            }
+            Ok(())
+        }).unwrap_err();
+        assert!(error.contains("injected partial write failure"));
+        assert!(error.contains("rollback also failed"));
+        assert_eq!(fs::read_to_string(root.path().join("docs/updated.md")).unwrap(), "original");
+    }
+
+    #[test]
     fn workspace_source_revision_is_stable_for_unchanged_content() {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join("docs/nested")).unwrap();
@@ -1226,7 +1419,8 @@ mod tests {
         .unwrap();
         fs::write(root.path().join("docs/concept.md"), "external\n").unwrap();
 
-        let error = verify_expected_workspace_source_revision(root.path(), &revision).unwrap_err();
+        let files = workspace_source_fingerprints(root.path()).unwrap();
+        let error = verify_workspace_source_fingerprints(&files, Some(&revision)).unwrap_err();
 
         assert!(error.contains("changed externally"));
         assert_eq!(prepared.previous_content, Some(b"accepted\n".to_vec()));

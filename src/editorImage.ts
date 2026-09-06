@@ -8,7 +8,8 @@ export type ResolvedEditorImage = {
 export type EditorImageResolver = (source: string) => Promise<ResolvedEditorImage>;
 
 export function createEditorImage(resolveImage: EditorImageResolver) {
-  return Image.extend({
+  const reloads = new Set<() => void>();
+  const extension = Image.extend({
     addNodeView() {
       return ({ node }) => {
         const container = document.createElement('figure');
@@ -82,7 +83,9 @@ export function createEditorImage(resolveImage: EditorImageResolver) {
           }
         };
 
-        void loadImage();
+        const reload = () => { void loadImage(); };
+        reloads.add(reload);
+        reload();
 
         return {
           dom: container,
@@ -99,6 +102,7 @@ export function createEditorImage(resolveImage: EditorImageResolver) {
           },
           ignoreMutation: () => true,
           destroy: () => {
+            reloads.delete(reload);
             requestId += 1;
             image.onload = null;
             image.onerror = null;
@@ -111,4 +115,12 @@ export function createEditorImage(resolveImage: EditorImageResolver) {
     allowBase64: false,
     inline: false,
   });
+  return {
+    extension,
+    setResolver(next: EditorImageResolver) {
+      if (next === resolveImage) return;
+      resolveImage = next;
+      for (const reload of reloads) reload();
+    },
+  };
 }

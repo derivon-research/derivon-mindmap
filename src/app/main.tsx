@@ -4,7 +4,10 @@ import { createRoot } from 'react-dom/client';
 // get `src/hosts/desktop/host.ts`. See `vite.config.ts`.
 import { host } from '#host';
 import App from './App';
+import { clearStoredFrontendCrashReport } from '../hosts/browserDiagnostics';
 import './app.css';
+
+clearStoredFrontendCrashReport();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
+import { FRONTEND_CRASH_REPORT_KEY } from './hosts/browserDiagnostics';
 
+export { FRONTEND_CRASH_REPORT_KEY } from './hosts/browserDiagnostics';
 export const CRASH_REPORT_EVENT = 'derivon:crash-report';
-export const FRONTEND_CRASH_REPORT_KEY = 'derivon.crash-report/v1';
 
 const RESIZE_OBSERVER_LOOP_WARNINGS = new Set([
   'ResizeObserver loop completed with undelivered notifications.',

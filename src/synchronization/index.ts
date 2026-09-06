@@ -4,11 +4,15 @@ import {
   type ContentChange, type CreateConceptIntent, type TextResource, type UpdateDocumentIntent, type WorkspaceContent,
 } from '../workspace/index';
 
+type AcquiredContent = { readonly content: WorkspaceContent; readonly revision: string | null };
+
 export type WorkspaceSnapshot = {
   readonly content: WorkspaceContent;
   readonly persistedContent: WorkspaceContent;
   /** The valid external version kept aside while local drafts or saves are protected. */
-  readonly externalChange: { readonly content: WorkspaceContent; readonly revision: string | null } | null;
+  readonly externalChange: AcquiredContent | null;
+  /** Remount authoring drafts only after an explicit discard, not on ordinary content updates. */
+  readonly authoringEpoch: number;
   readonly saveState: 'saved' | 'pending' | 'saving' | 'error';
   readonly error: string | null;
   readonly hasDrafts: boolean;
@@ -33,8 +37,8 @@ export type WorkspaceSession = {
   /** Explicit retry/close integration point; mode changes never call this. */
   flush(): Promise<void>;
   reload(): Promise<'loaded' | 'protected'>;
-  /** Keep accepted local work and make the buffered external version the next save baseline. */
-  keepLocalAfterExternalChange(): void;
+  /** Caller must confirm discarding local drafts and queued changes. Never interrupts a write. */
+  acceptExternalChange(): boolean;
   dispose(): void;
 };
 
@@ -62,7 +66,7 @@ async function readContent(source: WorkspaceSource): Promise<WorkspaceContent> {
   return parseWorkspaceContent({ graph, documents, companionMetadata: { '.derivon/orientation.json': orientation } });
 }
 
-async function readStableContent(source: WorkspaceSource): Promise<{ content: WorkspaceContent; revision: string | null }> {
+async function readStableContent(source: WorkspaceSource): Promise<AcquiredContent> {
   if (!source.revision) return { content: await readContent(source), revision: null };
   for (let attempt = 0; attempt < 3; attempt++) {
     const before = await source.revision();
@@ -82,8 +86,8 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
   const initial = await readStableContent(source);
   let acceptedRevision = initial.revision;
   let snapshot: WorkspaceSnapshot = {
-    content: initial.content, persistedContent: initial.content, externalChange: null, saveState: 'saved', error: null,
-    hasDrafts: false, hasProtectedChanges: false,
+    content: initial.content, persistedContent: initial.content, externalChange: null, authoringEpoch: 0,
+    saveState: 'saved', error: null, hasDrafts: false, hasProtectedChanges: false,
   };
   const listeners = new Set<() => void>();
   const drafts = new Set<string>();
@@ -93,43 +97,65 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
   let saving: Promise<void> | undefined;
   let disposed = false;
   let generation = 0;
-  let checkingExternalChange = false;
+  let writeGeneration = 0;
+  let checkingExternalChange: Promise<void> | undefined;
   let externalPollTimer: ReturnType<typeof setInterval> | undefined;
-
-  function accept(change: ContentChange) {
-    queue.push(change);
-    generation++;
-    publish({ content: change.content, saveState: saving ? 'saving' : 'pending', error: null });
-    clearTimeout(timer);
-    timer = setTimeout(() => { void flush(); }, options.autosaveDelayMs ?? 900);
-  }
 
   function publish(update: Partial<WorkspaceSnapshot>) {
     snapshot = { ...snapshot, ...update, hasDrafts: drafts.size > 0, hasProtectedChanges: drafts.size > 0 || queue.length > 0 };
     for (const listener of listeners) listener();
   }
 
+  function installContent(next: AcquiredContent) {
+    acceptedRevision = next.revision;
+    generation++;
+    loadedAssets.clear();
+    publish({ content: next.content, persistedContent: next.content, externalChange: null, saveState: 'saved', error: null });
+  }
+
+  function scheduleSave() {
+    clearTimeout(timer);
+    timer = setTimeout(() => { void flush(); }, options.autosaveDelayMs ?? 900);
+  }
+
+  function accept(change: ContentChange) {
+    queue.push(change);
+    generation++;
+    publish({ content: change.content, saveState: saving ? 'saving' : 'pending', error: null });
+    scheduleSave();
+  }
+
   async function checkExternalChange(): Promise<void> {
-    if (disposed || checkingExternalChange || !source.revision) return;
-    checkingExternalChange = true;
-    try {
-      const observedRevision = await source.revision();
-      if (observedRevision === acceptedRevision) return;
-      const next = await readStableContent(source);
-      if (disposed || next.revision === acceptedRevision) return;
-      if (snapshot.hasProtectedChanges) {
-        publish({ externalChange: next });
-        return;
+    if (disposed || saving || !source.revision) return;
+    if (checkingExternalChange) return checkingExternalChange;
+    const beforeWrite = writeGeneration;
+    const before = generation;
+    checkingExternalChange = (async () => {
+      try {
+        const observedRevision = await source.revision!();
+        if (observedRevision === acceptedRevision) {
+          if (snapshot.externalChange) {
+            publish({ externalChange: null });
+            if (queue.length > 0) scheduleSave();
+          }
+          return;
+        }
+        if (observedRevision === snapshot.externalChange?.revision) return;
+        const next = await readStableContent(source);
+        // A local write may have started and finished while acquisition was in flight.
+        if (disposed || saving || beforeWrite !== writeGeneration || next.revision === acceptedRevision) return;
+        if (snapshot.hasProtectedChanges || snapshot.externalChange) {
+          publish({ externalChange: next });
+          return;
+        }
+        if (before !== generation) return;
+        installContent(next);
+      } catch (error) {
+        if (!disposed && beforeWrite === writeGeneration) publish({ error: message(error) });
       }
-      acceptedRevision = next.revision;
-      generation++;
-      loadedAssets.clear();
-      publish({ content: next.content, persistedContent: next.content, externalChange: null, saveState: 'saved', error: null });
-    } catch (error) {
-      if (!disposed) publish({ error: message(error) });
-    } finally {
-      checkingExternalChange = false;
-    }
+    })();
+    try { await checkingExternalChange; }
+    finally { checkingExternalChange = undefined; }
   }
 
   if (source.revision) {
@@ -137,36 +163,44 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
   }
 
   async function readAsset(path: string): Promise<Uint8Array> {
-    const accepted = snapshot.content.assets?.[path];
+    if (disposed) throw new Error('工作区已关闭');
+    const content = snapshot.content;
+    const accepted = content.assets?.[path];
     if (accepted) return new Uint8Array(accepted);
     const cached = loadedAssets.get(path);
     if (cached) return new Uint8Array(cached);
-    const beforeRevision = await source.revision?.();
-    if (beforeRevision !== undefined && beforeRevision !== acceptedRevision) {
-      await checkExternalChange();
-      if (snapshot.hasProtectedChanges || snapshot.externalChange) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (saving) await saving;
+      if (disposed || snapshot.content !== content) throw new Error('工作区预览已更新');
+      const revision = acceptedRevision;
+      const beforeWrite = writeGeneration;
+      const beforeRevision = await source.revision?.();
+      if (saving || beforeWrite !== writeGeneration) continue;
+      if (beforeRevision !== undefined && beforeRevision !== revision) {
+        await checkExternalChange();
         throw new Error('外部工作区内容已更新，无法把新资产混入受保护的有效内容');
       }
-      return readAsset(path);
-    }
-    const before = generation;
-    const bytes = new Uint8Array(await source.readAsset(path));
-    const afterRevision = await source.revision?.();
-    if (beforeRevision !== undefined && afterRevision !== beforeRevision) {
-      await checkExternalChange();
-      if (snapshot.hasProtectedChanges || snapshot.externalChange) {
-        throw new Error('外部工作区内容已在资产读取期间更新');
+      const bytes = new Uint8Array(await source.readAsset(path));
+      const afterRevision = await source.revision?.();
+      // A successful local save changes the disk token, not the effective preview. Retry
+      // only this known overlap; external failures never enter an unbounded reload loop.
+      if (saving || beforeWrite !== writeGeneration) continue;
+      if (disposed || snapshot.content !== content || acceptedRevision !== revision
+        || (beforeRevision !== undefined && afterRevision !== beforeRevision)) {
+        void checkExternalChange();
+        throw new Error('工作区内容已在资产读取期间更新');
       }
-      return readAsset(path);
+      loadedAssets.set(path, bytes);
+      return new Uint8Array(bytes);
     }
-    if (!disposed && generation === before) loadedAssets.set(path, bytes);
-    return new Uint8Array(snapshot.content.assets?.[path] ?? bytes);
+    throw new Error('工作区在资产读取期间持续保存，无法取得一致资产');
   }
 
   async function flush(): Promise<void> {
     clearTimeout(timer);
     if (saving) return saving;
-    if (!options.authoring || queue.length === 0) return;
+    if (!options.authoring || queue.length === 0 || snapshot.externalChange) return;
+    writeGeneration++;
     saving = (async () => {
       while (queue.length > 0) {
         const change = queue[0];
@@ -174,20 +208,44 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
         try {
           const revision = await options.authoring!.commit({ ...change.changes,
             ...(acceptedRevision === null ? {} : { expectedRevision: acceptedRevision }) });
-          acceptedRevision = revision ?? await source.revision?.() ?? acceptedRevision;
-        }
-        catch (error) {
+          if (source.revision && revision === undefined) throw new Error('版本化工作区提交未返回写入版本');
+          acceptedRevision = revision ?? acceptedRevision;
+        } catch (error) {
           publish({ saveState: 'error', error: message(error) });
-          void checkExternalChange();
           return;
         }
         queue.shift();
         publish({ persistedContent: change.content, saveState: queue.length > 0 ? 'pending' : 'saved' });
       }
     })();
-    await saving;
-    saving = undefined;
+    try { await saving; }
+    finally { saving = undefined; }
+    await checkExternalChange();
   }
+
+  function authoringCommands(): AuthoringCommands | undefined {
+    if (!options.authoring) return undefined;
+    const epoch = snapshot.authoringEpoch;
+    function assertCurrent() {
+      if (disposed || snapshot.authoringEpoch !== epoch) throw new Error('编辑会话已关闭或重新载入');
+    }
+    return {
+      createConcept(intent) {
+        assertCurrent();
+        const change = createConcept(snapshot.content, intent);
+        accept(change);
+        return change.objectId;
+      },
+      updateDocument(intent) { assertCurrent(); accept(updateObjectDocument(snapshot.content, intent)); },
+      protectDraft(key, dirty) {
+        if (disposed || snapshot.authoringEpoch !== epoch) return;
+        if (dirty) drafts.add(key); else drafts.delete(key);
+        generation++;
+        publish({});
+      },
+    };
+  }
+  let commands = authoringCommands();
 
   return {
     reader: {
@@ -195,39 +253,25 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
       subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
       readAsset,
     },
-    ...(options.authoring ? { authoring: {
-      createConcept(intent: CreateConceptIntent) {
-        if (disposed) throw new Error('工作区已关闭');
-        const change = createConcept(snapshot.content, intent);
-        accept(change);
-        return change.objectId;
-      },
-      updateDocument(intent: UpdateDocumentIntent) {
-        if (disposed) throw new Error('工作区已关闭');
-        accept(updateObjectDocument(snapshot.content, intent));
-      },
-      protectDraft(key: string, dirty: boolean) {
-        if (disposed) return;
-        if (dirty) drafts.add(key); else drafts.delete(key);
-        generation++;
-        publish({});
-      },
-    } } : {}),
+    get authoring() { return commands; },
     flush,
-    keepLocalAfterExternalChange() {
-      if (disposed || !snapshot.externalChange) return;
-      acceptedRevision = snapshot.externalChange.revision;
-      publish({ externalChange: null });
+    acceptExternalChange() {
+      if (disposed || saving || !snapshot.externalChange) return false;
+      const next = snapshot.externalChange;
+      clearTimeout(timer);
+      queue.length = 0;
+      drafts.clear();
+      snapshot = { ...snapshot, authoringEpoch: snapshot.authoringEpoch + 1 };
+      commands = authoringCommands();
+      installContent(next);
+      return true;
     },
     async reload() {
       if (disposed || snapshot.hasProtectedChanges) return 'protected';
       const before = generation;
       const next = await readStableContent(source);
       if (disposed || snapshot.hasProtectedChanges || before !== generation) return 'protected';
-      acceptedRevision = next.revision;
-      generation++;
-      loadedAssets.clear();
-      publish({ content: next.content, persistedContent: next.content, externalChange: null, saveState: 'saved', error: null });
+      installContent(next);
       return 'loaded';
     },
     dispose() {

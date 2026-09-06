@@ -49,6 +49,9 @@ fn clear_report(path: &Path) -> Result<(), String> {
 
 pub fn install_panic_hook<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let path = report_path(app)?;
+    if let Err(error) = clear_report(&path) {
+        eprintln!("cannot clear previous crash report: {error}");
+    }
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let timestamp = SystemTime::now()
