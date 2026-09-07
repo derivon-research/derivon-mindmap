@@ -13,7 +13,13 @@ export type ConceptPickerProps = {
   readonly emptyNote?: string;
 };
 
-/** Choose concepts by name or by tag. Every concept reference in either mode is built here. */
+/**
+ * Choose concepts by name or by tag, for the orientation configuration and the learner's
+ * own targets and known set — the places where a tag filter and a long list earn their
+ * space. Picking an endpoint while authoring a derivation is a different interaction and
+ * does not come through here; see `modes/authoring/CreateObjectDialog` and
+ * `modes/authoring/DerivationStructure`.
+ */
 export function ConceptPicker({ label, graph, tags, selected, onChange, emptyNote }: ConceptPickerProps) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<readonly string[]>([]);

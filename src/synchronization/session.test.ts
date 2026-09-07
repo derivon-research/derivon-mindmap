@@ -394,6 +394,13 @@ describe('application-scoped workspace synchronization', () => {
     expect(JSON.parse(files.get('.derivon/workspace.json')!).graph.hyperedges[0])
       .toMatchObject({ tails: [], head: a, weight: 2.5 });
 
+    // Reopening reads the same structure back, and its document is still its own.
+    const reopened = await openWorkspaceSession(source, { authoring: source });
+    const edge = reopened.reader.getSnapshot().content.graph.hyperedges[0];
+    expect(edge).toEqual({ id: derivation, tails: [], head: a, weight: 2.5,
+      data: { document: `docs/derivation-${derivation.slice(2)}` } });
+    reopened.dispose();
+
     files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
     source.revision = async () => 'external';
     await session.reload();

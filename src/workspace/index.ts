@@ -4,7 +4,8 @@ export {
   createConcept, createDerivation, createWorkspace, objectDocumentPaths, objectDocumentSource, objectSourcePath,
   orientationConceptImpact, parseWorkspaceContent, updateConceptTags, updateDerivationStructure,
   updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
-  type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type CreateDerivationIntent, type TextResource,
+  type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type CreateDerivationIntent,
+  type DerivationStructure, type TextResource,
   type UpdateConceptTagsIntent, type UpdateDerivationStructureIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
   type WorkspaceContent, type WorkspaceOrientation,
 } from './content';

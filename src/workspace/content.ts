@@ -49,23 +49,21 @@ export type CreateConceptIntent = {
   readonly label: string;
 };
 
-export type CreateDerivationIntent = {
+/**
+ * What a derivation joins and what it costs to learn. The author decides the three
+ * together, so they travel together: creation states them, modification replaces them
+ * whole, and either way they are accepted or refused as one.
+ */
+export type DerivationStructure = {
   readonly tails: readonly string[];
   readonly head: string;
   readonly weight: number;
 };
 
-/**
- * A derivation's structure, replaced whole. The author edits joint premises, result and
- * learning cost as one decision, so they are accepted or refused together; identity and
- * the owned document are not part of it.
- */
-export type UpdateDerivationStructureIntent = {
-  readonly derivationId: string;
-  readonly tails: readonly string[];
-  readonly head: string;
-  readonly weight: number;
-};
+export type CreateDerivationIntent = DerivationStructure;
+
+/** Identity and the owned document are not part of the structure, so they cannot change here. */
+export type UpdateDerivationStructureIntent = DerivationStructure & { readonly derivationId: string };
 
 /** The object's own metadata. Its identity and its document location are not editable. */
 export type UpdateMetadataIntent = {
@@ -270,9 +268,9 @@ export function createConcept(content: WorkspaceContent, intent: CreateConceptIn
  * cycles, self-loops and parallel derivations are legal graph content; only a head that is
  * not a concept, a dangling premise or an unrepresentable cost is refused.
  */
-function validDerivationEndpoints(content: WorkspaceContent, intent: {
-  readonly tails: readonly string[]; readonly head: string; readonly weight: number;
-}): { readonly tails: string[]; readonly head: string; readonly weight: number } {
+function validatedStructure(content: WorkspaceContent, intent: DerivationStructure): {
+  readonly tails: string[]; readonly head: string; readonly weight: number;
+} {
   const pointIds = new Set(content.graph.points.map((point) => point.id));
   if (!pointIds.has(intent.head)) throw new Error(`结果概念 ${intent.head} 不存在`);
   const tails = [...new Set(intent.tails)];
@@ -291,7 +289,7 @@ function validDerivationEndpoints(content: WorkspaceContent, intent: {
  * cannot enter effective content.
  */
 export function createDerivation(content: WorkspaceContent, intent: CreateDerivationIntent): ContentChange & { objectId: string } {
-  const { tails, head, weight } = validDerivationEndpoints(content, intent);
+  const { tails, head, weight } = validatedStructure(content, intent);
   const usedIds = new Set([...content.graph.points, ...content.graph.hyperedges].map((object) => object.id));
   const id = generateObjectId('h', usedIds);
   const directory = objectDirectory(content, `docs/derivation-${id.slice(2)}`);
@@ -325,10 +323,10 @@ export function updateDerivationStructure(content: WorkspaceContent, intent: Upd
   const manifest = manifestOf(content);
   const edge = manifest.graph.hyperedges.find(({ id }) => id === intent.derivationId);
   if (!edge) throw new Error(`未找到推导: ${intent.derivationId}`);
-  const endpoints = validDerivationEndpoints(content, intent);
+  const structure = validatedStructure(content, intent);
   const graph = serializeWorkspaceManifest({ ...manifest, graph: { ...manifest.graph,
     hyperedges: manifest.graph.hyperedges.map((current) => current.id === edge.id
-      ? { ...current, ...endpoints } : current) } });
+      ? { ...current, ...structure } : current) } });
   return { content: withGraphText(content, graph), changes: { graph }, objectId: edge.id };
 }
 
