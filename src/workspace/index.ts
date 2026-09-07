@@ -1,10 +1,10 @@
 import { parseWorkspaceManifest, type ManifestGraph } from './manifest';
 
 export {
-  createConcept, createWorkspace, objectDocumentPaths, objectDocumentSource, objectSourcePath,
+  createConcept, createDerivation, createWorkspace, objectDocumentPaths, objectDocumentSource, objectSourcePath,
   orientationConceptImpact, parseWorkspaceContent, updateConceptTags, updateObjectDocument,
   updateObjectMetadata, updateOrientation, updateTagDeclarations,
-  type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type TextResource,
+  type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type CreateDerivationIntent, type TextResource,
   type UpdateConceptTagsIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
   type WorkspaceContent, type WorkspaceOrientation,
 } from './content';

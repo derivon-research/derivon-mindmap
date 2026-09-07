@@ -41,6 +41,7 @@ function harness() {
     content={content} authoring={authoring} routeSolver={solver} selectedConceptId={null} onSelectConcept={vi.fn()} />));
   const authoring: AuthoringCommands = {
     createConcept: vi.fn(() => 'unused'),
+    createDerivation: vi.fn(),
     updateDocument: vi.fn(),
     updateObjectMetadata: vi.fn(),
     updateConceptTags: vi.fn(),
