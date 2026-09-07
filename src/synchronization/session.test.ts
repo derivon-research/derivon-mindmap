@@ -19,6 +19,9 @@ function memorySource(graph = createWorkspace({ title: 'Test' }).content.graphTe
       return new Uint8Array(bytes);
     },
     async readCompanionMetadata(path) { return files.get(path) ?? null; },
+    async listOwnedFiles(directory) {
+      return [...files.keys(), ...assets.keys()].filter((path) => path.startsWith(`${directory}/`)).sort();
+    },
     async commit(changes) {
       commits.push(changes);
       if (changes.graph !== undefined) files.set('.derivon/workspace.json', changes.graph);
@@ -542,13 +545,13 @@ describe('object-document integrity through the shared session', () => {
     fixture.files.set(path(directoryA), `[到 B](../${directoryB.split('/').pop()}/document.md)`);
     fixture.commits.length = 0;
     const session = await openWorkspaceSession(fixture.source, { authoring: fixture.source });
-    return { ...fixture, session, a, b, pathA: path(directoryA) };
+    return { ...fixture, session, a, b, directoryA, directoryB, pathA: path(directoryA), pathB: path(directoryB) };
   }
 
   it('acquires every owned body before reporting what a deletion would break', async () => {
     const { session, a, b, pathA, commits } = await linkedWorkspace();
     try {
-      const impact = await session.authoring!.referenceImpact({ conceptIds: [b] });
+      const { impact } = await session.authoring!.deletionPreview({ conceptIds: [b] });
       expect(impact.incoming.map((item) => [item.from.id, item.reference.use])).toEqual([[a, 'link']]);
       expect(impact.complete).toBe(true);
       // Analysis is a read: it publishes no content change and queues no write.
@@ -564,7 +567,7 @@ describe('object-document integrity through the shared session', () => {
       return '';
     };
     try {
-      const impact = await session.authoring!.referenceImpact({ conceptIds: [b] });
+      const { impact } = await session.authoring!.deletionPreview({ conceptIds: [b] });
       expect(impact.unreadable).toEqual([{ path: pathA, message: 'Permission denied' }]);
       expect(impact.complete).toBe(false);
     } finally { session.dispose(); }
@@ -573,13 +576,58 @@ describe('object-document integrity through the shared session', () => {
   it('accepts a reference repair as an ordinary content change on the shared save queue', async () => {
     const { session, a, b, pathA, files, commits } = await linkedWorkspace();
     try {
-      const impact = await session.authoring!.referenceImpact({ conceptIds: [b] });
+      const { impact } = await session.authoring!.deletionPreview({ conceptIds: [b] });
       session.authoring!.repairReferences({ object: { kind: 'concept', id: a },
         repairs: [{ at: impact.incoming[0].reference.at, action: 'unlink' }] });
       expect(session.reader.getSnapshot().saveState).toBe('pending');
       await session.flush();
       expect(files.get(pathA)).toBe('到 B');
       expect(commits).toHaveLength(1);
+    } finally { session.dispose(); }
+  });
+
+  it('takes the owned files the host reports, including an asset no document mentions', async () => {
+    const { session, a, b, pathA, pathB, directoryB, files, assets, commits } = await linkedWorkspace();
+    const orphan = `${directoryB}/assets/never-mentioned.png`;
+    assets.set(orphan, new Uint8Array([9]));
+    try {
+      const preview = await session.authoring!.deletionPreview({ conceptIds: [b] });
+      expect(preview.ownedFiles).toEqual({ [directoryB]: [orphan, pathB] });
+      // Something still points at it, so the plan has to carry the repair.
+      await expect(session.authoring!.deleteObjects({ plan: { conceptIds: [b] } })).rejects.toThrow(/引用/);
+
+      await session.authoring!.deleteObjects({
+        plan: { conceptIds: [b] },
+        repairs: [{ object: { kind: 'concept', id: a },
+          repairs: [{ at: preview.impact.incoming[0].reference.at, action: 'unlink' }] }],
+      });
+      await session.flush();
+      expect(files.has(pathB)).toBe(false);
+      expect(assets.has(orphan)).toBe(false);
+      expect(files.get(pathA)).toBe('到 B');
+      expect(commits).toHaveLength(1);
+      expect(session.reader.getSnapshot().content.graph.points.map((point) => point.id)).toEqual([a]);
+    } finally { session.dispose(); }
+  });
+
+  it('refuses the whole deletion when the host cannot take the inventory', async () => {
+    const { session, b, pathB, files, source, commits } = await linkedWorkspace();
+    source.listOwnedFiles = async () => { throw new Error('Permission denied'); };
+    try {
+      await expect(session.authoring!.deleteObjects({ plan: { conceptIds: [b] } })).rejects.toThrow(/Permission denied/);
+      expect(commits).toHaveLength(0);
+      expect(files.has(pathB)).toBe(true);
+      expect(session.reader.getSnapshot().content.graph.points).toHaveLength(2);
+    } finally { session.dispose(); }
+  });
+
+  it('refuses a host inventory that reaches outside the directory it was asked about', async () => {
+    const { session, b, pathA, files, commits, source } = await linkedWorkspace();
+    source.listOwnedFiles = async (directory) => [`${directory}/document.md`, pathA];
+    try {
+      await expect(session.authoring!.deleteObjects({ plan: { conceptIds: [b] } })).rejects.toThrow(pathA);
+      expect(commits).toHaveLength(0);
+      expect(files.has(pathA)).toBe(true);
     } finally { session.dispose(); }
   });
 

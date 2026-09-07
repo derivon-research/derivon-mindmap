@@ -238,6 +238,34 @@ export function orientationConceptReferences(config: OrientationConfig): Orienta
   return references;
 }
 
+/**
+ * The configuration with every reference to the given concepts taken out: the default route
+ * seed loses them, and so does every action that named them. An action left naming nothing
+ * would resolve to no concepts, which is a broken configuration, so it goes with them rather
+ * than being kept as an error. This is only ever applied as part of a deletion plan a user
+ * confirmed; nothing removes a concept from a configuration on its own.
+ */
+export function orientationWithoutConcepts(
+  config: OrientationConfig,
+  conceptIds: readonly string[],
+): OrientationConfig {
+  const removed = new Set(conceptIds);
+  const keep = (ids: readonly string[]) => ids.filter((id) => !removed.has(id));
+  return {
+    ...config,
+    seed: { targets: keep(config.seed.targets), known: keep(config.seed.known) },
+    questions: config.questions.map((question) => ({
+      ...question,
+      options: question.options.map((option) => ({
+        ...option,
+        actions: option.actions
+          .map((action) => ({ ...action, ...(action.points ? { points: keep(action.points) } : {}) }))
+          .filter((action) => action.points?.length || action.tags?.length),
+      })),
+    })),
+  };
+}
+
 // ------------------------------------------------------------------ validation
 
 /**

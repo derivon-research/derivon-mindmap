@@ -46,7 +46,7 @@ afterEach(async () => {
 
 function commands(overrides: Partial<AuthoringCommands> = {}): AuthoringCommands {
   return fakeAuthoringCommands({
-    referenceImpact: vi.fn(async () => { throw new Error('未接入'); }), ...overrides,
+    deletionPreview: vi.fn(async () => { throw new Error('未接入'); }), ...overrides,
   });
 }
 
@@ -60,7 +60,7 @@ function renderPanel(workspace: WorkspaceContent, authoring: AuthoringCommands, 
 
 it('reports the cross-document link and the shared image a deletion would break', async () => {
   const workspace = linked();
-  const authoring = commands({ referenceImpact: vi.fn(async (plan) => referenceImpact(workspace, plan)) });
+  const authoring = commands({ deletionPreview: vi.fn(async (plan) => ({ impact: referenceImpact(workspace, plan), ownedFiles: {} })) });
   renderPanel(workspace, authoring);
   await page.getByRole('button', { name: '引用影响' }).click();
 
@@ -68,7 +68,7 @@ it('reports the cross-document link and the shared image a deletion would break'
   await expect.element(incoming.getByText('跨文档链接')).toBeInTheDocument();
   await expect.element(incoming.getByText('共享图片')).toBeInTheDocument();
   expect(container.textContent).toContain('已读取全部引用来源');
-  expect(authoring.referenceImpact).toHaveBeenCalledWith({ conceptIds: ['c-b'] });
+  expect(authoring.deletionPreview).toHaveBeenCalledWith({ conceptIds: ['c-b'] });
 });
 
 it('will not call a deletion safe when a reference source could not be read', async () => {
@@ -76,7 +76,7 @@ it('will not call a deletion safe when a reference source could not be read', as
     'docs/concept-a/document.md': { status: 'error', message: 'Permission denied' },
     'docs/concept-b/document.md': { status: 'ready', text: '# 向量空间' },
   });
-  renderPanel(workspace, commands({ referenceImpact: vi.fn(async (plan) => referenceImpact(workspace, plan)) }));
+  renderPanel(workspace, commands({ deletionPreview: vi.fn(async (plan) => ({ impact: referenceImpact(workspace, plan), ownedFiles: {} })) }));
   await page.getByRole('button', { name: '引用影响' }).click();
 
   await expect.element(page.getByRole('list', { name: '无法读取的引用来源' }).getByText('Permission denied')).toBeInTheDocument();
@@ -86,7 +86,7 @@ it('will not call a deletion safe when a reference source could not be read', as
 it('confirms a repair in the document that carries the reference, and cancels without writing', async () => {
   const workspace = linked();
   const impact = referenceImpact(workspace, { conceptIds: ['c-b'] });
-  const authoring = commands({ referenceImpact: vi.fn(async () => impact) });
+  const authoring = commands({ deletionPreview: vi.fn(async () => ({ impact, ownedFiles: {} })) });
   renderPanel(workspace, authoring);
   await page.getByRole('button', { name: '引用影响' }).click();
 
@@ -106,7 +106,7 @@ it('confirms a repair in the document that carries the reference, and cancels wi
 it('removes a shared image only as its own decision, never as part of the link repair', async () => {
   const workspace = linked();
   const impact = referenceImpact(workspace, { conceptIds: ['c-b'] });
-  const authoring = commands({ referenceImpact: vi.fn(async () => impact) });
+  const authoring = commands({ deletionPreview: vi.fn(async () => ({ impact, ownedFiles: {} })) });
   renderPanel(workspace, authoring);
   await page.getByRole('button', { name: '引用影响' }).click();
 

@@ -94,7 +94,7 @@ function structureContent(): WorkspaceContent {
 function commands(overrides: Partial<AuthoringCommands> = {}): AuthoringCommands {
   return {
     createConcept: vi.fn(() => ''), createDerivation: vi.fn(() => ''), updateDocument: vi.fn(),
-    repairReferences: vi.fn(), restoreDocument: vi.fn(), referenceImpact: vi.fn(),
+    repairReferences: vi.fn(), restoreDocument: vi.fn(), deletionPreview: vi.fn(), deleteObjects: vi.fn(),
     updateObjectMetadata: vi.fn(), updateDerivationStructure: vi.fn(), updateConceptTags: vi.fn(),
     updateTagDeclarations: vi.fn(), updateOrientation: vi.fn(), protectDraft: vi.fn(), ...overrides,
   };

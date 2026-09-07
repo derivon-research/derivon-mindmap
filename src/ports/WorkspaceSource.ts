@@ -33,4 +33,11 @@ export type WorkspaceCommit = {
 export interface WritableWorkspaceSource extends WorkspaceSource {
   /** Revision-capable hosts must return the version produced by this write, not a later external observation. */
   commit(changes: WorkspaceCommit): Promise<string | void>;
+  /**
+   * Every file stored under one object's owned directory, as workspace-relative paths,
+   * including assets no document mentions. Deleting an object needs what the host can see
+   * and a document scan cannot; the caller still verifies that what comes back belongs to
+   * the object it asked about. Never recursive over arbitrary workspace paths.
+   */
+  listOwnedFiles(directory: string): Promise<readonly string[]>;
 }

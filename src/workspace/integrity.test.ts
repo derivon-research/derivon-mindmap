@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { ORIENTATION_SCHEMA, WORKSPACE_SCHEMA } from './index';
 import { parseWorkspaceContent, type WorkspaceContent } from './content';
-import { deletionScope, isDeletionSafe, referenceImpact, repairDocumentReferences, restoreObjectDocument } from './integrity';
+import {
+  deleteObjects, deletionScope, isDeletionSafe, referenceImpact, repairDocumentReferences, restoreObjectDocument,
+} from './integrity';
 
 const graph = JSON.stringify({
   schema: WORKSPACE_SCHEMA, document: { title: 'T', description: '' }, tags: [],
@@ -134,6 +136,120 @@ describe('repairing references through a complete content change', () => {
     const image = impactOf(content).incoming[1].reference;
     expect(() => repairDocumentReferences(content, { object: { kind: 'concept', id: 'c-a' },
       repairs: [{ at: image.at, action: 'unlink' }] })).toThrow(/图片/);
+  });
+});
+
+describe('deleting objects with everything they own', () => {
+  const orientationText = JSON.stringify({
+    schema: ORIENTATION_SCHEMA,
+    seed: { targets: ['c-b'], known: ['c-a'] },
+    questions: [{ id: 'q1', prompt: '?', select: 'one', options: [
+      { id: 'o1', label: 'B', actions: [{ op: 'add-targets', points: ['c-b'] }] },
+      { id: 'o2', label: 'A 与 B', actions: [{ op: 'add-known', points: ['c-a', 'c-b'] }] },
+    ] }],
+  });
+  /** The inventory a host would report: `document.md` plus assets no body mentions. */
+  const inventory = {
+    'docs/concept-b': ['docs/concept-b/document.md', 'docs/concept-b/assets/shared.png', 'docs/concept-b/notes.txt'],
+    'docs/derivation-1': ['docs/derivation-1/document.md'],
+    'docs/concept-c': ['docs/concept-c/document.md'],
+  };
+
+  it('removes the concept, its derivations, their documents and every owned asset', () => {
+    const change = deleteObjects(whole(), { plan: { conceptIds: ['c-c'] },
+      ownedFiles: { 'docs/concept-c': inventory['docs/concept-c'] } });
+    expect(change.content.graph.points.map((point) => point.id)).toEqual(['c-a', 'c-b']);
+    expect(change.changes.documents).toEqual([{ path: 'docs/concept-c/document.md', content: null }]);
+    expect(change.content.documents['docs/concept-c/document.md']).toBeUndefined();
+  });
+
+  it('deletes assets the document text no longer mentions, because the inventory says they are there', () => {
+    const content = whole();
+    const [link, image, htmlLink] = referenceImpact(content, { conceptIds: ['c-b'] }).incoming.map((item) => item.reference);
+    const change = deleteObjects(content, {
+      plan: { conceptIds: ['c-b'] },
+      ownedFiles: { 'docs/concept-b': inventory['docs/concept-b'], 'docs/derivation-1': inventory['docs/derivation-1'] },
+      repairs: [{ object: { kind: 'concept', id: 'c-a' }, repairs: [
+        { at: link.at, action: 'retarget', target: { kind: 'concept', id: 'c-c' } },
+        { at: image.at, action: 'remove' },
+        { at: htmlLink.at, action: 'unlink' },
+      ] }],
+    });
+    expect(change.changes.assets).toEqual([
+      { path: 'docs/concept-b/assets/shared.png', content: null },
+      { path: 'docs/concept-b/notes.txt', content: null },
+    ]);
+    expect(change.changes.documents).toEqual([
+      { path: 'docs/concept-a/document.md', content: expect.stringContaining('../concept-c/document.md') },
+      { path: 'docs/concept-b/document.md', content: null },
+      { path: 'docs/derivation-1/document.md', content: null },
+    ]);
+    // One change: the graph, the owned files and the repairs travel together.
+    expect(change.content.graph.points.map((point) => point.id)).toEqual(['c-a', 'c-c']);
+    expect(change.content.graph.hyperedges).toEqual([]);
+  });
+
+  it('refuses a file that is not inside a directory being removed', () => {
+    expect(() => deleteObjects(whole(), { plan: { conceptIds: ['c-c'] },
+      ownedFiles: { 'docs/concept-c': ['docs/concept-c/document.md', 'docs/concept-a/document.md'] } }))
+      .toThrow(/docs\/concept-a\/document\.md/);
+    expect(() => deleteObjects(whole(), { plan: { conceptIds: ['c-c'] },
+      ownedFiles: { 'docs/concept-c': ['docs/concept-c-2/document.md'] } })).toThrow(/不在/);
+  });
+
+  it('refuses a plan whose inventory does not cover every directory it removes', () => {
+    expect(() => deleteObjects(whole(), { plan: { conceptIds: ['c-b'] },
+      ownedFiles: { 'docs/concept-b': inventory['docs/concept-b'] } })).toThrow(/docs\/derivation-1/);
+  });
+
+  it('refuses to delete while something still points at it', () => {
+    expect(() => deleteObjects(whole(), { plan: { conceptIds: ['c-b'] },
+      ownedFiles: { 'docs/concept-b': inventory['docs/concept-b'], 'docs/derivation-1': inventory['docs/derivation-1'] } }))
+      .toThrow(/还有 3 处引用/);
+  });
+
+  it('refuses to delete when a reference source could not be read', () => {
+    const damaged = workspace({
+      'docs/concept-a/document.md': { status: 'error', message: 'Permission denied' },
+      'docs/concept-b/document.md': { status: 'ready', text: '' },
+      'docs/concept-c/document.md': { status: 'ready', text: '' },
+      'docs/derivation-1/document.md': { status: 'ready', text: '' },
+    });
+    expect(() => deleteObjects(damaged, { plan: { conceptIds: ['c-c'] },
+      ownedFiles: { 'docs/concept-c': inventory['docs/concept-c'] } })).toThrow(/无法分析|读不出|不完整/);
+  });
+
+  it('refuses to delete when an owned body has not been read at all', () => {
+    expect(() => deleteObjects(workspace({}), { plan: { conceptIds: ['c-c'] },
+      ownedFiles: { 'docs/concept-c': inventory['docs/concept-c'] } })).toThrow(/不完整/);
+  });
+
+  it('takes the concept out of the orientation configuration only when that is confirmed', () => {
+    const configured = () => workspace({
+      'docs/concept-a/document.md': { status: 'ready', text: '' },
+      'docs/concept-b/document.md': { status: 'ready', text: '' },
+      'docs/concept-c/document.md': { status: 'ready', text: '' },
+      'docs/derivation-1/document.md': { status: 'ready', text: '' },
+    }, { '.derivon/orientation.json': { status: 'ready', text: orientationText } });
+    const plan = { plan: { conceptIds: ['c-b'] },
+      ownedFiles: { 'docs/concept-b': inventory['docs/concept-b'], 'docs/derivation-1': inventory['docs/derivation-1'] } };
+    expect(() => deleteObjects(configured(), plan)).toThrow(/开局配置/);
+
+    const change = deleteObjects(configured(), { ...plan, repairOrientation: true });
+    expect(change.content.orientation.status).toBe('ready');
+    const config = change.content.orientation.status === 'ready' ? change.content.orientation.config : null;
+    expect(config?.seed).toEqual({ targets: [], known: ['c-a'] });
+    // An action left naming nothing would be a broken configuration, so it goes with it;
+    // an action that still names another concept keeps that one.
+    expect(config?.questions[0].options.map((option) => option.actions)).toEqual([
+      [], [{ op: 'add-known', points: ['c-a'] }],
+    ]);
+    expect(change.changes.companionMetadata?.[0].path).toBe('.derivon/orientation.json');
+  });
+
+  it('refuses a plan that names an object the graph does not have', () => {
+    expect(() => deleteObjects(whole(), { plan: { conceptIds: ['c-zz'] }, ownedFiles: {} })).toThrow(/c-zz/);
+    expect(() => deleteObjects(whole(), { plan: {}, ownedFiles: {} })).toThrow(/没有要删除的对象/);
   });
 });
 

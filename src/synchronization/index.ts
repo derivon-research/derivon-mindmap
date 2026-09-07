@@ -1,14 +1,25 @@
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import {
-  ORIENTATION_PATH, createConcept, createDerivation, objectSourcePath, parseWorkspaceContent,
-  referenceImpact, repairDocumentReferences, restoreObjectDocument,
+  ORIENTATION_PATH, createConcept, createDerivation, deleteObjects, deletionScope, objectSourcePath,
+  parseWorkspaceContent, referenceImpact, repairDocumentReferences, restoreObjectDocument,
   updateConceptTags, updateDerivationStructure, updateObjectDocument, updateObjectMetadata, updateOrientation,
   updateTagDeclarations,
-  type ContentChange, type CreateConceptIntent, type CreateDerivationIntent, type DeletionPlan, type ObjectRef,
-  type OrientationConfig, type ReferenceImpact, type RepairReferencesIntent, type RestoreDocumentIntent,
-  type TagDeclaration, type TextResource, type UpdateConceptTagsIntent, type UpdateDerivationStructureIntent,
-  type UpdateDocumentIntent, type UpdateMetadataIntent, type WorkspaceContent,
+  type ContentChange, type CreateConceptIntent, type CreateDerivationIntent, type DeleteObjectsIntent,
+  type DeletionPlan, type ObjectRef, type OrientationConfig, type ReferenceImpact, type RepairReferencesIntent,
+  type RestoreDocumentIntent, type TagDeclaration, type TextResource, type UpdateConceptTagsIntent,
+  type UpdateDerivationStructureIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
+  type WorkspaceContent,
 } from '../workspace/index';
+
+/** Everything a deletion would take with it, from both sides of the port. */
+export type DeletionPreview = {
+  readonly impact: ReferenceImpact;
+  /** The host's file inventory for each removed directory, keyed by directory. */
+  readonly ownedFiles: Readonly<Record<string, readonly string[]>>;
+};
+
+/** A deletion the author has decided on, minus the inventory the session acquires itself. */
+export type DeleteObjectsCommand = Omit<DeleteObjectsIntent, 'ownedFiles'>;
 
 type AcquiredContent = { readonly content: WorkspaceContent; readonly revision: string | null };
 
@@ -42,10 +53,17 @@ export type AuthoringCommands = {
   /** Give a missing or damaged object document a body again, because a user asked. */
   restoreDocument(intent: RestoreDocumentIntent): void;
   /**
-   * What a deletion would break. Every owned body is acquired through the shared reader
-   * first, so an unread document is not mistaken for one without references.
+   * What a deletion would break and what it would take with it. Every owned body is
+   * acquired through the shared reader first, so an unread document is not mistaken for one
+   * without references, and the file inventory comes from the host rather than from a scan
+   * of document text.
    */
-  referenceImpact(plan: DeletionPlan): Promise<ReferenceImpact>;
+  deletionPreview(plan: DeletionPlan): Promise<DeletionPreview>;
+  /**
+   * Carry out a confirmed deletion: graph entries, owned files and the chosen reference
+   * repairs as one content change. Refuses rather than deleting part of it.
+   */
+  deleteObjects(command: DeleteObjectsCommand): Promise<void>;
   updateObjectMetadata(intent: UpdateMetadataIntent): void;
   /** Joint premises, result and learning cost, replaced as one decision. */
   updateDerivationStructure(intent: UpdateDerivationStructureIntent): void;
@@ -291,6 +309,29 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
       ? { ...content, documents: { ...content.documents, [path]: cached } } : content;
   }
 
+  /**
+   * The one basis a deletion is judged and carried out on: every owned body acquired through
+   * the shared reader, plus the host's inventory of each directory that would go. Ownership
+   * and path containment are verified by the content operation, not assumed here.
+   */
+  async function deletionBasis(plan: DeletionPlan, assertCurrent: () => void): Promise<{
+    readonly basis: WorkspaceContent;
+    readonly ownedFiles: Record<string, readonly string[]>;
+  }> {
+    const authoring = options.authoring;
+    if (!authoring) throw new Error('当前工作区没有写入权限');
+    const content = snapshot.content;
+    const documents = await readDocuments([...content.graph.points, ...content.graph.hyperedges]
+      .map(({ data }) => objectSourcePath(data)));
+    assertCurrent();
+    const basis = { ...content, documents: { ...content.documents, ...documents } };
+    const listed = await Promise.all(deletionScope(basis, plan).directories
+      .map(async (directory) => [directory, await authoring.listOwnedFiles(directory)] as const));
+    assertCurrent();
+    if (snapshot.content !== content) throw new Error('工作区内容已在取得所属文件清单期间更新');
+    return { basis, ownedFiles: Object.fromEntries(listed) };
+  }
+
   function authoringCommands(): AuthoringCommands | undefined {
     if (!options.authoring) return undefined;
     const epoch = snapshot.authoringEpoch;
@@ -313,13 +354,17 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
       updateDocument(intent) { assertCurrent(); accept(updateObjectDocument(editingBasis(intent.object), intent)); },
       repairReferences(intent) { assertCurrent(); accept(repairDocumentReferences(editingBasis(intent.object), intent)); },
       restoreDocument(intent) { assertCurrent(); accept(restoreObjectDocument(editingBasis(intent.object), intent)); },
-      async referenceImpact(plan) {
+      async deletionPreview(plan) {
         assertCurrent();
-        const content = snapshot.content;
-        const documents = await readDocuments([...content.graph.points, ...content.graph.hyperedges]
-          .map(({ data }) => objectSourcePath(data)));
+        const { basis, ownedFiles } = await deletionBasis(plan, assertCurrent);
+        return { impact: referenceImpact(basis, plan), ownedFiles };
+      },
+      async deleteObjects(command) {
         assertCurrent();
-        return referenceImpact({ ...content, documents: { ...content.documents, ...documents } }, plan);
+        // The inventory and the bodies are acquired again here rather than carried over from
+        // a preview the author has been reading: what is deleted is what is on disk now.
+        const { basis, ownedFiles } = await deletionBasis(command.plan, assertCurrent);
+        accept(deleteObjects(basis, { ...command, ownedFiles }));
       },
       updateObjectMetadata(intent) { assertCurrent(); accept(updateObjectMetadata(snapshot.content, intent)); },
       updateDerivationStructure(intent) { assertCurrent(); accept(updateDerivationStructure(snapshot.content, intent)); },
