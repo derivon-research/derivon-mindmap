@@ -36,6 +36,10 @@ export type OrientationRun = {
   /** Index of the question being asked, or -1 when orientation is finished. */
   readonly at: number;
   readonly trail: readonly OrientationAnswer[];
+  /** Concepts a probe round already put to the learner, so a later round moves on. */
+  readonly asked: readonly string[];
+  /** Probe rounds already asked. Zero before the first one. */
+  readonly round: number;
 };
 
 /** The whole vocabulary of the flow. A conversation adapter's input arrives as one of these. */
@@ -43,7 +47,12 @@ export type OrientationIntent =
   | { readonly kind: 'answer'; readonly optionIds: readonly string[] }
   | { readonly kind: 'skip' }
   | { readonly kind: 'set-targets'; readonly conceptIds: readonly string[] }
+  | { readonly kind: 'add-targets'; readonly conceptIds: readonly string[] }
   | { readonly kind: 'set-known'; readonly conceptIds: readonly string[] }
+  /** A round of concepts has been put to the learner; they are spent whatever the answer. */
+  | { readonly kind: 'ask-known'; readonly conceptIds: readonly string[] }
+  /** The learner says they already understand these. */
+  | { readonly kind: 'know'; readonly conceptIds: readonly string[] }
   | { readonly kind: 'restart' };
 
 /** Read the effective content and decide which entry the learner gets. */
@@ -71,6 +80,8 @@ export function beginOrientation(plan: OrientationPlan): OrientationRun {
     known: config ? inGraph(plan, config.seed.known) : [],
     at: config && config.questions.length ? 0 : -1,
     trail: [],
+    asked: [],
+    round: 0,
   };
 }
 
@@ -136,8 +147,18 @@ export function applyOrientationIntent(plan: OrientationPlan, run: OrientationRu
     }
     case 'set-targets':
       return { ...run, targets: inGraph(plan, intent.conceptIds) };
+    case 'add-targets':
+      return { ...run, targets: inGraph(plan, [...run.targets, ...intent.conceptIds]) };
     case 'set-known':
       return { ...run, known: inGraph(plan, intent.conceptIds) };
+    case 'ask-known':
+      return {
+        ...run,
+        asked: inGraph(plan, [...run.asked, ...intent.conceptIds]),
+        round: run.round + 1,
+      };
+    case 'know':
+      return { ...run, known: inGraph(plan, [...run.known, ...intent.conceptIds]) };
     case 'restart':
       return beginOrientation(plan);
   }

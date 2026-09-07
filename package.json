@@ -27,6 +27,7 @@
     "bench:runtime:desktop": "node --experimental-strip-types benchmarks/desktop-runtime.mjs",
     "bench:rendering": "VITE_BENCH_RENDERING=1 vitest run --project browser src/rendering/GraphRenderer.browser.test.tsx -t 'generated performance' --reporter verbose",
     "bench:authoring": "VITE_BENCH_AUTHORING=1 vitest run --project browser src/modes/authoring/AuthoringPerformance.browser.test.tsx --reporter verbose",
+    "bench:learning": "VITE_BENCH_LEARNING=1 vitest run --project browser src/modes/learning/LearningPerformance.browser.test.tsx --reporter verbose",
     "bench:g6-isolated": "playwright test --config playwright.performance.config.ts benchmarks/g6-performance.spec.ts",
     "check:release-version": "node scripts/check-release-version.mjs"
   },

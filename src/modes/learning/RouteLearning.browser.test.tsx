@@ -1,0 +1,145 @@
+import { act, useState } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { page } from 'vitest/browser';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { GraphRendererProps } from '../../rendering';
+import type { LearningModeProps } from '../../app/host';
+import { fixtureRouteSolver } from '../../testing/routeSolver';
+import { WORKSPACE_SCHEMA, parseWorkspaceContent, type WorkspaceContent } from '../../workspace/index';
+
+vi.mock('../../rendering', () => ({ GraphRenderer: ({ view, onEvent }: GraphRendererProps) => <div>
+  <span>{view.kind} 图</span>
+  {view.concepts.map((concept) => <button key={concept.id} type="button"
+    onClick={() => onEvent({ type: 'select', object: { kind: 'concept', id: concept.id } })}>
+    图：{concept.label}{concept.marks.length ? `（${concept.marks.join(',')}）` : ''}
+  </button>)}
+</div> }));
+import { LearningMode } from './LearningMode';
+
+let container: HTMLDivElement;
+let root: Root | undefined;
+beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); });
+afterEach(async () => { if (root) await act(async () => root?.unmount()); root = undefined; container.remove(); vi.restoreAllMocks(); });
+
+function workspace(): WorkspaceContent {
+  return parseWorkspaceContent({ graph: JSON.stringify({
+    schema: WORKSPACE_SCHEMA,
+    document: { title: '路线工作区', description: '' },
+    tags: [{ id: 'basics', label: '基础' }],
+    graph: { points: [
+      { id: 'a', data: { label: 'A', document: 'docs/a', tags: ['basics'] } },
+      { id: 'b', data: { label: 'B', document: 'docs/b', tags: ['basics'] } },
+      { id: 'c', data: { label: 'C', document: 'docs/c' } },
+    ], hyperedges: [
+      { id: 'd1', weight: 2, tails: ['a'], head: 'b', data: { document: 'docs/d1' } },
+      { id: 'd2', weight: 3, tails: ['b'], head: 'c', data: { document: 'docs/d2' } },
+    ] },
+  }), documents: {
+    'docs/b/document.md': { status: 'ready', text: '<main>B 的定义正文</main>' },
+    'docs/c/document.md': { status: 'ready', text: '<main>C 的定义正文</main>' },
+    'docs/d1/document.md': { status: 'ready', text: '<main>第一步的推导正文</main>' },
+    'docs/d2/document.md': { status: 'ready', text: '<main>第二步的推导正文</main>' },
+  } });
+}
+
+function Harness({ view = 'route' as const, onEnterView = vi.fn(), onConfirmRoute = vi.fn() }: {
+  view?: LearningModeProps['view'];
+  onEnterView?: LearningModeProps['onEnterView'];
+  onConfirmRoute?: LearningModeProps['onConfirmRoute'];
+}) {
+  const [content] = useState(workspace);
+  const [targets, setTargets] = useState<readonly string[]>(['c']);
+  const [known, setKnown] = useState<readonly string[]>(['a']);
+  return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
+    targetIds={targets} knownIds={known} routeSolver={fixtureRouteSolver()}
+    view={view} onEnterView={onEnterView} onConfirmRoute={onConfirmRoute}
+    onChangeTargets={setTargets} onChangeKnown={setKnown} />;
+}
+
+async function render(over: Parameters<typeof Harness>[0] = {}) {
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness {...over} />));
+  // The solver answers on a microtask; the view only exists once it has.
+  await act(async () => { await Promise.resolve(); });
+}
+
+const click = (selector: string) => act(async () => {
+  (container.querySelector(selector) as HTMLButtonElement | null)?.click();
+});
+
+it('puts the derivation in front of the definition, and keeps the definition behind a press', async () => {
+  await render();
+  await expect.element(page.getByText('第 1 / 2 步')).toBeVisible();
+  expect(container.textContent).toContain('A → B');
+
+  const frames = () => [...container.querySelectorAll('iframe')].map((frame) => frame.srcdoc).join('|');
+  expect(frames()).toContain('第一步的推导正文');
+  expect(frames()).not.toContain('B 的定义正文');
+
+  await page.getByRole('button', { name: '跟下来了，给我定义 ↓' }).click();
+  await expect.element(page.getByText('定义：B')).toBeVisible();
+  expect(frames()).toContain('B 的定义正文');
+});
+
+it('generates the comprehension task from the route and will not advance until it is answered', async () => {
+  await render();
+  await page.getByRole('button', { name: '跟下来了，给我定义 ↓' }).click();
+
+  // The task is what the route uses this concept for, not a fixed prompt.
+  expect(container.textContent).toContain('接下来的「C」为什么非得先有它不可');
+  const next = () => container.querySelector('.learning-text-actions .learning-primary') as HTMLButtonElement;
+  expect(next().disabled).toBe(true);
+  // Nothing on the step waves the task through: an unanswered gate is the only state left.
+  expect(container.querySelector('.learning-task')?.textContent).not.toContain('跳过');
+
+  await page.getByRole('textbox', { name: '理解验证的回答' }).fill('没有 B 就写不下 C。');
+  await page.getByRole('button', { name: '交上去' }).click();
+  expect(next().disabled).toBe(false);
+
+  await act(async () => next().click());
+  await expect.element(page.getByText('第 2 / 2 步')).toBeVisible();
+});
+
+it('walks to the end of the route and says the progress was not saved', async () => {
+  await render();
+  await click('.learning-rail-list li:last-child button');
+  await page.getByRole('button', { name: '跟下来了，给我定义 ↓' }).click();
+  await page.getByRole('textbox', { name: '理解验证的回答' }).fill('用它算一下就知道了。');
+  await page.getByRole('button', { name: '交上去' }).click();
+  await click('.learning-text-actions .learning-primary');
+  await expect.element(page.getByText('这条路线走完了')).toBeVisible();
+  expect(container.textContent).toContain('还没有存下来');
+});
+
+it('hides a side panel to a recall tab, and never lets the textbook lose width to both', async () => {
+  await render();
+  await click('.learning-rail button[aria-label="隐藏"]');
+  await expect.element(page.getByRole('button', { name: '路线' })).toBeVisible();
+  expect(container.querySelector('.learning-rail')).toBeNull();
+
+  await page.getByRole('button', { name: '路线' }).click();
+  await expect.element(page.getByText('折叠态 · 只排步骤')).toBeVisible();
+
+  // Widening one side hides the other rather than squeezing the middle.
+  await click('.learning-rail button[aria-label="展开子图"]');
+  expect(container.querySelector('.learning-tutor')).toBeNull();
+  expect(container.querySelector('.learning-route')?.className).toContain('rail-expanded');
+});
+
+it('draws the route subgraph with the learner\'s position on it, once the rail is widened', async () => {
+  await render();
+  await click('.learning-rail button[aria-label="展开子图"]');
+  await expect.element(page.getByText('route 图')).toBeVisible();
+  await expect.element(page.getByRole('button', { name: '图：B（current）' })).toBeVisible();
+  await expect.element(page.getByRole('button', { name: '图：C（target）' })).toBeVisible();
+});
+
+it('offers an Agent window that answers from the graph and says plainly that no model is connected', async () => {
+  await render();
+  await page.getByRole('button', { name: '「A」是什么来着？' }).click();
+  expect(container.textContent).toContain('它要么是你说会的，要么是图里的起点');
+
+  await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
+  await page.getByRole('button', { name: '发送消息' }).click();
+  expect(container.textContent).toContain('未连接模型，没有生成任何讲解');
+});

@@ -166,9 +166,13 @@ for (const width of [1440, 390, 320]) {
     const learning = page.locator('[data-derivon-mode="learning"]');
     await expect(learning).toContainText('1 个概念');
     await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
-    expect(await page.evaluate(findCanvasPixel, { clientCoordinates: true })).toBeDefined();
+    const conceptPoint = await page.evaluate(findCanvasPixel, { clientCoordinates: true });
+    expect(conceptPoint).toBeDefined();
+    // The learning side reads what authoring has in hand, still unsaved: pointing at the new
+    // concept opens its document without anything having been committed.
+    await page.mouse.click(conceptPoint!.x, conceptPoint!.y);
     await expect(learning.locator('iframe[title="Vector space 文档"]')).toBeVisible();
-    await learning.getByRole('button', { name: '取消目标', exact: true }).click();
+    await learning.getByRole('button', { name: '这个我会', exact: true }).click();
     expect(commits).toBe(1); // Empty workspace initialization only.
     releaseWrites!();
     await expect(page.getByLabel('保存状态')).toHaveText('已保存');

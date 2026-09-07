@@ -1,15 +1,22 @@
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
-import type { RouteSolver } from '../../ports/RouteSolver';
+import type { LearningModeProps } from '../../app/host';
+import { fixtureRouteSolver } from '../../testing/routeSolver';
 import {
   ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, parseWorkspaceContent, updateOrientation,
   type OrientationConfig, type WorkspaceContent,
 } from '../../workspace/index';
 
-vi.mock('../../rendering', () => ({ GraphRenderer: ({ view }: GraphRendererProps) => <div>已进入路线：{view.concepts.length} 个概念</div> }));
+vi.mock('../../rendering', () => ({ GraphRenderer: ({ view, onEvent }: GraphRendererProps) => <div>
+  <span>图上 {view.concepts.length} 个概念</span>
+  {view.concepts.map((concept) => <button key={concept.id} type="button"
+    onClick={() => onEvent({ type: 'select', object: { kind: 'concept', id: concept.id } })}>
+    图：{concept.label}{concept.marks.length ? `（${concept.marks.join(',')}）` : ''}
+  </button>)}
+</div> }));
 import { LearningMode } from './LearningMode';
 
 let container: HTMLDivElement;
@@ -40,26 +47,37 @@ function workspace(): WorkspaceContent {
       { id: 'b', data: { label: 'B', document: 'docs/b', tags: ['basics'] } },
       { id: 'c', data: { label: 'C', document: 'docs/c' } },
       { id: 'd', data: { label: 'D', document: 'docs/d' } },
-    ], hyperedges: [] },
-  }), documents: {} });
+    ], hyperedges: [
+      { id: 'ab', weight: 1, tails: ['a'], head: 'b', data: { document: 'docs/ab' } },
+      { id: 'bd', weight: 1, tails: ['b'], head: 'd', data: { document: 'docs/bd' } },
+    ] },
+  }), documents: { 'docs/d/document.md': { status: 'ready', text: '<main>D body</main>' } } });
 }
 
-const solver: RouteSolver = { solve: async () => ({
-  reachable: true, conceptIds: ['a', 'd'], derivationIds: [], order: [], cost: 3, provenOptimal: true, blocked: [],
-}) };
+type HarnessProps = Partial<LearningModeProps> & Pick<LearningModeProps, 'content'>;
 
-function render(content: WorkspaceContent, handlers: {
-  onChangeTargets: (ids: readonly string[]) => void; onChangeKnown: (ids: readonly string[]) => void;
-}) {
-  root = createRoot(container);
-  act(() => root?.render(<LearningMode workspace={{ id: 'w', name: '开局工作区' }} content={content}
-    targetIds={[]} knownIds={[]} routeSolver={solver} {...handlers} />));
+/**
+ * Targets and known concepts are application state, so the harness holds them the way
+ * `App` does. A spy that swallowed the change would make the mode look broken.
+ */
+function Harness({ content, targetIds = [], knownIds = [], onChangeTargets, onChangeKnown, ...over }: HarnessProps) {
+  const [targets, setTargets] = useState<readonly string[]>(targetIds);
+  const [known, setKnown] = useState<readonly string[]>(knownIds);
+  return <LearningMode workspace={{ id: 'w', name: '开局工作区' }} content={content} active
+    targetIds={targets} knownIds={known} routeSolver={fixtureRouteSolver()}
+    view="orientation" onEnterView={vi.fn()} onConfirmRoute={vi.fn()}
+    onChangeTargets={(ids) => { onChangeTargets?.(ids); setTargets(ids); }}
+    onChangeKnown={(ids) => { onChangeKnown?.(ids); setKnown(ids); }}
+    {...over} />;
 }
 
-it('initializes a route from the seed and completes orientation without any conversation provider', async () => {
+it('seeds the run, walks the author\'s questions and reaches the route without a conversation provider', async () => {
   const onChangeTargets = vi.fn();
   const onChangeKnown = vi.fn();
-  render(updateOrientation(workspace(), CONFIG).content, { onChangeTargets, onChangeKnown });
+  const onEnterView = vi.fn();
+  const content = updateOrientation(workspace(), CONFIG).content;
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={content} onChangeTargets={onChangeTargets} onChangeKnown={onChangeKnown} onEnterView={onEnterView} />));
 
   // The seed reaches application state before a question is answered.
   expect(onChangeTargets).toHaveBeenCalledWith(['c']);
@@ -71,9 +89,6 @@ it('initializes a route from the seed and completes orientation without any conv
 
   expect(onChangeTargets).toHaveBeenLastCalledWith(['d']);
   expect(onChangeKnown).toHaveBeenLastCalledWith(['a', 'b']);
-  await expect.element(page.getByText('初始路线')).toBeVisible();
-  await page.getByRole('button', { name: '进入路线' }).click();
-  await expect.element(page.getByText('已进入路线')).toBeVisible();
 });
 
 it('falls back to the generic entry with a diagnosis when the configuration is broken', async () => {
@@ -81,14 +96,67 @@ it('falls back to the generic entry with a diagnosis when the configuration is b
   const broken = parseWorkspaceContent({ graph: base.graphText, documents: base.documents,
     companionMetadata: { '.derivon/orientation.json': { status: 'ready', text: JSON.stringify({
       ...CONFIG, seed: { targets: ['gone'], known: [] } }) } } });
-  const onChangeTargets = vi.fn();
-  render(broken, { onChangeTargets, onChangeKnown: vi.fn() });
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={broken} />));
 
   await expect.element(page.getByRole('alert')).toBeVisible();
   expect(container.textContent).toContain('已回到通用入口');
-  expect(onChangeTargets).toHaveBeenCalledWith([]);
-  const choice = [...container.querySelectorAll('ul[aria-label="目标概念"] button')]
-    .find((button) => button.textContent?.startsWith('B'));
-  await act(async () => (choice as HTMLButtonElement).click());
-  expect(onChangeTargets).toHaveBeenLastCalledWith(['b']);
+  expect(container.textContent).toContain('想学会什么？');
+});
+
+it('offers what the graph builds towards, and records the target the learner picks', async () => {
+  const onChangeTargets = vi.fn();
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={workspace()} onChangeTargets={onChangeTargets} />));
+
+  // `d` is the only concept no derivation consumes, so it is the offered destination.
+  await page.getByRole('button', { name: 'D', exact: true }).click();
+  expect(onChangeTargets).toHaveBeenLastCalledWith(['d']);
+});
+
+it('opens a concept document from the search box without leaving the thread', async () => {
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={workspace()} />));
+
+  await page.getByRole('textbox', { name: '说出你想学会什么，或搜索一个概念' }).fill('D');
+  await page.getByRole('button', { name: '发送' }).click();
+
+  await expect.element(page.getByText('的文档在这儿')).toBeVisible();
+  expect(container.querySelector('iframe')?.srcdoc).toContain('D body');
+});
+
+it('probes with the concepts the route leans on, and marks what the learner says they know', async () => {
+  const onChangeKnown = vi.fn();
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={workspace()} targetIds={['d']} onChangeKnown={onChangeKnown} />));
+
+  await page.getByRole('button', { name: '就这一个，问我会什么吧' }).click();
+  await expect.element(page.getByText('第 1 轮 · 会的点一下')).toBeVisible();
+  // `b` is the premise the only route to `d` leans on, so it is worth asking about.
+  await page.getByRole('button', { name: 'B', exact: true }).click();
+  expect(onChangeKnown).toHaveBeenLastCalledWith(['b']);
+});
+
+it('spends a round when it is asked, so nobody is asked the same thing twice', async () => {
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={workspace()} targetIds={['d']} />));
+
+  await page.getByRole('button', { name: '就这一个，问我会什么吧' }).click();
+  await expect.element(page.getByText('第 1 轮 · 会的点一下')).toBeVisible();
+  // The round counts the moment it is shown: leaving without answering still spent it.
+  expect(container.querySelector('[data-orientation-round]')?.getAttribute('data-orientation-round')).toBe('1');
+  expect(container.textContent).toContain('问过 1 轮');
+
+  // This route only leans on those concepts, so a second round has nothing left to ask.
+  await page.getByRole('button', { name: '再问我一轮，路线会更准' }).click();
+  await expect.element(page.getByText('没有更值得问的了')).toBeVisible();
+});
+
+it('marks the learner\'s own choices on the overview, and nothing else', async () => {
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={workspace()} targetIds={['d']} knownIds={['a']} />));
+  await expect.element(page.getByRole('button', { name: '图：D（target）' })).toBeVisible();
+  await expect.element(page.getByRole('button', { name: '图：A（known）' })).toBeVisible();
+  // The route is not painted onto the overview (ADR-0003): B is on the route but unmarked.
+  await expect.element(page.getByRole('button', { name: '图：B' })).toBeVisible();
 });

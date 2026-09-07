@@ -95,7 +95,30 @@ button { font: inherit; cursor: pointer; }
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
 }
 
-.app-topbar-mode-slot { flex: 1; }
+.app-topbar-mode-slot { flex: 1; min-width: 0; }
+
+/* The learning side's stage entries. Pills, not a segmented control: they are places to
+   stand inside one mode, and must not read as a third mode next to 创作 / 学习. */
+.app-learning-views { display: flex; flex-wrap: wrap; gap: 6px; }
+.app-learning-views button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 13px;
+  border: 1px solid var(--app-line);
+  border-radius: 999px;
+  background: var(--app-paper);
+  color: var(--app-muted);
+  font: inherit;
+  white-space: nowrap;
+}
+.app-learning-views button:hover:not(:disabled) { border-color: var(--app-accent); color: #215f52; }
+.app-learning-views button.is-active { border-color: var(--app-accent); background: #eef7f4; color: #215f52; font-weight: 600; }
+.app-learning-views button:disabled { opacity: 0.45; cursor: not-allowed; }
+@media (max-width: 720px) {
+  .app-learning-views button span { display: none; }
+}
 
 /* ------------------------------------------------------------------ modes */
 .app-mode {

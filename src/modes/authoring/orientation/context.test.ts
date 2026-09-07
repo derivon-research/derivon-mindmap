@@ -40,7 +40,9 @@ describe('the assumption behind a follow-up route', () => {
   });
 
   it('reaches the opening question with no assumption at all', () => {
-    expect(arrivalState(plan(), 'why', null)).toEqual({ targets: ['a'], known: [], at: 0, trail: [] });
+    // Only the seed is settled: no answer, no trail, and no probe round spent.
+    expect(arrivalState(plan(), 'why', null))
+      .toEqual({ targets: ['a'], known: [], at: 0, trail: [], asked: [], round: 0 });
   });
 
   it('offers only the entries that can actually reach a follow-up', () => {

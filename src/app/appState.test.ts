@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   canEnterMode,
+  confirmLearningRoute,
+  enterLearningView,
   enterMode,
   initialAppState,
   openWorkspace,
   selectConcept,
+  setLearningKnown,
   setLearningTargets,
   type AppState,
 } from './appState';
@@ -123,5 +126,55 @@ describe('returning to authoring', () => {
     );
     const reselected = selectConcept(enterMode(learning, 'authoring'), 'schur-decomposition');
     expect(enterMode(reselected, 'learning').learningTargetIds).toEqual(['schur-decomposition']);
+  });
+});
+
+describe('the learning side views', () => {
+  const learning = () => setLearningTargets(enterMode(webState(), 'learning'), ['svd']);
+
+  it('opens a workspace in orientation, with no route confirmed yet', () => {
+    const state = webState();
+    expect(state.learningView).toBe('orientation');
+    expect(state.learningRouteConfirmed).toBe(false);
+  });
+
+  it('sends a learner heading for the route through the preview first', () => {
+    expect(enterLearningView(learning(), 'route').learningView).toBe('preview');
+  });
+
+  it('opens the route once the preview has been confirmed', () => {
+    const confirmed = confirmLearningRoute(learning());
+    expect(confirmed.learningView).toBe('route');
+    expect(enterLearningView(enterLearningView(confirmed, 'browse'), 'route').learningView).toBe('route');
+  });
+
+  it('makes a changed target or known set go back through the preview', () => {
+    const confirmed = confirmLearningRoute(learning());
+    expect(setLearningTargets(confirmed, ['svd', 'pseudoinverse']).learningRouteConfirmed).toBe(false);
+    expect(setLearningKnown(confirmed, ['basis']).learningRouteConfirmed).toBe(false);
+    expect(enterLearningView(setLearningKnown(confirmed, ['basis']), 'route').learningView).toBe('preview');
+  });
+
+  it('leaves the confirmation alone when the sets are republished unchanged', () => {
+    const confirmed = confirmLearningRoute(learning());
+    expect(setLearningTargets(confirmed, ['svd']).learningRouteConfirmed).toBe(true);
+  });
+
+  it('goes back to orientation when another workspace opens', () => {
+    const confirmed = confirmLearningRoute(learning());
+    const reopened = openWorkspace(confirmed, workspace);
+    expect(reopened.learningView).toBe('orientation');
+    expect(reopened.learningRouteConfirmed).toBe(false);
+  });
+
+  it('restages the preview when authoring hands learning a new target', () => {
+    const confirmed = confirmLearningRoute(enterMode(selectConcept(desktopState(), 'svd'), 'learning'));
+    const reselected = selectConcept(enterMode(confirmed, 'authoring'), 'kalman-filter');
+    expect(enterMode(reselected, 'learning').learningRouteConfirmed).toBe(false);
+  });
+
+  it('browsing and changing targets are reachable without a confirmed route', () => {
+    expect(enterLearningView(webState(), 'browse').learningView).toBe('browse');
+    expect(enterLearningView(webState(), 'orientation').learningView).toBe('orientation');
   });
 });

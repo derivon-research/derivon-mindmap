@@ -51,7 +51,7 @@ describe('the orientation plan', () => {
     const plan = planOrientation(workspace());
     expect(plan.kind).toBe('generic');
     expect(plan.fallbackReason).toBe('absent');
-    expect(beginOrientation(plan)).toEqual({ targets: [], known: [], at: -1, trail: [] });
+    expect(beginOrientation(plan)).toEqual({ targets: [], known: [], at: -1, trail: [], asked: [], round: 0 });
     expect(isOrientationComplete(plan, beginOrientation(plan))).toBe(true);
   });
 
@@ -135,5 +135,40 @@ describe('orientation transitions', () => {
     const run = applyOrientationIntent(p, beginOrientation(p), { kind: 'set-targets', conceptIds: ['a'] });
     expect(run.targets).toEqual(['a']);
     expect(() => applyOrientationIntent(p, run, { kind: 'answer', optionIds: ['paper'] })).toThrow();
+  });
+});
+
+describe('collecting targets and asking what the learner knows', () => {
+  const plan = () => planOrientation(configured());
+
+  it('adds targets without dropping the ones already collected', () => {
+    const p = plan();
+    const run = applyOrientationIntent(p, beginOrientation(p), { kind: 'add-targets', conceptIds: ['b', 'd'] });
+    expect(run.targets).toEqual(['c', 'b', 'd']);
+    expect(applyOrientationIntent(p, run, { kind: 'add-targets', conceptIds: ['b'] }).targets).toEqual(['c', 'b', 'd']);
+  });
+
+  it('spends a round of concepts whether or not the learner claims them', () => {
+    const p = plan();
+    const asked = applyOrientationIntent(p, beginOrientation(p), { kind: 'ask-known', conceptIds: ['b', 'd'] });
+    expect(asked.asked).toEqual(['b', 'd']);
+    expect(asked.round).toBe(1);
+    expect(asked.known).toEqual(['a']);
+    const second = applyOrientationIntent(p, asked, { kind: 'ask-known', conceptIds: ['c'] });
+    expect(second.asked).toEqual(['b', 'd', 'c']);
+    expect(second.round).toBe(2);
+  });
+
+  it('takes the concepts the learner claims, keeping only those the graph has', () => {
+    const p = plan();
+    const asked = applyOrientationIntent(p, beginOrientation(p), { kind: 'ask-known', conceptIds: ['b', 'd'] });
+    const run = applyOrientationIntent(p, asked, { kind: 'know', conceptIds: ['b', 'ghost'] });
+    expect(run.known).toEqual(['a', 'b']);
+  });
+
+  it('clears the rounds on a restart, so a second orientation asks from the top', () => {
+    const p = plan();
+    const asked = applyOrientationIntent(p, beginOrientation(p), { kind: 'ask-known', conceptIds: ['b'] });
+    expect(applyOrientationIntent(p, asked, { kind: 'restart' }).asked).toEqual([]);
   });
 });

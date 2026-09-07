@@ -26,7 +26,7 @@ test('announces interactive once, after the opening questions are ready, on the 
     window.addEventListener('derivon:test-hook', (event) => {
       if ((event as CustomEvent).detail.kind !== 'interactive') return;
       document.documentElement.dataset.openingReadyAtInteractive = String(
-        Boolean(document.querySelector('[aria-label="开局"] button'))
+        Boolean(document.querySelector('[aria-label="目标与已知"] button'))
           && !document.querySelector('[role="status"], [aria-busy="true"]'),
       );
     });
@@ -53,20 +53,57 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/');
-    await page.getByRole('button', { name: '还不确定，先随便逛逛', exact: true }).click();
-    await page.getByRole('button', { name: '进入路线', exact: true }).click();
+    // The overview sits beside the orientation thread from the first frame: the learner can
+    // point at a concept before answering anything.
     await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
     const point = await page.evaluate(findCanvasPixel, { clientCoordinates: true });
     expect(point, 'The graph must have painted concept pixels').toBeDefined();
     await page.mouse.click(point!.x, point!.y);
-    const selected = page.getByLabel('Selected concept');
-    await expect(selected).not.toBeEmpty();
-    await expect(page.frameLocator('.learning-document iframe').getByRole('heading', { name: await selected.innerText(), exact: true })).toBeVisible();
+
+    const card = page.locator('.learning-card').last();
+    await expect(card).toBeVisible();
+    const label = (await card.getAttribute('aria-label'))!.replace(/ 文档$/, '');
+    await expect(card.frameLocator('iframe').getByRole('heading', { name: label, exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
     expect(errors).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath('overview.png') });
   });
 }
+
+test('carries the bundled example through every learning view the top bar offers', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/');
+  await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
+
+  // The bundled workspace seeds its targets from the author's orientation config, so the
+  // route entry is live from the first frame — no answer needed to reach the other views.
+  await expect(page.locator('[data-derivon-mode="learning"]')).not.toHaveAttribute('data-learning-targets', '');
+
+  await page.getByRole('button', { name: '路线学习' }).click();
+  // No solver ships with the web build, and the preview says so rather than inventing an order.
+  await expect(page.getByRole('heading', { name: '还没有可以走的路线' })).toBeVisible();
+  await expect(page.getByText('这个宿主还不能求解路线')).toBeVisible();
+  await expect(page.getByRole('button', { name: '开始学' })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('preview.png') });
+
+  await page.getByRole('button', { name: '先去大图里看看' }).click();
+  await expect(page.locator('.learning-browse')).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
+  const browsePoint = await page.evaluate(findCanvasPixel, { clientCoordinates: true });
+  await page.mouse.click(browsePoint!.x, browsePoint!.y);
+  const inspector = page.locator('.learning-inspect');
+  await expect(inspector).toBeVisible();
+  const label = (await inspector.getAttribute('aria-label'))!.replace(/ 文档$/, '');
+  await expect(inspector.frameLocator('iframe').getByRole('heading', { name: label, exact: true })).toBeVisible();
+
+  await inspector.getByRole('button', { name: '看关联 →' }).click();
+  await expect(page.locator('.learning-browse')).not.toHaveAttribute('data-browse-focus', '');
+  await page.getByRole('button', { name: '回到全图' }).click();
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  expect(errors).toEqual([]);
+});
 
 test('does not ship a guided tour', async ({ page }) => {
   await page.goto('/');
