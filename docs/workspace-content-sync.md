@@ -77,6 +77,40 @@ or arbitrary-file existence guarantee is claimed.
 - Deletion impact for configuration references is available as `orientationConceptImpact`
   plus an executable repair; the unified deletion plan and its GUI remain #52.
 
+## Delivered In #71
+
+- `src/workspace/references.ts` owns the supported reference syntax and what may be claimed
+  about it. Markdown inline links and images, Markdown link reference definitions, and
+  literal `href`/`src` on `<a>`, `<img>`, `<source>`, `<video>` and `<audio>` are read;
+  code spans, fenced code and HTML comments are text. A script element, a templated
+  attribute or a destination outside that grammar is reported as an uncertainty, never as
+  an absent reference. Existence is only asserted where effective content proves it: an
+  object document through the manifest, image bytes through accepted assets. A workspace
+  path that is neither is `unknown`, not dangling. Path resolution for links and images is
+  now this one function.
+- `updateObjectDocument` refuses the broken references a change introduces, and only those.
+  Damage already in the body stays reported and does not veto an unrelated legal edit.
+- `src/workspace/integrity.ts` owns deletion scope (ADR-0005: the derivations that go with
+  a concept), the cross-document link, shared-image and orientation impact of a deletion,
+  and the repair operations. `referenceImpact` reports unread, unreadable and uncertain
+  sources and marks itself incomplete, so #52 cannot read an unreadable source as proof
+  that nothing points at the object being deleted.
+- Repairs are named decisions: `retarget`, `unlink` and `remove`. A repair whose reference
+  is no longer where the plan says it is is refused rather than applied elsewhere, and an
+  image is never silently dropped by a link repair. `restoreObjectDocument` gives a missing
+  document a body only on request, and only overwrites an unreadable one as its own
+  confirmed decision; opening and saving never fill a document in.
+- `AuthoringCommands` gains `repairReferences`, `restoreDocument` and `referenceImpact`.
+  Analysis acquires every owned body through the shared reader first; repairs travel the
+  same accept/preview/autosave queue as any other content change, with no second writer.
+- The authoring GUI carries both entries: a damaged object document keeps the graph
+  browsable and offers a confirmed repair, and the object page reports what the document
+  points at, what points at it, and what could not be analysed. This is the repair path
+  #52's deletion requires; the deletion command and its own dialogue remain #52.
+- C3-03 and C3-04 are covered for object documents; C3-06 has its analysis and repair, and
+  is completed by #52's deletion. No owned-file inventory is added: the impact reports what
+  the manifest owns, so a file no document mentions is still #52's host capability gap.
+
 ## Markdown-Only, On-Demand Documents
 
 [ADR-0008](adr/0008-persist-markdown-not-rendered-pages.md) supersedes the dual-file

@@ -1,21 +1,19 @@
 import type { WorkspaceCommit } from '../ports/WorkspaceSource';
 import { imageMimeType } from './imageReference';
 import {
-  WORKSPACE_SCHEMA, generateObjectId, isValidWeight, parseWorkspaceManifest, serializeWorkspaceManifest,
+  WORKSPACE_SCHEMA, generateObjectId, isValidWeight, objectSourcePath, parseWorkspaceManifest, serializeWorkspaceManifest,
   type ConceptPoint, type DerivationHyperedge, type DocumentReference, type ManifestGraph, type TagDeclaration,
   type WorkspaceManifest,
 } from './manifest';
+import { introducedReferenceProblems } from './references';
+import type { ContentDiagnostic, TextResource } from './resource';
 import {
   ORIENTATION_PATH, orientationConceptReferences, orientationErrors, parseOrientationConfig,
   serializeOrientationConfig, validateOrientationConfig,
   type OrientationConceptReference, type OrientationConfig, type OrientationDiagnostic,
 } from './orientation';
 
-export type TextResource =
-  | { readonly status: 'ready'; readonly text: string }
-  | { readonly status: 'error'; readonly message: string };
-
-export type ContentDiagnostic = { readonly path: string; readonly message: string };
+export type { ContentDiagnostic, TextResource };
 
 /**
  * The orientation configuration as effective content sees it. `ready` is the only status a
@@ -88,9 +86,7 @@ export function objectDocumentPaths(reference: DocumentReference): readonly stri
   return [objectSourcePath(reference)];
 }
 
-export function objectSourcePath(reference: DocumentReference): string {
-  return `${reference.document}/document.md`;
-}
+export { objectSourcePath };
 
 export function objectDocumentSource(content: WorkspaceContent, reference: DocumentReference): TextResource | undefined {
   return content.documents[objectSourcePath(reference)];
@@ -147,7 +143,7 @@ export function parseWorkspaceContent(input: {
 
 type AnyObject = { readonly id: string; readonly data: DocumentReference & { readonly label?: string; readonly description?: string } };
 
-function findObject(content: WorkspaceContent, ref: { kind: 'concept' | 'derivation'; id: string }): AnyObject {
+export function findObject(content: WorkspaceContent, ref: { kind: 'concept' | 'derivation'; id: string }): AnyObject {
   const objects: readonly AnyObject[] = ref.kind === 'concept' ? content.graph.points : content.graph.hyperedges;
   const object = objects.find(({ id }) => id === ref.id);
   if (!object) throw new Error(`未找到${ref.kind === 'concept' ? '概念' : '推导'}: ${ref.id}`);
@@ -188,6 +184,12 @@ export function updateObjectDocument(content: WorkspaceContent, intent: UpdateDo
     acceptedAssets[path] = bytes;
     return { path, content: new Uint8Array(bytes) };
   });
+  const introduced = introducedReferenceProblems(
+    { ...content, assets: acceptedAssets }, sourcePath, existingSource.text, intent.source);
+  if (introduced.length) {
+    throw new Error(`这次修改引入了无法解析的引用：\n${introduced.slice(0, 4)
+      .map((item) => `「${item.raw}」${item.message ?? ''}`).join('\n')}`);
+  }
   const documentChanges = [{ path: sourcePath, content: intent.source }];
   const documents = { ...content.documents, ...Object.fromEntries(documentChanges.map(({ path, content: text }) =>
     [path, { status: 'ready' as const, text }])) };

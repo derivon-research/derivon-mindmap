@@ -121,6 +121,31 @@ describe('complete workspace content operations', () => {
     expect(Object.keys(updated.content.documents).every((path) => path.endsWith('/document.md'))).toBe(true);
   });
 
+  it('refuses to accept a dangling reference this change introduces', () => {
+    const made = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A' });
+    const object = { kind: 'concept' as const, id: made.objectId };
+    const accept = (source: string) => updateObjectDocument(made.content, { object, source });
+
+    expect(() => accept('[去哪](../concept-gone/document.md)')).toThrow(/concept-gone/);
+    expect(() => accept('[越界](../../../outside.md)')).toThrow(/引用/);
+    // Remote URLs, page anchors and workspace files this session has not read are not
+    // claimed to be broken, so ordinary writing is not blocked by them.
+    expect(() => accept('[远端](https://example.com) [锚](#x) ![图](assets/earlier.png)')).not.toThrow();
+  });
+
+  it('lets an unrelated edit through without repairing damage the body already carries', () => {
+    const made = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A' });
+    const object = { kind: 'concept' as const, id: made.objectId };
+    const damaged = updateObjectDocument({ ...made.content, documents: {
+      ...made.content.documents,
+      [`${made.content.graph.points[0].data.document}/document.md`]: { status: 'ready', text: '[旧损伤](../gone/document.md)' },
+    } }, { object, source: '[旧损伤](../gone/document.md)\n\n新段落' });
+    expect(damaged.changes.documents).toHaveLength(1);
+    // A second copy of the same broken link is a new one, and is refused.
+    expect(() => updateObjectDocument(damaged.content, { object,
+      source: '[旧损伤](../gone/document.md)\n\n[又一个](../gone/document.md)' })).toThrow(/gone/);
+  });
+
   it('rejects unknown objects, unreadable source, invalid images and asset collisions', () => {
     const made = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A' });
     const created = made.content;

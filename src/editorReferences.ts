@@ -1,4 +1,5 @@
 import Fuse from 'fuse.js';
+import { objectDocumentHref, resolveWorkspaceReference } from './workspace/references';
 
 export type EditorReferenceTarget = {
   kind: 'concept' | 'derivation';
@@ -9,70 +10,22 @@ export type EditorReferenceTarget = {
   searchTerms: string[];
 };
 
-function pathSegments(path: string): string[] {
-  return path.split('/').filter(Boolean);
-}
-
-function decodePathSegment(value: string): string | null {
-  try {
-    const decoded = decodeURIComponent(value);
-    return decoded.includes('/') || decoded.includes('\\') || decoded.includes('\0') ? null : decoded;
-  } catch {
-    return null;
-  }
-}
-
-function resolveWorkspacePath(documentPath: string, href: string): string | null {
-  const pathOnly = href.split(/[?#]/, 1)[0];
-  const parts = pathSegments(documentPath).slice(0, -1);
-  for (const encodedSegment of pathOnly.split('/')) {
-    if (!encodedSegment || encodedSegment === '.') continue;
-    const segment = decodePathSegment(encodedSegment);
-    if (segment === null) return null;
-    if (segment === '..') {
-      if (!parts.length) return null;
-      parts.pop();
-    } else {
-      parts.push(segment);
-    }
-  }
-  return parts.length ? parts.join('/') : null;
-}
-
-export function relativeReferenceHref(documentPath: string, targetDirectory: string): string {
-  const source = pathSegments(documentPath).slice(0, -1);
-  const target = [...pathSegments(targetDirectory), 'document.md'];
-  let shared = 0;
-  while (shared < source.length && shared < target.length && source[shared] === target[shared]) shared += 1;
-  const relative = [
-    ...Array.from({ length: source.length - shared }, () => '..'),
-    ...target.slice(shared).map((segment) => encodeURIComponent(segment)),
-  ];
-  return relative.join('/') || 'document.md';
-}
+/** The editor writes the same object links the workspace module reads. */
+export const relativeReferenceHref = objectDocumentHref;
 
 export function resolveReferenceTarget(
   documentPath: string,
   href: string,
   targets: readonly EditorReferenceTarget[],
 ): EditorReferenceTarget | null {
-  const value = href.trim();
-  if (!value || value.startsWith('#') || /^[a-z][a-z\d+.-]*:/i.test(value) || value.startsWith('/') || value.startsWith('\\')) {
-    return null;
-  }
-  const resolved = resolveWorkspacePath(documentPath, value);
-  if (!resolved) return null;
-  return targets.find((target) => `${target.document}/document.md` === resolved) ?? null;
+  const resolved = resolveWorkspaceReference(documentPath, href, '链接');
+  if (resolved.kind !== 'workspace') return null;
+  return targets.find((target) => `${target.document}/document.md` === resolved.path) ?? null;
 }
 
 export function validateEditorLinkHref(documentPath: string, href: string): string | null {
-  const value = href.trim();
-  if (!value) return '链接地址为空';
-  if (/^https?:\/\//i.test(value) || /^mailto:[^\s@]+@[^\s@]+$/i.test(value) || /^#[^\s]+$/.test(value)) return null;
-  if (/^[a-z][a-z\d+.-]*:/i.test(value) || value.startsWith('/') || value.startsWith('\\')) {
-    return '只允许 HTTP(S)、邮箱、页面锚点或工作区相对路径';
-  }
-  return resolveWorkspacePath(documentPath, value) ? null : '链接路径超出工作区范围或包含无效编码';
+  const resolved = resolveWorkspaceReference(documentPath, href, '链接');
+  return resolved.kind === 'invalid' ? resolved.reason : null;
 }
 
 export function searchReferenceTargets(

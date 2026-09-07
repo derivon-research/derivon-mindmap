@@ -491,3 +491,77 @@ describe('application-scoped workspace synchronization', () => {
     reopened.dispose();
   });
 });
+
+describe('object-document integrity through the shared session', () => {
+  /** Two concepts, A linking to B, opened the way a later session finds them: on disk. */
+  async function linkedWorkspace() {
+    const fixture = memorySource();
+    const first = await openWorkspaceSession(fixture.source, { authoring: fixture.source });
+    const a = first.authoring!.createConcept({ label: 'A' });
+    const b = first.authoring!.createConcept({ label: 'B' });
+    const directoryOf = (id: string) => first.reader.getSnapshot().content.graph.points
+      .find((point) => point.id === id)!.data.document;
+    const [directoryA, directoryB] = [directoryOf(a), directoryOf(b)];
+    await first.flush();
+    first.dispose();
+    const path = (directory: string) => `${directory}/document.md`;
+    fixture.files.set(path(directoryA), `[到 B](../${directoryB.split('/').pop()}/document.md)`);
+    fixture.commits.length = 0;
+    const session = await openWorkspaceSession(fixture.source, { authoring: fixture.source });
+    return { ...fixture, session, a, b, pathA: path(directoryA) };
+  }
+
+  it('acquires every owned body before reporting what a deletion would break', async () => {
+    const { session, a, b, pathA, commits } = await linkedWorkspace();
+    try {
+      const impact = await session.authoring!.referenceImpact({ conceptIds: [b] });
+      expect(impact.incoming.map((item) => [item.from.id, item.reference.use])).toEqual([[a, 'link']]);
+      expect(impact.complete).toBe(true);
+      // Analysis is a read: it publishes no content change and queues no write.
+      expect(commits).toHaveLength(0);
+      expect(session.reader.getSnapshot().content.documents[pathA]).toBeUndefined();
+    } finally { session.dispose(); }
+  });
+
+  it('reports an unreadable reference source instead of claiming a safe deletion', async () => {
+    const { session, b, pathA, source } = await linkedWorkspace();
+    source.readDocument = async (requested) => {
+      if (requested === pathA) throw new Error('Permission denied');
+      return '';
+    };
+    try {
+      const impact = await session.authoring!.referenceImpact({ conceptIds: [b] });
+      expect(impact.unreadable).toEqual([{ path: pathA, message: 'Permission denied' }]);
+      expect(impact.complete).toBe(false);
+    } finally { session.dispose(); }
+  });
+
+  it('accepts a reference repair as an ordinary content change on the shared save queue', async () => {
+    const { session, a, b, pathA, files, commits } = await linkedWorkspace();
+    try {
+      const impact = await session.authoring!.referenceImpact({ conceptIds: [b] });
+      session.authoring!.repairReferences({ object: { kind: 'concept', id: a },
+        repairs: [{ at: impact.incoming[0].reference.at, action: 'unlink' }] });
+      expect(session.reader.getSnapshot().saveState).toBe('pending');
+      await session.flush();
+      expect(files.get(pathA)).toBe('到 B');
+      expect(commits).toHaveLength(1);
+    } finally { session.dispose(); }
+  });
+
+  it('creates a missing document only on request, and reopens with it', async () => {
+    const { session, a, pathA, files, source } = await linkedWorkspace();
+    files.delete(pathA);
+    try {
+      expect(() => session.authoring!.restoreDocument({ object: { kind: 'concept', id: a } })).toThrow(/还没有读取/);
+      expect((await session.reader.readDocuments([pathA]))[pathA]).toEqual({ status: 'error', message: expect.any(String) });
+      session.authoring!.restoreDocument({ object: { kind: 'concept', id: a } });
+      await session.flush();
+      expect(files.get(pathA)).toBe('');
+    } finally { session.dispose(); }
+    const reopened = await openWorkspaceSession(source);
+    try {
+      expect((await reopened.reader.readDocuments([pathA]))[pathA]).toEqual({ status: 'ready', text: '' });
+    } finally { reopened.dispose(); }
+  });
+});

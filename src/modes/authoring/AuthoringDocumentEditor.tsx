@@ -8,6 +8,7 @@ import type { EditorReferenceTarget } from '../../editorReferences';
 import { resolveWorkspaceImageReference, IMAGE_FILE_EXTENSIONS, imageMimeType } from '../../workspace/imageReference';
 import { DocumentPreview } from '../../app/DocumentPreview';
 import { markdownToHtml } from '../../documentContent';
+import { DamagedDocumentRepair, DocumentReferences } from './DocumentIntegrity';
 import './document-editor.css';
 
 const DocumentEditor = lazy(async () => ({ default: (await import('../../DocumentEditor')).DocumentEditor }));
@@ -105,7 +106,11 @@ export function AuthoringDocumentEditor({ object, content, authoring, drafts, on
   }
   function discard() { drafts.delete(key); setValue(accepted); setFailure(''); authoring.protectDraft(`document:${key}`, false); }
   if (reference && !resource) return <p role="status">正在载入文档…</p>;
-  if (!reference || resource?.status !== 'ready') return <p role="alert">{resource?.status === 'error' ? resource.message : '对象源文档不存在'}</p>;
+  if (!reference) return <p role="alert">对象源文档不存在</p>;
+  if (resource?.status !== 'ready') {
+    return <DamagedDocumentRepair path={sourcePath} detail={resource?.status === 'error' ? resource.message : '对象源文档不存在'}
+      onRestore={(overwriteDamaged) => authoring.restoreDocument({ object, overwriteDamaged })} />;
+  }
   return <section className="authoring-document-editor" aria-label="对象文档编辑器">
     <header className="document-viewbar">
       <div role="group" aria-label="文档视图">
@@ -123,6 +128,8 @@ export function AuthoringDocumentEditor({ object, content, authoring, drafts, on
       <button type="button" disabled={!dirty || applying} onClick={discard}><Undo2 size={15} />放弃草稿</button>
       <button type="button" className="authoring-primary" disabled={!dirty || applying} onClick={() => { void apply(); }}><Check size={15} />{applying ? '正在应用…' : '应用修改'}</button>
     </footer>
+    <DocumentReferences content={content} object={object} sourcePath={sourcePath} source={accepted} authoring={authoring}
+      blocked={dirty ? '引用修正作用在已生效的文档上。先应用或放弃当前草稿，再修正引用。' : undefined} />
   </section>;
 }
 

@@ -1,10 +1,12 @@
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import {
   ORIENTATION_PATH, createConcept, createDerivation, objectSourcePath, parseWorkspaceContent,
+  referenceImpact, repairDocumentReferences, restoreObjectDocument,
   updateConceptTags, updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
-  type ContentChange, type CreateConceptIntent, type CreateDerivationIntent, type OrientationConfig, type TagDeclaration,
-  type TextResource, type UpdateConceptTagsIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
-  type WorkspaceContent,
+  type ContentChange, type CreateConceptIntent, type CreateDerivationIntent, type DeletionPlan, type ObjectRef,
+  type OrientationConfig, type ReferenceImpact, type RepairReferencesIntent, type RestoreDocumentIntent,
+  type TagDeclaration, type TextResource, type UpdateConceptTagsIntent, type UpdateDocumentIntent,
+  type UpdateMetadataIntent, type WorkspaceContent,
 } from '../workspace/index';
 
 type AcquiredContent = { readonly content: WorkspaceContent; readonly revision: string | null };
@@ -34,6 +36,15 @@ export type AuthoringCommands = {
   createConcept(intent: CreateConceptIntent): string;
   createDerivation(intent: CreateDerivationIntent): string;
   updateDocument(intent: UpdateDocumentIntent): void;
+  /** Rewrite chosen references in one document; never a silent one. */
+  repairReferences(intent: RepairReferencesIntent): void;
+  /** Give a missing or damaged object document a body again, because a user asked. */
+  restoreDocument(intent: RestoreDocumentIntent): void;
+  /**
+   * What a deletion would break. Every owned body is acquired through the shared reader
+   * first, so an unread document is not mistaken for one without references.
+   */
+  referenceImpact(plan: DeletionPlan): Promise<ReferenceImpact>;
   updateObjectMetadata(intent: UpdateMetadataIntent): void;
   updateConceptTags(intent: UpdateConceptTagsIntent): void;
   updateTagDeclarations(tags: readonly TagDeclaration[]): void;
@@ -266,6 +277,17 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
     await checkExternalChange();
   }
 
+  /** An acquired body is a legitimate basis for editing it, even before it is published. */
+  function editingBasis(object: ObjectRef): WorkspaceContent {
+    const content = snapshot.content;
+    const objects = object.kind === 'concept' ? content.graph.points : content.graph.hyperedges;
+    const owner = objects.find(({ id }) => id === object.id);
+    const path = owner && objectSourcePath(owner.data);
+    const cached = path && loadedDocuments.get(path);
+    return path && cached && !content.documents[path]
+      ? { ...content, documents: { ...content.documents, [path]: cached } } : content;
+  }
+
   function authoringCommands(): AuthoringCommands | undefined {
     if (!options.authoring) return undefined;
     const epoch = snapshot.authoringEpoch;
@@ -285,16 +307,16 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
         accept(change);
         return change.objectId;
       },
-      updateDocument(intent) {
+      updateDocument(intent) { assertCurrent(); accept(updateObjectDocument(editingBasis(intent.object), intent)); },
+      repairReferences(intent) { assertCurrent(); accept(repairDocumentReferences(editingBasis(intent.object), intent)); },
+      restoreDocument(intent) { assertCurrent(); accept(restoreObjectDocument(editingBasis(intent.object), intent)); },
+      async referenceImpact(plan) {
         assertCurrent();
         const content = snapshot.content;
-        const objects = intent.object.kind === 'concept' ? content.graph.points : content.graph.hyperedges;
-        const owner = objects.find(({ id }) => id === intent.object.id);
-        const path = owner && objectSourcePath(owner.data);
-        const cached = path && loadedDocuments.get(path);
-        const basis = path && cached && !content.documents[path]
-          ? { ...content, documents: { ...content.documents, [path]: cached } } : content;
-        accept(updateObjectDocument(basis, intent));
+        const documents = await readDocuments([...content.graph.points, ...content.graph.hyperedges]
+          .map(({ data }) => objectSourcePath(data)));
+        assertCurrent();
+        return referenceImpact({ ...content, documents: { ...content.documents, ...documents } }, plan);
       },
       updateObjectMetadata(intent) { assertCurrent(); accept(updateObjectMetadata(snapshot.content, intent)); },
       updateConceptTags(intent) { assertCurrent(); accept(updateConceptTags(snapshot.content, intent)); },

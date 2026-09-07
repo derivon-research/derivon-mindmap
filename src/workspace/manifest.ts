@@ -247,6 +247,11 @@ export function serializeWorkspaceManifest(manifest: WorkspaceManifest): string 
   }, null, 2)}\n`;
 }
 
+/** Markdown is the only persisted object document, and it lives here. */
+export function objectSourcePath(reference: DocumentReference): string {
+  return `${reference.document}/document.md`;
+}
+
 export function conceptTags(point: ConceptPoint): readonly string[] {
   return point.data.tags ?? [];
 }
