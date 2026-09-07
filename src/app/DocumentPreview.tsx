@@ -25,6 +25,11 @@ export function MarkdownPreview({ markdown, ...props }: Omit<ComponentProps<type
  * and whatever follows the document can never sit at its end. Measuring needs the frame's
  * own document, which needs `allow-same-origin` — safe only because scripts stay off, so
  * nothing in there can run and reach back out.
+ *
+ * What is measured is the body box, and what is watched is the body. The frame's own
+ * scroll height is clamped to the height we last gave it, so a page that measured tall
+ * once could never come back down: turning to a shorter document would leave screens of
+ * blank between its last line and whatever follows.
  */
 function useContentHeight(frame: RefObject<HTMLIFrameElement | null>, markup: string | undefined, enabled: boolean) {
   const [height, setHeight] = useState<number>();
@@ -33,23 +38,29 @@ function useContentHeight(frame: RefObject<HTMLIFrameElement | null>, markup: st
     if (!enabled || !iframe || markup === undefined) return;
     let observer: ResizeObserver | undefined;
     const measure = () => {
-      const document_ = iframe.contentDocument;
-      if (!document_?.documentElement) return;
+      const view = iframe.contentWindow;
+      const body = iframe.contentDocument?.body;
+      const root = iframe.contentDocument?.documentElement;
+      if (!view || !body || !root) return;
+      const style = view.getComputedStyle(body);
+      // Both boxes are content-sized, so both can shrink. The body's own margins may
+      // collapse out of it and only show up on the root, hence the larger of the two.
       setHeight(Math.ceil(Math.max(
-        document_.documentElement.scrollHeight,
-        document_.body?.scrollHeight ?? 0,
+        root.getBoundingClientRect().height,
+        body.getBoundingClientRect().height
+          + (Number.parseFloat(style.marginTop) || 0) + (Number.parseFloat(style.marginBottom) || 0),
       )));
     };
     const attach = () => {
       const view = iframe.contentWindow as (Window & { ResizeObserver?: typeof ResizeObserver }) | null;
-      const root = iframe.contentDocument?.documentElement;
-      if (!view?.ResizeObserver || !root) return;
+      const body = iframe.contentDocument?.body;
+      if (!view?.ResizeObserver || !body) return;
       measure();
       observer?.disconnect();
-      // Web fonts and KaTeX metrics land after the first paint and change the height.
+      // Web fonts, images and KaTeX metrics land after the first paint and change the height.
       const watch = new view.ResizeObserver(measure);
       observer = watch;
-      watch.observe(root);
+      watch.observe(body);
       void iframe.contentDocument?.fonts?.ready.then(measure).catch(() => {});
     };
     iframe.addEventListener('load', attach);

@@ -91,7 +91,7 @@
 .learning-reader-pager button:disabled { color: #cbd5e1; cursor: not-allowed; }
 /* The document is the page: one scroller, and the actions sit at the end of the text. */
 .learning-reader-page { flex: 1; min-height: 0; overflow-y: auto; }
-.learning-reader-page iframe { width: 100%; min-height: 240px; display: block; border: 0; }
+.learning-reader-page iframe { width: 100%; display: block; border: 0; }
 .learning-reader-actions { display: flex; flex-wrap: wrap; gap: 8px; max-width: 820px; margin: 0 auto; padding: 0 32px 40px; }
 .learning-reader-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 7px 14px; border: 1px solid var(--app-line); border-radius: 10px; background: #fff; color: var(--app-ink); font-size: 13px; }
 .learning-reader-actions button.is-chosen { border-color: #16a34a; background: #f0fdf4; color: #15803d; }
@@ -131,7 +131,7 @@
 .learning-text header p { margin: 0; color: var(--app-muted); font-size: 13px; }
 .learning-derivation, .learning-definition { min-height: 120px; margin-inline: 0; }
 /* Sized to its content by the preview, so the column is the only thing that scrolls. */
-.learning-derivation iframe, .learning-definition iframe { width: 100%; min-height: 240px; display: block; border: 0; }
+.learning-derivation iframe, .learning-definition iframe { width: 100%; display: block; border: 0; }
 .learning-definition { margin-top: 26px; padding-top: 16px; border-top: 2px solid var(--app-line); }
 .learning-definition h3 { margin: 0 32px 8px; font-size: 17px; }
 .learning-text-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }

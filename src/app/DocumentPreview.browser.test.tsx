@@ -26,8 +26,8 @@ it('grows an auto-height preview to its content so its page is the only scroller
   container.style.cssText = 'width:640px;height:400px';
   document.body.append(container);
   root = createRoot(container);
-  const long = Array.from({ length: 60 }, (_, index) => `<p>段落 ${index}</p>`).join('');
-  await act(async () => root!.render(<DocumentPreview html={long} title="Long" documentPath="docs/a/index.html" autoHeight />));
+  const paragraphs = (count: number) => Array.from({ length: count }, (_, index) => `<p>段落 ${index}</p>`).join('');
+  await act(async () => root!.render(<DocumentPreview html={paragraphs(60)} title="Long" documentPath="docs/a/index.html" autoHeight />));
   const frame = container.querySelector('iframe')!;
   // Measuring needs the frame's own document, which needs same-origin — and is only safe
   // because this frame runs nothing.
@@ -38,6 +38,16 @@ it('grows an auto-height preview to its content so its page is the only scroller
     const view = frame.contentDocument?.documentElement;
     return view ? view.scrollHeight - view.clientHeight : Number.NaN;
   }).toBeLessThanOrEqual(0);
+  const long = frame.getBoundingClientRect().height;
+
+  // Turning to a shorter document takes the height back, rather than leaving screens of
+  // blank between its last line and whatever follows the document.
+  await act(async () => root!.render(<DocumentPreview html={paragraphs(3)} title="Short" documentPath="docs/a/index.html" autoHeight />));
+  await expect.poll(() => frame.getBoundingClientRect().height).toBeLessThan(long / 4);
+  await expect.poll(() => {
+    const last = frame.contentDocument?.body?.lastElementChild;
+    return last ? frame.getBoundingClientRect().height - last.getBoundingClientRect().bottom : Number.NaN;
+  }).toBeLessThan(40);
 });
 
 it('never combines scripts with same-origin, whatever the caller asks for', async () => {
