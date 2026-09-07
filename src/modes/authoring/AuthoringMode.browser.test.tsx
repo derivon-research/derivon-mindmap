@@ -142,13 +142,13 @@ it('opens the deletion plan from the object page and leaves no page behind once 
   await page.getByRole('button', { name: '对象', exact: true }).click();
   await page.getByRole('button', { name: '删除这个对象' }).click();
 
-  await expect.element(page.getByRole('region', { name: '连同删除的文件' })).toBeInTheDocument();
+  await expect.element(page.getByRole('dialog', { name: '删除 数域' })).toBeInTheDocument();
   await page.getByRole('button', { name: '执行完整删除方案' }).click();
   await page.getByRole('button', { name: '确认删除「数域」' }).click();
 
   expect(authoring.deleteObjects).toHaveBeenCalledWith({ plan: { conceptIds: ['a'] }, repairs: [] });
   expect(onSelect).toHaveBeenLastCalledWith(null);
-  await expect.element(page.getByRole('region', { name: '删除这个对象' })).not.toBeInTheDocument();
+  await expect.element(page.getByRole('dialog', { name: '删除 数域' })).not.toBeInTheDocument();
 });
 
 it('prefills the derivation form from the relations pane without creating anything', async () => {

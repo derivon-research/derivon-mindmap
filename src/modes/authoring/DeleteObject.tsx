@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Compass, FileText, GitBranch, HardDrive, Image, Trash2, Undo2 } from 'lucide-react';
+import { AlertTriangle, Compass, FileText, GitBranch, HardDrive, Image, Trash2, Undo2, X } from 'lucide-react';
 import {
   deletionBlockers, isMarkdownPath, objectSourcePath,
   type DeletionPlan, type ObjectRef, type ReferenceImpact, type ReferenceRepairChoice, type WorkspaceContent,
@@ -17,22 +17,20 @@ const referenceKey = (item: ReferenceImpact['incoming'][number]) =>
   `${item.from.kind}:${item.from.id}:${item.reference.at.start}`;
 
 /**
- * Deleting an object, as the last thing the object page says about it. It sits under the
- * reference report because it is the same question one step further: that report says what
- * points at this object, and this says what goes when it goes.
+ * Deleting an object, as a dialogue you enter and either finish or leave — the same shape
+ * as 新建, because deletion is the same kind of decision: one thing, decided from start to
+ * end, with nothing else being edited meanwhile.
  *
  * Nothing here is a shortcut. The plan is assembled first — the derivations that cannot
  * survive it, every file the host reports under its directories, the references that would
  * be broken and the orientation configuration that names it — and the repairs the author
  * picks are carried out by the same deletion, in one change. A reference source that could
- * not be read leaves the object exactly where it is, with this entry still on it.
+ * not be read leaves the object exactly where it is, with its entry still on it.
  */
-export function DeleteObject({ content, object, authoring, open, onOpen, onClose, onDeleted, onOpenObject, blocked }: {
+export function DeleteObject({ content, object, authoring, onClose, onDeleted, onOpenObject, blocked }: {
   content: WorkspaceContent;
   object: ObjectRef;
   authoring: AuthoringCommands;
-  open: boolean;
-  onOpen: () => void;
   onClose: () => void;
   onDeleted: () => void;
   /** A source that could not be analysed is repaired where it lives, so the plan links to it. */
@@ -55,10 +53,14 @@ export function DeleteObject({ content, object, authoring, open, onOpen, onClose
     finally { setLoading(false); }
   }, [authoring, object]);
 
+  useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    setPreview(null); setRepairs({}); setRepairOrientation(false); setConfirming(false); setFailure('');
-    if (open) void load();
-  }, [load, open]);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); onClose(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const impact = preview?.impact;
   // What the plan would leave behind, judged by the same rule the deletion itself enforces:
@@ -93,18 +95,15 @@ export function DeleteObject({ content, object, authoring, open, onOpen, onClose
     } finally { setDeleting(false); }
   }
 
-  return <section className={`authoring-delete ${open ? 'is-open' : ''}`} aria-label="删除这个对象">
-    <header><Trash2 size={15} /><strong>删除这个对象</strong></header>
-    {!open
-      ? <>
-        <p className="authoring-delete-lead">
-          删除会连同它的所属文档与全部资产一起进行，并要求先处理指向它的引用。
-        </p>
-        <div className="document-repair-actions">
-          <button type="button" onClick={onOpen}>查看删除方案…</button>
-        </div>
-      </>
-      : <>
+  return <>
+    <div className="authoring-dialog-backdrop" onClick={onClose} />
+    <div className="authoring-dialog authoring-delete-dialog" role="dialog" aria-modal="true"
+      aria-label={`删除 ${objectLabel(content, object)}`}>
+      <header>
+        <div><span className="authoring-eyebrow">删除</span><strong>{objectLabel(content, object)}</strong></div>
+        <button type="button" className="authoring-icon" title="取消" aria-label="关闭删除方案" onClick={onClose}><X size={16} /></button>
+      </header>
+      <div className="authoring-dialog-body">
         {loading && <p role="status">正在取得删除方案…</p>}
         {failure && <p className="document-editor-error" role="alert">{failure}</p>}
         {blocked && <p className="document-references-note">{blocked}</p>}
@@ -115,24 +114,24 @@ export function DeleteObject({ content, object, authoring, open, onOpen, onClose
             return { ...current, [key]: choice };
           })}
           onRepairOrientation={setRepairOrientation} />}
-        <footer className="authoring-delete-commit">
-          {preview && outstanding.map((stop) => <p key={stop} className="authoring-delete-stop" role="alert">{stop}</p>)}
-          {preview && ready && <p className="authoring-delete-summary" role="status">{summarize(preview)}</p>}
-          {confirming
-            ? <div className="document-repair-actions">
-              <span className="authoring-delete-note">一次提交：图、所属文件与引用修正一起写入，不留孤儿文件。</span>
-              <button type="button" onClick={() => setConfirming(false)}>再看看</button>
-              <button type="button" className="authoring-danger" disabled={deleting}
-                onClick={() => { void run(); }}>{deleting ? '正在删除…' : `确认删除「${objectLabel(content, object)}」`}</button>
-            </div>
-            : <div className="document-repair-actions">
-              <button type="button" onClick={onClose}>取消</button>
-              <button type="button" className="authoring-danger" disabled={!ready}
-                onClick={() => setConfirming(true)}>执行完整删除方案</button>
-            </div>}
-        </footer>
-      </>}
-  </section>;
+      </div>
+      <footer className="authoring-delete-commit">
+        {preview && outstanding.map((stop) => <p key={stop} className="authoring-delete-stop" role="alert">{stop}</p>)}
+        {preview && ready && <p className="authoring-delete-summary" role="status">{summarize(preview)}</p>}
+        {confirming
+          ? <div className="document-repair-actions">
+            <button type="button" onClick={() => setConfirming(false)}>再看看</button>
+            <button type="button" className="authoring-danger" disabled={deleting}
+              onClick={() => { void run(); }}>{deleting ? '正在删除…' : `确认删除「${objectLabel(content, object)}」`}</button>
+          </div>
+          : <div className="document-repair-actions">
+            <button type="button" onClick={onClose}>取消</button>
+            <button type="button" className="authoring-danger" disabled={!ready}
+              onClick={() => setConfirming(true)}>执行完整删除方案</button>
+          </div>}
+      </footer>
+    </div>
+  </>;
 }
 
 function summarize({ impact, ownedFiles }: DeletionPreview): string {
@@ -168,20 +167,18 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
       <h3><Trash2 size={14} />会被删除的对象<small>{owners.length}</small></h3>
       <ul className="authoring-delete-list">
         {impact.scope.concepts.map((point) => <li key={point.id}>
-          <FileText size={13} /><strong>{point.data.label}</strong><small>概念</small>
+          <FileText size={13} /><strong>{point.data.label}</strong>
         </li>)}
         {impact.scope.derivations.map((edge) => <li key={edge.id}>
           <GitBranch size={13} /><strong>{objectLabel(content, { kind: 'derivation', id: edge.id })}</strong>
-          <small>{impact.scope.concepts.length ? '推导 · 少了这个端点就不成立' : '推导'}</small>
+          {impact.scope.concepts.length > 0 && <small>少了这个端点就不成立</small>}
         </li>)}
       </ul>
     </section>
 
     <section aria-label="连同删除的文件">
       <h3><HardDrive size={14} />连同删除的文件<small>{files.length}</small></h3>
-      {assets.length > 0 && <p className="document-references-note">
-        含 {assets.length} 个资产，其中可能有正文早已不再引用的文件——这份清单来自宿主，不是正文扫描。
-      </p>}
+      {assets.length > 0 && <p className="document-references-note">含 {assets.length} 个资产。</p>}
       {owners.map((owner) => <div key={owner.id} className="authoring-delete-files">
         <p><strong>{owner.name}</strong><code>{owner.directory}/</code></p>
         <ul>
@@ -193,14 +190,10 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
           {!(ownedFiles[owner.directory] ?? []).length && <li><small>这个目录下没有文件</small></li>}
         </ul>
       </div>)}
-      <p className="document-references-note">别的对象目录、工作区里其它文件和外部地址都不在这份清单里。</p>
     </section>
 
     {impact.incoming.length > 0 && <section aria-label="指向它的引用">
       <h3>指向它的引用<small>{impact.incoming.length}</small></h3>
-      <p className="document-references-note">
-        每一处都要自己选一种改法。应用不会替你挑，也不会顺手把别的文档里的链接退成文字。
-      </p>
       <ul className="document-reference-list">
         {impact.incoming.map((item) => {
           const key = referenceKey(item);
@@ -223,10 +216,7 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
 
     {(impact.unreadable.length > 0 || impact.uncertain.length > 0 || impact.unread.length > 0) && <section aria-label="无法分析的引用来源">
       <h3><AlertTriangle size={14} />无法分析的引用来源<small>{impact.unreadable.length + impact.uncertain.length + impact.unread.length}</small></h3>
-      <p className="document-references-note">
-        读不出来的文档不能当成「没有引用」。它修好之前，这个对象保留在这里，管理入口也不撤。
-        每一处都在它自己那份文档里修，不在这里。
-      </p>
+      <p className="document-references-note">每一处都在它自己那份文档里修，不在这里。</p>
       <ul className="document-reference-list">
         {impact.unreadable.map((item) => <li key={item.path}>
           <span className="document-reference-status is-unreadable">无法读取</span><code>{item.path}</code><span>{item.message}</span>
@@ -246,9 +236,6 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
 
     {impact.orientation.length > 0 && <section aria-label="开局配置引用">
       <h3><Compass size={14} />开局配置<small>{impact.orientation.length}</small></h3>
-      <p className="document-references-note">
-        删掉这个概念，开局配置里按名字存着它的地方就会悬空，整份配置失效。
-      </p>
       <ul className="document-reference-list">
         {impact.orientation.map((item, index) => <li key={`${item.conceptId}:${index}`}>
           <span className="document-reference-status">{orientationWhere(item.at)}</span>

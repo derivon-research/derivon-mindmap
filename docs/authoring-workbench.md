@@ -89,30 +89,30 @@ relations pane rather than here.
 
 ### Deleting an object
 
-Deletion is the last thing the object page says about an object, under the reference report
-it extends: that report says what this document points at and what points at it, and this
-says what goes when it goes. A quiet control in the title row scrolls to and opens that same
-section, so there is one place a deletion is decided and two ways to reach it. No graph view
-deletes anything (ADR-0002).
+Deletion is a dialogue, in the same frame as 新建 and for the same reason: it is one thing,
+decided from start to end, with nothing else being edited meanwhile. A quiet control in the
+object's title row opens it. No graph view deletes anything (ADR-0002).
 
 Opening it assembles the plan before offering anything: the derivations that cannot survive
 losing an endpoint, every file the host reports under each removed directory, the
 cross-document links and shared images that would be broken, and the places the orientation
 configuration names the concept. The file list comes from the host inventory rather than
 from the document text, so an asset the body no longer mentions is in it; nothing outside
-those directories ever is.
+those directories ever is. The plan states what it found and does not explain itself: a file
+list is a file list, and the rules behind it are documented here, not repeated on screen.
 
 Each incoming reference gets the same three named repairs the reference report offers —
 改指到, 取消链接, 删除引用 — but here they are written into the plan rather than applied on
 the spot, and the orientation configuration is taken out only when that is chosen too.
 Deletion stays disabled until every one of them is decided, and the whole plan — graph,
-owned files and repairs — is then one content change on one commit (ADR-0005). Cancelling,
-or moving to another object, discards the plan; nothing is written by looking at it.
+owned files and repairs — is then one content change on one commit (ADR-0005). Executing is
+itself two steps, the second naming what it deletes. Closing the dialogue discards the plan;
+nothing is written by looking at it.
 
 A reference source that could not be read or could not be analysed refuses the deletion
 outright: unreadable is not evidence of no references, so the object stays where it is with
-this entry still on it. Such a source is repaired where it lives, not here, so the plan lists
-it with the way to its document. Taking a concept out of the orientation configuration removes
+its entry still on it. Such a source is repaired where it lives, not here, so the plan lists
+it with the way to its document, and taking that way closes the dialogue. Taking a concept out of the orientation configuration removes
 an action that named nothing else along with it — a configuration carrying an action that
 resolves to no concept could not be accepted at all — while its option and question stay, to be
 dealt with in the orientation view. A failed deletion re-reads the plan and reports the failure

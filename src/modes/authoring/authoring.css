@@ -209,17 +209,14 @@ input.authoring-description-line { width: 100%; }
   .authoring-create-columns, .authoring-kind-choice { grid-template-columns: 1fr; }
 }
 
-/* Deleting an object: the last thing the object page says about it, under the reference
-   report it extends. Quiet until it is opened; the plan itself is the loud part. */
+/* Deleting an object: a dialogue, the same frame as 新建, so the plan is the only thing on
+   screen while it is being decided. */
 .authoring-title-delete { color: #9aa1ab; }
 .authoring-title-delete:hover { color: #8c3a2c; }
 .authoring-danger { border-color: #a8453a !important; background: #a8453a !important; color: #fff !important; }
 .authoring-danger:disabled { opacity: 0.45; }
-.authoring-delete { margin: 4px 0 22px; padding: 14px; border: 1px solid #e0cbc4; border-radius: 6px; background: #fdf9f8; }
-.authoring-delete.is-open { background: #fff; }
-.authoring-delete > header { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; color: #8c3a2c; }
-.authoring-delete > header strong { font-size: 13.5px; }
-.authoring-delete-lead { margin: 0 0 10px; color: #5f6a63; font-size: 12.5px; }
+.authoring-delete-dialog > header { border-bottom-color: #e0cbc4; }
+.authoring-delete-dialog > header .authoring-eyebrow { color: #8c3a2c; }
 .authoring-delete-plan { display: grid; gap: 12px; }
 .authoring-delete-plan > section { padding: 10px 12px; border: 1px solid var(--app-line); border-radius: 5px; background: #fff; }
 .authoring-delete-plan h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 8px; font-size: 13px; }
@@ -235,8 +232,8 @@ input.authoring-description-line { width: 100%; }
 .authoring-delete-files li em { color: #8a6d3b; font-style: normal; font-size: 10.5px; }
 .authoring-delete-files code, .authoring-delete-plan code { padding: 1px 5px; border-radius: 3px; background: #f4f5f7; font: 11.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 .authoring-delete-chosen { color: #18705e; font-size: 11.5px; }
-.authoring-delete-commit { display: grid; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--app-line); }
+.authoring-delete-commit { display: grid; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--app-line); background: #fbfcfd; }
+.authoring-delete-commit .document-repair-actions { justify-content: flex-end; }
 .authoring-delete-stop { margin: 0; padding: 7px 10px; border: 1px solid #e0cbc4; border-radius: 5px; background: #fdf3f1; color: #8c3a2c; font-size: 12px; line-height: 1.6; }
 .authoring-delete-summary { margin: 0; padding: 7px 10px; border: 1px solid #cfe0da; border-radius: 5px; background: #f2f8f5; color: #215f52; font-size: 12px; }
-.authoring-delete-note { margin-right: auto; color: #8a6d3b; font-size: 12px; }
 .document-reference-status.is-incoming { border-color: #c3ccc6; color: #46536b; }

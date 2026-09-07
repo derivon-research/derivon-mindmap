@@ -53,10 +53,10 @@ afterEach(async () => {
 });
 
 function render(workspace: WorkspaceContent, authoring: AuthoringCommands, onDeleted = vi.fn(), blocked?: string,
-  onOpenObject = vi.fn()) {
+  onOpenObject = vi.fn(), onClose = vi.fn()) {
   root = createRoot(container);
   act(() => root?.render(<DeleteObject content={workspace} object={{ kind: 'concept', id: 'c-b' }}
-    authoring={authoring} open onOpen={vi.fn()} onClose={vi.fn()} onDeleted={onDeleted}
+    authoring={authoring} onClose={onClose} onDeleted={onDeleted}
     onOpenObject={onOpenObject} blocked={blocked} />));
   return onDeleted;
 }
@@ -67,9 +67,11 @@ function commands(preview: () => DeletionPreview, overrides: Partial<AuthoringCo
 
 it('names the derivations, the owned documents and the assets no body mentions', async () => {
   const workspace = linked();
-  render(workspace, commands(() => ({ impact: referenceImpact(workspace, { conceptIds: ['c-b'] }), ownedFiles })));
+  const onClose = vi.fn();
+  render(workspace, commands(() => ({ impact: referenceImpact(workspace, { conceptIds: ['c-b'] }), ownedFiles })),
+    vi.fn(), undefined, vi.fn(), onClose);
 
-  await expect.element(page.getByRole('region', { name: '会被删除的对象' })).toBeInTheDocument();
+  await expect.element(page.getByRole('dialog', { name: '删除 向量空间' })).toBeInTheDocument();
   const removed = page.getByRole('region', { name: '会被删除的对象' });
   await expect.element(removed.getByText('数域 → 向量空间')).toBeInTheDocument();
   expect(container.textContent).toContain('少了这个端点就不成立');
@@ -77,8 +79,9 @@ it('names the derivations, the owned documents and the assets no body mentions',
   const files = page.getByRole('region', { name: '连同删除的文件' });
   await expect.element(files.getByText('docs/concept-b/assets/never-mentioned.png')).toBeInTheDocument();
   await expect.element(files.getByText('docs/derivation-1/document.md')).toBeInTheDocument();
-  expect(container.textContent).toContain('这份清单来自宿主，不是正文扫描');
-  expect(container.textContent).toContain('别的对象目录、工作区里其它文件和外部地址都不在这份清单里');
+
+  await page.getByRole('button', { name: '关闭删除方案' }).click();
+  expect(onClose).toHaveBeenCalled();
 });
 
 it('will not delete until every incoming reference has a chosen repair, then sends them as one plan', async () => {
@@ -100,8 +103,9 @@ it('will not delete until every incoming reference has a chosen repair, then sen
   await page.getByRole('button', { name: '纳入方案' }).click();
   await expect.element(page.getByRole('button', { name: '执行完整删除方案' })).toBeEnabled();
 
+  // Executing is a two-step decision, and the second step names what it deletes.
   await page.getByRole('button', { name: '执行完整删除方案' }).click();
-  expect(container.textContent).toContain('不留孤儿文件');
+  await expect.element(page.getByRole('button', { name: '再看看' })).toBeInTheDocument();
   await page.getByRole('button', { name: '确认删除「向量空间」' }).click();
 
   expect(authoring.deleteObjects).toHaveBeenCalledWith({

@@ -139,9 +139,9 @@ or arbitrary-file existence guarantee is claimed.
   acquire every owned body through the shared reader and the inventory through the port
   before deciding anything; the deletion re-acquires rather than trusting the preview the
   author has been reading.
-- The authoring GUI carries the plan at the foot of the object page, under the reference
-  report it extends. Repairs are chosen into the plan rather than applied on the spot, and
-  the deletion stays refused until every one of them is decided. See
+- The authoring GUI carries the plan as a dialogue opened from the object's title row, in
+  the same frame as creation. Repairs are chosen into the plan rather than applied on the
+  spot, and the deletion stays refused until every one of them is decided. See
   [authoring workbench](authoring-workbench.md).
 - Desktop tests on a real temporary filesystem cover the inventory, its refusals, a
   multi-file deletion whose rollback succeeds, and one whose rollback also fails; neither is
