@@ -79,6 +79,11 @@ npm run bench:rendering
 VITE_PERF_SIZE=2000 npm run bench:rendering
 ```
 
+`npm test` skips these three cases: they are wall-clock budgets whose headroom on a shared
+CI runner is smaller than that runner's timing noise, so running them there reports the
+machine rather than the renderer. They run from the command above, and from the manual
+[runtime performance workflow](runtime-performance.md). The budgets are unchanged.
+
 The benchmark consumes `benchmarks/fixtures/generated-workspace.ts`, not a substitute
 renderer or fixture. Three mounts each measure open-to-painted-ready (maximum 2500 ms)
 and three native pointer selections through the next paint (maximum 200 ms). Hover-in

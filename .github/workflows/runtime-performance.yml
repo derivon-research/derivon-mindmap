@@ -36,6 +36,14 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      # The rendering module's own budgets. Kept out of the correctness suite, so this is
+      # the only place CI measures them; like the benchmark below, a breach is reported
+      # rather than thrown, because a shared runner cannot prove a regression on its own.
+      - name: Measure rendering module performance
+        id: rendering-benchmark
+        continue-on-error: true
+        run: npm run bench:rendering
+
       - name: Measure runtime performance
         id: benchmark
         continue-on-error: true
