@@ -7,6 +7,36 @@ The runtime performance benchmark treats the application as a black box. Both th
 
 The limits are fixed. Do not raise them to make a rewrite pass.
 
+## Authoring edits
+
+The same 200 ms interaction budget covers the authoring side's edits, measured by
+`npm run bench:authoring` rather than through the test-hook transport below. The transport
+serves the v0.4.2 application on `legacy.html`, which has no authoring side; the v1 authoring
+surface exists only in the desktop module graph and is driven here through the real workbench,
+a real `WorkspaceSession` and the real content operations, so a number covers validating the
+change, re-deriving effective content and repainting the object page.
+
+Three edits are measured at the same generated scale as the runtime benchmark
+(`VITE_PERF_SIZE`, default 1000 concepts and 1000 derivations), each from the input to the
+second animation frame after it:
+
+- object metadata: renaming a concept;
+- derivation structure: committing premises, result and learning cost as one change;
+- deletion: executing a confirmed deletion plan.
+
+The measurement is taken on the object view. A hidden overview is not laid out again per
+change (ADR-0006), so including it would measure a cost the product does not pay.
+
+Assembling a deletion plan is reported alongside these but is not held to the budget: it
+acquires every owned document body and asks the host for a file inventory, which is a
+deliberate action with a progress status rather than a keystroke. Its reported number comes
+from an in-memory source and therefore says what the application costs, not what a filesystem
+costs.
+
+Measured on an Apple silicon laptop at 1000 concepts, four runs: renaming 42–44 ms, derivation
+structure 88–103 ms, deletion 98–99 ms, plan assembly 53–64 ms. Like the rendering benchmark,
+`npm test` skips this: a shared runner's timing noise is larger than the headroom.
+
 ## Event transport
 
 The application dispatches `CustomEvent` instances on `window` with the event name `derivon:test-hook`. A benchmark listener must be installed before application scripts run so that it cannot miss the initial event. The application also appends the same details to the document-local `window.__derivonTestHooksV1` buffer; WebDriver hosts that cannot install a preload listener use this buffer.

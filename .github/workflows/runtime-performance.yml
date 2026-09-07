@@ -44,6 +44,13 @@ jobs:
         continue-on-error: true
         run: npm run bench:rendering
 
+      # The authoring side is not on the test-hook transport: it lives only in the desktop
+      # module graph, so its budget is measured through its own surface.
+      - name: Measure authoring edit performance
+        id: authoring-benchmark
+        continue-on-error: true
+        run: npm run bench:authoring
+
       - name: Measure runtime performance
         id: benchmark
         continue-on-error: true
