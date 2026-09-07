@@ -53,10 +53,9 @@ export type ConceptReaderProps = {
 /**
  * Reading a concept: the authoring side's document surface with the editing taken out.
  *
- * The document gets the whole pane rather than a scrolling excerpt inside a card — a
- * definition read through a letterbox is not read. Everything that can be decided about
- * the concept is decided here too, in both directions: a target can be dropped and a
- * concept the learner claimed can be un-claimed.
+ * The document is the page, not a card on it — one scroller, and what the learner can do
+ * with the concept sits at the end of the text where they arrive at it. Paging between the
+ * documents opened in this view is in the header, so the page itself ends with the reading.
  */
 export function ConceptReader({
   active, content, conceptId, pages, at, onGo, onClose, closeLabel, isTarget, isKnown,
@@ -67,6 +66,13 @@ export function ConceptReader({
 
   return <aside className="learning-reader" aria-label={`${label} 文档`}>
     <header className="learning-reader-head">
+      <nav className="learning-reader-pager" aria-label="文档翻页">
+        <button type="button" className="learning-icon-button" title="上一页" aria-label="上一页"
+          disabled={at <= 0} onClick={() => onGo(at - 1)}><ChevronLeft size={15} aria-hidden="true" /></button>
+        <span>第 {at + 1} / {pages.length} 页</span>
+        <button type="button" className="learning-icon-button" title="下一页" aria-label="下一页"
+          disabled={at >= pages.length - 1} onClick={() => onGo(at + 1)}><ChevronRight size={15} aria-hidden="true" /></button>
+      </nav>
       <strong>{label}</strong>
       {isTarget && <span className="learning-reader-mark is-target">目标</span>}
       {isKnown && <span className="learning-reader-mark is-known">已会</span>}
@@ -74,33 +80,22 @@ export function ConceptReader({
         onClick={onClose}><X size={15} aria-hidden="true" /></button>
     </header>
 
-    <div className="learning-reader-body">
+    <div className="learning-reader-page">
       <ObjectDocument title={label} content={content} object={concept} active={active}
         readAsset={readAsset} readDocuments={readDocuments} />
+      <footer className="learning-reader-actions">
+        <button type="button" className={isTarget ? 'is-chosen' : ''} aria-pressed={isTarget}
+          onClick={() => onToggleTarget(conceptId)}>
+          <Target size={15} aria-hidden="true" />{isTarget ? '取消目标' : '加进目标'}
+        </button>
+        <button type="button" className={isKnown ? 'is-chosen' : ''} aria-pressed={isKnown}
+          onClick={() => onToggleKnown(conceptId)}>
+          <Check size={15} aria-hidden="true" />{isKnown ? '其实我不会' : '这个我会'}
+        </button>
+        {onFocus && <button type="button" onClick={() => onFocus(conceptId)}>
+          <Network size={15} aria-hidden="true" />看关联 →
+        </button>}
+      </footer>
     </div>
-
-    <nav className="learning-reader-pager" aria-label="文档翻页">
-      <button type="button" disabled={at <= 0} onClick={() => onGo(at - 1)}>
-        <ChevronLeft size={14} aria-hidden="true" />上一页
-      </button>
-      <span>第 {at + 1} / {pages.length} 页</span>
-      <button type="button" disabled={at >= pages.length - 1} onClick={() => onGo(at + 1)}>
-        下一页<ChevronRight size={14} aria-hidden="true" />
-      </button>
-    </nav>
-
-    <footer className="learning-reader-actions">
-      <button type="button" className={isTarget ? 'is-chosen' : ''} aria-pressed={isTarget}
-        onClick={() => onToggleTarget(conceptId)}>
-        <Target size={15} aria-hidden="true" />{isTarget ? '取消目标' : '加进目标'}
-      </button>
-      <button type="button" className={isKnown ? 'is-chosen' : ''} aria-pressed={isKnown}
-        onClick={() => onToggleKnown(conceptId)}>
-        <Check size={15} aria-hidden="true" />{isKnown ? '其实我不会' : '这个我会'}
-      </button>
-      {onFocus && <button type="button" onClick={() => onFocus(conceptId)}>
-        <Network size={15} aria-hidden="true" />看关联 →
-      </button>}
-    </footer>
   </aside>;
 }

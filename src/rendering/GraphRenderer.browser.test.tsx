@@ -98,7 +98,12 @@ it('draws selectable derivations in route, including an empty tail and colliding
   await expect.poll(() => conceptPixel({ color: [255, 249, 247] })).toBeDefined();
   await page.getByRole('img').click({ position: conceptPixel({ color: [255, 249, 247] })! });
   expect(onEvent).toHaveBeenCalledWith({ type: 'select', object: { kind: 'derivation', id: 'same-id' } });
-  expect(colorBounds([250, 251, 249])).toBeDefined();
+  // It runs down the page, so its ports are above and below the card, not beside it.
+  const card = colorBounds([250, 251, 249])!;
+  const cardX = (card.left + card.right) / 2;
+  expect(hasColorNear([164, 79, 63], cardX, card.top)).toBe(true);
+  expect(hasColorNear([47, 112, 135], cardX, card.bottom)).toBe(true);
+  expect(hasColorNear([164, 79, 63], card.left, (card.top + card.bottom) / 2)).toBe(false);
 });
 
 it('restores neighbourhood cards, visual ports, and selected outlines', async () => {
@@ -279,10 +284,11 @@ it('lays out replacement topology inside a retained view kind', async () => {
     { id: 'a', label: 'A', marks: [] }, { id: 'b', label: 'B', marks: ['known'] },
   ], hyperedges: [{ id: 'h', tails: ['a'], head: 'b', weight: 1, marks: [] }] }} onEvent={onEvent} />));
   await expect.poll(() => conceptPixel({ color: knownCard })).toBeDefined();
+  // A route runs down the page, so the replacement's second step is below the first.
   await expect.poll(() => {
-    const left = conceptPixel({ color: card, center: true });
-    const right = conceptPixel({ color: knownCard, center: true });
-    return left && right ? right.x - left.x : 0;
+    const first = conceptPixel({ color: card, center: true });
+    const second = conceptPixel({ color: knownCard, center: true });
+    return first && second ? second.y - first.y : 0;
   }).toBeGreaterThan(180);
   await page.getByRole('img').click({ position: conceptPixel({ color: knownCard, center: true })! });
   expect(onEvent).toHaveBeenCalledWith({ type: 'select', object: { kind: 'concept', id: 'b' } });

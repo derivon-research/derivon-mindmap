@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react';
 import { markdownToHtml } from '../documentContent';
 import { resolveWorkspaceImageReference, imageMimeType } from '../workspace/imageReference';
 import type { ResolvedEditorImage, EditorImageResolver } from '../editorImage';
@@ -18,9 +18,52 @@ export function MarkdownPreview({ markdown, ...props }: Omit<ComponentProps<type
   return <DocumentPreview {...props} html={html} />;
 }
 
+/**
+ * Grow the frame to its content so the page it sits on is the only thing that scrolls.
+ *
+ * A document boxed inside its own scroller reads as a widget, not a page: two scrollbars,
+ * and whatever follows the document can never sit at its end. Measuring needs the frame's
+ * own document, which needs `allow-same-origin` — safe only because scripts stay off, so
+ * nothing in there can run and reach back out.
+ */
+function useContentHeight(frame: RefObject<HTMLIFrameElement | null>, markup: string | undefined, enabled: boolean) {
+  const [height, setHeight] = useState<number>();
+  useEffect(() => {
+    const iframe = frame.current;
+    if (!enabled || !iframe || markup === undefined) return;
+    let observer: ResizeObserver | undefined;
+    const measure = () => {
+      const document_ = iframe.contentDocument;
+      if (!document_?.documentElement) return;
+      setHeight(Math.ceil(Math.max(
+        document_.documentElement.scrollHeight,
+        document_.body?.scrollHeight ?? 0,
+      )));
+    };
+    const attach = () => {
+      const view = iframe.contentWindow as (Window & { ResizeObserver?: typeof ResizeObserver }) | null;
+      const root = iframe.contentDocument?.documentElement;
+      if (!view?.ResizeObserver || !root) return;
+      measure();
+      observer?.disconnect();
+      // Web fonts and KaTeX metrics land after the first paint and change the height.
+      const watch = new view.ResizeObserver(measure);
+      observer = watch;
+      watch.observe(root);
+      void iframe.contentDocument?.fonts?.ready.then(measure).catch(() => {});
+    };
+    iframe.addEventListener('load', attach);
+    attach();
+    return () => { iframe.removeEventListener('load', attach); observer?.disconnect(); };
+  }, [enabled, frame, markup]);
+  return enabled ? height : undefined;
+}
+
 /** Sandboxed object HTML; workspace images use the reader, never a native URL. */
-export function DocumentPreview({ html, title, documentPath, readAsset, resolveImage, className, allowScripts = false }: {
+export function DocumentPreview({ html, title, documentPath, readAsset, resolveImage, className, allowScripts = false, autoHeight = false }: {
   html: string; title: string; documentPath: string; className?: string; allowScripts?: boolean;
+  /** Size the frame to its content instead of its container, for a page that scrolls as one. */
+  autoHeight?: boolean;
   readAsset?: (path: string) => Promise<Uint8Array>; resolveImage?: EditorImageResolver;
 }) {
   const [prepared, setPrepared] = useState<{
@@ -65,5 +108,13 @@ export function DocumentPreview({ html, title, documentPath, readAsset, resolveI
   }, [documentPath, html, readAsset, resolveImage]);
   const current = prepared?.source === html && prepared?.path === documentPath
     && prepared?.reader === readAsset && prepared?.resolver === resolveImage;
-  return <iframe title={title} className={className} aria-busy={!current} sandbox={allowScripts ? 'allow-scripts' : ''} srcDoc={current ? prepared.markup : ''} />;
+  const frame = useRef<HTMLIFrameElement>(null);
+  // Scripts and same-origin together would take the sandbox apart, so measuring is only
+  // ever offered to the frames that run nothing.
+  const measured = autoHeight && !allowScripts;
+  const height = useContentHeight(frame, current ? prepared.markup : undefined, measured);
+  return <iframe ref={frame} title={title} className={className} aria-busy={!current}
+    sandbox={allowScripts ? 'allow-scripts' : measured ? 'allow-same-origin' : ''}
+    srcDoc={current ? prepared.markup : ''}
+    style={height === undefined ? undefined : { height }} />;
 }

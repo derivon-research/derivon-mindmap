@@ -57,9 +57,9 @@ of it produces a 499-step route — and widening the rail onto a subgraph that s
 length; a benchmark aimed there would measure the renderer through the panel rather than the
 panel. The concept count, which is the scale the budgets are stated at, stays at 1000.
 
-Measured on an Apple silicon laptop at 1000 concepts, four runs: adding a target 81–110 ms,
-removing one 99–102 ms, widening the rail 136–138 ms, collapsing it 81 ms, hiding it 83 ms.
-`npm test` skips this for the same reason as the benchmarks above.
+Measured on an Apple silicon laptop at 1000 concepts, four runs: adding a target 81–124 ms,
+removing one 99–100 ms, widening the rail 137–155 ms, collapsing it 81–82 ms, hiding it
+83 ms. `npm test` skips this for the same reason as the benchmarks above.
 
 ## Event transport
 

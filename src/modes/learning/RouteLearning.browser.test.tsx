@@ -126,6 +126,19 @@ it('hides a side panel to a recall tab, and never lets the textbook lose width t
   expect(container.querySelector('.learning-route')?.className).toContain('rail-expanded');
 });
 
+it('brings back only the panel the learner asked for when both are put away', async () => {
+  await render();
+  await click('.learning-rail button[aria-label="隐藏"]');
+  await click('.learning-tutor button[aria-label="隐藏"]');
+  expect(container.querySelector('.learning-route')?.className).toContain('tutor-hidden');
+
+  await page.getByRole('button', { name: '路线' }).click();
+  await expect.element(page.getByText('折叠态 · 只排步骤')).toBeVisible();
+  // The tutor was closed by hand, so nothing else gets to reopen it.
+  expect(container.querySelector('.learning-tutor')).toBeNull();
+  await expect.element(page.getByRole('button', { name: 'Agent 对话' })).toBeVisible();
+});
+
 it('draws the route subgraph with the learner\'s position on it, once the rail is widened', async () => {
   await render();
   await click('.learning-rail button[aria-label="展开子图"]');

@@ -3,7 +3,8 @@
  *
  * The rule that makes it work is here rather than in the component, because it is the
  * whole point of three states: the textbook in the middle never gives up width. Widening
- * one side hides the other; letting an expanded side back down restores the one it hid.
+ * one side hides the other; letting that side back down returns the one it hid. A panel
+ * the learner closed themselves is not returned by anything but asking for it.
  */
 export type PanelState = 'expanded' | 'default' | 'hidden';
 export type PanelSide = 'tutor' | 'rail';
@@ -14,7 +15,9 @@ export const DEFAULT_PANELS: PanelLayout = { tutor: 'default', rail: 'default' }
 export function setPanel(layout: PanelLayout, side: PanelSide, state: PanelState): PanelLayout {
   const other: PanelSide = side === 'tutor' ? 'rail' : 'tutor';
   if (state === 'expanded') return { ...layout, [side]: state, [other]: 'hidden' } as PanelLayout;
-  const restored = state !== 'hidden' && layout[other] === 'hidden' ? 'default' : layout[other];
+  // Only the side that did the hiding gives the other side back.
+  const restored = layout[side] === 'expanded' && layout[other] === 'hidden' && state !== 'hidden'
+    ? 'default' : layout[other];
   return { ...layout, [side]: state, [other]: restored } as PanelLayout;
 }
 

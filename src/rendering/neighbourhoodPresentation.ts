@@ -3,6 +3,11 @@
  * them. Named for the neighbourhood it was drawn for, and also what a route is drawn with
  * — a route is read the way an author reads a neighbourhood, so the two share one look
  * rather than each getting a treatment of its own.
+ *
+ * The one thing that differs is which way the flow runs. An author reads a neighbourhood
+ * left to right; a learner reads a route down the page, one step under the last. Ports and
+ * curves follow that axis, because premises entering a card from its side while the cards
+ * are stacked vertically is what makes a route look like a tangle.
  */
 import { Cubic, Diamond, Label, Rect, register } from '@antv/g6';
 import type { Point, RectStyleProps } from '@antv/g6';
@@ -14,7 +19,11 @@ export const NEIGHBOURHOOD_EDGE = 'mindmap-neighbourhood-edge';
 
 const MONO_FONT = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
+/** Which way the flow runs: `x` left to right, `y` top to bottom. */
+export type CardAxis = 'x' | 'y';
+
 type ConceptStyle = RectStyleProps & { identityText?: string };
+type CurveStyle = { cardAxis?: CardAxis };
 
 class NeighbourhoodConceptNode extends Rect {
   render(attributes = this.parsedAttributes, container: Parameters<Rect['render']>[1] = this): void {
@@ -40,15 +49,24 @@ class NeighbourhoodConceptNode extends Rect {
   }
 }
 
-// v0.4 control distances, kept local so geometry never depends on the legacy app.
-function cubicControls(source: Point, target: Point): [Point, Point] {
-  const distance = Math.abs(target[0] - source[0]);
-  if (target[0] >= source[0]) {
+// v0.4 control distances, kept local so geometry never depends on the legacy app. The
+// same numbers along whichever axis the cards are laid out on.
+function cubicControls(source: Point, target: Point, axis: CardAxis): [Point, Point] {
+  const main = axis === 'y' ? 1 : 0;
+  const cross = main === 0 ? 1 : 0;
+  const distance = Math.abs(target[main] - source[main]);
+  const point = (from: Point, offset: number): Point => {
+    const control: [number, number] = [0, 0];
+    control[main] = from[main] + offset;
+    control[cross] = from[cross];
+    return control;
+  };
+  if (target[main] >= source[main]) {
     const offset = Math.max(42, distance * 0.48);
-    return [[source[0] + offset, source[1]], [target[0] - offset, target[1]]];
+    return [point(source, offset), point(target, -offset)];
   }
   const outward = Math.max(70, distance * 0.42 + 44);
-  return [[source[0] + outward, source[1]], [target[0] - outward, target[1]]];
+  return [point(source, outward), point(target, -outward)];
 }
 
 class NeighbourhoodCubicEdge extends Cubic {
@@ -59,7 +77,8 @@ class NeighbourhoodCubicEdge extends Cubic {
     _curveOffset: [number, number],
     controlPoints?: [Point, Point],
   ): [Point, Point] {
-    return controlPoints?.length === 2 ? controlPoints : cubicControls(sourcePoint, targetPoint);
+    if (controlPoints?.length === 2) return controlPoints;
+    return cubicControls(sourcePoint, targetPoint, (this.parsedAttributes as CurveStyle).cardAxis ?? 'x');
   }
 }
 
@@ -67,9 +86,11 @@ register('node', NEIGHBOURHOOD_CONCEPT, NeighbourhoodConceptNode);
 register('node', NEIGHBOURHOOD_DERIVATION, Diamond);
 register('edge', NEIGHBOURHOOD_EDGE, NeighbourhoodCubicEdge);
 
-export function neighbourhoodNodeStyle(kind: 'concept' | 'derivation', marks: readonly GraphMark[]) {
+export function neighbourhoodNodeStyle(kind: 'concept' | 'derivation', marks: readonly GraphMark[], axis: CardAxis = 'x') {
   const concept = kind === 'concept';
   const has = (mark: GraphMark) => marks.includes(mark);
+  const incoming = axis === 'y' ? 'top' as const : 'left' as const;
+  const outgoing = axis === 'y' ? 'bottom' as const : 'right' as const;
   return {
     size: concept ? [136, 64] as [number, number] : [54, 54] as [number, number],
     fill: has('completed') ? '#f3f8f4' : has('known') ? '#f0f7f9' : concept ? '#fafbf9' : '#fff9f7',
@@ -90,18 +111,18 @@ export function neighbourhoodNodeStyle(kind: 'concept' | 'derivation', marks: re
     labelTextOverflow: 'ellipsis',
     labelPointerEvents: 'none' as const,
     ports: concept ? [
-      { key: 'concept-in', placement: 'left' as const, r: 4.5, fill: '#a44f3f', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
-      { key: 'concept-out', placement: 'right' as const, r: 4.5, fill: '#2f7087', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
+      { key: 'concept-in', placement: incoming, r: 4.5, fill: '#a44f3f', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
+      { key: 'concept-out', placement: outgoing, r: 4.5, fill: '#2f7087', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
     ] : [
-      { key: 'premise-in', placement: 'left' as const, r: 4.5, fill: '#2f7087', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
-      { key: 'conclusion-out', placement: 'right' as const, r: 4.5, fill: '#a44f3f', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
+      { key: 'premise-in', placement: incoming, r: 4.5, fill: '#2f7087', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
+      { key: 'conclusion-out', placement: outgoing, r: 4.5, fill: '#a44f3f', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
     ],
     port: true,
     portLinkToCenter: true,
   };
 }
 
-export function neighbourhoodEdgeStyle(kind: 'premise' | 'conclusion') {
+export function neighbourhoodEdgeStyle(kind: 'premise' | 'conclusion', axis: CardAxis = 'x') {
   const premise = kind === 'premise';
   return {
     stroke: premise ? '#2f7087' : '#a44f3f',
@@ -113,5 +134,6 @@ export function neighbourhoodEdgeStyle(kind: 'premise' | 'conclusion') {
     sourcePort: premise ? 'concept-out' : 'conclusion-out',
     targetPort: premise ? 'premise-in' : 'concept-in',
     pointerEvents: 'none' as const,
+    cardAxis: axis,
   };
 }

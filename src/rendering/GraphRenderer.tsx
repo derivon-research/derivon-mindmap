@@ -7,11 +7,19 @@ import {
   NEIGHBOURHOOD_EDGE,
   neighbourhoodEdgeStyle,
   neighbourhoodNodeStyle,
+  type CardAxis,
 } from './neighbourhoodPresentation';
 
 // Namespaces also protect arbitrary IDs containing separators and parallel hyperedges.
 const conceptId = (id: string) => JSON.stringify(['concept', id]);
 const derivationId = (id: string) => JSON.stringify(['derivation', id]);
+
+/**
+ * Which way a card view flows. An author reads a neighbourhood across the page; a learner
+ * reads a route down it, one step under the last, so both the layout and the ports the
+ * curves leave from follow that axis rather than the container's shape.
+ */
+const axisOf = (view: GraphView): CardAxis => view.kind === 'neighbourhood' ? 'x' : 'y';
 
 /**
  * The overview says one thing only: what the learner has decided. A target is red, a
@@ -32,6 +40,7 @@ function overviewStyle(marks: readonly GraphMark[]) {
 /** The view-specific hypergraph translation never leaves this module. */
 function drawable(view: GraphView): GraphData {
   const overview = view.kind === 'overview';
+  const axis = axisOf(view);
   const nodes: NodeData[] = view.concepts.map((concept) => ({
     id: conceptId(concept.id),
     // A route is read the same way an author reads a neighbourhood, so it is drawn the
@@ -41,7 +50,7 @@ function drawable(view: GraphView): GraphData {
     style: {
       ...(overview
         ? overviewStyle(concept.marks)
-        : neighbourhoodNodeStyle('concept', concept.marks)),
+        : neighbourhoodNodeStyle('concept', concept.marks, axis)),
       labelText: overview ? '' : concept.label,
       cursor: 'pointer',
       // The identity is an author's handle on an object; a learner navigates by label.
@@ -56,13 +65,13 @@ function drawable(view: GraphView): GraphData {
         type: NEIGHBOURHOOD_DERIVATION,
         data: { object: { kind: 'derivation', id: hyperedge.id } },
         style: {
-          ...neighbourhoodNodeStyle('derivation', hyperedge.marks),
+          ...neighbourhoodNodeStyle('derivation', hyperedge.marks, axis),
           labelText: String(hyperedge.weight), cursor: 'pointer',
         },
       });
       edges.push({
         id: JSON.stringify(['head', hyperedge.id]), source: derivationId(hyperedge.id),
-        target: conceptId(hyperedge.head), style: neighbourhoodEdgeStyle('conclusion'),
+        target: conceptId(hyperedge.head), style: neighbourhoodEdgeStyle('conclusion', axis),
       });
     }
     hyperedge.tails.forEach((tail, index) => {
@@ -72,7 +81,7 @@ function drawable(view: GraphView): GraphData {
         target: overview ? conceptId(hyperedge.head) : derivationId(hyperedge.id),
         style: overview
           ? { stroke: '#94a3b8', lineWidth: 1, opacity: 0.12 }
-          : neighbourhoodEdgeStyle('premise'),
+          : neighbourhoodEdgeStyle('premise', axis),
       });
     });
   }
@@ -131,7 +140,7 @@ export function GraphRenderer({ view, onEvent }: GraphRendererProps) {
     const overview = view.kind === 'overview';
     setBusy(true);
     setFailure(undefined);
-    const fitOptions = { when: view.kind === 'neighbourhood' ? 'always' as const : 'overflow' as const };
+    const fitOptions = { when: overview ? 'overflow' as const : 'always' as const };
     const graph = new Graph({
       container: host,
       width: Math.max(1, host.clientWidth),
@@ -155,7 +164,7 @@ export function GraphRenderer({ view, onEvent }: GraphRendererProps) {
       },
       layout: overview
         ? { type: 'd3-force', animation: false, iterations: 40, manyBody: { strength: -80 }, link: { distance: 45 } }
-        : { type: 'dagre', rankdir: view.kind === 'neighbourhood' || host.clientHeight <= host.clientWidth ? 'LR' : 'TB', nodesep: 24, ranksep: 48 },
+        : { type: 'dagre', rankdir: axisOf(view) === 'x' ? 'LR' : 'TB', nodesep: 24, ranksep: 48 },
       behaviors: ['drag-canvas', 'zoom-canvas', ...(view.kind === 'neighbourhood' ? [] : ['optimize-viewport-transform'])],
     });
     const objectOf = (event: IElementEvent) => graph.getNodeData(event.target.id).data?.object as GraphObject;
@@ -164,10 +173,11 @@ export function GraphRenderer({ view, onEvent }: GraphRendererProps) {
     graph.on('canvas:click', () => emit.current({ type: 'select', object: null }));
 
     const fail = (error: unknown) => { if (!disposed) { setBusy(false); setFailure(String(error)); } };
-    // G6's overflow fit requires both axes to overflow. Fit neighbourhoods on either
-    // axis without enlarging a small graph beyond its natural card dimensions.
+    // G6's overflow fit requires both axes to overflow, and a card view runs off one axis
+    // at a time — a route down the page, a neighbourhood across it. So card views always
+    // fit, without enlarging a small one beyond its natural card dimensions.
     const capFittedZoom = () => {
-      if (view.kind === 'neighbourhood' && graph.getZoom() > 1) return graph.zoomTo(1, false);
+      if (!overview && graph.getZoom() > 1) return graph.zoomTo(1, false);
     };
     // Serialize initial render, updates and teardown. StrictMode may unmount during layout.
     let work = graph.render().then(capFittedZoom).then(afterPaint).then(() => { if (!disposed) setBusy(false); }).catch(fail);

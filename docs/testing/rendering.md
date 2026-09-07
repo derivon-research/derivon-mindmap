@@ -21,7 +21,12 @@ content; the renderer consumes an already valid view, not a workspace manifest.
   neighbourhood, so it is not given a second look of its own. The explicit hyperedge
   encoding has no learning-mode assumptions; empty marks are valid for authoring previews.
 
-Hierarchical direction is chosen from the container's aspect ratio at mount. Subsequent
+Hierarchical direction belongs to the view kind, not to the container's shape: a
+neighbourhood runs left to right, the way an author reads one, and a route runs down the
+page, the way a learner walks it. The ports the curves leave from and arrive at follow that
+axis, so a vertical route does not have premises entering its cards from the side. Because
+a card view runs off one axis at a time, it is always fitted on opening, but never enlarged
+past the cards' natural size. Subsequent
 container resizing changes the viewport size without moving objects. A view-kind change
 mounts a fresh layout. Within a kind, the renderer diffs complete models by ID. Label,
 weight and mark changes use G6 `draw()` only: positions and the user's pan/zoom survive.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PANELS, answerNeedsWidth, setPanel } from './panels';
+import { DEFAULT_PANELS, answerNeedsWidth, setPanel, type PanelLayout } from './panels';
 
 describe('setPanel', () => {
   it('expands one side by hiding the other, so the textbook never gives up width', () => {
@@ -19,6 +19,12 @@ describe('setPanel', () => {
   it('lets a learner hide both and read nothing but the textbook', () => {
     const withoutTutor = setPanel(DEFAULT_PANELS, 'tutor', 'hidden');
     expect(setPanel(withoutTutor, 'rail', 'hidden')).toEqual({ tutor: 'hidden', rail: 'hidden' });
+  });
+
+  it('opens only the side asked for when the learner closed both', () => {
+    const none: PanelLayout = { tutor: 'hidden', rail: 'hidden' };
+    expect(setPanel(none, 'rail', 'default')).toEqual({ tutor: 'hidden', rail: 'default' });
+    expect(setPanel(none, 'tutor', 'default')).toEqual({ tutor: 'default', rail: 'hidden' });
   });
 
   it('does not disturb a side that is already showing', () => {
