@@ -62,6 +62,22 @@ The id and the document directory are not shown. They are identity and storage, 
 authored metadata; the directory appears only in the error that reports an unreadable
 document. See [new object](#new-object) for how concepts and derivations are created.
 
+### Damaged documents and references
+
+An object whose document cannot be read still appears in the graph and in relations; its
+page reports the failure with the document path and offers one repair, and the repair only
+happens because it was chosen and then confirmed. Creating the empty document refuses a
+collision rather than overwriting; replacing an unreadable file is a second, separately
+confirmed decision that says what is lost.
+
+Below the editor, the object page reports what its document points at: how many references
+it carries, which ones resolve to nothing, which ones effective content cannot decide about,
+and which reference sources could not be analysed at all. 引用影响 additionally reports what
+points at this object — cross-document links, images shared from its directory, and the
+orientation configuration. Repairs are offered per reference and named: 改指到, 取消链接,
+删除引用. Each is confirmed before it is applied, each is a complete content change on the
+shared save path, and none of them is applied while an unapplied draft would be overwritten.
+
 Document drafts, the orientation draft and the Agent conversation survive centre-view and mode changes. Merely selecting
 an object in the graph does not mount its document editor or parse its body. The last opened
 document stays mounted while the graph is visible, until another document is explicitly opened.

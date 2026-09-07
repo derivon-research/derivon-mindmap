@@ -10,6 +10,18 @@ export {
 } from './content';
 
 export {
+  documentReferences, isBrokenReference, objectDocumentHref, resolveWorkspaceReference,
+  type DocumentReferenceItem, type DocumentReferenceReport, type ReferenceRepairAction, type ReferenceStatus,
+  type ReferenceUncertainty, type ReferenceUse, type SourceRange, type WorkspaceReferenceTarget,
+} from './references';
+
+export {
+  deletionScope, isDeletionSafe, referenceImpact, repairDocumentReferences, restoreObjectDocument,
+  type DeletionPlan, type DeletionScope, type IncomingReference, type ObjectRef, type ReferenceImpact,
+  type ReferenceRepairChoice, type RepairReferencesIntent, type RestoreDocumentIntent,
+} from './integrity';
+
+export {
   WORKSPACE_SCHEMA, conceptTags, conceptsWithTag,
   type ConceptPoint, type DerivationHyperedge, type DocumentReference,
   type ManifestGraph, type TagDeclaration, type WorkspaceManifest,

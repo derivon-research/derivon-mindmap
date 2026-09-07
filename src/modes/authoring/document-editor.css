@@ -158,3 +158,26 @@
 .document-editor-actions > small { font-size: 12px; color: #717782; }
 .document-editor-error { color: #a12d35; font-size: 13px; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .authoring-document-editor .tiptap-content { padding: 16px 0 28px; } }
+
+/* Object-document integrity: a damaged source, and what the body points at. */
+.document-repair { display: grid; gap: 12px; margin: 14px 0; padding: 16px; border: 1px solid #d9b7a8; border-radius: 5px; background: #fdf7f4; }
+.document-repair > header { display: flex; gap: 10px; align-items: start; color: #8c3a2c; }
+.document-repair > header p { margin: 4px 0; color: #5f6a63; font-size: 13px; }
+.document-repair code { color: #5f6a63; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.document-repair-note, .document-references-note { margin: 0; color: #5f6a63; font-size: 12px; line-height: 1.7; }
+.document-repair-confirm { display: grid; gap: 8px; padding: 12px; border: 1px solid #e2d3ca; background: #fff; }
+.document-repair-confirm p { margin: 0; font-size: 13px; }
+.document-repair-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.document-references { display: grid; gap: 10px; margin: 4px 0 18px; padding: 14px 0 0; border-top: 1px solid var(--app-line); }
+.document-references > header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #4c5750; }
+.document-references > header small { color: #717782; font-size: 12px; }
+.document-reference-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.document-reference-list > li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 9px 11px; border: 1px solid var(--app-line); border-radius: 4px; font-size: 12px; }
+.document-reference-list code { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.document-reference-status { display: inline-flex; gap: 4px; align-items: center; padding: 2px 7px; border: 1px solid #c3ccc6; border-radius: 3px; color: #4c5750; font-size: 11px; }
+.document-reference-status.is-dangling, .document-reference-status.is-unsupported, .document-reference-status.is-unreadable { border-color: #d6a89a; color: #8c3a2c; }
+.document-reference-status.is-uncertain { border-color: #d3c294; color: #7a6120; }
+.document-reference-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: auto; }
+.document-reference-impact { display: grid; gap: 10px; }
+.document-reference-impact > p { margin: 0; font-size: 13px; }
+.document-reference-impact > p.is-incomplete { color: #8c3a2c; }
