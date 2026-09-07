@@ -40,8 +40,8 @@ it('retains an unchanged hidden overview and invalidates changed topology until 
   act(() => root?.render(<LearningMode {...props({ content: latest, targetIds: ['first'] })} />));
   await expect.element(page.getByRole('button', { name: 'select graph concept' })).toBeVisible();
   await page.getByRole('button', { name: 'select graph concept' }).click();
-  // Returning rebuilds from the latest content: the card is for `latest`, not the retained `first`.
-  expect(container.querySelector('.learning-card')?.getAttribute('aria-label')).toBe('Latest 文档');
+  // Returning rebuilds from the latest content: the page opened is `latest`, not the retained `first`.
+  expect(container.querySelector('.learning-reader')?.getAttribute('aria-label')).toBe('Latest 文档');
 });
 
 function content(): WorkspaceContent {

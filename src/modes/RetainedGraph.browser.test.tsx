@@ -71,7 +71,7 @@ it.each([360, 1000])('preserves a panned unchanged viewport and invalidates hidd
   await expect.poll(() => container.querySelector('canvas')).toBeNull();
   render(true, latest);
   await expect.element(page.getByRole('img')).toHaveAttribute('aria-busy', 'false');
-  await expect.poll(() => findCanvasPixel({ color: [37, 99, 235] })).toBeDefined();
-  await page.getByRole('img').click({ position: findCanvasPixel({ color: [37, 99, 235] })! });
+  await expect.poll(() => findCanvasPixel({ color: [22, 163, 74] })).toBeDefined();
+  await page.getByRole('img').click({ position: findCanvasPixel({ color: [22, 163, 74] })! });
   expect(onEvent).toHaveBeenLastCalledWith({ type: 'select', object: { kind: 'concept', id: 'latest' } });
 });

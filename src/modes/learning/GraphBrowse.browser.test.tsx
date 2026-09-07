@@ -52,13 +52,33 @@ async function render(over: Parameters<typeof Harness>[0] = {}) {
   await act(async () => root?.render(<Harness {...over} />));
 }
 
-it('draws the whole graph and reads a concept in the inspector rather than on the map', async () => {
+it('draws the whole graph and reads a concept beside the map rather than on it', async () => {
   await render();
   await expect.element(page.getByText('overview 图 · 4 个概念')).toBeVisible();
 
   await page.getByRole('button', { name: '图：B' }).click();
   await expect.element(page.getByRole('complementary', { name: 'B 文档' })).toBeVisible();
-  expect(container.querySelector<HTMLIFrameElement>('.learning-inspect iframe')?.srcdoc).toContain('B 的正文');
+  expect(container.querySelector<HTMLIFrameElement>('.learning-reader iframe')?.srcdoc).toContain('B 的正文');
+  // The map stays alongside it: reading a concept does not close the thing being browsed.
+  await expect.element(page.getByText('overview 图 · 4 个概念')).toBeVisible();
+});
+
+it('turns a page instead of stacking documents when another concept is opened', async () => {
+  await render();
+  await page.getByRole('button', { name: '图：B' }).click();
+  await page.getByRole('button', { name: '图：C' }).click();
+
+  await expect.element(page.getByRole('complementary', { name: 'C 文档' })).toBeVisible();
+  expect(container.querySelectorAll('.learning-reader').length).toBe(1);
+  expect(container.textContent).toContain('第 2 / 2 页');
+
+  await page.getByRole('button', { name: '上一页' }).click();
+  await expect.element(page.getByRole('complementary', { name: 'B 文档' })).toBeVisible();
+  expect(container.textContent).toContain('第 1 / 2 页');
+
+  // Reopening a concept already read returns to its page rather than adding another.
+  await page.getByRole('button', { name: '图：C' }).click();
+  expect(container.textContent).toContain('第 2 / 2 页');
 });
 
 it('narrows to one step around a concept instead of piling more onto the overview', async () => {
@@ -98,17 +118,20 @@ it('sends the learner back to settle the run when a target is set from here', as
   const onEnterView = vi.fn();
   await render({ onEnterView });
   await page.getByRole('button', { name: '图：C' }).click();
-  await page.getByRole('button', { name: '设为目标' }).click();
+  await page.getByRole('button', { name: '加进目标' }).click();
 
   expect(onEnterView).toHaveBeenLastCalledWith('orientation');
   expect(container.querySelector('[data-derivon-mode="learning"]')?.getAttribute('data-learning-targets')).toBe('c');
 });
 
-it('marks what the learner knows on the map, and offers it only once', async () => {
+it('marks what the learner knows on the map, and lets them take it back', async () => {
   await render();
   await page.getByRole('button', { name: '图：A' }).click();
   await page.getByRole('button', { name: '这个我会' }).click();
 
   await expect.element(page.getByRole('button', { name: '图：A（known,selected）' })).toBeVisible();
-  expect((page.getByRole('button', { name: '已标记会了' }).element() as HTMLButtonElement).disabled).toBe(true);
+
+  await page.getByRole('button', { name: '其实我不会' }).click();
+  await expect.element(page.getByRole('button', { name: '图：A（selected）' })).toBeVisible();
+  expect(container.querySelector('[data-derivon-mode="learning"]')?.getAttribute('data-learning-known')).toBe('');
 });

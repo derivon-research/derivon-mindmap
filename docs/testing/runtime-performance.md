@@ -45,7 +45,8 @@ target and moving a route panel are measured through the v1 surface instead, by
 the same generated scale as the runtime benchmark (`VITE_PERF_SIZE`, default 1000 concepts and
 1000 derivations), each interaction timed from the input to the second animation frame after it:
 
-- switching a target on, from the orientation thread, and back off from its chip;
+- switching a target on, from the document the learner opened to read, and back off from
+  its chip;
 - widening the route rail from the step list to the route subgraph, returning it to the list,
   and hiding it to a recall tab.
 
@@ -56,8 +57,8 @@ of it produces a 499-step route — and widening the rail onto a subgraph that s
 length; a benchmark aimed there would measure the renderer through the panel rather than the
 panel. The concept count, which is the scale the budgets are stated at, stays at 1000.
 
-Measured on an Apple silicon laptop at 1000 concepts, four runs: adding a target 91–104 ms,
-removing one 83 ms, widening the rail 135–138 ms, collapsing it 82 ms, hiding it 83–84 ms.
+Measured on an Apple silicon laptop at 1000 concepts, four runs: adding a target 81–110 ms,
+removing one 99–102 ms, widening the rail 136–138 ms, collapsing it 81 ms, hiding it 83 ms.
 `npm test` skips this for the same reason as the benchmarks above.
 
 ## Event transport

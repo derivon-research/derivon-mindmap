@@ -13,35 +13,39 @@ import {
 const conceptId = (id: string) => JSON.stringify(['concept', id]);
 const derivationId = (id: string) => JSON.stringify(['derivation', id]);
 
-function markStyle(marks: readonly GraphMark[], derivation = false, overview = false) {
-  const has = (mark: GraphMark) => marks.includes(mark)
-    && (!overview || mark === 'known' || mark === 'target');
+/**
+ * The overview says one thing only: what the learner has decided. A target is red, a
+ * concept they already hold is green, and everything else is background grey — the map is
+ * not meant to be read (`docs/adr/0003-the-overview-is-not-meant-to-be-readable.md`), so
+ * route progress and selection are deliberately not channels here.
+ */
+function overviewStyle(marks: readonly GraphMark[]) {
+  const has = (mark: GraphMark) => marks.includes(mark);
   return {
-    fill: has('completed') ? '#15803d' : has('known') ? '#2563eb' : derivation ? '#d97706' : '#168b72',
-    stroke: has('selected') ? '#9333ea' : has('current') ? '#dc2626' : has('target') ? '#d97706' : '#ffffff',
-    lineWidth: has('selected') || has('current') || has('target') ? 3 : 1,
-    opacity: has('muted') ? 0.35 : 1,
+    fill: has('target') ? '#b91c1c' : has('known') ? '#16a34a' : '#cbd5e1',
+    stroke: '#ffffff',
+    lineWidth: has('target') || has('known') ? 2 : 1,
+    size: has('target') ? 20 : has('known') ? 16 : 12,
   };
 }
 
 /** The view-specific hypergraph translation never leaves this module. */
 function drawable(view: GraphView): GraphData {
   const overview = view.kind === 'overview';
-  const neighbourhood = view.kind === 'neighbourhood';
   const nodes: NodeData[] = view.concepts.map((concept) => ({
     id: conceptId(concept.id),
-    type: overview ? 'circle' : neighbourhood ? NEIGHBOURHOOD_CONCEPT : 'rect',
+    // A route is read the same way an author reads a neighbourhood, so it is drawn the
+    // same way: the same card, diamond and ported curve.
+    type: overview ? 'circle' : NEIGHBOURHOOD_CONCEPT,
     data: { object: { kind: 'concept', id: concept.id }, label: concept.label },
     style: {
-      ...(neighbourhood ? neighbourhoodNodeStyle('concept', concept.marks) : markStyle(concept.marks, false, overview)),
+      ...(overview
+        ? overviewStyle(concept.marks)
+        : neighbourhoodNodeStyle('concept', concept.marks)),
       labelText: overview ? '' : concept.label,
-      ...(!neighbourhood ? {
-        size: overview ? 14 : [176, 56], radius: 6,
-        labelPlacement: 'center', labelFill: '#ffffff', labelFontSize: 13,
-        labelWordWrap: true, labelMaxWidth: 152, labelMaxLines: 2, labelTextOverflow: 'ellipsis',
-      } : {}),
       cursor: 'pointer',
-      identityText: neighbourhood ? concept.id : undefined,
+      // The identity is an author's handle on an object; a learner navigates by label.
+      identityText: view.kind === 'neighbourhood' ? concept.id : undefined,
     },
   }));
   const edges: EdgeData[] = [];
@@ -49,31 +53,26 @@ function drawable(view: GraphView): GraphData {
     if (!overview) {
       nodes.push({
         id: derivationId(hyperedge.id),
-        type: neighbourhood ? NEIGHBOURHOOD_DERIVATION : 'diamond',
+        type: NEIGHBOURHOOD_DERIVATION,
         data: { object: { kind: 'derivation', id: hyperedge.id } },
         style: {
-          ...(neighbourhood ? neighbourhoodNodeStyle('derivation', hyperedge.marks) : markStyle(hyperedge.marks, true)),
+          ...neighbourhoodNodeStyle('derivation', hyperedge.marks),
           labelText: String(hyperedge.weight), cursor: 'pointer',
-          ...(!neighbourhood ? { size: 28, labelPlacement: 'bottom', labelFill: '#475569', labelFontSize: 11 } : {}),
         },
       });
       edges.push({
-        id: JSON.stringify(['head', hyperedge.id]), source: derivationId(hyperedge.id), target: conceptId(hyperedge.head),
-        style: neighbourhood ? neighbourhoodEdgeStyle('conclusion') : undefined,
+        id: JSON.stringify(['head', hyperedge.id]), source: derivationId(hyperedge.id),
+        target: conceptId(hyperedge.head), style: neighbourhoodEdgeStyle('conclusion'),
       });
     }
-    const marked = markStyle(hyperedge.marks, false, overview);
     hyperedge.tails.forEach((tail, index) => {
       edges.push({
         id: JSON.stringify(['tail', hyperedge.id, index]),
         source: conceptId(tail),
         target: overview ? conceptId(hyperedge.head) : derivationId(hyperedge.id),
-        style: overview ? {
-          stroke: marked.lineWidth > 1 ? marked.stroke
-            : hyperedge.marks.includes('known') ? marked.fill : '#94a3b8',
-          lineWidth: marked.lineWidth,
-          opacity: marked.opacity * 0.12,
-        } : neighbourhood ? neighbourhoodEdgeStyle('premise') : undefined,
+        style: overview
+          ? { stroke: '#94a3b8', lineWidth: 1, opacity: 0.12 }
+          : neighbourhoodEdgeStyle('premise'),
       });
     });
   }
@@ -151,7 +150,7 @@ export function GraphRenderer({ view, onEvent }: GraphRendererProps) {
         },
       },
       edge: {
-        type: view.kind === 'neighbourhood' ? NEIGHBOURHOOD_EDGE : 'line',
+        type: overview ? 'line' : NEIGHBOURHOOD_EDGE,
         style: (edge) => ({ stroke: '#94a3b8', lineWidth: 1, opacity: 0.7, endArrow: !overview, ...edge.style }),
       },
       layout: overview

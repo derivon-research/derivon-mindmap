@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, MessageSquarePlus, Search, Send, Target, X } from 'lucide-react';
+import { AlertTriangle, Check, FileText, MessageSquarePlus, Search, Send, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
 import type { GraphEvent } from '../../rendering';
@@ -9,7 +9,7 @@ import { labelOf } from '../ConceptPicker';
 import { overviewGraphView } from '../graphViews';
 import { RetainedGraph } from '../RetainedGraph';
 import type { RoutePreview } from '../routePreview';
-import { ObjectDocument } from './ObjectDocument';
+import { ConceptReader, useConceptPages } from './ConceptReader';
 import { currentQuestion, type OrientationIntent, type OrientationPlan, type OrientationRun } from './orientation';
 import { OrientationQuestionBlock } from './OrientationQuestion';
 import { graphProbeCandidates, routeProbeCandidates } from './probe';
@@ -20,10 +20,13 @@ import { sameTagNeighbours, terminalConcepts } from './suggestions';
  * One exchange in the orientation thread. The thread is throwaway — it is a record of how
  * this conversation went, not where the answers live. Targets, known concepts and the
  * probe bookkeeping are application state and survive "+ 新对话" untouched.
+ *
+ * A document appears in the thread as a reference to it, never as an embedded excerpt:
+ * reading happens on the reading surface, at full size.
  */
 type Turn =
   | { readonly kind: 'agent' | 'learner'; readonly text: string }
-  | { readonly kind: 'card'; readonly conceptId: string }
+  | { readonly kind: 'doc'; readonly conceptId: string }
   | { readonly kind: 'targets'; readonly conceptIds: readonly string[]; readonly note: string }
   | { readonly kind: 'probe'; readonly conceptIds: readonly string[]; readonly round: number };
 
@@ -65,6 +68,7 @@ export function OrientationView({
   const question = currentQuestion(plan, run);
   const label = (conceptId: string) => labelOf(graph, conceptId);
   const suggestions = useMemo(() => searchConcepts(graph, draft), [draft, graph]);
+  const reading = useConceptPages();
 
   /**
    * Which concepts to put in the next round. A solved route ranks them by what the answer
@@ -101,14 +105,28 @@ export function OrientationView({
     });
   };
 
-  const markKnown = (conceptId: string) => onIntent({ kind: 'know', conceptIds: [conceptId] });
+  /** Every choice is reversible: pressing the same option again takes it back. */
+  const toggleTarget = (conceptId: string) => {
+    if (run.targets.includes(conceptId)) dropTarget(conceptId);
+    else addTargets([conceptId]);
+  };
 
-  const openCard = (conceptId: string) => {
+  const toggleKnown = (conceptId: string) => onIntent(run.known.includes(conceptId)
+    ? { kind: 'set-known', conceptIds: run.known.filter((id) => id !== conceptId) }
+    : { kind: 'know', conceptIds: [conceptId] });
+
+  /** Reading turns a page on the surface beside the thread; nothing is embedded in it. */
+  const readDoc = (conceptId: string) => {
     const startedAtMs = currentInputStartedAtMs();
-    say({ kind: 'card', conceptId });
+    reading.open(conceptId);
     void emitInteractionCompleteTestHook({
       interaction: 'select-concept', startedAtMs, context: { conceptId },
     });
+  };
+
+  const openDoc = (conceptId: string) => {
+    say({ kind: 'doc', conceptId });
+    readDoc(conceptId);
   };
 
   const submit = (text: string) => {
@@ -123,7 +141,8 @@ export function OrientationView({
     }
     say({ kind: 'learner', text: trimmed },
       { kind: 'agent', text: `「${hit.data.label}」的文档在这儿。要把它加进目标，还是你本来就会？` },
-      { kind: 'card', conceptId: hit.id });
+      { kind: 'doc', conceptId: hit.id });
+    readDoc(hit.id);
   };
 
   /**
@@ -151,7 +170,7 @@ export function OrientationView({
   const view = useMemo(() => overviewGraphView(graph, { targetIds: run.targets, knownIds: run.known }),
     [graph, run.known, run.targets]);
   const handleEvent = (event: GraphEvent) => {
-    if (event.object?.kind === 'concept') openCard(event.object.id);
+    if (event.object?.kind === 'concept') openDoc(event.object.id);
   };
 
   const renderTurn = (turn: Turn, index: number) => {
@@ -159,44 +178,23 @@ export function OrientationView({
       case 'agent':
       case 'learner':
         return <p key={index} className={`learning-bubble is-${turn.kind}`}>{turn.text}</p>;
-      case 'card': {
-        const concept = graph.points.find((point) => point.id === turn.conceptId);
-        return <article key={index} className="learning-card" aria-label={`${label(turn.conceptId)} 文档`}>
-          <div className="learning-card-doc">
-            <ObjectDocument title={label(turn.conceptId)} content={content} object={concept} active={active}
-              readAsset={readAsset} readDocuments={readDocuments} />
-          </div>
-          <footer className="learning-card-actions">
-            <button type="button" onClick={() => addTargets([turn.conceptId])}
-              disabled={run.targets.includes(turn.conceptId)}>
-              <Target size={15} aria-hidden="true" />{run.targets.includes(turn.conceptId) ? '已经是目标' : '加进目标'}
-            </button>
-            <button type="button" onClick={() => markKnown(turn.conceptId)}
-              disabled={run.known.includes(turn.conceptId)}>
-              <Check size={15} aria-hidden="true" />{run.known.includes(turn.conceptId) ? '已标记会了' : '这个我会'}
-            </button>
-          </footer>
-        </article>;
-      }
+      case 'doc':
+        return <button key={index} type="button"
+          className={`learning-doc-link${reading.current === turn.conceptId ? ' is-open' : ''}`}
+          onClick={() => readDoc(turn.conceptId)}>
+          <FileText size={14} aria-hidden="true" />
+          「{label(turn.conceptId)}」的文档<span>在右边展开 →</span>
+        </button>;
       case 'targets':
         return <div key={index} className="learning-choice-block">
           <span className="learning-choice-note">{turn.note}</span>
-          <div className="learning-choice-grid">
-            {turn.conceptIds.map((conceptId) => <button key={conceptId} type="button"
-              aria-pressed={run.targets.includes(conceptId)}
-              className={run.targets.includes(conceptId) ? 'is-chosen' : ''}
-              onClick={() => addTargets([conceptId])}>{label(conceptId)}</button>)}
-          </div>
+          <ChoiceGrid conceptIds={turn.conceptIds} chosenIds={run.targets} label={label} onPick={toggleTarget} />
         </div>;
       case 'probe':
         return <div key={index} className="learning-choice-block">
           <span className="learning-choice-note">第 {turn.round} 轮 · 会的点一下</span>
-          <div className="learning-choice-grid">
-            {turn.conceptIds.map((conceptId) => <button key={conceptId} type="button"
-              aria-pressed={run.known.includes(conceptId)}
-              className={run.known.includes(conceptId) ? 'is-chosen' : ''}
-              onClick={() => markKnown(conceptId)}>{label(conceptId)}</button>)}
-          </div>
+          <span className="learning-choice-hint">点错了再点一下就取消</span>
+          <ChoiceGrid conceptIds={turn.conceptIds} chosenIds={run.known} label={label} onPick={toggleKnown} />
           {index === turns.length - 1 && <div className="learning-choice-actions">
             <button type="button" onClick={() => askAgain(turn.round)}>再问我一轮，路线会更准</button>
             <button type="button" className="learning-primary" onClick={onEnterPreview}>够了，先看看路线</button>
@@ -207,7 +205,8 @@ export function OrientationView({
 
   const starters = useMemo(() => terminalConcepts(graph), [graph]);
 
-  return <div className="learning-orientation" data-orientation-round={run.round}>
+  return <div className={`learning-orientation${reading.current ? ' is-reading' : ''}`}
+    data-orientation-round={run.round}>
     <section className="learning-thread-pane" aria-label="目标与已知">
       <header className="learning-thread-head">
         {/* The learner is never told they are in a stage called 开局; the head says what to do. */}
@@ -237,13 +236,18 @@ export function OrientationView({
             </div>
             {!run.targets.length && starters.length > 0 && <div className="learning-choice-block">
               <span className="learning-choice-note">不知道从哪开始？这张图最后通向这几个概念</span>
-              <div className="learning-choice-grid">
-                {starters.map((conceptId) => <button key={conceptId} type="button"
-                  onClick={() => addTargets([conceptId])}>{label(conceptId)}</button>)}
-              </div>
+              <ChoiceGrid conceptIds={starters} chosenIds={run.targets} label={label} onPick={toggleTarget} />
             </div>}
-            <p className="learning-confirm-known">已经会的：{run.known.length} 个概念{
-              run.round ? ` · 问过 ${run.round} 轮` : ''}</p>
+            <div className="learning-known">
+              <p className="learning-confirm-known">已经会的：{run.known.length} 个概念{
+                run.round ? ` · 问过 ${run.round} 轮` : ''}</p>
+              <div className="learning-chips">
+                {run.known.map((conceptId) => <button key={conceptId} type="button" className="learning-chip is-known"
+                  aria-label={`取消已会 ${label(conceptId)}`} onClick={() => toggleKnown(conceptId)}>
+                  {label(conceptId)}<X size={12} aria-hidden="true" />
+                </button>)}
+              </div>
+            </div>
             <RouteSummary route={preview} graph={graph} />
             <footer className="learning-confirm-actions">
               <button type="button" disabled={!run.targets.length} onClick={startProbe}>
@@ -257,7 +261,7 @@ export function OrientationView({
       </div>
       <form className="learning-composer" onSubmit={(event) => { event.preventDefault(); submit(draft); }}>
         {draft.trim() && suggestions.length > 0 && <div className="learning-suggest">
-          {suggestions.map((point) => <button key={point.id} type="button" onClick={() => { setDraft(''); openCard(point.id); }}>
+          {suggestions.map((point) => <button key={point.id} type="button" onClick={() => { setDraft(''); openDoc(point.id); }}>
             <Search size={13} aria-hidden="true" />{point.data.label}
           </button>)}
         </div>}
@@ -275,8 +279,38 @@ export function OrientationView({
       <div className="learning-graph-legend">
         <span><i className="is-target" aria-hidden="true" />目标 {run.targets.length}</span>
         <span><i className="is-known" aria-hidden="true" />已会 {run.known.length}</span>
-        <span>共 {graph.points.length} 个概念 · 点一个看它的文档</span>
+        <span><i aria-hidden="true" />其余 · 共 {graph.points.length} 个概念 · 点一个看它的文档</span>
       </div>
+      {/* Reading covers the map instead of replacing it: the graph keeps its layout and
+          viewport underneath, so closing the document costs nothing (ADR-0006). */}
+      {reading.current && <ConceptReader active={active} content={content} conceptId={reading.current}
+        pages={reading.pages} at={reading.at} onGo={reading.go} onClose={reading.close} closeLabel="回到图"
+        isTarget={run.targets.includes(reading.current)} isKnown={run.known.includes(reading.current)}
+        onToggleTarget={toggleTarget} onToggleKnown={toggleKnown}
+        readAsset={readAsset} readDocuments={readDocuments} />}
     </section>
+  </div>;
+}
+
+/**
+ * A round of options. Two columns of rectangles, not a cloud of pills: the learner reads
+ * down one column, and a full-width hit area holds a concept name that does not fit on a
+ * chip. Pressing a chosen option again takes the choice back.
+ */
+function ChoiceGrid({ conceptIds, chosenIds, label, onPick }: {
+  readonly conceptIds: readonly string[];
+  readonly chosenIds: readonly string[];
+  readonly label: (conceptId: string) => string;
+  readonly onPick: (conceptId: string) => void;
+}) {
+  return <div className="learning-choice-grid">
+    {conceptIds.map((conceptId) => {
+      const chosen = chosenIds.includes(conceptId);
+      return <button key={conceptId} type="button" aria-pressed={chosen}
+        className={chosen ? 'is-chosen' : ''} onClick={() => onPick(conceptId)}>
+        <span>{label(conceptId)}</span>
+        {chosen && <Check size={14} aria-hidden="true" />}
+      </button>;
+    })}
   </div>;
 }

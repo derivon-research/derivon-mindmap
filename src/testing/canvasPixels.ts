@@ -4,8 +4,12 @@ type CanvasPixelOptions = {
   clientCoordinates?: boolean;
 };
 
-/** Serializable for Playwright evaluate(); locates painted pixels, never G6 objects. */
-export function findCanvasPixel({ color = [22, 139, 114], center = false, clientCoordinates = false }: CanvasPixelOptions = {}) {
+/**
+ * Serializable for Playwright evaluate(); locates painted pixels, never G6 objects.
+ * The default colour is an unmarked overview concept — the grey everything the learner
+ * has not decided about is drawn in.
+ */
+export function findCanvasPixel({ color = [203, 213, 225], center = false, clientCoordinates = false }: CanvasPixelOptions = {}) {
   for (const canvas of document.querySelectorAll('canvas')) {
     const context = canvas.getContext('2d');
     if (!context) continue;

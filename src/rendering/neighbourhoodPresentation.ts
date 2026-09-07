@@ -1,3 +1,9 @@
+/**
+ * The card presentation: concept cards, derivation diamonds and the ported cubic between
+ * them. Named for the neighbourhood it was drawn for, and also what a route is drawn with
+ * — a route is read the way an author reads a neighbourhood, so the two share one look
+ * rather than each getting a treatment of its own.
+ */
 import { Cubic, Diamond, Label, Rect, register } from '@antv/g6';
 import type { Point, RectStyleProps } from '@antv/g6';
 import type { GraphMark } from './index';
@@ -65,7 +71,7 @@ export function neighbourhoodNodeStyle(kind: 'concept' | 'derivation', marks: re
   const concept = kind === 'concept';
   const has = (mark: GraphMark) => marks.includes(mark);
   return {
-    size: concept ? [136, 64] : [54, 54],
+    size: concept ? [136, 64] as [number, number] : [54, 54] as [number, number],
     fill: has('completed') ? '#f3f8f4' : has('known') ? '#f0f7f9' : concept ? '#fafbf9' : '#fff9f7',
     stroke: has('selected') ? '#9333ea' : has('current') ? '#dc2626' : has('target') ? '#a44f3f'
       : has('known') ? '#2f7087' : has('completed') ? '#4a765f' : concept ? '#6f7973' : '#8d5147',
@@ -84,11 +90,11 @@ export function neighbourhoodNodeStyle(kind: 'concept' | 'derivation', marks: re
     labelTextOverflow: 'ellipsis',
     labelPointerEvents: 'none' as const,
     ports: concept ? [
-      { key: 'concept-in', placement: 'left', r: 4.5, fill: '#a44f3f', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' },
-      { key: 'concept-out', placement: 'right', r: 4.5, fill: '#2f7087', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' },
+      { key: 'concept-in', placement: 'left' as const, r: 4.5, fill: '#a44f3f', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
+      { key: 'concept-out', placement: 'right' as const, r: 4.5, fill: '#2f7087', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
     ] : [
-      { key: 'premise-in', placement: 'left', r: 4.5, fill: '#2f7087', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' },
-      { key: 'conclusion-out', placement: 'right', r: 4.5, fill: '#a44f3f', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' },
+      { key: 'premise-in', placement: 'left' as const, r: 4.5, fill: '#2f7087', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
+      { key: 'conclusion-out', placement: 'right' as const, r: 4.5, fill: '#a44f3f', stroke: '#f7f7f5', lineWidth: 2, pointerEvents: 'none' as const },
     ],
     port: true,
     portLinkToCenter: true,

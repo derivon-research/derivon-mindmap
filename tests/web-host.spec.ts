@@ -60,10 +60,11 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     expect(point, 'The graph must have painted concept pixels').toBeDefined();
     await page.mouse.click(point!.x, point!.y);
 
-    const card = page.locator('.learning-card').last();
-    await expect(card).toBeVisible();
-    const label = (await card.getAttribute('aria-label'))!.replace(/ 文档$/, '');
-    await expect(card.frameLocator('iframe').getByRole('heading', { name: label, exact: true })).toBeVisible();
+    // Reading is a full pane beside the map, not a card folded into the thread.
+    const reader = page.locator('.learning-reader');
+    await expect(reader).toBeVisible();
+    const label = (await reader.getAttribute('aria-label'))!.replace(/ 文档$/, '');
+    await expect(reader.frameLocator('iframe').getByRole('heading', { name: label, exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
     expect(errors).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath('overview.png') });
@@ -92,7 +93,7 @@ test('carries the bundled example through every learning view the top bar offers
   await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
   const browsePoint = await page.evaluate(findCanvasPixel, { clientCoordinates: true });
   await page.mouse.click(browsePoint!.x, browsePoint!.y);
-  const inspector = page.locator('.learning-inspect');
+  const inspector = page.locator('.learning-reader');
   await expect(inspector).toBeVisible();
   const label = (await inspector.getAttribute('aria-label'))!.replace(/ 文档$/, '');
   await expect(inspector.frameLocator('iframe').getByRole('heading', { name: label, exact: true })).toBeVisible();

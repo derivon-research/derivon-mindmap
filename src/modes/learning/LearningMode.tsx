@@ -58,6 +58,13 @@ export function LearningMode({
   useEffect(() => { setCursor(0); }, [routeKey]);
 
   const know = (conceptId: string) => intent({ kind: 'know', conceptIds: [conceptId] });
+  // Every claim the learner makes is reversible, wherever they made it.
+  const toggleKnown = (conceptId: string) => intent(knownIds.includes(conceptId)
+    ? { kind: 'set-known', conceptIds: knownIds.filter((id) => id !== conceptId) }
+    : { kind: 'know', conceptIds: [conceptId] });
+  const toggleTarget = (conceptId: string) => intent(targetIds.includes(conceptId)
+    ? { kind: 'set-targets', conceptIds: targetIds.filter((id) => id !== conceptId) }
+    : { kind: 'add-targets', conceptIds: [conceptId] });
 
   return <section className="learning-workbench" data-derivon-mode="learning" data-learning-view={view}
     data-learning-targets={targetIds.join(' ')} data-learning-known={knownIds.join(' ')} aria-label="学习侧">
@@ -82,8 +89,8 @@ export function LearningMode({
       </div>)}
 
     {view === 'browse' && <GraphBrowse active={active} content={content} targetIds={targetIds} knownIds={knownIds}
-      onAddTarget={(conceptId) => intent({ kind: 'add-targets', conceptIds: [conceptId] })}
-      onKnow={know} onBackToOrientation={() => onEnterView('orientation')}
+      onToggleTarget={toggleTarget} onToggleKnown={toggleKnown}
+      onBackToOrientation={() => onEnterView('orientation')}
       readAsset={readAsset} readDocuments={readDocuments} />}
 
     {content.diagnostics.length > 0 && <details className="learning-diagnostics">

@@ -122,7 +122,16 @@ it('opens a concept document from the search box without leaving the thread', as
   await page.getByRole('button', { name: '发送' }).click();
 
   await expect.element(page.getByText('的文档在这儿')).toBeVisible();
-  expect(container.querySelector('iframe')?.srcdoc).toContain('D body');
+  // The document is read at full size beside the thread, not folded into it.
+  await expect.element(page.getByRole('complementary', { name: 'D 文档' })).toBeVisible();
+  expect(container.querySelector<HTMLIFrameElement>('.learning-reader iframe')?.srcdoc).toContain('D body');
+  expect(container.querySelector('.learning-thread .learning-reader')).toBeNull();
+
+  // Closing keeps the thread's reference to it, so it can be reopened without searching again.
+  await page.getByRole('button', { name: '回到图' }).click();
+  expect(container.querySelector('.learning-reader')).toBeNull();
+  await page.getByRole('button', { name: '「D」的文档 在右边展开 →' }).click();
+  await expect.element(page.getByRole('complementary', { name: 'D 文档' })).toBeVisible();
 });
 
 it('probes with the concepts the route leans on, and marks what the learner says they know', async () => {
@@ -135,6 +144,24 @@ it('probes with the concepts the route leans on, and marks what the learner says
   // `b` is the premise the only route to `d` leans on, so it is worth asking about.
   await page.getByRole('button', { name: 'B', exact: true }).click();
   expect(onChangeKnown).toHaveBeenLastCalledWith(['b']);
+});
+
+it('takes a choice back, from the option that made it and from the list of what is known', async () => {
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={workspace()} targetIds={['d']} />));
+  const known = () => container.querySelector('[data-learning-known]')?.getAttribute('data-learning-known');
+
+  await page.getByRole('button', { name: '就这一个，问我会什么吧' }).click();
+  await page.getByRole('button', { name: 'B', exact: true }).click();
+  expect(known()).toBe('b');
+
+  // The same option, pressed again, is the cancel: nothing else has to be found first.
+  await page.getByRole('button', { name: 'B', exact: true }).click();
+  expect(known()).toBe('');
+
+  await page.getByRole('button', { name: 'B', exact: true }).click();
+  await page.getByRole('button', { name: '取消已会 B' }).click();
+  expect(known()).toBe('');
 });
 
 it('spends a round when it is asked, so nobody is asked the same thing twice', async () => {
