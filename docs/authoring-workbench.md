@@ -120,8 +120,9 @@ instead of claiming success. An unapplied document draft also blocks it, because
 are written against the bodies that are in effective content.
 
 Assembling the plan reads every owned body and asks the host for each directory, so it is a
-deliberate action with a progress status rather than an edit-latency path; the ≤ 200 ms
-budget covers the editing interactions, not this acquisition.
+deliberate action with a progress status rather than an edit-latency path; the ≤ 200 ms budget
+covers the editing interactions, not this acquisition. Both are measured — see
+[runtime performance](testing/runtime-performance.md#authoring-edits).
 
 ### Damaged documents and references
 
