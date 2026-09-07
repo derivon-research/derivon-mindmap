@@ -1,7 +1,8 @@
 import { parseWorkspaceManifest, type ManifestGraph } from './manifest';
 
 export {
-  createConcept, createDerivation, createWorkspace, objectDocumentPaths, objectDocumentSource, objectSourcePath,
+  createConcept, createDerivation, createWorkspace, isMarkdownPath,
+  objectDocumentPaths, objectDocumentSource, objectSourcePath,
   orientationConceptImpact, parseWorkspaceContent, updateConceptTags, updateDerivationStructure,
   updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
   type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type CreateDerivationIntent,
@@ -17,9 +18,10 @@ export {
 } from './references';
 
 export {
-  deletionScope, isDeletionSafe, referenceImpact, repairDocumentReferences, restoreObjectDocument,
-  type DeletionPlan, type DeletionScope, type IncomingReference, type ObjectRef, type ReferenceImpact,
-  type ReferenceRepairChoice, type RepairReferencesIntent, type RestoreDocumentIntent,
+  deleteObjects, deletionBlockers, deletionScope, isDeletionSafe, referenceImpact, repairDocumentReferences,
+  restoreObjectDocument,
+  type DeleteObjectsIntent, type DeletionPlan, type DeletionScope, type IncomingReference, type ObjectRef,
+  type ReferenceImpact, type ReferenceRepairChoice, type RepairReferencesIntent, type RestoreDocumentIntent,
 } from './integrity';
 
 export {
@@ -30,8 +32,8 @@ export {
 
 export {
   ORIENTATION_ACTION_OPS, ORIENTATION_FINISH, ORIENTATION_PATH, ORIENTATION_SCHEMA,
-  emptyOrientationConfig, orientationConceptReferences, orientationErrors, parseOrientationConfig,
-  resolveOrientationAction, serializeOrientationConfig, validateOrientationConfig,
+  emptyOrientationConfig, orientationConceptReferences, orientationErrors, orientationWithoutConcepts,
+  parseOrientationConfig, resolveOrientationAction, serializeOrientationConfig, validateOrientationConfig,
   type OrientationAction, type OrientationActionOp, type OrientationConceptReference, type OrientationConfig,
   type OrientationDiagnostic, type OrientationOption, type OrientationQuestion, type OrientationSeed,
 } from './orientation';

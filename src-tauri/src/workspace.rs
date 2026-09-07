@@ -812,6 +812,117 @@ pub async fn workspace_source_revision(root_path: String) -> Result<String, Stri
     .map_err(|error| format!("workspace source revision task failed: {error}"))?
 }
 
+// Every file under one object's owned directory, including assets no document mentions.
+// Deletion needs the inventory the filesystem has and a document scan cannot produce. The
+// walk stays inside the requested directory: it is not a recursive listing of arbitrary
+// workspace paths, and it refuses to follow a symlink out of the workspace.
+fn collect_owned_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut Vec<String>,
+) -> Result<(), String> {
+    let entries = fs::read_dir(directory)
+        .map_err(|error| format!("cannot read {}: {error}", directory.display()))?;
+    let mut entries = entries
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("cannot read workspace entry: {error}"))?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let kind = entry
+            .file_type()
+            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
+        if kind.is_symlink() {
+            return Err(format!(
+                "workspace object directory contains symlink {}",
+                path.display()
+            ));
+        }
+        if kind.is_dir() {
+            collect_owned_files(root, &path, files)?;
+            continue;
+        }
+        if kind.is_file() {
+            files.push(workspace_source_relative_name(root, &path)?.replace('\\', "/"));
+        }
+    }
+    Ok(())
+}
+
+// Ownership is decided by the manifest, not by the shape of the path: the inventory may
+// only be taken for a directory some object actually claims as its own. A workspace file
+// that belongs to nobody is not something a deletion is allowed to enumerate.
+fn is_object_document_directory(root: &Path, relative: &Path) -> Result<bool, String> {
+    let manifest_path = root.join(MANIFEST_PATH);
+    let manifest_text = fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("cannot read {}: {error}", manifest_path.display()))?;
+    let manifest: WorkspaceDocument = serde_json::from_str(&manifest_text)
+        .map_err(|error| format!("invalid {MANIFEST_PATH}: {error}"))?;
+    let values = manifest
+        .graph
+        .points
+        .iter()
+        .map(|point| &point.data)
+        .chain(manifest.graph.hyperedges.iter().map(|edge| &edge.data));
+    for value in values {
+        let reference: DocumentReference = serde_json::from_value(value.clone())
+            .map_err(|error| format!("invalid document reference: {error}"))?;
+        if safe_relative_path(&reference.document)? == relative {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn owned_files_for_directory(root: &Path, directory: &str) -> Result<Vec<String>, String> {
+    let relative = safe_relative_path(directory)?;
+    if relative.components().count() == 0
+        || relative.starts_with(".derivon")
+        || !is_object_document_directory(root, &relative)?
+    {
+        return Err(format!(
+            "`{directory}` is not an object document directory"
+        ));
+    }
+    let canonical_root = fs::canonicalize(root)
+        .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
+    let target = canonical_root.join(&relative);
+    if !target
+        .try_exists()
+        .map_err(|error| format!("cannot inspect {}: {error}", target.display()))?
+    {
+        // An object whose directory is already gone owns no files; that is an inventory of
+        // zero, not a failure to take one.
+        return Ok(Vec::new());
+    }
+    let canonical_target = fs::canonicalize(&target)
+        .map_err(|error| format!("cannot resolve {}: {error}", target.display()))?;
+    if !canonical_target.starts_with(&canonical_root) || canonical_target == canonical_root {
+        return Err(format!(
+            "workspace path `{directory}` resolves outside the workspace"
+        ));
+    }
+    if !canonical_target.is_dir() {
+        return Err(format!("workspace path `{directory}` is not a directory"));
+    }
+    let mut files = Vec::new();
+    collect_owned_files(&canonical_root, &canonical_target, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+#[tauri::command]
+pub async fn list_workspace_source_owned_files(
+    root_path: String,
+    directory: String,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        owned_files_for_directory(Path::new(&root_path), &directory)
+    })
+    .await
+    .map_err(|error| format!("workspace owned file inventory task failed: {error}"))?
+}
+
 fn read_workspace_asset_bytes(root: &Path, relative_path: &str) -> Result<Vec<u8>, String> {
     let canonical_root = fs::canonicalize(root)
         .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
@@ -1691,6 +1802,165 @@ mod tests {
             fs::read_to_string(root.path().join("docs/second.md")).unwrap(),
             "second original\n"
         );
+    }
+
+    /** A manifest claiming `docs/concept-a` and `docs/concept-b`, for inventory ownership. */
+    fn write_two_object_manifest(root: &Path) {
+        fs::create_dir_all(root.join(".derivon")).unwrap();
+        fs::write(root.join(MANIFEST_PATH), serde_json::json!({
+            "schema": "derivon.workspace/v1",
+            "document": { "title": "T", "description": "" },
+            "graph": {
+                "points": [
+                    { "id": "c-a", "data": { "label": "A", "document": "docs/concept-a" } },
+                    { "id": "c-b", "data": { "label": "B", "document": "docs/concept-b" } }
+                ],
+                "hyperedges": []
+            }
+        }).to_string()).unwrap();
+    }
+
+    #[test]
+    fn owned_file_inventory_lists_every_file_under_an_object_directory() {
+        let root = tempfile::tempdir().unwrap();
+        write_two_object_manifest(root.path());
+        fs::create_dir_all(root.path().join("docs/concept-a/assets/nested")).unwrap();
+        fs::create_dir_all(root.path().join("docs/concept-b")).unwrap();
+        fs::write(root.path().join("docs/concept-a/document.md"), "# A").unwrap();
+        // An asset the document text no longer mentions is exactly what a body scan cannot
+        // find, and exactly what has to go with its object.
+        fs::write(root.path().join("docs/concept-a/assets/orphan.png"), [1_u8]).unwrap();
+        fs::write(root.path().join("docs/concept-a/assets/nested/deep.svg"), [2_u8]).unwrap();
+        fs::write(root.path().join("docs/concept-a/notes.scratch"), "x").unwrap();
+        fs::write(root.path().join("docs/concept-b/document.md"), "# B").unwrap();
+
+        assert_eq!(
+            owned_files_for_directory(root.path(), "docs/concept-a").unwrap(),
+            vec![
+                "docs/concept-a/assets/nested/deep.svg".to_owned(),
+                "docs/concept-a/assets/orphan.png".to_owned(),
+                "docs/concept-a/document.md".to_owned(),
+                "docs/concept-a/notes.scratch".to_owned(),
+            ]
+        );
+        // An object whose directory is already gone owns nothing; that is an inventory of
+        // zero, not a failure to take one.
+        fs::remove_dir_all(root.path().join("docs/concept-b")).unwrap();
+        assert!(owned_files_for_directory(root.path(), "docs/concept-b")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn owned_file_inventory_refuses_a_directory_no_object_claims() {
+        let root = tempfile::tempdir().unwrap();
+        write_two_object_manifest(root.path());
+        fs::write(root.path().join(".derivon/orientation.json"), "{}").unwrap();
+        fs::create_dir_all(root.path().join("docs/unclaimed")).unwrap();
+        fs::write(root.path().join("docs/unclaimed/document.md"), "x").unwrap();
+        fs::write(root.path().join("loose.md"), "x").unwrap();
+
+        assert!(owned_files_for_directory(root.path(), "../").is_err());
+        assert!(owned_files_for_directory(root.path(), "/etc").is_err());
+        assert!(owned_files_for_directory(root.path(), ".derivon").is_err());
+        assert!(owned_files_for_directory(root.path(), "").is_err());
+        assert!(owned_files_for_directory(root.path(), ".").is_err());
+        assert!(owned_files_for_directory(root.path(), "loose.md").is_err());
+        // A directory holding a plausible object document that no object claims is not one.
+        assert!(owned_files_for_directory(root.path(), "docs/unclaimed").is_err());
+        assert!(owned_files_for_directory(root.path(), "docs").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn owned_file_inventory_refuses_to_follow_a_symlink_out_of_the_object_directory() {
+        let root = tempfile::tempdir().unwrap();
+        write_two_object_manifest(root.path());
+        fs::create_dir_all(root.path().join("docs/concept-a")).unwrap();
+        fs::create_dir_all(root.path().join("docs/concept-b")).unwrap();
+        fs::write(root.path().join("docs/concept-b/document.md"), "# B").unwrap();
+        std::os::unix::fs::symlink(
+            root.path().join("docs/concept-b"),
+            root.path().join("docs/concept-a/borrowed"),
+        )
+        .unwrap();
+
+        let error = owned_files_for_directory(root.path(), "docs/concept-a").unwrap_err();
+        assert!(error.contains("symlink"), "{error}");
+        assert!(root.path().join("docs/concept-b/document.md").exists());
+    }
+
+    #[test]
+    fn deleting_an_objects_files_restores_all_of_them_when_one_delete_fails() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs/concept-a/assets")).unwrap();
+        fs::write(root.path().join("docs/concept-a/document.md"), "# A\n").unwrap();
+        fs::write(root.path().join("docs/concept-a/assets/one.png"), [1_u8, 2]).unwrap();
+        fs::write(root.path().join("docs/concept-a/assets/two.png"), [3_u8, 4]).unwrap();
+        let prepared = [
+            "docs/concept-a/document.md",
+            "docs/concept-a/assets/one.png",
+            "docs/concept-a/assets/two.png",
+        ]
+        .map(|path| prepare_workspace_source_change(root.path(), path, None).unwrap());
+
+        let mut deletes = 0;
+        let error = apply_prepared_workspace_source_changes(&prepared, |change| {
+            deletes += 1;
+            write_workspace_source_content(&change.target, None)?;
+            if deletes == 3 {
+                return Err("simulated third delete failure".to_owned());
+            }
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert!(error.contains("simulated third delete failure"));
+        assert!(!error.contains("rollback also failed"));
+        assert_eq!(
+            fs::read_to_string(root.path().join("docs/concept-a/document.md")).unwrap(),
+            "# A\n"
+        );
+        assert_eq!(
+            fs::read(root.path().join("docs/concept-a/assets/one.png")).unwrap(),
+            vec![1_u8, 2]
+        );
+        assert_eq!(
+            fs::read(root.path().join("docs/concept-a/assets/two.png")).unwrap(),
+            vec![3_u8, 4]
+        );
+    }
+
+    #[test]
+    fn a_failed_multi_file_deletion_whose_rollback_also_fails_is_not_reported_as_success() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs/concept-a/assets")).unwrap();
+        fs::write(root.path().join("docs/concept-a/document.md"), "# A\n").unwrap();
+        fs::write(root.path().join("docs/concept-a/assets/one.png"), [1_u8]).unwrap();
+        let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+            "documents": [{ "path": "docs/concept-a/document.md", "content": null }],
+            "assets": [{ "path": "docs/concept-a/assets/one.png", "content": null }]
+        }))
+        .unwrap();
+
+        // The document is deleted, the asset delete then fails, and by that point neither
+        // file can be written back. Both failures are reported and no revision is returned:
+        // a partly carried out deletion is never reported as a completed one.
+        let mut deletes = 0;
+        let result = commit_workspace_source_changes_using(root.path(), &changes, |change| {
+            deletes += 1;
+            if change.target.ends_with("one.png") {
+                fs::remove_dir_all(root.path().join("docs/concept-a")).unwrap();
+                fs::write(root.path().join("docs/concept-a"), "no longer a directory").unwrap();
+                return Err("simulated asset delete failure".to_owned());
+            }
+            write_workspace_source_content(&change.target, None)
+        });
+
+        assert_eq!(deletes, 2, "both files should have been attempted");
+        let error = result.unwrap_err();
+        assert!(error.contains("simulated asset delete failure"), "{error}");
+        assert!(error.contains("rollback also failed"), "{error}");
     }
 
     #[test]

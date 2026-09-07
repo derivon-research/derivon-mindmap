@@ -18,7 +18,10 @@ describe('WorkspaceSource', () => {
     expect(await source.readAsset('assets/diagram.png')).toEqual(new Uint8Array([0, 159, 255]));
     expect(await source.readCompanionMetadata('.derivon/orientation.json')).toBe('{"questions":[]}\n');
     expect(await source.readCompanionMetadata('.derivon/missing.json')).toBeNull();
+    // No write capability, and therefore no owned-file inventory either: a source that
+    // cannot commit cannot delete, so it is never asked what an object owns.
     expect('commit' in source).toBe(false);
+    expect('listOwnedFiles' in source).toBe(false);
   });
 
   it('opens the fixed web example through the same read port', async () => {

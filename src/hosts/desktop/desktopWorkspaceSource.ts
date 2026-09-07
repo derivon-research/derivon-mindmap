@@ -46,6 +46,9 @@ export function createDesktopWorkspaceSource(
     revision() {
       return invoke('workspace_source_revision', { rootPath });
     },
+    listOwnedFiles(directory) {
+      return invoke<readonly string[]>('list_workspace_source_owned_files', { rootPath, directory });
+    },
     commit(changes) {
       return invoke<string>('commit_workspace_source_changes', {
         rootPath,

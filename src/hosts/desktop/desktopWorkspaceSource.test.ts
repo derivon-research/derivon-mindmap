@@ -30,6 +30,9 @@ describe('desktop WorkspaceSource', () => {
         return files.get(path) ?? null;
       }
       if (command === 'workspace_source_revision') return 'revision-1';
+      if (command === 'list_workspace_source_owned_files') {
+        return [...files.keys()].filter((name) => name.startsWith(`${args?.directory as string}/`)).sort();
+      }
       if (command === 'commit_workspace_source_changes') {
         const changes = args?.changes as {
           graph?: string;
@@ -52,6 +55,10 @@ describe('desktop WorkspaceSource', () => {
     const openedAsset = await source.readAsset('assets/diagram.png');
     const openedCompanion = await source.readCompanionMetadata('.derivon/orientation.json');
     expect(await source.revision!()).toBe('revision-1');
+    expect(await source.listOwnedFiles('docs/concept-a')).toEqual(['docs/concept-a/document.md']);
+    expect(invoke).toHaveBeenLastCalledWith('list_workspace_source_owned_files', {
+      rootPath: '/projects/example', directory: 'docs/concept-a',
+    });
     const committedRevision = await source.commit({
       expectedRevision: 'revision-1',
       graph: openedGraph,

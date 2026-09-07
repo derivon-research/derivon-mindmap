@@ -8,16 +8,20 @@
  * repair is always a decision someone made: nothing here turns a link into text, drops an
  * image, or fills a missing document in without being asked for exactly that.
  */
-import { objectSourcePath, type ConceptPoint, type DerivationHyperedge } from './manifest';
 import {
-  findObject, objectDocumentSource, orientationConceptImpact, updateObjectDocument,
-  type ContentChange, type WorkspaceContent,
+  objectSourcePath, parseWorkspaceManifest, serializeWorkspaceManifest,
+  type ConceptPoint, type DerivationHyperedge,
+} from './manifest';
+import {
+  findObject, isMarkdownPath, objectDocumentSource, orientationConceptImpact, parseWorkspaceContent,
+  updateObjectDocument, updateOrientation, type ContentChange, type WorkspaceContent,
 } from './content';
 import {
   applyReferenceRepairs, documentReferences, objectDocumentHref,
   type DocumentReferenceItem, type ReferenceRepairAction, type ReferenceUncertainty, type SourceRange,
 } from './references';
-import type { OrientationConceptReference } from './orientation';
+import { orientationWithoutConcepts, type OrientationConceptReference } from './orientation';
+import type { WorkspaceAssetChange, WorkspaceTextChange } from '../ports/WorkspaceSource';
 
 export type ObjectRef = { readonly kind: 'concept' | 'derivation'; readonly id: string };
 
@@ -114,12 +118,39 @@ export function referenceImpact(content: WorkspaceContent, plan: DeletionPlan): 
 }
 
 /**
+ * Why a deletion may not proceed, in the order the author has to deal with it. This is the
+ * one place that rule is written: the content operation refuses on it, and a GUI assembling
+ * a plan asks the same question of the impact its planned repairs would leave behind, so
+ * what the author reads and what the deletion enforces cannot drift apart.
+ */
+export function deletionBlockers(impact: ReferenceImpact): readonly string[] {
+  const stops: string[] = [];
+  if (impact.unread.length) {
+    stops.push(`删除前的引用分析不完整：还有 ${impact.unread.length} 份文档没有读取，无法确认它们没有引用要删的内容。`);
+  }
+  if (impact.unreadable.length) {
+    stops.push(`删除前的引用分析不完整：${impact.unreadable.map(({ path }) => path).join('、')} 读不出来。`
+      + '读不出来不等于没有引用，先修好这些来源再决定删除。');
+  }
+  if (impact.uncertain.length) {
+    stops.push(`删除前的引用分析不完整：有 ${impact.uncertain.length} 处引用来源无法分析，它们可能指向要删的内容。`);
+  }
+  if (impact.incoming.length) {
+    stops.push(`还有 ${impact.incoming.length} 处引用指向要删除的内容，每一处都要先选定怎么改。`);
+  }
+  if (impact.orientation.length) {
+    stops.push(`开局配置还有 ${impact.orientation.length} 处引用这些概念，需要一并纳入删除方案。`);
+  }
+  return stops;
+}
+
+/**
  * Whether a deletion may proceed on reference grounds alone. Every source has to have been
  * analysed, and nothing may still point at what is being removed; an author repairs those
  * references, or confirms repairing them as part of the deletion, first.
  */
 export function isDeletionSafe(impact: ReferenceImpact): boolean {
-  return impact.complete && impact.incoming.length === 0 && impact.orientation.length === 0;
+  return deletionBlockers(impact).length === 0;
 }
 
 // ------------------------------------------------------------------ repair
@@ -190,4 +221,125 @@ export function restoreObjectDocument(content: WorkspaceContent, intent: Restore
     changes: { documents: [{ path, content: text, ...(intent.overwriteDamaged ? {} : { createOnly: true as const }) }] },
     objectId: owner.id,
   };
+}
+
+// ------------------------------------------------------------------ deletion
+
+export type DeleteObjectsIntent = {
+  readonly plan: DeletionPlan;
+  /**
+   * The host's inventory of each removed directory, as workspace-relative paths. It is the
+   * inventory and not a scan of document text, because an asset no body mentions is exactly
+   * what a scan cannot find and what ADR-0005 says must go with its object. Every directory
+   * in scope needs an entry; an entry may legitimately be empty.
+   */
+  readonly ownedFiles: Readonly<Record<string, readonly string[]>>;
+  /** Repairs to surviving documents, confirmed as part of this one plan. */
+  readonly repairs?: readonly RepairReferencesIntent[];
+  /** Take the removed concepts out of the orientation configuration in the same change. */
+  readonly repairOrientation?: boolean;
+};
+
+
+
+/**
+ * Carry out a complete deletion: the graph entries, every file the removed objects own, and
+ * the reference repairs the author confirmed, as one content change on one commit. There is
+ * no graph-only variant and no orphan-file cleanup afterwards (ADR-0005).
+ *
+ * The safety rule is the same one `isDeletionSafe` states, checked against the content the
+ * repairs produce rather than the content the author started from: every reference source
+ * must have been read, and nothing may still point at what is going. A source that could not
+ * be read is not evidence of no references, so it refuses the deletion instead of being
+ * skipped, and the object keeps its management entry.
+ */
+export function deleteObjects(content: WorkspaceContent, intent: DeleteObjectsIntent): ContentChange {
+  const scope = deletionScope(content, intent.plan);
+  const known = new Set([...content.graph.points, ...content.graph.hyperedges].map(({ id }) => id));
+  const unknown = [...intent.plan.conceptIds ?? [], ...intent.plan.derivationIds ?? []].filter((id) => !known.has(id));
+  if (unknown.length) throw new Error(`删除方案说到了图里没有的对象：${unknown.join('、')}`);
+  if (!scope.concepts.length && !scope.derivations.length) throw new Error('删除方案里没有要删除的对象。');
+
+  const owned = ownedFilesInScope(scope, intent.ownedFiles);
+  const removedIds = new Set([...scope.concepts, ...scope.derivations].map(({ id }) => id));
+
+  let current = content;
+  const documents: WorkspaceTextChange[] = [];
+  let companionMetadata: WorkspaceTextChange[] = [];
+  for (const repair of mergedRepairs(intent.repairs ?? [])) {
+    if (removedIds.has(repair.object.id)) {
+      throw new Error(`「${repair.object.id}」自己就在这次删除里，不需要也不能修正它的引用。`);
+    }
+    const change = repairDocumentReferences(current, repair);
+    current = change.content;
+    documents.push(...change.changes.documents ?? []);
+  }
+  if (intent.repairOrientation) {
+    const config = current.orientation.status === 'absent' ? null : current.orientation.config;
+    if (!config) throw new Error('开局配置读不出来，无法把它的修正纳入删除方案。');
+    const change = updateOrientation(current, orientationWithoutConcepts(config, scope.concepts.map(({ id }) => id)));
+    current = change.content;
+    companionMetadata = [...change.changes.companionMetadata ?? []];
+  }
+
+  const stops = deletionBlockers(referenceImpact(current, intent.plan));
+  if (stops.length) throw new Error(stops.join('\n'));
+
+  const manifest = parseWorkspaceManifest(current.graphText).manifest;
+  const graph = serializeWorkspaceManifest({ ...manifest, graph: {
+    points: manifest.graph.points.filter((point) => !removedIds.has(point.id)),
+    hyperedges: manifest.graph.hyperedges.filter((edge) => !removedIds.has(edge.id)),
+  } });
+  const gone = new Set(owned);
+  return {
+    content: parseWorkspaceContent({
+      graph,
+      documents: withoutPaths(current.documents, gone),
+      assets: withoutPaths(current.assets ?? {}, gone),
+      companionMetadata: current.companionMetadata,
+    }),
+    changes: {
+      graph,
+      documents: [...documents, ...owned.filter(isMarkdownPath).map((path) => ({ path, content: null }))],
+      assets: owned.filter((path) => !isMarkdownPath(path)).map((path): WorkspaceAssetChange => ({ path, content: null })),
+      ...(companionMetadata.length ? { companionMetadata } : {}),
+    },
+  };
+}
+
+/**
+ * The files the plan may delete. Ownership is checked here rather than trusted: a path the
+ * host reported outside the directory it was asked about, or a directory the caller forgot
+ * to ask about, refuses the whole deletion instead of writing part of it.
+ */
+function ownedFilesInScope(scope: DeletionScope, inventory: Readonly<Record<string, readonly string[]>>): string[] {
+  const files: string[] = [];
+  for (const directory of scope.directories) {
+    const listed = inventory[directory];
+    if (!listed) throw new Error(`还没有取得「${directory}」的所属文件清单，不能只删一半。`);
+    for (const path of listed) {
+      if (!path.startsWith(`${directory}/`)) {
+        throw new Error(`文件「${path}」不在要删除的目录「${directory}」里，删除方案拒绝执行。`);
+      }
+      files.push(path);
+    }
+  }
+  return [...new Set(files)];
+}
+
+/** One document is rewritten once, so the commit never carries the same path twice. */
+function mergedRepairs(repairs: readonly RepairReferencesIntent[]): RepairReferencesIntent[] {
+  const byObject = new Map<string, RepairReferencesIntent>();
+  for (const intent of repairs) {
+    const key = `${intent.object.kind}:${intent.object.id}`;
+    const existing = byObject.get(key);
+    byObject.set(key, existing
+      ? { object: intent.object, repairs: [...existing.repairs, ...intent.repairs] }
+      : intent);
+  }
+  return [...byObject.values()];
+}
+
+function withoutPaths<T>(entries: Readonly<Record<string, T>>, removed: ReadonlySet<string>): Record<string, T> {
+  return Object.fromEntries(Object.entries(entries).filter(([path]) => !removed.has(path)));
 }

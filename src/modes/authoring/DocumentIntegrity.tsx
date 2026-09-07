@@ -6,7 +6,7 @@ import {
   type SourceRange, type WorkspaceContent,
 } from '../../workspace/index';
 import type { AuthoringCommands } from '../../synchronization';
-import { derivationTitle } from './ObjectMetadata';
+import { derivationTitle, objectLabel } from './ObjectMetadata';
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -73,8 +73,9 @@ export function DocumentReferences({ content, object, sourcePath, source, author
     if (!authoring) return;
     setChecking(true); setFailure('');
     try {
-      setImpact(await authoring.referenceImpact(object.kind === 'concept'
-        ? { conceptIds: [object.id] } : { derivationIds: [object.id] }));
+      const preview = await authoring.deletionPreview(object.kind === 'concept'
+        ? { conceptIds: [object.id] } : { derivationIds: [object.id] });
+      setImpact(preview.impact);
     } catch (error) { setFailure(message(error)); }
     finally { setChecking(false); }
   }, [authoring, object.id, object.kind]);
@@ -127,17 +128,13 @@ function ReferenceLine({ item }: { item: DocumentReferenceItem }) {
   </>;
 }
 
-function objectLabel(content: WorkspaceContent, object: ObjectRef): string {
-  if (object.kind === 'concept') {
-    return content.graph.points.find((point) => point.id === object.id)?.data.label ?? object.id;
-  }
-  const edge = content.graph.hyperedges.find((item) => item.id === object.id);
-  return edge ? derivationTitle(content.graph, edge) : object.id;
-}
-
-/** Three named decisions. There is no "fix it" that picks one of them for the author. */
-function RepairActions({ content, item, disabled, onRepair }: {
-  content: WorkspaceContent; item: DocumentReferenceItem; disabled?: boolean;
+/**
+ * Three named decisions. There is no "fix it" that picks one of them for the author.
+ * `confirmLabel` says what confirming means where it is used: repairing one reference now,
+ * or writing that decision into a deletion plan that carries it out later.
+ */
+export function RepairActions({ content, item, disabled, confirmLabel, onRepair }: {
+  content: WorkspaceContent; item: DocumentReferenceItem; disabled?: boolean; confirmLabel?: string;
   onRepair: (choice: RepairChoice) => void;
 }) {
   const [confirming, setConfirming] = useState<ReferenceRepairAction | null>(null);
@@ -163,12 +160,12 @@ function RepairActions({ content, item, disabled, onRepair }: {
         {targets.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}
       </select></label>
       <button type="button" className="authoring-primary" disabled={!target}
-        onClick={() => { onRepair({ at: item.at, action: 'retarget', target: target && { kind: target.kind, id: target.id } }); setConfirming(null); }}>确认改指</button></>
+        onClick={() => { onRepair({ at: item.at, action: 'retarget', target: target && { kind: target.kind, id: target.id } }); setConfirming(null); }}>{confirmLabel ?? '确认改指'}</button></>
       : <><span>{confirming === 'unlink' ? '链接会变成它原来的文字，链接目标不再保留。'
         : item.syntax === 'markdown-definition' ? '引用定义会被删掉；正文里用到这个标签的地方会变成普通文字。'
           : item.use === 'image' ? '这张图片会从这份文档里去掉。' : '整个链接连同文字一起去掉。'}</span>
       <button type="button" className="authoring-primary"
-        onClick={() => { onRepair({ at: item.at, action: confirming }); setConfirming(null); }}>确认修正</button></>}
+        onClick={() => { onRepair({ at: item.at, action: confirming }); setConfirming(null); }}>{confirmLabel ?? '确认修正'}</button></>}
     <button type="button" onClick={() => setConfirming(null)}>取消</button>
   </div>;
 }

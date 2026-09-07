@@ -111,6 +111,43 @@ or arbitrary-file existence guarantee is claimed.
   is completed by #52's deletion. No owned-file inventory is added: the impact reports what
   the manifest owns, so a file no document mentions is still #52's host capability gap.
 
+## Delivered In #52
+
+- `WritableWorkspaceSource.listOwnedFiles` closes the owned-file inventory gap, which was the
+  last capability standing between C3-05 and passing: the desktop binding walks one object
+  directory and reports every file under it, including assets no document mentions. Ownership
+  comes from the manifest, so it is not a recursive listing of arbitrary workspace paths, and
+  what it returns is checked for containment again by the content operation.
+- `deleteObjects` in `src/workspace/integrity.ts` is the complete deletion: graph entries,
+  every owned file, and the reference repairs the author confirmed, as one change on one
+  commit. There is no graph-only deletion and no orphan-file cleanup afterwards (ADR-0005).
+  It refuses an inventory that reaches outside a removed directory, an inventory that does
+  not cover every directory the plan removes, and a plan naming an object the graph does not
+  have.
+- `deletionBlockers` is the single statement of why a deletion may not proceed: an unread,
+  unreadable or uncertain reference source, a remaining incoming reference, or a remaining
+  orientation reference. The content operation refuses on it, and the GUI asks the same
+  question of the impact its planned repairs would leave behind, so what an author reads and
+  what the deletion enforces cannot drift apart. Safety is therefore judged on the content the
+  repairs produce, not the content the author started from. `orientationWithoutConcepts` makes
+  the configuration repair executable, and it only runs when the plan says so; an action left
+  naming no concept goes with it, because a configuration carrying one could not be accepted
+  at all. Its option and question stay, and the orientation view is where their emptiness is
+  dealt with.
+- `AuthoringCommands` replaces `referenceImpact` with `deletionPreview`, which answers what a
+  deletion would break *and* what it would take with it, and gains `deleteObjects`. Both
+  acquire every owned body through the shared reader and the inventory through the port
+  before deciding anything; the deletion re-acquires rather than trusting the preview the
+  author has been reading.
+- The authoring GUI carries the plan as a dialogue opened from the object's title row, in
+  the same frame as creation. Repairs are chosen into the plan rather than applied on the
+  spot, and the deletion stays refused until every one of them is decided. See
+  [authoring workbench](authoring-workbench.md).
+- Desktop tests on a real temporary filesystem cover the inventory, its refusals, a
+  multi-file deletion whose rollback succeeds, and one whose rollback also fails; neither is
+  reported as success. C3-05 and C3-06 are covered. Deletion still inherits the port's
+  limits: no cross-process transaction, no CAS and no crash atomicity.
+
 ## Markdown-Only, On-Demand Documents
 
 [ADR-0008](adr/0008-persist-markdown-not-rendered-pages.md) supersedes the dual-file
@@ -198,15 +235,14 @@ confirmation under #55; automatic saving does not bypass that consent.
 
 ## Capability gaps to resolve
 
-The current TypeScript port reads individual paths and submits path-based changes. PR #72 adds
-revision observation and commit preconditions, but no owned-file inventory. The desktop
+The current TypeScript port reads individual paths and submits path-based changes. PR #72 added
+revision observation and commit preconditions; #52 added the owned-file inventory. The desktop
 implementation prepares previous file contents and attempts rollback on a write failure;
 that is not a concurrency or crash-atomicity guarantee. See the current
 [WorkspaceSource contract](workspace-source.md) for observation limits and delivered tests.
 
 | Gap | Required investigation and verification | Delivery responsibility |
 | --- | --- | --- |
-| Owned-file inventory | Enumerate documents and assets, including unused files; validate ownership, path containment and shared references before deletion | #52 with #53; host capability needed before C3-05 can pass |
 | Consistent reads | Establish how graph, documents and configuration refer to one accepted content version, including externally changing files and lazy reads | #51 establishes the shared content model; #55 verifies external-update handling |
 | External-write protection | Define observation and commit-time validation, then test a change occurring between inspection and write; a UI preflight check alone is insufficient | #55, using the same synchronization interface introduced by #51 |
 | Failure guarantees | Test partial write failures and rollback failures without claiming success; state the limit for process crashes and uncooperative external writers | #55 with host-adapter tests; #52 exercises multi-file deletion |

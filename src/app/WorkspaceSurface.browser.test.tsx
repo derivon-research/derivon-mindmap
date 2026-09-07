@@ -31,6 +31,7 @@ function fixture() {
     readCompanionMetadata: async () => null,
     readAsset: async () => bytes,
     revision: async () => revision,
+    listOwnedFiles: async () => [],
     commit,
   };
   const workspace: WorkspaceHandle = { id: 'test', name: 'Test', source, authoringSource: source };

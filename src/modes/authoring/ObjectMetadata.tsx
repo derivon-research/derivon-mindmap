@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { AuthoringCommands } from '../../synchronization';
 import {
@@ -12,13 +12,15 @@ export type ObjectMetadataProps = {
   readonly graph: WorkspaceGraph;
   readonly tags: readonly TagDeclaration[];
   readonly authoring?: AuthoringCommands;
+  /** Opens the deletion plan at the foot of the page; it is never carried out from here. */
+  readonly onDelete?: () => void;
 };
 
 /**
  * The object's own metadata, one property per line, above its document. A name that reads
  * as the title, a one-line description, and the tags — nothing that only a machine needs.
  */
-export function ObjectMetadata({ object, graph, tags, authoring }: ObjectMetadataProps) {
+export function ObjectMetadata({ object, graph, tags, authoring, onDelete }: ObjectMetadataProps) {
   const id = object.kind === 'concept' ? object.point.id : object.edge.id;
   const data = object.kind === 'concept' ? object.point.data : object.edge.data;
   const [failure, setFailure] = useState('');
@@ -34,6 +36,8 @@ export function ObjectMetadata({ object, graph, tags, authoring }: ObjectMetadat
     <div className="authoring-object-title">
       <TextLine value={data.label ?? ''} placeholder={object.kind === 'concept' ? '概念名称' : endpointName(graph, object.kind === 'derivation' ? object.edge : undefined)}
         label="名称" editable={Boolean(authoring)} className="authoring-title-line" onCommit={(label) => save({ label })} />
+      {onDelete && <button type="button" className="authoring-icon authoring-title-delete" title="删除这个对象"
+        aria-label="删除这个对象" onClick={onDelete}><Trash2 size={15} /></button>}
       <span className="authoring-status-ready">有效内容</span>
     </div>
 
@@ -112,4 +116,13 @@ export function endpointName(graph: WorkspaceGraph, edge?: DerivationHyperedge):
 /** A derivation reads from its endpoints until the author names it. */
 export function derivationTitle(graph: WorkspaceGraph, edge: DerivationHyperedge): string {
   return edge.data.label?.trim() || endpointName(graph, edge);
+}
+
+/** How any object is named where it is only being referred to: a link, a list, a plan. */
+export function objectLabel(content: { graph: WorkspaceGraph }, object: { kind: 'concept' | 'derivation'; id: string }): string {
+  if (object.kind === 'concept') {
+    return content.graph.points.find((point) => point.id === object.id)?.data.label ?? object.id;
+  }
+  const edge = content.graph.hyperedges.find((item) => item.id === object.id);
+  return edge ? derivationTitle(content.graph, edge) : object.id;
 }

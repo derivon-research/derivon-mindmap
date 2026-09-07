@@ -3,7 +3,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AuthoringCommands } from '../../synchronization';
-import type { WorkspaceContent } from '../../workspace/index';
+import {
+  WORKSPACE_SCHEMA, parseWorkspaceContent, referenceImpact, type WorkspaceContent,
+} from '../../workspace/index';
 import { AuthoringMode } from './AuthoringMode';
 import { fakeAuthoringCommands } from '../../testing/authoringCommands';
 
@@ -122,6 +124,31 @@ it('blocks submitting a derivation without a conclusion', async () => {
   await page.getByRole('button', { name: /^推导/ }).click();
   await expect.element(page.getByRole('button', { name: '创建推导' })).toBeDisabled();
   expect(authoring.createDerivation).not.toHaveBeenCalled();
+});
+
+it('opens the deletion plan from the object page and leaves no page behind once it is gone', async () => {
+  const content = pointsContent();
+  const authoring = fakeAuthoringCommands({
+    deletionPreview: vi.fn(async (plan) => ({
+      impact: referenceImpact(parseWorkspaceContent({ graph: JSON.stringify({
+        schema: WORKSPACE_SCHEMA, document: { title: 'T', description: '' }, tags: [],
+        graph: { points: content.graph.points, hyperedges: [] },
+      }), documents: Object.fromEntries(content.graph.points.map((point) =>
+        [`${point.data.document}/document.md`, { status: 'ready' as const, text: '' }])) }), plan),
+      ownedFiles: { 'docs/concept-a': ['docs/concept-a/document.md'] },
+    })),
+  });
+  const onSelect = render(content, authoring, 'a');
+  await page.getByRole('button', { name: '对象', exact: true }).click();
+  await page.getByRole('button', { name: '删除这个对象' }).click();
+
+  await expect.element(page.getByRole('dialog', { name: '删除 数域' })).toBeInTheDocument();
+  await page.getByRole('button', { name: '执行完整删除方案' }).click();
+  await page.getByRole('button', { name: '确认删除「数域」' }).click();
+
+  expect(authoring.deleteObjects).toHaveBeenCalledWith({ plan: { conceptIds: ['a'] }, repairs: [] });
+  expect(onSelect).toHaveBeenLastCalledWith(null);
+  await expect.element(page.getByRole('dialog', { name: '删除 数域' })).not.toBeInTheDocument();
 });
 
 it('prefills the derivation form from the relations pane without creating anything', async () => {
