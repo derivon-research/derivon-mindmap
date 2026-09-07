@@ -117,3 +117,12 @@ export function endpointName(graph: WorkspaceGraph, edge?: DerivationHyperedge):
 export function derivationTitle(graph: WorkspaceGraph, edge: DerivationHyperedge): string {
   return edge.data.label?.trim() || endpointName(graph, edge);
 }
+
+/** How any object is named where it is only being referred to: a link, a list, a plan. */
+export function objectLabel(content: { graph: WorkspaceGraph }, object: { kind: 'concept' | 'derivation'; id: string }): string {
+  if (object.kind === 'concept') {
+    return content.graph.points.find((point) => point.id === object.id)?.data.label ?? object.id;
+  }
+  const edge = content.graph.hyperedges.find((item) => item.id === object.id);
+  return edge ? derivationTitle(content.graph, edge) : object.id;
+}

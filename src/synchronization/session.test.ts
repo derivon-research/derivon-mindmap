@@ -587,7 +587,7 @@ describe('object-document integrity through the shared session', () => {
   });
 
   it('takes the owned files the host reports, including an asset no document mentions', async () => {
-    const { session, a, b, pathA, pathB, directoryB, files, assets, commits } = await linkedWorkspace();
+    const { session, a, b, pathA, pathB, directoryB, files, assets, commits, source } = await linkedWorkspace();
     const orphan = `${directoryB}/assets/never-mentioned.png`;
     assets.set(orphan, new Uint8Array([9]));
     try {
@@ -608,6 +608,14 @@ describe('object-document integrity through the shared session', () => {
       expect(commits).toHaveLength(1);
       expect(session.reader.getSnapshot().content.graph.points.map((point) => point.id)).toEqual([a]);
     } finally { session.dispose(); }
+
+    // Reopening finds the same workspace the deletion left, in the same on-disk format.
+    const reopened = await openWorkspaceSession(source);
+    try {
+      expect(reopened.reader.getSnapshot().content.graph.points.map((point) => point.id)).toEqual([a]);
+      expect((await reopened.reader.readDocuments([pathA]))[pathA]).toEqual({ status: 'ready', text: '到 B' });
+      await expect(reopened.reader.readDocuments([pathB])).rejects.toThrow(/不是当前工作区/);
+    } finally { reopened.dispose(); }
   });
 
   it('refuses the whole deletion when the host cannot take the inventory', async () => {

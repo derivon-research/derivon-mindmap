@@ -13,8 +13,8 @@ import {
   type ConceptPoint, type DerivationHyperedge,
 } from './manifest';
 import {
-  findObject, objectDocumentSource, orientationConceptImpact, parseWorkspaceContent, updateObjectDocument,
-  updateOrientation, type ContentChange, type WorkspaceContent,
+  findObject, isMarkdownPath, objectDocumentSource, orientationConceptImpact, parseWorkspaceContent,
+  updateObjectDocument, updateOrientation, type ContentChange, type WorkspaceContent,
 } from './content';
 import {
   applyReferenceRepairs, documentReferences, objectDocumentHref,
@@ -118,12 +118,39 @@ export function referenceImpact(content: WorkspaceContent, plan: DeletionPlan): 
 }
 
 /**
+ * Why a deletion may not proceed, in the order the author has to deal with it. This is the
+ * one place that rule is written: the content operation refuses on it, and a GUI assembling
+ * a plan asks the same question of the impact its planned repairs would leave behind, so
+ * what the author reads and what the deletion enforces cannot drift apart.
+ */
+export function deletionBlockers(impact: ReferenceImpact): readonly string[] {
+  const stops: string[] = [];
+  if (impact.unread.length) {
+    stops.push(`删除前的引用分析不完整：还有 ${impact.unread.length} 份文档没有读取，无法确认它们没有引用要删的内容。`);
+  }
+  if (impact.unreadable.length) {
+    stops.push(`删除前的引用分析不完整：${impact.unreadable.map(({ path }) => path).join('、')} 读不出来。`
+      + '读不出来不等于没有引用，先修好这些来源再决定删除。');
+  }
+  if (impact.uncertain.length) {
+    stops.push(`删除前的引用分析不完整：有 ${impact.uncertain.length} 处引用来源无法分析，它们可能指向要删的内容。`);
+  }
+  if (impact.incoming.length) {
+    stops.push(`还有 ${impact.incoming.length} 处引用指向要删除的内容，每一处都要先选定怎么改。`);
+  }
+  if (impact.orientation.length) {
+    stops.push(`开局配置还有 ${impact.orientation.length} 处引用这些概念，需要一并纳入删除方案。`);
+  }
+  return stops;
+}
+
+/**
  * Whether a deletion may proceed on reference grounds alone. Every source has to have been
  * analysed, and nothing may still point at what is being removed; an author repairs those
  * references, or confirms repairing them as part of the deletion, first.
  */
 export function isDeletionSafe(impact: ReferenceImpact): boolean {
-  return impact.complete && impact.incoming.length === 0 && impact.orientation.length === 0;
+  return deletionBlockers(impact).length === 0;
 }
 
 // ------------------------------------------------------------------ repair
@@ -213,8 +240,7 @@ export type DeleteObjectsIntent = {
   readonly repairOrientation?: boolean;
 };
 
-/** Markdown is written as text; everything else a directory holds is bytes. */
-const isTextFile = (path: string) => path.toLowerCase().endsWith('.md');
+
 
 /**
  * Carry out a complete deletion: the graph entries, every file the removed objects own, and
@@ -256,7 +282,8 @@ export function deleteObjects(content: WorkspaceContent, intent: DeleteObjectsIn
     companionMetadata = [...change.changes.companionMetadata ?? []];
   }
 
-  refuseUnsafeDeletion(referenceImpact(current, intent.plan));
+  const stops = deletionBlockers(referenceImpact(current, intent.plan));
+  if (stops.length) throw new Error(stops.join('\n'));
 
   const manifest = parseWorkspaceManifest(current.graphText).manifest;
   const graph = serializeWorkspaceManifest({ ...manifest, graph: {
@@ -273,8 +300,8 @@ export function deleteObjects(content: WorkspaceContent, intent: DeleteObjectsIn
     }),
     changes: {
       graph,
-      documents: [...documents, ...owned.filter(isTextFile).map((path) => ({ path, content: null }))],
-      assets: owned.filter((path) => !isTextFile(path)).map((path): WorkspaceAssetChange => ({ path, content: null })),
+      documents: [...documents, ...owned.filter(isMarkdownPath).map((path) => ({ path, content: null }))],
+      assets: owned.filter((path) => !isMarkdownPath(path)).map((path): WorkspaceAssetChange => ({ path, content: null })),
       ...(companionMetadata.length ? { companionMetadata } : {}),
     },
   };
@@ -311,25 +338,6 @@ function mergedRepairs(repairs: readonly RepairReferencesIntent[]): RepairRefere
       : intent);
   }
   return [...byObject.values()];
-}
-
-function refuseUnsafeDeletion(impact: ReferenceImpact): void {
-  if (impact.unread.length) {
-    throw new Error(`删除前的引用分析不完整：还有 ${impact.unread.length} 份文档没有读取，无法确认它们没有引用要删的内容。`);
-  }
-  if (impact.unreadable.length) {
-    throw new Error(`删除前的引用分析不完整：${impact.unreadable.map(({ path }) => path).join('、')} 读不出来。`
-      + '读不出来不等于没有引用，先修好这些来源再决定删除。');
-  }
-  if (impact.uncertain.length) {
-    throw new Error(`删除前的引用分析不完整：有 ${impact.uncertain.length} 处引用来源无法分析。`);
-  }
-  if (impact.incoming.length) {
-    throw new Error(`还有 ${impact.incoming.length} 处引用指向要删除的内容，每一处都要先选定怎么改。`);
-  }
-  if (impact.orientation.length) {
-    throw new Error(`开局配置还有 ${impact.orientation.length} 处引用这些概念，需要一并纳入删除方案。`);
-  }
 }
 
 function withoutPaths<T>(entries: Readonly<Record<string, T>>, removed: ReadonlySet<string>): Record<string, T> {

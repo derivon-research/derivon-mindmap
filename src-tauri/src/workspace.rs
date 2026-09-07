@@ -849,9 +849,37 @@ fn collect_owned_files(
     Ok(())
 }
 
+// Ownership is decided by the manifest, not by the shape of the path: the inventory may
+// only be taken for a directory some object actually claims as its own. A workspace file
+// that belongs to nobody is not something a deletion is allowed to enumerate.
+fn is_object_document_directory(root: &Path, relative: &Path) -> Result<bool, String> {
+    let manifest_path = root.join(MANIFEST_PATH);
+    let manifest_text = fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("cannot read {}: {error}", manifest_path.display()))?;
+    let manifest: WorkspaceDocument = serde_json::from_str(&manifest_text)
+        .map_err(|error| format!("invalid {MANIFEST_PATH}: {error}"))?;
+    let values = manifest
+        .graph
+        .points
+        .iter()
+        .map(|point| &point.data)
+        .chain(manifest.graph.hyperedges.iter().map(|edge| &edge.data));
+    for value in values {
+        let reference: DocumentReference = serde_json::from_value(value.clone())
+            .map_err(|error| format!("invalid document reference: {error}"))?;
+        if safe_relative_path(&reference.document)? == relative {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn owned_files_for_directory(root: &Path, directory: &str) -> Result<Vec<String>, String> {
     let relative = safe_relative_path(directory)?;
-    if relative.components().count() == 0 || relative.starts_with(".derivon") {
+    if relative.components().count() == 0
+        || relative.starts_with(".derivon")
+        || !is_object_document_directory(root, &relative)?
+    {
         return Err(format!(
             "`{directory}` is not an object document directory"
         ));
@@ -1776,9 +1804,26 @@ mod tests {
         );
     }
 
+    /** A manifest claiming `docs/concept-a` and `docs/concept-b`, for inventory ownership. */
+    fn write_two_object_manifest(root: &Path) {
+        fs::create_dir_all(root.join(".derivon")).unwrap();
+        fs::write(root.join(MANIFEST_PATH), serde_json::json!({
+            "schema": "derivon.workspace/v1",
+            "document": { "title": "T", "description": "" },
+            "graph": {
+                "points": [
+                    { "id": "c-a", "data": { "label": "A", "document": "docs/concept-a" } },
+                    { "id": "c-b", "data": { "label": "B", "document": "docs/concept-b" } }
+                ],
+                "hyperedges": []
+            }
+        }).to_string()).unwrap();
+    }
+
     #[test]
     fn owned_file_inventory_lists_every_file_under_an_object_directory() {
         let root = tempfile::tempdir().unwrap();
+        write_two_object_manifest(root.path());
         fs::create_dir_all(root.path().join("docs/concept-a/assets/nested")).unwrap();
         fs::create_dir_all(root.path().join("docs/concept-b")).unwrap();
         fs::write(root.path().join("docs/concept-a/document.md"), "# A").unwrap();
@@ -1798,17 +1843,21 @@ mod tests {
                 "docs/concept-a/notes.scratch".to_owned(),
             ]
         );
-        // A directory that is already gone owns nothing; that is an inventory, not a failure.
-        assert!(owned_files_for_directory(root.path(), "docs/concept-z")
+        // An object whose directory is already gone owns nothing; that is an inventory of
+        // zero, not a failure to take one.
+        fs::remove_dir_all(root.path().join("docs/concept-b")).unwrap();
+        assert!(owned_files_for_directory(root.path(), "docs/concept-b")
             .unwrap()
             .is_empty());
     }
 
     #[test]
-    fn owned_file_inventory_refuses_anything_that_is_not_an_object_directory() {
+    fn owned_file_inventory_refuses_a_directory_no_object_claims() {
         let root = tempfile::tempdir().unwrap();
-        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        write_two_object_manifest(root.path());
         fs::write(root.path().join(".derivon/orientation.json"), "{}").unwrap();
+        fs::create_dir_all(root.path().join("docs/unclaimed")).unwrap();
+        fs::write(root.path().join("docs/unclaimed/document.md"), "x").unwrap();
         fs::write(root.path().join("loose.md"), "x").unwrap();
 
         assert!(owned_files_for_directory(root.path(), "../").is_err());
@@ -1817,12 +1866,16 @@ mod tests {
         assert!(owned_files_for_directory(root.path(), "").is_err());
         assert!(owned_files_for_directory(root.path(), ".").is_err());
         assert!(owned_files_for_directory(root.path(), "loose.md").is_err());
+        // A directory holding a plausible object document that no object claims is not one.
+        assert!(owned_files_for_directory(root.path(), "docs/unclaimed").is_err());
+        assert!(owned_files_for_directory(root.path(), "docs").is_err());
     }
 
     #[cfg(unix)]
     #[test]
     fn owned_file_inventory_refuses_to_follow_a_symlink_out_of_the_object_directory() {
         let root = tempfile::tempdir().unwrap();
+        write_two_object_manifest(root.path());
         fs::create_dir_all(root.path().join("docs/concept-a")).unwrap();
         fs::create_dir_all(root.path().join("docs/concept-b")).unwrap();
         fs::write(root.path().join("docs/concept-b/document.md"), "# B").unwrap();

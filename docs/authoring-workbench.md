@@ -91,8 +91,9 @@ relations pane rather than here.
 
 Deletion is the last thing the object page says about an object, under the reference report
 it extends: that report says what this document points at and what points at it, and this
-says what goes when it goes. A quiet control in the title row opens the same section; there
-is no second entry, and no graph view deletes anything (ADR-0002).
+says what goes when it goes. A quiet control in the title row scrolls to and opens that same
+section, so there is one place a deletion is decided and two ways to reach it. No graph view
+deletes anything (ADR-0002).
 
 Opening it assembles the plan before offering anything: the derivations that cannot survive
 losing an endpoint, every file the host reports under each removed directory, the
@@ -110,9 +111,13 @@ or moving to another object, discards the plan; nothing is written by looking at
 
 A reference source that could not be read or could not be analysed refuses the deletion
 outright: unreadable is not evidence of no references, so the object stays where it is with
-this entry still on it. A failed deletion re-reads the plan and reports the failure instead
-of claiming success. An unapplied document draft also blocks it, because the repairs are
-written against the bodies that are in effective content.
+this entry still on it. Such a source is repaired where it lives, not here, so the plan lists
+it with the way to its document. Taking a concept out of the orientation configuration removes
+an action that named nothing else along with it — a configuration carrying an action that
+resolves to no concept could not be accepted at all — while its option and question stay, to be
+dealt with in the orientation view. A failed deletion re-reads the plan and reports the failure
+instead of claiming success. An unapplied document draft also blocks it, because the repairs
+are written against the bodies that are in effective content.
 
 Assembling the plan reads every owned body and asks the host for each directory, so it is a
 deliberate action with a progress status rather than an edit-latency path; the ≤ 200 ms

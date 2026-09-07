@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Compass, FileText, GitBranch, HardDrive, Image, Trash2, Undo2 } from 'lucide-react';
-import type {
-  DeletionPlan, ObjectRef, ReferenceImpact, ReferenceRepairChoice, WorkspaceContent,
+import {
+  deletionBlockers, isMarkdownPath, objectSourcePath,
+  type DeletionPlan, type ObjectRef, type ReferenceImpact, type ReferenceRepairChoice, type WorkspaceContent,
 } from '../../workspace/index';
 import type { AuthoringCommands, DeletionPreview } from '../../synchronization';
 import { RepairActions } from './DocumentIntegrity';
-import { derivationTitle } from './ObjectMetadata';
+import { objectLabel } from './ObjectMetadata';
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -26,7 +27,7 @@ const referenceKey = (item: ReferenceImpact['incoming'][number]) =>
  * picks are carried out by the same deletion, in one change. A reference source that could
  * not be read leaves the object exactly where it is, with this entry still on it.
  */
-export function DeleteObject({ content, object, authoring, open, onOpen, onClose, onDeleted, blocked }: {
+export function DeleteObject({ content, object, authoring, open, onOpen, onClose, onDeleted, onOpenObject, blocked }: {
   content: WorkspaceContent;
   object: ObjectRef;
   authoring: AuthoringCommands;
@@ -34,6 +35,8 @@ export function DeleteObject({ content, object, authoring, open, onOpen, onClose
   onOpen: () => void;
   onClose: () => void;
   onDeleted: () => void;
+  /** A source that could not be analysed is repaired where it lives, so the plan links to it. */
+  onOpenObject: (object: ObjectRef) => void;
   /** An unapplied document draft: repairs would be written against a body being replaced. */
   blocked?: string;
 }) {
@@ -58,37 +61,26 @@ export function DeleteObject({ content, object, authoring, open, onOpen, onClose
   }, [load, open]);
 
   const impact = preview?.impact;
-  const outstanding = useMemo(() => {
-    if (!impact) return [];
-    const stops: string[] = [];
-    if (!impact.complete) {
-      stops.push('有引用来源没有读到或无法分析。读不出来不等于没有引用，先把这些来源修好，再决定删除。');
-    }
-    const remaining = impact.incoming.filter((item) => !repairs[referenceKey(item)]);
-    if (remaining.length) stops.push(`还有 ${remaining.length} 处引用指向要删的内容，每一处都要自己选一种改法。`);
-    if (impact.orientation.length && !repairOrientation) {
-      stops.push(`开局配置有 ${impact.orientation.length} 处引用这个概念，需要一并纳入方案。`);
-    }
-    return stops;
-  }, [impact, repairOrientation, repairs]);
+  // What the plan would leave behind, judged by the same rule the deletion itself enforces:
+  // the impact minus the repairs that are already decided.
+  const outstanding = useMemo(() => impact ? deletionBlockers({
+    ...impact,
+    incoming: impact.incoming.filter((item) => !repairs[referenceKey(item)]),
+    orientation: repairOrientation ? [] : impact.orientation,
+  }) : [], [impact, repairOrientation, repairs]);
   const ready = Boolean(impact) && outstanding.length === 0 && !blocked;
 
   async function run() {
     if (deleting) return;
     setDeleting(true); setFailure('');
     try {
-      const byObject = new Map<string, { object: ObjectRef; repairs: ReferenceRepairChoice[] }>();
-      for (const item of impact?.incoming ?? []) {
-        const choice = repairs[referenceKey(item)];
-        if (!choice) continue;
-        const key = `${item.from.kind}:${item.from.id}`;
-        const entry = byObject.get(key) ?? { object: { kind: item.from.kind, id: item.from.id }, repairs: [] };
-        entry.repairs.push(choice);
-        byObject.set(key, entry);
-      }
       await authoring.deleteObjects({
         plan: planOf(object),
-        repairs: [...byObject.values()],
+        // One decision per reference; the content operation is what gathers them per document.
+        repairs: (impact?.incoming ?? []).flatMap((item) => {
+          const choice = repairs[referenceKey(item)];
+          return choice ? [{ object: { kind: item.from.kind, id: item.from.id }, repairs: [choice] }] : [];
+        }),
         ...(repairOrientation ? { repairOrientation: true } : {}),
       });
       onDeleted();
@@ -117,7 +109,7 @@ export function DeleteObject({ content, object, authoring, open, onOpen, onClose
         {failure && <p className="document-editor-error" role="alert">{failure}</p>}
         {blocked && <p className="document-references-note">{blocked}</p>}
         {preview && <DeletionPlanReport content={content} preview={preview} repairs={repairs} disabled={Boolean(blocked)}
-          repairOrientation={repairOrientation}
+          repairOrientation={repairOrientation} onOpenObject={onOpenObject}
           onRepair={(key, choice) => setRepairs((current) => {
             if (!choice) { const { [key]: _dropped, ...rest } = current; return rest; }
             return { ...current, [key]: choice };
@@ -125,13 +117,13 @@ export function DeleteObject({ content, object, authoring, open, onOpen, onClose
           onRepairOrientation={setRepairOrientation} />}
         <footer className="authoring-delete-commit">
           {preview && outstanding.map((stop) => <p key={stop} className="authoring-delete-stop" role="alert">{stop}</p>)}
-          {ready && <p className="authoring-delete-summary" role="status">{summarize(preview!)}</p>}
+          {preview && ready && <p className="authoring-delete-summary" role="status">{summarize(preview)}</p>}
           {confirming
             ? <div className="document-repair-actions">
               <span className="authoring-delete-note">一次提交：图、所属文件与引用修正一起写入，不留孤儿文件。</span>
               <button type="button" onClick={() => setConfirming(false)}>再看看</button>
               <button type="button" className="authoring-danger" disabled={deleting}
-                onClick={() => { void run(); }}>{deleting ? '正在删除…' : `确认删除「${label(content, object)}」`}</button>
+                onClick={() => { void run(); }}>{deleting ? '正在删除…' : `确认删除「${objectLabel(content, object)}」`}</button>
             </div>
             : <div className="document-repair-actions">
               <button type="button" onClick={onClose}>取消</button>
@@ -143,24 +135,16 @@ export function DeleteObject({ content, object, authoring, open, onOpen, onClose
   </section>;
 }
 
-function label(content: WorkspaceContent, object: ObjectRef): string {
-  if (object.kind === 'concept') {
-    return content.graph.points.find((point) => point.id === object.id)?.data.label ?? object.id;
-  }
-  const edge = content.graph.hyperedges.find((item) => item.id === object.id);
-  return edge ? derivationTitle(content.graph, edge) : object.id;
-}
-
 function summarize({ impact, ownedFiles }: DeletionPreview): string {
   const files = Object.values(ownedFiles).flat();
-  const assets = files.filter((path) => !path.toLowerCase().endsWith('.md')).length;
+  const assets = files.filter((path) => !isMarkdownPath(path)).length;
   return `${impact.scope.concepts.length} 个概念 · ${impact.scope.derivations.length} 条推导 · `
     + `${files.length} 个文件（其中 ${assets} 个资产）`
     + (impact.incoming.length ? ` · ${impact.incoming.length} 处引用修正` : '')
     + (impact.orientation.length ? ` · ${impact.orientation.length} 处开局配置修正` : '');
 }
 
-function DeletionPlanReport({ content, preview, repairs, repairOrientation, disabled, onRepair, onRepairOrientation }: {
+function DeletionPlanReport({ content, preview, repairs, repairOrientation, disabled, onRepair, onRepairOrientation, onOpenObject }: {
   content: WorkspaceContent;
   preview: DeletionPreview;
   repairs: Record<string, ReferenceRepairChoice>;
@@ -168,14 +152,16 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
   disabled?: boolean;
   onRepair: (key: string, choice: ReferenceRepairChoice | null) => void;
   onRepairOrientation: (repair: boolean) => void;
+  onOpenObject: (object: ObjectRef) => void;
 }) {
   const { impact, ownedFiles } = preview;
   const owners = [
     ...impact.scope.concepts.map((point) => ({ id: point.id, name: point.data.label, directory: point.data.document })),
-    ...impact.scope.derivations.map((edge) => ({ id: edge.id, name: derivationTitle(content.graph, edge), directory: edge.data.document })),
+    ...impact.scope.derivations.map((edge) => ({
+      id: edge.id, name: objectLabel(content, { kind: 'derivation', id: edge.id }), directory: edge.data.document })),
   ];
   const files = Object.values(ownedFiles).flat();
-  const assets = files.filter((path) => !path.toLowerCase().endsWith('.md'));
+  const assets = files.filter((path) => !isMarkdownPath(path));
 
   return <div className="authoring-delete-plan">
     <section aria-label="会被删除的对象">
@@ -185,7 +171,7 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
           <FileText size={13} /><strong>{point.data.label}</strong><small>概念</small>
         </li>)}
         {impact.scope.derivations.map((edge) => <li key={edge.id}>
-          <GitBranch size={13} /><strong>{derivationTitle(content.graph, edge)}</strong>
+          <GitBranch size={13} /><strong>{objectLabel(content, { kind: 'derivation', id: edge.id })}</strong>
           <small>{impact.scope.concepts.length ? '推导 · 少了这个端点就不成立' : '推导'}</small>
         </li>)}
       </ul>
@@ -200,9 +186,9 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
         <p><strong>{owner.name}</strong><code>{owner.directory}/</code></p>
         <ul>
           {(ownedFiles[owner.directory] ?? []).map((path) => <li key={path}>
-            {path.toLowerCase().endsWith('.md') ? <FileText size={12} /> : <Image size={12} />}
+            {isMarkdownPath(path) ? <FileText size={12} /> : <Image size={12} />}
             <code>{path}</code>
-            {!path.toLowerCase().endsWith('.md') && <em>资产</em>}
+            {!isMarkdownPath(path) && <em>资产</em>}
           </li>)}
           {!(ownedFiles[owner.directory] ?? []).length && <li><small>这个目录下没有文件</small></li>}
         </ul>
@@ -221,7 +207,7 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
           const chosen = repairs[key];
           return <li key={key}>
             <span className="document-reference-status is-incoming">{item.reference.use === 'image' ? '共用图片' : '跨文档链接'}</span>
-            <strong>{label(content, { kind: item.from.kind, id: item.from.id })}</strong>
+            <strong>{objectLabel(content, { kind: item.from.kind, id: item.from.id })}</strong>
             <code>{item.reference.raw}</code>
             {chosen
               ? <span className="document-reference-actions">
@@ -239,17 +225,21 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
       <h3><AlertTriangle size={14} />无法分析的引用来源<small>{impact.unreadable.length + impact.uncertain.length + impact.unread.length}</small></h3>
       <p className="document-references-note">
         读不出来的文档不能当成「没有引用」。它修好之前，这个对象保留在这里，管理入口也不撤。
+        每一处都在它自己那份文档里修，不在这里。
       </p>
       <ul className="document-reference-list">
         {impact.unreadable.map((item) => <li key={item.path}>
           <span className="document-reference-status is-unreadable">无法读取</span><code>{item.path}</code><span>{item.message}</span>
+          <SourceLink content={content} documentPath={item.path} onOpenObject={onOpenObject} />
         </li>)}
         {impact.unread.map((path) => <li key={path}>
           <span className="document-reference-status is-uncertain">尚未读取</span><code>{path}</code>
+          <SourceLink content={content} documentPath={path} onOpenObject={onOpenObject} />
         </li>)}
         {impact.uncertain.map((item) => <li key={`${item.documentPath}:${item.uncertainty.at.start}`}>
           <span className="document-reference-status is-uncertain">无法分析</span>
           <code>{item.documentPath}</code><span>{item.uncertainty.detail}</span>
+          <SourceLink content={content} documentPath={item.documentPath} onOpenObject={onOpenObject} />
         </li>)}
       </ul>
     </section>}
@@ -276,6 +266,19 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
   </div>;
 }
 
+/** The way to the document that has to be fixed before this deletion can be judged safe. */
+function SourceLink({ content, documentPath, onOpenObject }: {
+  content: WorkspaceContent; documentPath: string; onOpenObject: (object: ObjectRef) => void;
+}) {
+  const owner = content.graph.points.find((point) => objectSourcePath(point.data) === documentPath)
+    ?? content.graph.hyperedges.find((edge) => objectSourcePath(edge.data) === documentPath);
+  if (!owner) return null;
+  const object: ObjectRef = { kind: 'tails' in owner ? 'derivation' : 'concept', id: owner.id };
+  return <span className="document-reference-actions">
+    <button type="button" onClick={() => onOpenObject(object)}>去修这份文档</button>
+  </span>;
+}
+
 function orientationWhere(at: ReferenceImpact['orientation'][number]['at']): string {
   if (at.field === 'seed.targets') return '默认目标';
   if (at.field === 'seed.known') return '默认已知';
@@ -285,5 +288,5 @@ function orientationWhere(at: ReferenceImpact['orientation'][number]['at']): str
 function repairName(choice: ReferenceRepairChoice, content: WorkspaceContent): string {
   if (choice.action === 'unlink') return '取消链接';
   if (choice.action === 'remove') return '删除引用';
-  return `改指到 ${choice.target ? label(content, choice.target) : ''}`;
+  return `改指到 ${choice.target ? objectLabel(content, choice.target) : ''}`;
 }

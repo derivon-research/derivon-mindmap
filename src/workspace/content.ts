@@ -96,6 +96,16 @@ export function objectDocumentPaths(reference: DocumentReference): readonly stri
   return [objectSourcePath(reference)];
 }
 
+/**
+ * Whether a workspace path is Markdown, which under ADR-0008 means: whether it is a
+ * document rather than an asset. Callers that classify a file — a commit that writes text
+ * or bytes, a list that says which of an object's files is its body — ask here rather than
+ * each writing the rule down.
+ */
+export function isMarkdownPath(path: string): boolean {
+  return path.toLowerCase().endsWith('.md');
+}
+
 export { objectSourcePath };
 
 export function objectDocumentSource(content: WorkspaceContent, reference: DocumentReference): TextResource | undefined {

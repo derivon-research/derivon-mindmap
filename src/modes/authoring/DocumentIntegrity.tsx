@@ -6,7 +6,7 @@ import {
   type SourceRange, type WorkspaceContent,
 } from '../../workspace/index';
 import type { AuthoringCommands } from '../../synchronization';
-import { derivationTitle } from './ObjectMetadata';
+import { derivationTitle, objectLabel } from './ObjectMetadata';
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -126,14 +126,6 @@ function ReferenceLine({ item }: { item: DocumentReferenceItem }) {
     <code>{item.raw}</code>
     <span>{item.message}</span>
   </>;
-}
-
-function objectLabel(content: WorkspaceContent, object: ObjectRef): string {
-  if (object.kind === 'concept') {
-    return content.graph.points.find((point) => point.id === object.id)?.data.label ?? object.id;
-  }
-  const edge = content.graph.hyperedges.find((item) => item.id === object.id);
-  return edge ? derivationTitle(content.graph, edge) : object.id;
 }
 
 /**

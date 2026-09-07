@@ -158,6 +158,27 @@ describe('authoring in a web build', () => {
   });
 });
 
+describe('workspace I/O', () => {
+  it('stays behind the port: no mode and no rendering file reaches a source or a host', async () => {
+    const { modules } = await wholeBuild('desktop');
+    const owning = [...modules].filter((module) => module.startsWith('modes/') || module.startsWith('rendering/'));
+    const offenders: string[] = [];
+    for (const module of owning) {
+      const resolved = await readModule(module);
+      const reached = [...resolved!.imports.staticImports, ...resolved!.imports.dynamicImports]
+        .filter((specifier) => specifier.startsWith('.'))
+        .map((specifier) => resolveRelative(resolved!.file, specifier))
+        // `ports/RouteSolver` is a capability a mode is handed and may name; the workspace
+        // source and the host adapters are not.
+        .filter((target) => target.startsWith('ports/WorkspaceSource') || target.startsWith('hosts/'));
+      if (reached.length) offenders.push(`${module} → ${reached.join(', ')}`);
+    }
+    // CONTEXT.md: 工作区 I/O 不得进入 src/modes/ 或 src/rendering/. A mode asks the shared
+    // authoring commands for a content change; it never holds a source or a host adapter.
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('orientation on the web', () => {
   it('carries the flow, so a workspace without a conversation provider still opens', async () => {
     const { modules } = await wholeBuild('web');

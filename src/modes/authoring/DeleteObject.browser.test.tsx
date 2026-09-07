@@ -52,10 +52,12 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function render(workspace: WorkspaceContent, authoring: AuthoringCommands, onDeleted = vi.fn(), blocked?: string) {
+function render(workspace: WorkspaceContent, authoring: AuthoringCommands, onDeleted = vi.fn(), blocked?: string,
+  onOpenObject = vi.fn()) {
   root = createRoot(container);
   act(() => root?.render(<DeleteObject content={workspace} object={{ kind: 'concept', id: 'c-b' }}
-    authoring={authoring} open onOpen={vi.fn()} onClose={vi.fn()} onDeleted={onDeleted} blocked={blocked} />));
+    authoring={authoring} open onOpen={vi.fn()} onClose={vi.fn()} onDeleted={onDeleted}
+    onOpenObject={onOpenObject} blocked={blocked} />));
   return onDeleted;
 }
 
@@ -86,7 +88,7 @@ it('will not delete until every incoming reference has a chosen repair, then sen
   const onDeleted = render(workspace, authoring);
 
   await expect.element(page.getByRole('region', { name: '指向它的引用' })).toBeInTheDocument();
-  expect(container.textContent).toContain('还有 2 处引用指向要删的内容');
+  expect(container.textContent).toContain('还有 2 处引用指向要删除的内容');
   await expect.element(page.getByRole('button', { name: '执行完整删除方案' })).toBeDisabled();
 
   await page.getByRole('button', { name: '取消链接 ../concept-b/document.md' }).click();
@@ -104,10 +106,10 @@ it('will not delete until every incoming reference has a chosen repair, then sen
 
   expect(authoring.deleteObjects).toHaveBeenCalledWith({
     plan: { conceptIds: ['c-b'] },
-    repairs: [{ object: { kind: 'concept', id: 'c-a' }, repairs: [
-      { at: impact.incoming[0].reference.at, action: 'unlink' },
-      { at: impact.incoming[1].reference.at, action: 'remove' },
-    ] }],
+    repairs: [
+      { object: { kind: 'concept', id: 'c-a' }, repairs: [{ at: impact.incoming[0].reference.at, action: 'unlink' }] },
+      { object: { kind: 'concept', id: 'c-a' }, repairs: [{ at: impact.incoming[1].reference.at, action: 'remove' }] },
+    ],
   });
   expect(onDeleted).toHaveBeenCalled();
 });
@@ -119,12 +121,17 @@ it('refuses to call a deletion safe when a reference source could not be read', 
     'docs/derivation-1/document.md': { status: 'ready', text: '' },
   });
   const authoring = commands(() => ({ impact: referenceImpact(workspace, { conceptIds: ['c-b'] }), ownedFiles }));
-  render(workspace, authoring);
+  const onOpenObject = vi.fn();
+  render(workspace, authoring, vi.fn(), undefined, onOpenObject);
 
   await expect.element(page.getByRole('region', { name: '无法分析的引用来源' })).toBeInTheDocument();
   expect(container.textContent).toContain('读不出来不等于没有引用');
   await expect.element(page.getByRole('button', { name: '执行完整删除方案' })).toBeDisabled();
   expect(authoring.deleteObjects).not.toHaveBeenCalled();
+
+  // The source is repaired where it lives, so the plan has to be able to get there.
+  await page.getByRole('button', { name: '去修这份文档' }).click();
+  expect(onOpenObject).toHaveBeenCalledWith({ kind: 'concept', id: 'c-a' });
 });
 
 it('takes the concept out of the orientation configuration only as a confirmed part of the plan', async () => {

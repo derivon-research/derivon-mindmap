@@ -1,7 +1,8 @@
 import { parseWorkspaceManifest, type ManifestGraph } from './manifest';
 
 export {
-  createConcept, createDerivation, createWorkspace, objectDocumentPaths, objectDocumentSource, objectSourcePath,
+  createConcept, createDerivation, createWorkspace, isMarkdownPath,
+  objectDocumentPaths, objectDocumentSource, objectSourcePath,
   orientationConceptImpact, parseWorkspaceContent, updateConceptTags, updateDerivationStructure,
   updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
   type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type CreateDerivationIntent,
@@ -17,7 +18,8 @@ export {
 } from './references';
 
 export {
-  deleteObjects, deletionScope, isDeletionSafe, referenceImpact, repairDocumentReferences, restoreObjectDocument,
+  deleteObjects, deletionBlockers, deletionScope, isDeletionSafe, referenceImpact, repairDocumentReferences,
+  restoreObjectDocument,
   type DeleteObjectsIntent, type DeletionPlan, type DeletionScope, type IncomingReference, type ObjectRef,
   type ReferenceImpact, type ReferenceRepairChoice, type RepairReferencesIntent, type RestoreDocumentIntent,
 } from './integrity';
