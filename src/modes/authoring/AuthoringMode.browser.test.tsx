@@ -47,6 +47,7 @@ async function pressEnter(field: ReturnType<typeof page.getByRole>) {
 const commands = (createConcept: AuthoringCommands['createConcept'], createDerivation: AuthoringCommands['createDerivation'] = vi.fn()): AuthoringCommands => ({
   createConcept, createDerivation, updateDocument: vi.fn(), updateObjectMetadata: vi.fn(), updateConceptTags: vi.fn(),
   updateTagDeclarations: vi.fn(), updateOrientation: vi.fn(), protectDraft: vi.fn(),
+  repairReferences: vi.fn(), restoreDocument: vi.fn(), referenceImpact: vi.fn(),
 });
 
 it('creates a concept through the new-object dialog, then opens it', async () => {
