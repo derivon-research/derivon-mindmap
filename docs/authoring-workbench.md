@@ -35,6 +35,27 @@ The relations pane grows the contextual shortcut: quiet plus buttons in the 前�
 already selected as the conclusion, respectively as a premise. Prefill is selection help,
 never an automatic creation.
 
+### Editing a derivation's structure
+
+Selecting a derivation turns the relations pane — which already showed that derivation's
+joint premises and result — into its structure editor. Premises are removed one by one and
+added through a concept search; the result is replaced through the same search, never
+cleared, so the draft has no headless state to publish; the learning cost is a field beside
+them. Empty premises, cycles, self-loops and parallel derivations are all legal content and
+are not warned about: `derivon-core` treats an ungrounded cycle as an unreachable target,
+not as a structure error.
+
+Premises, result and cost are one decision and leave as one content change on an explicit
+保存更改. Until then they stay a draft that protects its editing basis; 放弃更改 and selecting
+another object both discard it. Nothing else edits a derivation's structure: a concept's page
+lists its neighbouring derivations for opening only, so one derivation never has two editing
+entries. Without authoring authority the pane stays the read-only endpoint list.
+
+Changing endpoints needs no reference analysis. The owned document directory does not move,
+so cross-document links and images are untouched, and orientation configuration names
+concepts rather than derivations. A premise removal that makes some target unreachable is
+not an error and is not reported as one here; reachability belongs to route solving.
+
 ### The orientation view
 
 A third centre view, 开局, sits beside 对象 and 图浏览. It is not a mode: orientation is a stage
@@ -60,7 +81,11 @@ ticked, not defined.
 
 The id and the document directory are not shown. They are identity and storage, not
 authored metadata; the directory appears only in the error that reports an unreadable
-document. See [new object](#new-object) for how concepts and derivations are created.
+document. Renaming an object is never a change of identity: the id is generated once, at
+creation, and no surface asks for or accepts one. See [new object](#new-object) for how
+concepts and derivations are created, and [editing a derivation's
+structure](#editing-a-derivations-structure) for its endpoints and cost, which live in the
+relations pane rather than here.
 
 ### Damaged documents and references
 

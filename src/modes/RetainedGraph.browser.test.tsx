@@ -9,6 +9,9 @@ import { RetainedGraph } from './RetainedGraph';
 let container: HTMLDivElement;
 let root: Root;
 const view: GraphView = { kind: 'overview', concepts: [{ id: 'a', label: 'A', marks: [] }], hyperedges: [] };
+const structured: GraphView = { kind: 'overview',
+  concepts: ['a', 'b', 'c'].map((id) => ({ id, label: id.toUpperCase(), marks: [] })),
+  hyperedges: [{ id: 'h', tails: ['a', 'b'], head: 'c', weight: 2, marks: [] }] };
 const onEvent = vi.fn();
 
 beforeEach(() => {
@@ -28,6 +31,24 @@ function render(active: boolean, content = view) {
     <RetainedGraph active={active} view={content} onEvent={onEvent} />
   </div>));
 }
+
+// ADR-0006: re-costing a derivation is not a topology change, so a hidden overview keeps
+// its layout; moving a premise is one, so the stale layout is dropped instead of recomputed.
+it('retains a hidden overview across a weight change and invalidates it on a premise change', async () => {
+  await page.viewport(1000, 700);
+  render(true, structured);
+  await expect.element(page.getByRole('img')).toHaveAttribute('aria-busy', 'false');
+  const canvas = container.querySelector('canvas');
+  expect(canvas).not.toBeNull();
+
+  const recosted: GraphView = { ...structured, hyperedges: [{ ...structured.hyperedges[0], weight: 0.5 }] };
+  render(false, recosted);
+  expect(container.querySelector('canvas')).toBe(canvas);
+
+  const repremised: GraphView = { ...structured, hyperedges: [{ ...structured.hyperedges[0], tails: ['a'] }] };
+  render(false, repremised);
+  await expect.poll(() => container.querySelector('canvas')).toBeNull();
+});
 
 it.each([360, 1000])('preserves a panned unchanged viewport and invalidates hidden topology at %i px', async (width) => {
   await page.viewport(width, 700);

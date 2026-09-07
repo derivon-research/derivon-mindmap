@@ -2,6 +2,7 @@ import { FileText, GitBranch, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { AuthoringCommands } from '../../synchronization';
 import { type ConceptPoint, type WorkspaceGraph } from '../../workspace/index';
+import { ConceptOptions } from './ConceptOptions';
 import { derivationTitle } from './ObjectMetadata';
 
 /**
@@ -117,36 +118,19 @@ export function CreateObjectDialog({ graph, authoring, request, draftKey, onClos
   </>;
 }
 
-/** Search for a concept in a graph too large to scan, then pick it. */
+/** A persistent column: the matches stay on screen while several premises are ticked. */
 function ConceptPicker({ label, tone, points, pointById, selected, onToggle }: {
   label: string; tone: 'tail' | 'head'; points: readonly ConceptPoint[];
   pointById: Map<string, ConceptPoint>; selected: readonly string[];
   onToggle: (id: string) => void;
 }) {
-  const [query, setQuery] = useState('');
-  const needle = query.trim().toLowerCase();
-  const hits = useMemo(() => {
-    const matches = needle
-      ? points.filter((point) => point.data.label?.toLowerCase().includes(needle) || point.id.toLowerCase().includes(needle))
-      : points;
-    return matches.slice(0, 12);
-  }, [needle, points]);
   return <section className={`authoring-picker is-${tone}`} aria-label={label}>
-    <label className="authoring-picker-label">{label}
-      <input className="authoring-picker-search" placeholder="搜索概念" aria-label={`${label}搜索`}
-        value={query} onChange={(event) => setQuery(event.target.value)} />
-    </label>
+    <p className="authoring-picker-label">{label}</p>
     {selected.length > 0 && <div className="authoring-picker-selected">
       {selected.map((id) => <button type="button" key={id} className="authoring-chip" title="移除" onClick={() => onToggle(id)}>
         {pointById.get(id)?.data.label ?? id} ✕
       </button>)}
     </div>}
-    <div className="authoring-picker-list" role="listbox" aria-label={`${label}候选`}>
-      {hits.map((point) => <button type="button" role="option" key={point.id} aria-selected={selected.includes(point.id)}
-        className={selected.includes(point.id) ? 'is-selected' : ''} onClick={() => onToggle(point.id)}>
-        <FileText size={14} />{point.data.label ?? point.id}<small>{point.id}</small>
-      </button>)}
-      {!hits.length && <p className="authoring-empty-note">{needle ? '没有匹配的概念' : '图里还没有概念'}</p>}
-    </div>
+    <ConceptOptions label={label} points={points} marked={selected} limit={12} onPick={onToggle} />
   </section>;
 }

@@ -11,6 +11,7 @@ import {
 
 vi.mock('../../../rendering', () => ({ GraphRenderer: ({ view }: GraphRendererProps) => <div>路线子图 {view.concepts.length}</div> }));
 import { AuthoringMode } from '../AuthoringMode';
+import { fakeAuthoringCommands } from '../../../testing/authoringCommands';
 
 let container: HTMLDivElement;
 let root: Root | undefined;
@@ -39,19 +40,10 @@ function harness() {
   const protectDraft = vi.fn();
   const render = () => act(() => root?.render(<AuthoringMode active workspace={{ id: 'w', name: '开局工作区' }}
     content={content} authoring={authoring} routeSolver={solver} selectedConceptId={null} onSelectConcept={vi.fn()} />));
-  const authoring: AuthoringCommands = {
-    createConcept: vi.fn(() => 'unused'),
-    createDerivation: vi.fn(),
-    updateDocument: vi.fn(),
-    repairReferences: vi.fn(),
-    restoreDocument: vi.fn(),
-    referenceImpact: vi.fn(),
-    updateObjectMetadata: vi.fn(),
-    updateConceptTags: vi.fn(),
-    updateTagDeclarations: vi.fn(),
+  const authoring: AuthoringCommands = fakeAuthoringCommands({
     updateOrientation: vi.fn((config) => { content = updateOrientation(content, config).content; render(); }),
     protectDraft,
-  };
+  });
   root = createRoot(container);
   render();
   return { protectDraft, authoring, get content() { return content; } };

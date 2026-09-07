@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, createConcept, createDerivation, createWorkspace, emptyOrientationConfig,
   objectDocumentSource, orientationConceptImpact, parseWorkspaceContent, updateConceptTags,
-  updateObjectDocument, updateOrientation, updateTagDeclarations,
+  updateDerivationStructure, updateObjectDocument, updateOrientation, updateTagDeclarations,
   type OrientationConfig, type WorkspaceContent,
 } from './index';
 import { parseWorkspaceManifest } from './manifest';
@@ -218,6 +218,89 @@ describe('creating derivations as workspace content', () => {
     expect(() => createDerivation(base, { tails: [], head: a, weight: -1 })).toThrow();
     expect(() => createDerivation(base, { tails: [], head: a, weight: 0.25 })).toThrow();
     expect(base.graph.hyperedges).toEqual([]);
+  });
+});
+
+describe('modifying a derivation as workspace content', () => {
+  /** A + B → C, so a premise can be dropped, added and swapped from one fixture. */
+  const withDerivation = () => {
+    let content = createWorkspace({ title: 'T' }).content;
+    for (const label of ['A', 'B', 'C']) content = createConcept(content, { label }).content;
+    const created = createDerivation(content, {
+      tails: [idOf(content, 'A'), idOf(content, 'B')], head: idOf(content, 'C'), weight: 2,
+    });
+    return { content: created.content, id: created.objectId };
+  };
+
+  it('replaces premises, conclusion and cost in one operation, keeping identity and document', () => {
+    const { content, id } = withDerivation();
+    const before = content.graph.hyperedges[0];
+    const changed = updateDerivationStructure(content, {
+      derivationId: id, tails: [idOf(content, 'B')], head: idOf(content, 'A'), weight: 0.5,
+    });
+    const edge = parseWorkspaceManifest(changed.changes.graph!).manifest.graph.hyperedges[0];
+
+    expect(edge).toEqual({ id, weight: 0.5, tails: [idOf(content, 'B')], head: idOf(content, 'A'),
+      data: before.data });
+    expect(changed.objectId).toBe(id);
+    // The document is not touched: a structure change is a graph change alone.
+    expect(changed.changes.documents).toBeUndefined();
+    expect(changed.content.documents).toEqual(content.documents);
+    expect(content.graph.hyperedges[0]).toEqual(before);
+  });
+
+  it('accepts empty premises, self-loops, cycles and parallel derivations', () => {
+    const { content, id } = withDerivation();
+    const [a, b, c] = ['A', 'B', 'C'].map((label) => idOf(content, label));
+
+    const emptied = updateDerivationStructure(content, { derivationId: id, tails: [], head: c, weight: 0 });
+    expect(emptied.content.graph.hyperedges[0].tails).toEqual([]);
+
+    // A self-loop is the degenerate cycle. derivon-core allows it: an ungrounded cycle
+    // never fires, so it surfaces as an unreachable target, not as a structure error.
+    const looped = updateDerivationStructure(content, { derivationId: id, tails: [c, a], head: c, weight: 1 });
+    expect(looped.content.graph.hyperedges[0]).toMatchObject({ tails: [c, a], head: c });
+
+    // A two-step cycle against a second derivation, and a parallel twin of it.
+    const withSecond = createDerivation(content, { tails: [c], head: a, weight: 1 }).content;
+    expect(() => updateDerivationStructure(withSecond, { derivationId: id, tails: [c], head: a, weight: 3 })).not.toThrow();
+    const parallel = updateDerivationStructure(withSecond, { derivationId: id, tails: [c], head: a, weight: 3 });
+    expect(parallel.content.graph.hyperedges.map((edge) => [edge.tails, edge.head]))
+      .toEqual([[[c], a], [[c], a]]);
+    expect(parallel.content.diagnostics).toEqual([]);
+  });
+
+  it('refuses an unknown derivation, dangling endpoints and unrepresentable costs', () => {
+    const { content, id } = withDerivation();
+    const a = idOf(content, 'A');
+    const before = content.graphText;
+
+    expect(() => updateDerivationStructure(content, { derivationId: 'h-ghost', tails: [], head: a, weight: 1 }))
+      .toThrow('未找到推导: h-ghost');
+    expect(() => updateDerivationStructure(content, { derivationId: id, tails: [], head: 'ghost', weight: 1 }))
+      .toThrow('结果概念 ghost 不存在');
+    expect(() => updateDerivationStructure(content, { derivationId: id, tails: ['ghost'], head: a, weight: 1 }))
+      .toThrow('前提概念 ghost 不存在');
+    // A derivation's own id is not a concept, so it can never become an endpoint.
+    expect(() => updateDerivationStructure(content, { derivationId: id, tails: [id], head: a, weight: 1 })).toThrow();
+    expect(() => updateDerivationStructure(content, { derivationId: id, tails: [], head: a, weight: -1 })).toThrow();
+    expect(() => updateDerivationStructure(content, { derivationId: id, tails: [], head: a, weight: 0.25 })).toThrow();
+    expect(content.graphText).toBe(before);
+  });
+
+  it('collapses duplicate premises and leaves every other object untouched', () => {
+    const { content, id } = withDerivation();
+    const [a, b, c] = ['A', 'B', 'C'].map((label) => idOf(content, label));
+    const untouched = createDerivation(content, { tails: [b], head: a, weight: 4 });
+    const changed = updateDerivationStructure(untouched.content, {
+      derivationId: id, tails: [a, a, b], head: c, weight: 2,
+    });
+
+    expect(changed.content.graph.hyperedges[0].tails).toEqual([a, b]);
+    expect(changed.content.graph.hyperedges[1]).toEqual(untouched.content.graph.hyperedges[1]);
+    expect(changed.content.graph.points).toEqual(untouched.content.graph.points);
+    expect(changed.content.tags).toEqual(untouched.content.tags);
+    expect(changed.changes.graph).toBe(changed.content.graphText);
   });
 });
 
