@@ -9,7 +9,7 @@ export const WORKSPACE_SCHEMA = 'derivon.workspace/v1' as const;
 
 const WEIGHT_SCALE = 10;
 
-function isValidWeight(value: unknown): value is number {
+export function isValidWeight(value: unknown): value is number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return false;
   const scaled = Math.round(value * WEIGHT_SCALE);
   return Number.isSafeInteger(scaled) && Math.abs(value - scaled / WEIGHT_SCALE) < 1e-10;

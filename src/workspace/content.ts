@@ -1,8 +1,8 @@
 import type { WorkspaceCommit } from '../ports/WorkspaceSource';
 import { imageMimeType } from './imageReference';
 import {
-  WORKSPACE_SCHEMA, generateObjectId, parseWorkspaceManifest, serializeWorkspaceManifest,
-  type ConceptPoint, type DocumentReference, type ManifestGraph, type TagDeclaration,
+  WORKSPACE_SCHEMA, generateObjectId, isValidWeight, parseWorkspaceManifest, serializeWorkspaceManifest,
+  type ConceptPoint, type DerivationHyperedge, type DocumentReference, type ManifestGraph, type TagDeclaration,
   type WorkspaceManifest,
 } from './manifest';
 import {
@@ -49,6 +49,12 @@ export type ContentChange = {
 
 export type CreateConceptIntent = {
   readonly label: string;
+};
+
+export type CreateDerivationIntent = {
+  readonly tails: readonly string[];
+  readonly head: string;
+  readonly weight: number;
 };
 
 /** The object's own metadata. Its identity and its document location are not editable. */
@@ -206,12 +212,8 @@ export function createWorkspace(intent: { title: string }): ContentChange {
   return { content: parseWorkspaceContent({ graph, documents: {} }), changes: { graph, createOnly: true } };
 }
 
-export function createConcept(content: WorkspaceContent, intent: CreateConceptIntent): ContentChange & { objectId: string } {
-  const label = intent.label.trim();
-  if (!label) throw new Error('概念名称不能为空');
-  const usedIds = new Set([...content.graph.points, ...content.graph.hyperedges].map((object) => object.id));
-  const id = generateObjectId('c', usedIds);
-  const base = `docs/concept-${id.slice(2)}`;
+/** A directory that belongs to a new object alone, never nested in or around an existing one. */
+function objectDirectory(content: WorkspaceContent, base: string): string {
   const usedDirectories = [...content.graph.points, ...content.graph.hyperedges].map((object) => object.data.document);
   let directory = base;
   let suffix = 2;
@@ -219,10 +221,58 @@ export function createConcept(content: WorkspaceContent, intent: CreateConceptIn
     || Object.keys(content.documents).some((path) => path.startsWith(`${directory}/`))) {
     directory = `${base}-${suffix++}`;
   }
+  return directory;
+}
+
+export function createConcept(content: WorkspaceContent, intent: CreateConceptIntent): ContentChange & { objectId: string } {
+  const label = intent.label.trim();
+  if (!label) throw new Error('概念名称不能为空');
+  const usedIds = new Set([...content.graph.points, ...content.graph.hyperedges].map((object) => object.id));
+  const id = generateObjectId('c', usedIds);
+  const directory = objectDirectory(content, `docs/concept-${id.slice(2)}`);
   const point: ConceptPoint = { id, data: { label, document: directory } };
   const manifest = manifestOf(content);
   const graph = serializeWorkspaceManifest({ ...manifest, graph: {
     ...manifest.graph, points: [...manifest.graph.points, point],
+  } });
+  const documents = [
+    { path: `${directory}/document.md`, content: '', createOnly: true as const },
+  ];
+  return {
+    objectId: id,
+    content: parseWorkspaceContent({
+      graph,
+      documents: { ...content.documents, ...Object.fromEntries(documents.map(({ path, content: text }) =>
+        [path, { status: 'ready' as const, text }])) },
+      companionMetadata: content.companionMetadata,
+      assets: content.assets,
+    }),
+    changes: { graph, documents },
+  };
+}
+
+/**
+ * Create a derivation as a hyperedge with its own owned document. Empty premises, cycles
+ * and parallel derivations are legal; a missing head or a dangling concept reference
+ * cannot enter effective content.
+ */
+export function createDerivation(content: WorkspaceContent, intent: CreateDerivationIntent): ContentChange & { objectId: string } {
+  const pointIds = new Set(content.graph.points.map((point) => point.id));
+  if (!pointIds.has(intent.head)) throw new Error(`结果概念 ${intent.head} 不存在`);
+  const tails = [...new Set(intent.tails)];
+  for (const tail of tails) {
+    if (!pointIds.has(tail)) throw new Error(`前提概念 ${tail} 不存在`);
+  }
+  if (!isValidWeight(intent.weight)) {
+    throw new Error('学习成本必须是非负且最多保留一位小数的数值');
+  }
+  const usedIds = new Set([...content.graph.points, ...content.graph.hyperedges].map((object) => object.id));
+  const id = generateObjectId('h', usedIds);
+  const directory = objectDirectory(content, `docs/derivation-${id.slice(2)}`);
+  const edge: DerivationHyperedge = { id, weight: intent.weight, tails, head: intent.head, data: { document: directory } };
+  const manifest = manifestOf(content);
+  const graph = serializeWorkspaceManifest({ ...manifest, graph: {
+    ...manifest.graph, hyperedges: [...manifest.graph.hyperedges, edge],
   } });
   const documents = [
     { path: `${directory}/document.md`, content: '', createOnly: true as const },

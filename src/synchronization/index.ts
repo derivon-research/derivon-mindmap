@@ -1,8 +1,8 @@
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import {
-  ORIENTATION_PATH, createConcept, objectSourcePath, parseWorkspaceContent,
+  ORIENTATION_PATH, createConcept, createDerivation, objectSourcePath, parseWorkspaceContent,
   updateConceptTags, updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
-  type ContentChange, type CreateConceptIntent, type OrientationConfig, type TagDeclaration,
+  type ContentChange, type CreateConceptIntent, type CreateDerivationIntent, type OrientationConfig, type TagDeclaration,
   type TextResource, type UpdateConceptTagsIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
   type WorkspaceContent,
 } from '../workspace/index';
@@ -32,6 +32,7 @@ export type WorkspaceReader = {
 
 export type AuthoringCommands = {
   createConcept(intent: CreateConceptIntent): string;
+  createDerivation(intent: CreateDerivationIntent): string;
   updateDocument(intent: UpdateDocumentIntent): void;
   updateObjectMetadata(intent: UpdateMetadataIntent): void;
   updateConceptTags(intent: UpdateConceptTagsIntent): void;
@@ -275,6 +276,12 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
       createConcept(intent) {
         assertCurrent();
         const change = createConcept(snapshot.content, intent);
+        accept(change);
+        return change.objectId;
+      },
+      createDerivation(intent) {
+        assertCurrent();
+        const change = createDerivation(snapshot.content, intent);
         accept(change);
         return change.objectId;
       },

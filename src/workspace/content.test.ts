@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, createConcept, createWorkspace, emptyOrientationConfig,
+  ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, createConcept, createDerivation, createWorkspace, emptyOrientationConfig,
   objectDocumentSource, orientationConceptImpact, parseWorkspaceContent, updateConceptTags,
   updateObjectDocument, updateOrientation, updateTagDeclarations,
   type OrientationConfig, type WorkspaceContent,
@@ -139,6 +139,60 @@ describe('complete workspace content operations', () => {
       assets: { [`${directory}/assets/123e4567-e89b-42d3-a456-426614174000.webp`]: new Uint8Array([8]) } });
     expect(() => updateObjectDocument(withAsset, { object: { kind: 'concept', id }, source: '',
       assets: [{ name: '123e4567-e89b-42d3-a456-426614174000.webp', content: new Uint8Array([9]) }] })).toThrow(/已存在/);
+  });
+});
+
+describe('creating derivations as workspace content', () => {
+  const twoConcepts = () => {
+    const base = createWorkspace({ title: 'T' }).content;
+    return createConcept(createConcept(base, { label: 'A' }).content, { label: 'B' }).content;
+  };
+
+  it('creates a derivation with its owned document in one operation', () => {
+    const base = twoConcepts();
+    const a = idOf(base, 'A');
+    const b = idOf(base, 'B');
+    const created = createDerivation(base, { tails: [a, a], head: b, weight: 1.5 });
+    const manifest = parseWorkspaceManifest(created.changes.graph!).manifest;
+    const edge = manifest.graph.hyperedges[0];
+
+    expect(created.objectId).toMatch(/^h-[23456789abcdefghjkmnpqrstvwxyz]{6}$/);
+    // Duplicate premises are collapsed instead of being written into the manifest.
+    expect(edge).toEqual({ id: created.objectId, weight: 1.5, tails: [a], head: b, data: {
+      document: `docs/derivation-${created.objectId.slice(2)}`,
+    } });
+    expect(created.changes.documents).toEqual([
+      { path: `${edge.data.document}/document.md`, content: '', createOnly: true },
+    ]);
+    expect(created.content.documents[`${edge.data.document}/document.md`]).toEqual({ status: 'ready', text: '' });
+    expect(created.content.diagnostics).toEqual([]);
+    expect(base.graph.hyperedges).toEqual([]);
+  });
+
+  it('allows empty premises, cycles and parallel derivations', () => {
+    const base = twoConcepts();
+    const a = idOf(base, 'A');
+    const b = idOf(base, 'B');
+
+    expect(() => createDerivation(base, { tails: [], head: a, weight: 0 })).not.toThrow();
+    // A cycle: B → A while A → B exists is legal graph content.
+    const first = createDerivation(base, { tails: [a], head: b, weight: 1 });
+    expect(() => createDerivation(first.content, { tails: [b], head: a, weight: 1 })).not.toThrow();
+    // Parallel derivations differ only by their generated ids.
+    const second = createDerivation(first.content, { tails: [a], head: b, weight: 2 });
+    expect(second.content.graph.hyperedges).toHaveLength(2);
+    expect(second.objectId).not.toBe(first.objectId);
+  });
+
+  it('rejects unknown heads, dangling tails and invalid weights without modifying content', () => {
+    const base = twoConcepts();
+    const a = idOf(base, 'A');
+
+    expect(() => createDerivation(base, { tails: [], head: 'ghost', weight: 1 })).toThrow('结果概念 ghost 不存在');
+    expect(() => createDerivation(base, { tails: ['ghost'], head: a, weight: 1 })).toThrow('前提概念 ghost 不存在');
+    expect(() => createDerivation(base, { tails: [], head: a, weight: -1 })).toThrow();
+    expect(() => createDerivation(base, { tails: [], head: a, weight: 0.25 })).toThrow();
+    expect(base.graph.hyperedges).toEqual([]);
   });
 });
 

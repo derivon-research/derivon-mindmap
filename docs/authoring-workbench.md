@@ -7,8 +7,8 @@ The prototype harness and its in-memory workspace implementation are not shipped
 ## Navigation
 
 Opening a workspace enters the authoring overview, including for an empty workspace. Creating
-a concept is an explicit command that opens its metadata form; successful creation opens the
-new object's document editor.
+an object is an explicit workbench command; successful creation opens the new object's
+document editor. See [new object](#new-object).
 
 - Selecting a concept in the overview enters its one-step neighbourhood.
 - Selecting a different concept in the neighbourhood selects it and changes the neighbourhood
@@ -20,6 +20,20 @@ new object's document editor.
 - Search results and relation links open the corresponding object document directly.
 - An object page without a selection offers graph browsing when concepts exist. Only a genuinely
   empty writable workspace offers creation of its first concept.
+
+### New object
+
+The workbar carries one creation command, 新建, which opens a dialogue on a kind choice:
+concept or derivation. A concept is a name and a return key. A derivation is the ADR-0002
+form — search and multi-select the joint premises (empty is legal), single-select the head
+(a missing head is the only blocked submit), set the learning cost — with a live endpoint
+preview as its title. Closing the dialogue discards the draft and releases its protection;
+creating lands on the new object's document editor.
+
+The relations pane grows the contextual shortcut: quiet plus buttons in the 前提推导 and
+后续推导 groups open the dialogue directly on the derivation form with the current concept
+already selected as the conclusion, respectively as a premise. Prefill is selection help,
+never an automatic creation.
 
 ### The orientation view
 
@@ -46,8 +60,7 @@ ticked, not defined.
 
 The id and the document directory are not shown. They are identity and storage, not
 authored metadata; the directory appears only in the error that reports an unreadable
-document. Creating a concept is a name and a return key in the workbar, which opens the new
-object's page.
+document. See [new object](#new-object) for how concepts and derivations are created.
 
 Document drafts, the orientation draft and the Agent conversation survive centre-view and mode changes. Merely selecting
 an object in the graph does not mount its document editor or parse its body. The last opened
