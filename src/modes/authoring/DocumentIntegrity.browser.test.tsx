@@ -8,6 +8,7 @@ import {
 } from '../../workspace/index';
 import { AuthoringDocumentEditor } from './AuthoringDocumentEditor';
 import { DocumentReferences } from './DocumentIntegrity';
+import { fakeAuthoringCommands } from '../../testing/authoringCommands';
 
 const graph = JSON.stringify({
   schema: WORKSPACE_SCHEMA, document: { title: 'T', description: '' }, tags: [],
@@ -44,12 +45,9 @@ afterEach(async () => {
 });
 
 function commands(overrides: Partial<AuthoringCommands> = {}): AuthoringCommands {
-  return {
-    createConcept: vi.fn(() => ''), createDerivation: vi.fn(() => ''), updateDocument: vi.fn(),
-    repairReferences: vi.fn(), restoreDocument: vi.fn(), referenceImpact: vi.fn(async () => { throw new Error('未接入'); }),
-    updateObjectMetadata: vi.fn(), updateDerivationStructure: vi.fn(), updateConceptTags: vi.fn(), updateTagDeclarations: vi.fn(),
-    updateOrientation: vi.fn(), protectDraft: vi.fn(), ...overrides,
-  };
+  return fakeAuthoringCommands({
+    referenceImpact: vi.fn(async () => { throw new Error('未接入'); }), ...overrides,
+  });
 }
 
 function renderPanel(workspace: WorkspaceContent, authoring: AuthoringCommands, blocked?: string) {

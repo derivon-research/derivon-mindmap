@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AuthoringCommands } from '../../synchronization';
 import type { WorkspaceContent } from '../../workspace/index';
 import { AuthoringMode } from './AuthoringMode';
+import { fakeAuthoringCommands } from '../../testing/authoringCommands';
 
 const emptyContent: WorkspaceContent = {
   graphText: '', title: 'Test', graph: { points: [], hyperedges: [] }, documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [],
@@ -44,12 +45,8 @@ async function pressEnter(field: ReturnType<typeof page.getByRole>) {
   await field.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
-const commands = (createConcept: AuthoringCommands['createConcept'], createDerivation: AuthoringCommands['createDerivation'] = vi.fn()): AuthoringCommands => ({
-  createConcept, createDerivation, updateDocument: vi.fn(), updateObjectMetadata: vi.fn(),
-  updateDerivationStructure: vi.fn(), updateConceptTags: vi.fn(),
-  updateTagDeclarations: vi.fn(), updateOrientation: vi.fn(), protectDraft: vi.fn(),
-  repairReferences: vi.fn(), restoreDocument: vi.fn(), referenceImpact: vi.fn(),
-});
+const commands = (createConcept: AuthoringCommands['createConcept'], createDerivation: AuthoringCommands['createDerivation'] = vi.fn()): AuthoringCommands =>
+  fakeAuthoringCommands({ createConcept, createDerivation });
 
 it('creates a concept through the new-object dialog, then opens it', async () => {
   const authoring = commands(vi.fn(() => 'c-k7f3q2'));

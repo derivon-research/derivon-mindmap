@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { GraphObject } from '../../rendering';
 import type { AuthoringCommands } from '../../synchronization';
 import type { ConceptPoint, DerivationHyperedge } from '../../workspace/index';
+import { ConceptOptions } from './ConceptOptions';
 
 /**
  * A derivation's own structure, edited where the relations pane already shows it: the
@@ -56,7 +57,7 @@ export function DerivationStructure({ edge, points, authoring, draftKey, onOpen 
         <button type="button" className="authoring-icon" title="添加前提概念" aria-label="添加前提概念"
           onClick={() => setPicking(picking === 'tail' ? null : 'tail')}><Plus size={13} /></button>
       </header>
-      {picking === 'tail' && <ConceptPicker points={points} exclude={tails} label="添加前提概念"
+      {picking === 'tail' && <ConceptPopover points={points} hidden={tails} label="添加前提概念"
         onPick={(id) => { setTails([...tails, id]); setPicking(null); }} onClose={() => setPicking(null)} />}
       <div className="authoring-structure-items">
         {tails.map((id) => <div className="authoring-structure-item is-tail" key={id}>
@@ -74,7 +75,7 @@ export function DerivationStructure({ edge, points, authoring, draftKey, onOpen 
         <button type="button" className="authoring-icon" title="更换结果概念" aria-label="更换结果概念"
           onClick={() => setPicking(picking === 'head' ? null : 'head')}><Search size={13} /></button>
       </header>
-      {picking === 'head' && <ConceptPicker points={points} exclude={[]} label="更换结果概念"
+      {picking === 'head' && <ConceptPopover points={points} hidden={[head]} label="更换结果概念"
         onPick={(id) => { setHead(id); setPicking(null); }} onClose={() => setPicking(null)} />}
       <div className="authoring-structure-items">
         <div className="authoring-structure-item is-head">
@@ -100,30 +101,17 @@ export function DerivationStructure({ edge, points, authoring, draftKey, onOpen 
   </div>;
 }
 
-/** Search a graph too large to scan, then pick one concept. */
-function ConceptPicker({ points, exclude, label, onPick, onClose }: {
-  points: readonly ConceptPoint[]; exclude: readonly string[]; label: string;
+/** A transient surface: one pick answers the question and closes it, Escape abandons it. */
+function ConceptPopover({ points, hidden, label, onPick, onClose }: {
+  points: readonly ConceptPoint[]; hidden: readonly string[]; label: string;
   onPick: (id: string) => void; onClose: () => void;
 }) {
-  const [query, setQuery] = useState('');
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  const needle = query.trim().toLowerCase();
-  const hits = points.filter((point) => !exclude.includes(point.id)
-    && (!needle || point.data.label.toLowerCase().includes(needle) || point.id.toLowerCase().includes(needle))).slice(0, 8);
-  return <div className="authoring-structure-picker">
-    <span className="ws-input"><Search size={14} aria-hidden="true" />
-      <input autoFocus type="search" value={query} placeholder="搜索概念" aria-label={`${label}搜索`}
-        onChange={(event) => setQuery(event.target.value)} />
-    </span>
-    <div role="listbox" aria-label={`${label}候选`}>
-      {hits.map((point) => <button type="button" role="option" aria-selected={false} key={point.id} onClick={() => onPick(point.id)}>
-        <FileText size={13} />{point.data.label}<small>{point.id}</small>
-      </button>)}
-      {!hits.length && <p className="authoring-empty-note">没有匹配的概念</p>}
-    </div>
+  return <div className="authoring-picker authoring-structure-picker">
+    <ConceptOptions label={label} points={points} hidden={hidden} autoFocus onPick={onPick} />
   </div>;
 }
