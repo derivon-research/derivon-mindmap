@@ -47,6 +47,7 @@ function harness() {
     restoreDocument: vi.fn(),
     referenceImpact: vi.fn(),
     updateObjectMetadata: vi.fn(),
+    updateDerivationStructure: vi.fn(),
     updateConceptTags: vi.fn(),
     updateTagDeclarations: vi.fn(),
     updateOrientation: vi.fn((config) => { content = updateOrientation(content, config).content; render(); }),

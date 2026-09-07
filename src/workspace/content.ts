@@ -55,6 +55,18 @@ export type CreateDerivationIntent = {
   readonly weight: number;
 };
 
+/**
+ * A derivation's structure, replaced whole. The author edits joint premises, result and
+ * learning cost as one decision, so they are accepted or refused together; identity and
+ * the owned document are not part of it.
+ */
+export type UpdateDerivationStructureIntent = {
+  readonly derivationId: string;
+  readonly tails: readonly string[];
+  readonly head: string;
+  readonly weight: number;
+};
+
 /** The object's own metadata. Its identity and its document location are not editable. */
 export type UpdateMetadataIntent = {
   readonly object: { readonly kind: 'concept' | 'derivation'; readonly id: string };
@@ -254,11 +266,13 @@ export function createConcept(content: WorkspaceContent, intent: CreateConceptIn
 }
 
 /**
- * Create a derivation as a hyperedge with its own owned document. Empty premises, cycles
- * and parallel derivations are legal; a missing head or a dangling concept reference
- * cannot enter effective content.
+ * The endpoints and cost both creation and modification must agree on. Empty premises,
+ * cycles, self-loops and parallel derivations are legal graph content; only a head that is
+ * not a concept, a dangling premise or an unrepresentable cost is refused.
  */
-export function createDerivation(content: WorkspaceContent, intent: CreateDerivationIntent): ContentChange & { objectId: string } {
+function validDerivationEndpoints(content: WorkspaceContent, intent: {
+  readonly tails: readonly string[]; readonly head: string; readonly weight: number;
+}): { readonly tails: string[]; readonly head: string; readonly weight: number } {
   const pointIds = new Set(content.graph.points.map((point) => point.id));
   if (!pointIds.has(intent.head)) throw new Error(`结果概念 ${intent.head} 不存在`);
   const tails = [...new Set(intent.tails)];
@@ -268,10 +282,20 @@ export function createDerivation(content: WorkspaceContent, intent: CreateDeriva
   if (!isValidWeight(intent.weight)) {
     throw new Error('学习成本必须是非负且最多保留一位小数的数值');
   }
+  return { tails, head: intent.head, weight: intent.weight };
+}
+
+/**
+ * Create a derivation as a hyperedge with its own owned document. Empty premises, cycles
+ * and parallel derivations are legal; a missing head or a dangling concept reference
+ * cannot enter effective content.
+ */
+export function createDerivation(content: WorkspaceContent, intent: CreateDerivationIntent): ContentChange & { objectId: string } {
+  const { tails, head, weight } = validDerivationEndpoints(content, intent);
   const usedIds = new Set([...content.graph.points, ...content.graph.hyperedges].map((object) => object.id));
   const id = generateObjectId('h', usedIds);
   const directory = objectDirectory(content, `docs/derivation-${id.slice(2)}`);
-  const edge: DerivationHyperedge = { id, weight: intent.weight, tails, head: intent.head, data: { document: directory } };
+  const edge: DerivationHyperedge = { id, weight, tails, head, data: { document: directory } };
   const manifest = manifestOf(content);
   const graph = serializeWorkspaceManifest({ ...manifest, graph: {
     ...manifest.graph, hyperedges: [...manifest.graph.hyperedges, edge],
@@ -290,6 +314,22 @@ export function createDerivation(content: WorkspaceContent, intent: CreateDeriva
     }),
     changes: { graph, documents },
   };
+}
+
+/**
+ * Change which concepts a derivation joins and what it costs to learn. The same rules as
+ * creation hold: empty premises, cycles, self-loops and parallel derivations are legal;
+ * a missing head or a dangling concept reference cannot enter effective content.
+ */
+export function updateDerivationStructure(content: WorkspaceContent, intent: UpdateDerivationStructureIntent): ContentChange {
+  const manifest = manifestOf(content);
+  const edge = manifest.graph.hyperedges.find(({ id }) => id === intent.derivationId);
+  if (!edge) throw new Error(`未找到推导: ${intent.derivationId}`);
+  const endpoints = validDerivationEndpoints(content, intent);
+  const graph = serializeWorkspaceManifest({ ...manifest, graph: { ...manifest.graph,
+    hyperedges: manifest.graph.hyperedges.map((current) => current.id === edge.id
+      ? { ...current, ...endpoints } : current) } });
+  return { content: withGraphText(content, graph), changes: { graph }, objectId: edge.id };
 }
 
 /**

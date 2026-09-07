@@ -2,11 +2,12 @@ import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/Workspac
 import {
   ORIENTATION_PATH, createConcept, createDerivation, objectSourcePath, parseWorkspaceContent,
   referenceImpact, repairDocumentReferences, restoreObjectDocument,
-  updateConceptTags, updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
+  updateConceptTags, updateDerivationStructure, updateObjectDocument, updateObjectMetadata, updateOrientation,
+  updateTagDeclarations,
   type ContentChange, type CreateConceptIntent, type CreateDerivationIntent, type DeletionPlan, type ObjectRef,
   type OrientationConfig, type ReferenceImpact, type RepairReferencesIntent, type RestoreDocumentIntent,
-  type TagDeclaration, type TextResource, type UpdateConceptTagsIntent, type UpdateDocumentIntent,
-  type UpdateMetadataIntent, type WorkspaceContent,
+  type TagDeclaration, type TextResource, type UpdateConceptTagsIntent, type UpdateDerivationStructureIntent,
+  type UpdateDocumentIntent, type UpdateMetadataIntent, type WorkspaceContent,
 } from '../workspace/index';
 
 type AcquiredContent = { readonly content: WorkspaceContent; readonly revision: string | null };
@@ -46,6 +47,8 @@ export type AuthoringCommands = {
    */
   referenceImpact(plan: DeletionPlan): Promise<ReferenceImpact>;
   updateObjectMetadata(intent: UpdateMetadataIntent): void;
+  /** Joint premises, result and learning cost, replaced as one decision. */
+  updateDerivationStructure(intent: UpdateDerivationStructureIntent): void;
   updateConceptTags(intent: UpdateConceptTagsIntent): void;
   updateTagDeclarations(tags: readonly TagDeclaration[]): void;
   /** `null` removes the companion document; the workspace stays valid without one. */
@@ -319,6 +322,7 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
         return referenceImpact({ ...content, documents: { ...content.documents, ...documents } }, plan);
       },
       updateObjectMetadata(intent) { assertCurrent(); accept(updateObjectMetadata(snapshot.content, intent)); },
+      updateDerivationStructure(intent) { assertCurrent(); accept(updateDerivationStructure(snapshot.content, intent)); },
       updateConceptTags(intent) { assertCurrent(); accept(updateConceptTags(snapshot.content, intent)); },
       updateTagDeclarations(tags) { assertCurrent(); accept(updateTagDeclarations(snapshot.content, tags)); },
       updateOrientation(config) { assertCurrent(); accept(updateOrientation(snapshot.content, config)); },

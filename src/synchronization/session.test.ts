@@ -374,6 +374,33 @@ describe('application-scoped workspace synchronization', () => {
     session.dispose();
   });
 
+  it('accepts a derivation structure change as one save and refuses it from a discarded editor', async () => {
+    const { source, commits, files } = memorySource();
+    const session = await openWorkspaceSession(source, { authoring: source });
+    const a = session.authoring!.createConcept({ label: 'A' });
+    const b = session.authoring!.createConcept({ label: 'B' });
+    const derivation = session.authoring!.createDerivation({ tails: [a], head: b, weight: 1 });
+    await session.flush();
+    const saved = commits.length;
+
+    const stale = session.authoring!;
+    session.authoring!.updateDerivationStructure({ derivationId: derivation, tails: [], head: a, weight: 2.5 });
+    expect(session.reader.getSnapshot().content.graph.hyperedges[0]).toMatchObject({ tails: [], head: a, weight: 2.5 });
+    await session.flush();
+
+    // One structure change is one commit, carrying the graph alone.
+    expect(commits).toHaveLength(saved + 1);
+    expect(Object.keys(commits[saved])).toEqual(['graph']);
+    expect(JSON.parse(files.get('.derivon/workspace.json')!).graph.hyperedges[0])
+      .toMatchObject({ tails: [], head: a, weight: 2.5 });
+
+    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    source.revision = async () => 'external';
+    await session.reload();
+    expect(() => stale.updateDerivationStructure({ derivationId: derivation, tails: [], head: a, weight: 1 })).toThrow();
+    session.dispose();
+  });
+
   it('serializes changes accepted while a prior save is in flight', async () => {
     const { source, commits } = memorySource();
     let release!: () => void;

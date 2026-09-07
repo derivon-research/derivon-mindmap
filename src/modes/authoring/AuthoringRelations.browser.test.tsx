@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { page } from 'vitest/browser';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
+import type { AuthoringCommands } from '../../synchronization';
 import type { WorkspaceContent } from '../../workspace/index';
 import { AuthoringMode } from './AuthoringMode';
 
@@ -76,4 +77,98 @@ it('opens the overview, selects neighbourhood objects, and opens the selected ob
   await page.getByRole('button', { name: '画布概念 Focus', exact: true }).click();
   await page.getByRole('button', { name: '激活推导 incoming', exact: true }).click();
   await expect.poll(() => container.querySelector('.authoring-title-line')?.textContent).toBe('推导 incoming');
+});
+
+// --------------------------------------------------------------- structure editing
+
+/** A + B → C, so a premise can be dropped, added and swapped from one fixture. */
+function structureContent(): WorkspaceContent {
+  const points = ['A', 'B', 'C'].map((id) => ({ id, data: { label: id, document: `docs/${id}` } }));
+  const hyperedges = [{ id: 'edge', tails: ['A', 'B'], head: 'C', weight: 2, data: { document: 'docs/edge' } }];
+  return { title: 'Structure', graphText: '', graph: { points, hyperedges },
+    documents: Object.fromEntries([...points, ...hyperedges].map((item) =>
+      [`${item.data.document}/document.md`, { status: 'ready' as const, text: 'Body' }])),
+    companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [] };
+}
+
+function commands(overrides: Partial<AuthoringCommands> = {}): AuthoringCommands {
+  return {
+    createConcept: vi.fn(() => ''), createDerivation: vi.fn(() => ''), updateDocument: vi.fn(),
+    repairReferences: vi.fn(), restoreDocument: vi.fn(), referenceImpact: vi.fn(),
+    updateObjectMetadata: vi.fn(), updateDerivationStructure: vi.fn(), updateConceptTags: vi.fn(),
+    updateTagDeclarations: vi.fn(), updateOrientation: vi.fn(), protectDraft: vi.fn(), ...overrides,
+  };
+}
+
+async function renderStructure(authoring?: AuthoringCommands) {
+  await page.viewport(1100, 800);
+  container = document.createElement('div'); container.style.cssText = 'width:1100px;height:700px'; document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root!.render(<AuthoringMode workspace={{ id: 'test', name: 'Structure' }}
+    content={structureContent()} authoring={authoring} selectedConceptId={null} onSelectConcept={vi.fn()} />));
+  // Overview draws points only; the neighbourhood of C is where its derivation is selectable.
+  await page.getByRole('button', { name: '画布概念 C', exact: true }).click();
+  await page.getByRole('button', { name: '画布推导 edge', exact: true }).click();
+}
+
+it('edits the selected derivation from the relations pane and commits it as one change', async () => {
+  const authoring = commands();
+  await renderStructure(authoring);
+
+  await expect.element(page.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '移除前提 B', exact: true }).click();
+  await expect.element(page.getByText('有未保存的修改')).toBeVisible();
+  await page.getByRole('button', { name: '保存更改', exact: true }).click();
+
+  expect(authoring.updateDerivationStructure).toHaveBeenCalledExactlyOnceWith({
+    derivationId: 'edge', tails: ['A'], head: 'C', weight: 2,
+  });
+});
+
+it('adds a premise, replaces the result and re-costs the derivation in the same change', async () => {
+  const authoring = commands();
+  await renderStructure(authoring);
+
+  await page.getByRole('button', { name: '移除前提 A', exact: true }).click();
+  await page.getByRole('button', { name: '添加前提概念', exact: true }).click();
+  await page.getByRole('searchbox', { name: '添加前提概念搜索' }).fill('C');
+  await page.getByRole('option', { name: /^C/ }).click();
+  // A self-loop: C is now both a premise and the result. derivon-core allows it.
+  await expect.element(page.getByText('C → C', { exact: false })).toBeVisible();
+
+  await page.getByRole('button', { name: '更换结果概念', exact: true }).click();
+  await page.getByRole('option', { name: /^A/ }).click();
+  await page.getByRole('spinbutton', { name: '学习成本' }).fill('0.5');
+  await page.getByRole('button', { name: '保存更改', exact: true }).click();
+
+  expect(authoring.updateDerivationStructure).toHaveBeenCalledExactlyOnceWith({
+    derivationId: 'edge', tails: ['B', 'C'], head: 'A', weight: 0.5,
+  });
+});
+
+it('discards a structure draft on demand and when another object is selected', async () => {
+  const authoring = commands();
+  await renderStructure(authoring);
+  const draftKey = 'test:derivation-structure:edge';
+
+  await page.getByRole('button', { name: '移除前提 B', exact: true }).click();
+  expect(authoring.protectDraft).toHaveBeenCalledWith(draftKey, true);
+  await page.getByRole('button', { name: '放弃更改', exact: true }).click();
+  await expect.element(page.getByText('与有效内容一致')).toBeVisible();
+  await expect.element(page.getByRole('button', { name: '移除前提 B', exact: true })).toBeVisible();
+
+  // Selecting away is leaving this derivation: the draft goes, and so does its protection.
+  await page.getByRole('button', { name: '移除前提 B', exact: true }).click();
+  await page.getByRole('button', { name: '画布概念 A', exact: true }).click();
+  await expect.element(page.getByRole('heading', { name: '前提推导 0', exact: true })).toBeVisible();
+  expect(authoring.protectDraft).toHaveBeenLastCalledWith(draftKey, false);
+  expect(authoring.updateDerivationStructure).not.toHaveBeenCalled();
+});
+
+it('keeps the relations pane read-only without authoring authority', async () => {
+  await renderStructure(undefined);
+  await expect.element(page.getByRole('heading', { name: '联合前提 2', exact: true })).toBeVisible();
+  await expect.element(page.getByRole('button', { name: '保存更改', exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByRole('button', { name: '移除前提 B', exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByRole('button', { name: '添加前提概念', exact: true })).not.toBeInTheDocument();
 });

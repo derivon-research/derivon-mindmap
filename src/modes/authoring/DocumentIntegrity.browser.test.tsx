@@ -47,7 +47,7 @@ function commands(overrides: Partial<AuthoringCommands> = {}): AuthoringCommands
   return {
     createConcept: vi.fn(() => ''), createDerivation: vi.fn(() => ''), updateDocument: vi.fn(),
     repairReferences: vi.fn(), restoreDocument: vi.fn(), referenceImpact: vi.fn(async () => { throw new Error('未接入'); }),
-    updateObjectMetadata: vi.fn(), updateConceptTags: vi.fn(), updateTagDeclarations: vi.fn(),
+    updateObjectMetadata: vi.fn(), updateDerivationStructure: vi.fn(), updateConceptTags: vi.fn(), updateTagDeclarations: vi.fn(),
     updateOrientation: vi.fn(), protectDraft: vi.fn(), ...overrides,
   };
 }
