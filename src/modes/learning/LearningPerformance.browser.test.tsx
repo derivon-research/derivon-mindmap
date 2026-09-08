@@ -38,9 +38,6 @@ function memorySource(graph: string, documents: Record<string, string>): Workspa
     },
     async readAsset() { throw new Error('no assets'); },
     async readCompanionMetadata() { return null; },
-    async listOwnedFiles(directory) {
-      return [...files.keys()].filter((path) => path.startsWith(`${directory}/`)).sort();
-    },
   };
 }
 
