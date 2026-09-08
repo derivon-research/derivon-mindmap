@@ -4,6 +4,7 @@ import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
 import type { LearningModeProps } from '../../app/host';
+import type { RouteSolver } from '../../ports/RouteSolver';
 import { fixtureRouteSolver } from '../../testing/routeSolver';
 import { WORKSPACE_SCHEMA, parseWorkspaceContent, type WorkspaceContent } from '../../workspace/index';
 
@@ -124,6 +125,43 @@ it('hides a side panel to a recall tab, and never lets the textbook lose width t
   await click('.learning-rail button[aria-label="展开子图"]');
   expect(container.querySelector('.learning-tutor')).toBeNull();
   expect(container.querySelector('.learning-route')?.className).toContain('rail-expanded');
+});
+
+it('holds the route being walked, so a later solve cannot renumber the steps', async () => {
+  await render();
+  expect(container.textContent).toContain('第 1 / 2 步');
+
+  // Saying a step was already known records it — the next route will be shorter — but the
+  // walk in progress keeps its numbering and simply moves on. Re-solving under the learner
+  // would put them back at "第 1 / 1 步" of a route they never accepted.
+  await click('.learning-text-actions button:nth-child(3)');
+  await act(async () => { await Promise.resolve(); });
+  expect(container.textContent).toContain('第 2 / 2 步');
+  expect(container.querySelector('[data-learning-known]')?.getAttribute('data-learning-known')).toBe('a b');
+});
+
+it('does not ask the host to solve again for content that parsed to the same graph', async () => {
+  let solves = 0;
+  const counting: RouteSolver = {
+    solve: (graph, request) => { solves++; return fixtureRouteSolver().solve(graph, request); },
+  };
+  function Counted({ content }: { content: WorkspaceContent }) {
+    const [targets, setTargets] = useState<readonly string[]>(['c']);
+    const [known, setKnown] = useState<readonly string[]>(['a']);
+    return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
+      targetIds={targets} knownIds={known} routeSolver={counting}
+      view="route" onEnterView={vi.fn()} onConfirmRoute={vi.fn()}
+      onChangeTargets={setTargets} onChangeKnown={setKnown} />;
+  }
+  root = createRoot(container);
+  await act(async () => root?.render(<Counted content={workspace()} />));
+  await act(async () => { await Promise.resolve(); });
+  expect(solves).toBe(1);
+
+  // Acquiring a document body hands the mode a new content object with the same manifest.
+  await act(async () => root?.render(<Counted content={workspace()} />));
+  await act(async () => { await Promise.resolve(); });
+  expect(solves, '同一份清单不该再求一次路线').toBe(1);
 });
 
 it('brings back only the panel the learner asked for when both are put away', async () => {

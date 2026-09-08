@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
+import type { RouteSolution } from '../../ports/RouteSolver';
 import { GraphBrowse } from './GraphBrowse';
 import './learning.css';
 import { applyOrientationIntent, beginOrientation, planOrientation, type OrientationIntent, type OrientationRun } from './orientation';
@@ -46,12 +47,30 @@ export function LearningMode({
     onChangeKnown(next.known);
   };
 
-  const preview = useRoutePreview(routeSolver, content.graph, targetIds, knownIds);
+  // The same manifest parsed again is the same graph. Acquiring a document body or
+  // re-accepting unchanged content hands down a new object; asking the host to solve the
+  // route again for it would cost an answer nobody asked for.
+  const graph = useMemo(() => content.graph, [content.graphText]);
+  const preview = useRoutePreview(routeSolver, graph, targetIds, knownIds);
   const [cursor, setCursor] = useState(0);
   const [revealed, setRevealed] = useState<readonly string[]>([]);
   const [tasksDone, setTasksDone] = useState<readonly string[]>([]);
   const [panels, setPanels] = useState<PanelLayout>(DEFAULT_PANELS);
-  const solution = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
+  const solved = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
+  /**
+   * The route a learner walks is the one they accepted on the preview screen.
+   *
+   * While the route view is up it is held: a solve that lands later — the same route
+   * computed again, or a shorter one because the learner said they already knew a step —
+   * must not renumber the steps under them. A new route is a new walk, and the learner
+   * starts it deliberately, by looking at the preview again and accepting it.
+   */
+  const [walked, setWalked] = useState<RouteSolution | null>(null);
+  useEffect(() => {
+    if (view !== 'route') setWalked(null);
+    else setWalked((current) => current ?? solved);
+  }, [solved, view]);
+  const solution = view === 'route' ? walked ?? solved : solved;
   // A different route is a different walk: keeping a cursor across it would point at a step
   // that is no longer there.
   const routeKey = solution ? solution.order.join(' ') : '';
