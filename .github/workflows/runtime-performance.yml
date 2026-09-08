@@ -51,6 +51,14 @@ jobs:
         continue-on-error: true
         run: npm run bench:authoring
 
+      # The learning side's own budgets. The transport benchmark below still drives
+      # legacy.html, so target switching and the route panels are measured here, through
+      # the v1 learning surface that actually implements them.
+      - name: Measure learning interaction performance
+        id: learning-benchmark
+        continue-on-error: true
+        run: npm run bench:learning
+
       - name: Measure runtime performance
         id: benchmark
         continue-on-error: true

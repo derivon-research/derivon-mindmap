@@ -27,8 +27,9 @@ describe('WorkspaceSource', () => {
   it('opens the fixed web example through the same read port', async () => {
     const graph = JSON.parse(await bundledExampleWorkspaceSource.readGraph());
 
-    expect(graph.document.title).toBe('A + B → X');
-    expect(await bundledExampleWorkspaceSource.readDocument('docs/concept-a/document.md')).toBe('# A\n\n点 A。\n');
+    expect(graph.document.title).toBe('线性代数应该这样学：概念与推导图');
+    expect(await bundledExampleWorkspaceSource.readDocument('docs/concept-foundation-fields/document.md'))
+      .toContain('# 数域');
     expect('commit' in bundledExampleWorkspaceSource).toBe(false);
   });
 });

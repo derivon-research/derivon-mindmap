@@ -1,80 +1,122 @@
-import { Compass, FileText, Network, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { MarkdownPreview } from '../../app/DocumentPreview';
-import { useObjectDocument } from '../../app/useObjectDocument';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
-import type { GraphEvent, GraphView } from '../../rendering';
-import { objectDocumentSource, type TextResource } from '../../workspace/index';
-import { RetainedGraph } from '../RetainedGraph';
+import type { RouteSolution } from '../../ports/RouteSolver';
+import { GraphBrowse } from './GraphBrowse';
 import './learning.css';
-import { OrientationPanel } from './OrientationPanel';
-import {
-  applyOrientationIntent, beginOrientation, planOrientation,
-  type OrientationIntent, type OrientationRun,
-} from './orientation';
+import { applyOrientationIntent, beginOrientation, planOrientation, type OrientationIntent, type OrientationRun } from './orientation';
+import { OrientationView } from './OrientationView';
+import { DEFAULT_PANELS, type PanelLayout } from './panels';
+import { RouteLearning } from './RouteLearning';
+import { RoutePreviewView } from './RoutePreviewView';
+import { useRoutePreview } from '../routePreview';
 
-export function LearningMode({ active = true, workspace, content, targetIds, knownIds, onChangeTargets, onChangeKnown, routeSolver, readAsset, readDocuments }: LearningModeProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(() => targetIds[0] ?? null);
+/**
+ * The learning side. One mode, four views: orientation, the route preview, walking the
+ * route, and free browsing. Which one shows is the application's business — the top bar
+ * switches between them — so this component dispatches rather than deciding.
+ *
+ * Everything a view would lose by being unmounted lives here: the orientation flow, how
+ * far along the route the learner is, and the panel layout. Going back to look at the
+ * route and returning is meant to cost nothing.
+ */
+export function LearningMode({
+  active = true, content, targetIds, knownIds, onChangeTargets, onChangeKnown,
+  routeSolver, view, onEnterView, onConfirmRoute, readAsset, readDocuments,
+}: LearningModeProps) {
   const plan = useMemo(() => planOrientation(content), [content]);
-  // Targets already in application state came from a mode switch: orientation is over for
-  // this session. Otherwise the run starts from the author's seed.
-  const [run, setRun] = useState<OrientationRun>(() => (targetIds.length
-    ? { ...beginOrientation(plan), targets: [...targetIds], known: [...knownIds], at: -1 }
-    : beginOrientation(plan)));
-  const [oriented, setOriented] = useState(() => targetIds.length > 0);
-  // The seed reaches application state on the first frame, before a question is asked. The
-  // callbacks are stable setters; watching them would publish on every render.
+  // Only the question bookkeeping is local. Targets and known concepts are application
+  // state, so a target carried in from the authoring side is the one that counts.
+  const [flow, setFlow] = useState(() => beginOrientation(plan));
+  const run: OrientationRun = useMemo(
+    () => ({ ...flow, targets: [...targetIds], known: [...knownIds] }),
+    [flow, knownIds, targetIds],
+  );
+  const seeded = useRef(false);
   useEffect(() => {
-    onChangeTargets(run.targets);
-    onChangeKnown(run.known);
-  }, [run.known, run.targets]);
+    // The author's seed applies only to a run the application has nothing of its own for.
+    if (seeded.current) return;
+    seeded.current = true;
+    if (!targetIds.length && flow.targets.length) onChangeTargets(flow.targets);
+    if (!knownIds.length && flow.known.length) onChangeKnown(flow.known);
+  }, [flow.known, flow.targets, knownIds.length, targetIds.length]);
 
-  const selected = selectedId ? content.graph.points.find((point) => point.id === selectedId) : undefined;
-  const view = useMemo<GraphView>(() => ({
-    kind: 'overview',
-    concepts: content.graph.points.map((point) => ({ id: point.id, label: point.data.label,
-      marks: [...(targetIds.includes(point.id) ? ['target' as const] : []),
-        ...(knownIds.includes(point.id) ? ['known' as const] : []),
-        ...(point.id === selectedId ? ['selected' as const] : [])] })),
-    hyperedges: content.graph.hyperedges.map((edge) => ({ ...edge, marks: [] })),
-  }), [content.graph, knownIds, selectedId, targetIds]);
-  const handleEvent = (event: GraphEvent) => {
-    if (event.object === null) setSelectedId(null);
-    else if (event.object.kind === 'concept') setSelectedId(event.object.id);
+  const intent = (value: OrientationIntent) => {
+    const next = applyOrientationIntent(plan, run, value);
+    setFlow(next);
+    onChangeTargets(next.targets);
+    onChangeKnown(next.known);
   };
-  const toggleTarget = () => {
-    if (!selected) return;
-    setRun((current) => applyOrientationIntent(plan, current, { kind: 'set-targets',
-      conceptIds: current.targets.includes(selected.id)
-        ? current.targets.filter((id) => id !== selected.id) : [...current.targets, selected.id] }));
-  };
-  // Applied eagerly, so a rejected intent surfaces to the caller that raised it.
-  const intent = (value: OrientationIntent) => setRun(applyOrientationIntent(plan, run, value));
 
-  return <section className="learning-workbench" data-derivon-mode="learning" data-learning-targets={targetIds.join(' ')} data-learning-known={knownIds.join(' ')} aria-label="学习侧">
-    <header className="learning-header"><div><Network aria-hidden="true" /><h1>{workspace.name}</h1><span>{view.concepts.length} 个概念</span></div>
-      {oriented && <div className="learning-selection">
-        {selected && <><output aria-label="Selected concept">{selected.data.label}</output><button type="button" aria-pressed={targetIds.includes(selected.id)} onClick={toggleTarget}>{targetIds.includes(selected.id) ? '取消目标' : '设为目标'}</button><button type="button" className="learning-icon-button" title="关闭文档" onClick={() => setSelectedId(null)}><X aria-hidden="true" /></button></>}
-        <button type="button" onClick={() => { setRun(beginOrientation(plan)); setOriented(false); }}><Compass size={15} aria-hidden="true" />重新确定目标</button>
-      </div>}
-    </header>
-    {oriented ? <div className={`learning-main${selected ? ' has-document' : ''}`}>
-      <div className="learning-graph-canvas"><RetainedGraph active={active} view={view} onEvent={handleEvent} /></div>
-      {selected && <section className="learning-document" aria-label={`${selected.data.label} 文档`}><Document title={selected.data.label} documentPath={`${selected.data.document}/document.md`} active={active} readAsset={readAsset} readDocuments={readDocuments} resource={objectDocumentSource(content, selected.data)} /></section>}
-    </div> : <div className="learning-main learning-orientation">
-      <OrientationPanel graph={content.graph} tags={content.tags} plan={plan} run={run} routeSolver={routeSolver}
-        onIntent={intent} onEnter={() => setOriented(true)} />
-    </div>}
-    {content.diagnostics.length > 0 && <details className="learning-diagnostics"><summary>{content.diagnostics.length} 个本地内容问题</summary>{content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}><code>{item.path}</code> {item.message}</p>)}</details>}
+  // The same manifest parsed again is the same graph. Acquiring a document body or
+  // re-accepting unchanged content hands down a new object; asking the host to solve the
+  // route again for it would cost an answer nobody asked for.
+  const graph = useMemo(() => content.graph, [content.graphText]);
+  const preview = useRoutePreview(routeSolver, graph, targetIds, knownIds);
+  const [cursor, setCursor] = useState(0);
+  const [revealed, setRevealed] = useState<readonly string[]>([]);
+  const [tasksDone, setTasksDone] = useState<readonly string[]>([]);
+  const [panels, setPanels] = useState<PanelLayout>(DEFAULT_PANELS);
+  const solved = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
+  /**
+   * The route a learner walks is the one they accepted on the preview screen.
+   *
+   * While the route view is up it is held: a solve that lands later — the same route
+   * computed again, or a shorter one because the learner said they already knew a step —
+   * must not renumber the steps under them. A new route is a new walk, and the learner
+   * starts it deliberately, by looking at the preview again and accepting it.
+   */
+  const [walked, setWalked] = useState<RouteSolution | null>(null);
+  useEffect(() => {
+    if (view !== 'route') setWalked(null);
+    else setWalked((current) => current ?? solved);
+  }, [solved, view]);
+  const solution = view === 'route' ? walked ?? solved : solved;
+  // A different route is a different walk: keeping a cursor across it would point at a step
+  // that is no longer there.
+  const routeKey = solution ? solution.order.join(' ') : '';
+  useEffect(() => { setCursor(0); }, [routeKey]);
+
+  const know = (conceptId: string) => intent({ kind: 'know', conceptIds: [conceptId] });
+  // Every claim the learner makes is reversible, wherever they made it.
+  const toggleKnown = (conceptId: string) => intent(knownIds.includes(conceptId)
+    ? { kind: 'set-known', conceptIds: knownIds.filter((id) => id !== conceptId) }
+    : { kind: 'know', conceptIds: [conceptId] });
+  const toggleTarget = (conceptId: string) => intent(targetIds.includes(conceptId)
+    ? { kind: 'set-targets', conceptIds: targetIds.filter((id) => id !== conceptId) }
+    : { kind: 'add-targets', conceptIds: [conceptId] });
+
+  return <section className="learning-workbench" data-derivon-mode="learning" data-learning-view={view}
+    data-learning-targets={targetIds.join(' ')} data-learning-known={knownIds.join(' ')} aria-label="学习侧">
+    {view === 'orientation' && <OrientationView active={active} content={content} plan={plan} run={run}
+      preview={preview} onIntent={intent} onEnterPreview={() => onEnterView('preview')}
+      readAsset={readAsset} readDocuments={readDocuments} />}
+
+    {view === 'preview' && <RoutePreviewView active={active} graph={content.graph} tags={content.tags}
+      preview={preview} targetIds={targetIds} knownIds={knownIds} onConfirm={onConfirmRoute}
+      onBackToOrientation={() => onEnterView('orientation')} onBrowse={() => onEnterView('browse')} />}
+
+    {view === 'route' && (solution
+      ? <RouteLearning active={active} content={content} solution={solution} targetIds={targetIds}
+        knownIds={knownIds} cursor={cursor} onCursor={setCursor}
+        revealed={revealed} onReveal={(id) => setRevealed((current) => [...new Set([...current, id])])}
+        tasksDone={tasksDone} onTaskDone={(id) => setTasksDone((current) => [...new Set([...current, id])])}
+        panels={panels} onPanels={setPanels} onKnow={know}
+        onBackToPreview={() => onEnterView('preview')} readAsset={readAsset} readDocuments={readDocuments} />
+      : <div className="learning-route-empty" role="status">
+        <p>路线不见了 —— 目标或者已知变过，得重新算一次。</p>
+        <button type="button" className="learning-primary" onClick={() => onEnterView('preview')}>回去看路线</button>
+      </div>)}
+
+    {view === 'browse' && <GraphBrowse active={active} content={content} targetIds={targetIds} knownIds={knownIds}
+      onToggleTarget={toggleTarget} onToggleKnown={toggleKnown}
+      onBackToOrientation={() => onEnterView('orientation')}
+      readAsset={readAsset} readDocuments={readDocuments} />}
+
+    {content.diagnostics.length > 0 && <details className="learning-diagnostics">
+      <summary>{content.diagnostics.length} 个本地内容问题</summary>
+      {content.diagnostics.map((item) => <p key={`${item.path}:${item.message}`}>
+        <code>{item.path}</code> {item.message}
+      </p>)}
+    </details>}
   </section>;
-}
-
-function Document({ title, resource, documentPath, readAsset, readDocuments, active }: {
-  title: string; resource: TextResource | undefined; documentPath: string; active: boolean;
-  readAsset?: LearningModeProps['readAsset']; readDocuments?: LearningModeProps['readDocuments'];
-}) {
-  const current = useObjectDocument(documentPath, resource, readDocuments, active);
-  if (!current) return <p role="status">正在载入文档…</p>;
-  return current.status === 'ready' ? <MarkdownPreview title={`${title} 文档`} markdown={current.text} documentPath={documentPath} readAsset={readAsset} />
-    : <div className="learning-document-error" role="alert"><FileText aria-hidden="true" /><div><strong>无法读取对象文档</strong><p>{current.message}</p></div></div>;
 }

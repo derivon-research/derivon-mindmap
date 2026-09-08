@@ -2,7 +2,7 @@ import { Suspense, useEffect, useMemo, useState, useSyncExternalStore, type Comp
 import type { RouteSolver } from '../ports/RouteSolver';
 import { openWorkspaceSession, type WorkspaceSession } from '../synchronization';
 import type { AppState } from './appState';
-import type { AuthoringModeProps, LearningModeProps, WorkspaceHandle } from './host';
+import type { AuthoringModeProps, LearningModeProps, LearningView, WorkspaceHandle } from './host';
 
 export type WorkspaceSurfaceProps = {
   workspace: WorkspaceHandle;
@@ -15,6 +15,8 @@ export type WorkspaceSurfaceProps = {
   onSelectConcept(id: string | null): void;
   onChangeTargets(ids: readonly string[]): void;
   onChangeKnown(ids: readonly string[]): void;
+  onEnterLearningView(view: LearningView): void;
+  onConfirmRoute(): void;
   onProtectionChange(protectedChanges: boolean): void;
 };
 
@@ -34,7 +36,7 @@ export default function WorkspaceSurface(props: WorkspaceSurfaceProps) {
   return <SessionModes {...props} session={session} />;
 }
 
-function SessionModes({ session, state, workspace, modes, routeSolver, onSelectConcept, onChangeTargets, onChangeKnown, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
+function SessionModes({ session, state, workspace, modes, routeSolver, onSelectConcept, onChangeTargets, onChangeKnown, onEnterLearningView, onConfirmRoute, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
   const snapshot = useSyncExternalStore(session.reader.subscribe, session.reader.getSnapshot);
   const [closeGuardError, setCloseGuardError] = useState<string>();
   const readAsset = useMemo(() => async (path: string) => {
@@ -88,7 +90,8 @@ function SessionModes({ session, state, workspace, modes, routeSolver, onSelectC
       <Suspense fallback={<div className="app-mode-loading" role="status">正在载入…</div>}>
         {mode === 'learning' ? <LearningMode active={mode === state.mode} workspace={identity} content={snapshot.content}
           targetIds={state.learningTargetIds} knownIds={state.learningKnownIds} onChangeTargets={onChangeTargets}
-          onChangeKnown={onChangeKnown} routeSolver={routeSolver} readAsset={readAsset} readDocuments={readDocuments} />
+          onChangeKnown={onChangeKnown} view={state.learningView} onEnterView={onEnterLearningView}
+          onConfirmRoute={onConfirmRoute} routeSolver={routeSolver} readAsset={readAsset} readDocuments={readDocuments} />
           : AuthoringMode && <AuthoringMode key={snapshot.authoringEpoch} active={mode === state.mode} workspace={identity} content={snapshot.content}
             authoring={session.authoring} readAsset={readAsset} readDocuments={readDocuments} routeSolver={routeSolver} selectedConceptId={state.selectedConceptId} onSelectConcept={onSelectConcept}
             syncStatus={workspace.authoringSource && state.mode === 'authoring' ? { state: snapshot.saveState, label: saveLabel } : undefined}

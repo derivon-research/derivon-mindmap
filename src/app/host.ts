@@ -11,6 +11,13 @@ import type { WorkspaceContent } from '../workspace/index';
  */
 export type AppMode = 'authoring' | 'learning';
 
+/**
+ * Where a learner stands inside the learning mode. These are stages and views, not modes:
+ * they never join the mode segmented control, and their entry points live in the
+ * application top bar rather than inside any panel.
+ */
+export type LearningView = 'orientation' | 'preview' | 'route' | 'browse';
+
 export type HostId = 'web' | 'desktop';
 
 /** An open workspace: its identity, a display name, and the port to read it through. */
@@ -58,6 +65,11 @@ export type LearningModeProps = {
   readonly knownIds: readonly string[];
   readonly onChangeTargets: (conceptIds: readonly string[]) => void;
   readonly onChangeKnown: (conceptIds: readonly string[]) => void;
+  /** The stage or view showing, owned by the application because the top bar switches it. */
+  readonly view: LearningView;
+  readonly onEnterView: (view: LearningView) => void;
+  /** The learner accepted the previewed route; only this opens the route view. */
+  readonly onConfirmRoute: () => void;
 };
 
 /**

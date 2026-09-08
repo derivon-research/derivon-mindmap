@@ -16,10 +16,17 @@ content; the renderer consumes an already valid view, not a workspace manifest.
 - `overview`: G6 force layout, concept points, direct structural links, no derivation nodes.
 - `neighbourhood`: the caller supplies the one-step subgraph; G6 draws concept cards and
   explicit derivations using hierarchical layout.
-- `route`: the caller supplies the solved subgraph; the same explicit hyperedge encoding
-  has no learning-mode assumptions. Empty marks are valid for authoring previews.
+- `route`: the caller supplies the solved subgraph, drawn with the same cards, diamonds and
+  ported curves as a neighbourhood — a route is read the way an author reads a
+  neighbourhood, so it is not given a second look of its own. The explicit hyperedge
+  encoding has no learning-mode assumptions; empty marks are valid for authoring previews.
 
-Hierarchical direction is chosen from the container's aspect ratio at mount. Subsequent
+Hierarchical direction belongs to the view kind, not to the container's shape: a
+neighbourhood runs left to right, the way an author reads one, and a route runs down the
+page, the way a learner walks it. The ports the curves leave from and arrive at follow that
+axis, so a vertical route does not have premises entering its cards from the side. Because
+a card view runs off one axis at a time, it is always fitted on opening, but never enlarged
+past the cards' natural size. Subsequent
 container resizing changes the viewport size without moving objects. A view-kind change
 mounts a fresh layout. Within a kind, the renderer diffs complete models by ID. Label,
 weight and mark changes use G6 `draw()` only: positions and the user's pan/zoom survive.
@@ -46,14 +53,16 @@ is represented by `aria-busy`, and rendering failures by a visible alert.
 
 ## Marks and detail
 
-Marks compose by visual channel, not by enumerating pairs:
+Away from the overview — in a neighbourhood and along a route, which share one card
+presentation — marks compose by visual channel rather than by enumerating pairs:
 
 - Fill: `completed` takes precedence over `known`, then the object's default fill.
 - Outline: `selected` takes precedence over `current`, then `target`, then the default.
 - Opacity: `muted` reduces opacity independently of fill and outline.
 
-The overview consumes only deliberately set `known` and `target` marks. Selection and
-route-progress marks do not drive its appearance (ADR-0003).
+The overview is the exception, because it is not meant to be read (ADR-0003): it says only
+what the learner decided. A target is red, a concept they already hold is green, and every
+other concept is background grey; selection and route progress are not channels there.
 
 Overview hover temporarily highlights structural predecessors and successors in separate
 colors and exposes the focused label. These are visual relationships, not solver closure:

@@ -2,6 +2,8 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { emitInteractiveTestHook } from '../testHooks';
 import type { RouteSolver } from '../ports/RouteSolver';
 import {
+  confirmLearningRoute,
+  enterLearningView,
   enterMode,
   initialAppState,
   openWorkspace,
@@ -10,7 +12,7 @@ import {
   setLearningTargets,
   type AppState,
 } from './appState';
-import type { Host, RecentWorkspace, WorkspaceHandle } from './host';
+import type { Host, LearningView, RecentWorkspace, WorkspaceHandle } from './host';
 import { TopBar } from './TopBar';
 import { WorkspaceLaunch } from './WorkspaceLaunch';
 
@@ -127,6 +129,14 @@ export default function App({ host }: { host: Host }) {
     setState((current) => (current ? setLearningKnown(current, conceptIds) : current));
   }, []);
 
+  const handleEnterLearningView = useCallback((view: LearningView) => {
+    setState((current) => (current ? enterLearningView(current, view) : current));
+  }, []);
+
+  const handleConfirmRoute = useCallback(() => {
+    setState((current) => (current ? confirmLearningRoute(current) : current));
+  }, []);
+
   if (failure) {
     return <main className="app-failure" role="alert">应用没能启动：{failure}</main>;
   }
@@ -144,12 +154,15 @@ export default function App({ host }: { host: Host }) {
         mode={state.mode}
         onEnterMode={(mode) => setState((current) => (current ? enterMode(current, mode) : current))}
         onCloseWorkspace={workspace && host.id === 'desktop' ? handleCloseWorkspace : undefined}
+        learning={workspace ? { view: state.learningView, hasTargets: state.learningTargetIds.length > 0,
+          onEnterView: handleEnterLearningView } : undefined}
       />
       {workspace ? (
         <Suspense fallback={<div role="status">正在载入工作区…</div>}>
           <WorkspaceSurface key={workspace.id} workspace={workspace} state={state} modes={modes}
             routeSolver={routeSolver} onSelectConcept={handleSelectConcept} onChangeTargets={handleChangeTargets}
-            onChangeKnown={handleChangeKnown} onProtectionChange={handleProtectionChange} />
+            onChangeKnown={handleChangeKnown} onEnterLearningView={handleEnterLearningView}
+            onConfirmRoute={handleConfirmRoute} onProtectionChange={handleProtectionChange} />
         </Suspense>
       ) : (
         <WorkspaceLaunch recentWorkspaces={recentWorkspaces} busy={opening} failure={openFailure}

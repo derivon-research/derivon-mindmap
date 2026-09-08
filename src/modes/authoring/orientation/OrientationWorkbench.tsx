@@ -9,7 +9,8 @@ import {
 import { ConceptPicker, labelOf } from '../../ConceptPicker';
 import { RetainedGraph } from '../../RetainedGraph';
 import { TagChips } from '../../TagChips';
-import { OrientationPanel, RouteSummary } from '../../learning/OrientationPanel';
+import { OrientationPanel } from '../../learning/OrientationPanel';
+import { RouteSummary } from '../../learning/RouteSummary';
 import {
   applyOrientationIntent, beginOrientation, planOrientation, type OrientationRun,
 } from '../../learning/orientation';

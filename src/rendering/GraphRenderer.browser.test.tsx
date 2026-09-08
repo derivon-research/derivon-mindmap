@@ -94,9 +94,16 @@ it('draws selectable derivations in route, including an empty tail and colliding
     { id: 'same-id', tails: [], head: 'same-id', weight: 2, marks: [] },
   ] };
   flushSync(() => root.render(<GraphRenderer view={view} onEvent={onEvent} />));
-  await expect.poll(() => conceptPixel({ color: [217, 119, 6] })).toBeDefined();
-  await page.getByRole('img').click({ position: conceptPixel({ color: [217, 119, 6] })! });
+  // A route is drawn with the authoring side's neighbourhood presentation, diamond and all.
+  await expect.poll(() => conceptPixel({ color: [255, 249, 247] })).toBeDefined();
+  await page.getByRole('img').click({ position: conceptPixel({ color: [255, 249, 247] })! });
   expect(onEvent).toHaveBeenCalledWith({ type: 'select', object: { kind: 'derivation', id: 'same-id' } });
+  // It runs down the page, so its ports are above and below the card, not beside it.
+  const card = colorBounds([250, 251, 249])!;
+  const cardX = (card.left + card.right) / 2;
+  expect(hasColorNear([164, 79, 63], cardX, card.top)).toBe(true);
+  expect(hasColorNear([47, 112, 135], cardX, card.bottom)).toBe(true);
+  expect(hasColorNear([164, 79, 63], card.left, (card.top + card.bottom) / 2)).toBe(false);
 });
 
 it('restores neighbourhood cards, visual ports, and selected outlines', async () => {
@@ -214,16 +221,18 @@ it('draws neighbourhood cubic edges for empty tails, cycles, and parallel deriva
 it('diffs a complete model without moving existing nodes and uses the latest event callback', async () => {
   const first = vi.fn();
   const latest = vi.fn();
+  const card = [250, 251, 249] as const;
+  const knownCard = [240, 247, 249] as const;
   const route: GraphView = { ...single, kind: 'route' };
   flushSync(() => root.render(<GraphRenderer view={route} onEvent={first} />));
-  await expect.poll(() => conceptPixel()).toBeDefined();
-  const position = conceptPixel({ center: true })!;
+  await expect.poll(() => conceptPixel({ color: card })).toBeDefined();
+  const position = conceptPixel({ color: card, center: true })!;
   flushSync(() => root.render(<GraphRenderer view={{ ...route, concepts: [
     { id: 'same-id', label: 'Renamed', marks: ['known', 'target', 'selected'] },
   ] }} onEvent={latest} />));
-  await expect.poll(() => conceptPixel({ color: [37, 99, 235] })).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: knownCard })).toBeDefined();
   await expect.poll(() => conceptPixel({ color: [147, 51, 234] })).toBeDefined();
-  const updated = conceptPixel({ color: [37, 99, 235], center: true })!;
+  const updated = conceptPixel({ color: knownCard, center: true })!;
   expect(Math.abs(updated.x - position.x)).toBeLessThan(3);
   expect(Math.abs(updated.y - position.y)).toBeLessThan(3);
   await page.getByRole('img').click({ position: updated });
@@ -235,10 +244,13 @@ it('keeps route progress out of the overview while preserving deliberate marks',
   flushSync(() => root.render(<GraphRenderer view={{ ...single, concepts: [
     { ...single.concepts[0], marks: ['known', 'target', 'current', 'completed', 'selected'] },
   ] }} onEvent={vi.fn()} />));
-  await expect.poll(() => conceptPixel({ color: [37, 99, 235] })).toBeDefined();
-  expect(conceptPixel({ color: [217, 119, 6] })).toBeDefined();
+  // A target is red and outranks the green of a concept already held; walking the route,
+  // selecting and finishing a step say nothing here (ADR-0003).
+  await expect.poll(() => conceptPixel({ color: [185, 28, 28] })).toBeDefined();
+  expect(conceptPixel({ color: [22, 163, 74] })).toBeUndefined();
   expect(conceptPixel({ color: [21, 128, 61] })).toBeUndefined();
   expect(conceptPixel({ color: [147, 51, 234] })).toBeUndefined();
+  expect(conceptPixel({ color: [220, 38, 38] })).toBeUndefined();
 });
 
 it('does not expose inputs from an uncommitted concurrent render', async () => {
@@ -263,19 +275,22 @@ it('does not expose inputs from an uncommitted concurrent render', async () => {
 
 it('lays out replacement topology inside a retained view kind', async () => {
   const onEvent = vi.fn();
+  const card = [250, 251, 249] as const;
+  const knownCard = [240, 247, 249] as const;
   const view: GraphView = { ...single, kind: 'route' };
   flushSync(() => root.render(<GraphRenderer view={view} onEvent={onEvent} />));
-  await expect.poll(() => conceptPixel()).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: card })).toBeDefined();
   flushSync(() => root.render(<GraphRenderer view={{ kind: 'route', concepts: [
     { id: 'a', label: 'A', marks: [] }, { id: 'b', label: 'B', marks: ['known'] },
   ], hyperedges: [{ id: 'h', tails: ['a'], head: 'b', weight: 1, marks: [] }] }} onEvent={onEvent} />));
-  await expect.poll(() => conceptPixel({ color: [37, 99, 235] })).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: knownCard })).toBeDefined();
+  // A route runs down the page, so the replacement's second step is below the first.
   await expect.poll(() => {
-    const left = conceptPixel({ center: true });
-    const right = conceptPixel({ color: [37, 99, 235], center: true });
-    return left && right ? right.x - left.x : 0;
+    const first = conceptPixel({ color: card, center: true });
+    const second = conceptPixel({ color: knownCard, center: true });
+    return first && second ? second.y - first.y : 0;
   }).toBeGreaterThan(180);
-  await page.getByRole('img').click({ position: conceptPixel({ color: [37, 99, 235], center: true })! });
+  await page.getByRole('img').click({ position: conceptPixel({ color: knownCard, center: true })! });
   expect(onEvent).toHaveBeenCalledWith({ type: 'select', object: { kind: 'concept', id: 'b' } });
 });
 
@@ -290,20 +305,20 @@ it('keeps source and downstream hover highlights inside the overview across mode
     { id: 'bc', tails: ['b'], head: 'c', weight: 1, marks: [] },
   ] };
   flushSync(() => root.render(<GraphRenderer view={view} onEvent={onEvent} />));
-  await expect.poll(() => conceptPixel({ color: [37, 99, 235] })).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: [22, 163, 74] })).toBeDefined();
   const surface = page.getByRole('img');
-  await surface.hover({ position: conceptPixel({ color: [37, 99, 235] })! });
+  await surface.hover({ position: conceptPixel({ color: [22, 163, 74] })! });
   await expect.poll(() => conceptPixel({ color: [180, 83, 9] })).toBeDefined();
   await expect.poll(() => conceptPixel({ color: [3, 105, 161] })).toBeDefined();
   expect(onEvent).not.toHaveBeenCalled();
   flushSync(() => root.render(<GraphRenderer view={{ ...view, concepts: view.concepts.map((concept) =>
     concept.id === 'b' ? { ...concept, label: 'Updated focus', marks: ['known', 'target'] } : concept,
   ) }} onEvent={onEvent} />));
-  await expect.poll(() => conceptPixel({ color: [217, 119, 6] })).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: [185, 28, 28] })).toBeDefined();
   expect(conceptPixel({ color: [180, 83, 9] })).toBeDefined();
   expect(conceptPixel({ color: [3, 105, 161] })).toBeDefined();
   await surface.hover({ position: { x: 2, y: 2 } });
-  await expect.poll(() => conceptPixel({ color: [37, 99, 235] })).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: [203, 213, 225] })).toBeDefined();
 });
 
 it('survives StrictMode mounting and keeps two instances independent', async () => {
@@ -339,8 +354,8 @@ it('replaces topology while hovered, removes empty views, and mounts another vie
     { id: 'parallel', tails: ['a', 'b'], head: 'c', weight: 4, marks: [] },
   ] };
   flushSync(() => root.render(<GraphRenderer view={replacement} onEvent={onEvent} />));
-  await expect.poll(() => conceptPixel({ color: [217, 119, 6] })).toBeDefined();
-  await page.getByRole('img').click({ position: conceptPixel({ color: [217, 119, 6] })! });
+  await expect.poll(() => conceptPixel({ color: [255, 249, 247] })).toBeDefined();
+  await page.getByRole('img').click({ position: conceptPixel({ color: [255, 249, 247] })! });
   expect(onEvent.mock.lastCall?.[0].object.kind).toBe('derivation');
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
@@ -351,14 +366,14 @@ it('retargets a retained hyperedge when its previous endpoint is removed', async
     { id: 'a', label: 'A', marks: [] }, { id: 'b', label: 'B', marks: ['known'] },
   ], hyperedges: [{ id: 'h', tails: ['a'], head: 'b', weight: 1, marks: [] }] };
   flushSync(() => root.render(<GraphRenderer view={initial} onEvent={onEvent} />));
-  await expect.poll(() => conceptPixel({ color: [37, 99, 235] })).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: [240, 247, 249] })).toBeDefined();
   const next: GraphView = { ...initial, concepts: [initial.concepts[0], { id: 'c', label: 'C', marks: ['completed'] }],
     hyperedges: [{ ...initial.hyperedges[0], head: 'c' }],
   };
   flushSync(() => root.render(<GraphRenderer view={next} onEvent={onEvent} />));
-  await expect.poll(() => conceptPixel({ color: [21, 128, 61] })).toBeDefined();
+  await expect.poll(() => conceptPixel({ color: [243, 248, 244] })).toBeDefined();
   expect(container.querySelector('[role="alert"]')).toBeNull();
-  await page.getByRole('img').click({ position: conceptPixel({ color: [21, 128, 61] })! });
+  await page.getByRole('img').click({ position: conceptPixel({ color: [243, 248, 244] })! });
   expect(onEvent).toHaveBeenCalledWith({ type: 'select', object: { kind: 'concept', id: 'c' } });
 });
 

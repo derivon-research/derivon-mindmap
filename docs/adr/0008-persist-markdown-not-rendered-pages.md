@@ -14,7 +14,9 @@ both modes acquire and render the accepted Markdown on demand. Opening reads onl
 graph and companion metadata, never all Markdown bodies. Explicit full-text search may
 request a batch of bodies; hidden views and metadata indexing may not trigger acquisition.
 Read failures remain local diagnostics. Inline HTML is preserved verbatim in saved Markdown and is sandboxed when
-rendered.
+rendered. A reading surface that sizes the frame to its document — so the page around it is
+the only scroller — reads the frame's own document and therefore renders it same-origin;
+that is offered only where scripts stay off, never together with them.
 
 Existing unrelated files are not deleted on open or save. Standalone publication, if
 requested, is a separate export outside the workspace, not a prerequisite for using it.

@@ -1,8 +1,8 @@
 import type { WorkspaceSource } from '../../ports/WorkspaceSource';
-import exampleGraph from '../../examples/replace-with/.derivon/workspace.json?raw';
-import exampleOrientation from '../../examples/replace-with/.derivon/orientation.json?raw';
+import exampleGraph from '../../examples/math-reforged/.derivon/workspace.json?raw';
+import exampleOrientation from '../../examples/math-reforged/.derivon/orientation.json?raw';
 
-const exampleDocuments = import.meta.glob('../../examples/replace-with/docs/**/document.md', {
+const exampleDocuments = import.meta.glob('../../examples/math-reforged/docs/**/document.md', {
   import: 'default',
   query: '?raw',
 }) as Record<string, () => Promise<string>>;
@@ -45,7 +45,7 @@ export const bundledExampleWorkspaceSource = createBundledWorkspaceSource({
   // the author's questions.
   companionMetadata: { '.derivon/orientation.json': exampleOrientation },
   documents: Object.fromEntries(Object.entries(exampleDocuments).map(([path, content]) => [
-    path.replace('../../examples/replace-with/', ''),
+    path.replace('../../examples/math-reforged/', ''),
     content,
   ])),
 });

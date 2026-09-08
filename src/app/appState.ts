@@ -1,4 +1,4 @@
-import type { AppMode, HostId, WorkspaceHandle } from './host';
+import type { AppMode, HostId, LearningView, WorkspaceHandle } from './host';
 
 /**
  * Application state: which mode is showing, what is open, and the little
@@ -16,6 +16,10 @@ export type AppState = {
   readonly learningTargetIds: readonly string[];
   /** This session's known concepts, produced by orientation. */
   readonly learningKnownIds: readonly string[];
+  /** The learning stage or view showing; the top bar switches it, so the application owns it. */
+  readonly learningView: LearningView;
+  /** The learner has seen and accepted the route these targets and known concepts produce. */
+  readonly learningRouteConfirmed: boolean;
   /** The selection already handed to learning, so a return trip does not re-carry it. */
   readonly carriedConceptId: string | null;
 };
@@ -39,6 +43,8 @@ export function initialAppState({ hostId, modes, workspace = null }: InitialAppS
     selectedConceptId: null,
     learningTargetIds: [],
     learningKnownIds: [],
+    learningView: 'orientation',
+    learningRouteConfirmed: false,
     carriedConceptId: null,
   };
 }
@@ -57,6 +63,8 @@ export function openWorkspace(state: AppState, workspace: WorkspaceHandle): AppS
     selectedConceptId: null,
     learningTargetIds: [],
     learningKnownIds: [],
+    learningView: 'orientation',
+    learningRouteConfirmed: false,
     carriedConceptId: null,
   };
 }
@@ -65,14 +73,41 @@ export function selectConcept(state: AppState, conceptId: string | null): AppSta
   return { ...state, selectedConceptId: conceptId };
 }
 
-/** Learning owns its targets once it has them; orientation calls this. */
+const same = (left: readonly string[], right: readonly string[]) =>
+  left.length === right.length && left.every((id, index) => id === right[index]);
+
+/**
+ * Learning owns its targets once it has them; orientation calls this.
+ *
+ * A route the learner already accepted was accepted for these targets. Changing them
+ * un-confirms it, so the preview screen is passed again before the route reopens.
+ */
 export function setLearningTargets(state: AppState, conceptIds: readonly string[]): AppState {
-  return { ...state, learningTargetIds: [...conceptIds] };
+  if (same(state.learningTargetIds, conceptIds)) return state;
+  return { ...state, learningTargetIds: [...conceptIds], learningRouteConfirmed: false };
 }
 
 /** The known set orientation produced; session state alongside the targets. */
 export function setLearningKnown(state: AppState, conceptIds: readonly string[]): AppState {
-  return { ...state, learningKnownIds: [...conceptIds] };
+  if (same(state.learningKnownIds, conceptIds)) return state;
+  return { ...state, learningKnownIds: [...conceptIds], learningRouteConfirmed: false };
+}
+
+/**
+ * Move to another learning stage or view.
+ *
+ * Route learning is the one view with a gate in front of it: a learner who has not seen
+ * the route these targets produce lands on the preview instead. That is the whole
+ * mechanism behind "the preview is always passed before targets are committed to".
+ */
+export function enterLearningView(state: AppState, view: LearningView): AppState {
+  const reached = view === 'route' && !state.learningRouteConfirmed ? 'preview' : view;
+  return { ...state, learningView: reached };
+}
+
+/** The learner accepted the previewed route. */
+export function confirmLearningRoute(state: AppState): AppState {
+  return { ...state, learningRouteConfirmed: true, learningView: 'route' };
 }
 
 /**
@@ -101,6 +136,7 @@ export function enterMode(state: AppState, mode: AppMode): AppState {
       ? state.visitedModes
       : [...state.visitedModes, mode],
     learningTargetIds: carries ? [state.selectedConceptId!] : state.learningTargetIds,
+    learningRouteConfirmed: carries ? false : state.learningRouteConfirmed,
     carriedConceptId: carries ? state.selectedConceptId : state.carriedConceptId,
   };
 }
