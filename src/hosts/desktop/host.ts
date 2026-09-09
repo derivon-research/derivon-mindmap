@@ -1,4 +1,5 @@
 import type { Host, RecentWorkspace, WorkspaceHandle } from '../../app/host';
+import { createDesktopConversationProvider } from './conversationProvider';
 import {
   readRecentWorkspaces,
   type RecentWorkspaceStorage,
@@ -60,4 +61,5 @@ export const host: Host = {
     const { createDesktopRouteSolver } = await import('./desktopRouteSolver');
     return createDesktopRouteSolver();
   },
+  createConversationProvider: createDesktopConversationProvider,
 };

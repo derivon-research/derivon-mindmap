@@ -1,8 +1,11 @@
 mod crash_report;
+mod conversation;
 #[cfg(all(debug_assertions, desktop))]
 mod desktop_debug;
 mod route;
 mod workspace;
+
+use tauri::Manager;
 
 #[tauri::command]
 async fn solve_route(request: route::RouteRequest) -> Result<route::RouteResponse, String> {
@@ -23,6 +26,7 @@ pub fn run() {
         .on_menu_event(desktop_debug::handle_menu_event);
 
     let app = builder
+        .manage(conversation::ConversationState::new())
         .setup(|app| {
             crash_report::install_panic_hook(app.handle())?;
             #[cfg(all(debug_assertions, desktop))]
@@ -49,6 +53,11 @@ pub fn run() {
             workspace::workspace_source_revision,
             workspace::list_workspace_source_owned_files,
             workspace::commit_workspace_source_changes,
+            conversation::conversation_list_models,
+            conversation::conversation_set_model,
+            conversation::conversation_send,
+            conversation::conversation_abort,
+            conversation::conversation_new,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Derivon");
@@ -58,10 +67,15 @@ pub fn run() {
         let mut trace_guard = trace_guard;
         app.run(move |_app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                conversation::shutdown(_app.app_handle());
                 drop(trace_guard.take());
             }
         });
     }
     #[cfg(not(all(debug_assertions, desktop, feature = "debug-tools")))]
-    app.run(|_app, _event| {});
+    app.run(|app, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            conversation::shutdown(app.app_handle());
+        }
+    });
 }

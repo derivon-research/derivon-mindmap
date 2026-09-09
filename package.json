@@ -4,17 +4,22 @@
   "version": "0.4.2",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "dev": "vite",
-    "dev:desktop": "vite --mode desktop",
+    "dev:desktop": "npm run build:companion && vite --mode desktop",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:debug": "tauri dev --features debug-tools -- -- --debug",
     "tauri:build": "tauri build",
     "build": "tsc -b && vite build",
-    "build:desktop": "tsc -b && vite build --mode desktop",
-    "test": "tsc --noEmit -p tsconfig.hosts-desktop.json && vitest run src && npm run test:initial-js-budget",
-    "test:node": "vitest run --project=node",
+    "build:desktop": "npm run build:companion && npm run prepare:companion && tsc -b && vite build --mode desktop",
+    "build:companion": "node scripts/build-companion.mjs",
+    "prepare:companion": "node scripts/prepare-companion.mjs",
+    "test": "npm run build:companion && tsc --noEmit -p tsconfig.hosts-desktop.json && vitest run src && npm run test:initial-js-budget",
+    "test:node": "npm run build:companion && vitest run --project=node",
     "test:browser": "vitest run --project=browser",
     "test:initial-js-budget": "node --test scripts/check-initial-js-budget.test.mjs",
     "check:initial-js-budget": "node scripts/check-initial-js-budget.mjs",
@@ -34,6 +39,7 @@
   "dependencies": {
     "@antv/g6": "^5.1.1",
     "@dagrejs/dagre": "^3.1.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
     "@tauri-apps/api": "^2.11.1",
     "@tiptap/extension-file-handler": "^3.30.3",
     "@tiptap/extension-image": "^3.30.3",
@@ -66,6 +72,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/browser": "^4.1.11",
     "@vitest/browser-playwright": "^4.1.11",
+    "esbuild": "^0.28.2",
     "typescript": "~5.7.2",
     "vite": "^6.0.5",
     "vitest": "^4.1.11"

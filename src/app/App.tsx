@@ -95,9 +95,13 @@ export default function App({ host }: { host: Host }) {
       learning: lazy(async () => ({ default: await host.loadLearningMode() })),
       authoring: loadAuthoringMode
         ? lazy(async () => ({ default: await loadAuthoringMode() }))
-        : null,
+      : null,
     };
   }, [host]);
+  const conversationProviders = useMemo(() => host.createConversationProvider ? {
+    learning: host.createConversationProvider('learning'),
+    authoring: host.createConversationProvider('authoring'),
+  } : undefined, [host]);
 
   const handleOpenWorkspace = useCallback(async (open: () => Promise<WorkspaceHandle | null>) => {
     setOpening(true);
@@ -165,7 +169,8 @@ export default function App({ host }: { host: Host }) {
       {workspace ? (
         <Suspense fallback={<div role="status">正在载入工作区…</div>}>
           <WorkspaceSurface key={workspace.id} workspace={workspace} state={state} modes={modes}
-            routeSolver={routeSolver} onSelectConcept={handleSelectConcept} onChangeTargets={handleChangeTargets}
+            routeSolver={routeSolver} conversationProviders={conversationProviders}
+            onSelectConcept={handleSelectConcept} onChangeTargets={handleChangeTargets}
             onChangeKnown={handleChangeKnown} onEnterLearningView={handleEnterLearningView}
             onConfirmRoute={handleConfirmRoute} onRouteInvalidated={handleRouteInvalidated}
             onProtectionChange={handleProtectionChange} />
