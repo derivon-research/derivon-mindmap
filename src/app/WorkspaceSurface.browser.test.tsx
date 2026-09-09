@@ -21,12 +21,14 @@ afterEach(async () => {
 
 function fixture() {
   const content = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A' }).content;
+  const changedContent = createConcept(createWorkspace({ title: 'Changed' }).content, { label: 'B' }).content;
   const documentPath = `${content.graph.points[0].data.document}/document.md`;
   let revision = 'initial';
   let bytes = new Uint8Array([1]);
+  let graphText = content.graphText;
   const commit = vi.fn(async () => revision);
   const source: WritableWorkspaceSource = {
-    readGraph: async () => content.graphText,
+    readGraph: async () => graphText,
     readDocument: async () => '<img src="assets/image.png">',
     readCompanionMetadata: async () => null,
     readAsset: async () => bytes,
@@ -35,7 +37,14 @@ function fixture() {
     commit,
   };
   const workspace: WorkspaceHandle = { id: 'test', name: 'Test', source, authoringSource: source };
-  return { workspace, commit, documentPath, update() { revision = 'external'; bytes = new Uint8Array([2]); } };
+  return {
+    workspace, commit, documentPath, changedGraphText: changedContent.graphText,
+    update(nextGraphText = content.graphText) {
+      revision = 'external';
+      graphText = nextGraphText;
+      bytes = new Uint8Array([2]);
+    },
+  };
 }
 
 let documentPath = '';
@@ -53,14 +62,25 @@ const modes = {
   } })),
 };
 
-async function render(workspace: WorkspaceHandle, mode: 'authoring' | 'learning') {
+async function render(workspace: WorkspaceHandle, mode: 'authoring' | 'learning', onContentGraphChange = vi.fn()) {
   container = document.createElement('div'); document.body.append(container);
   root = createRoot(container);
   const state = initialAppState({ hostId: 'desktop', modes: [mode], workspace });
   await act(async () => root!.render(<WorkspaceSurface workspace={workspace} state={state} modes={modes}
     onSelectConcept={vi.fn()} onChangeTargets={vi.fn()} onChangeKnown={vi.fn()}
-    onEnterLearningView={vi.fn()} onConfirmRoute={vi.fn()} onProtectionChange={vi.fn()} />));
+    onEnterLearningView={vi.fn()} onConfirmRoute={vi.fn()} onContentGraphChange={onContentGraphChange}
+    onProtectionChange={vi.fn()} />));
 }
+
+it('reports an external graph change to application state without writing', async () => {
+  const fixed = fixture();
+  const onContentGraphChange = vi.fn();
+  documentPath = fixed.documentPath;
+  await render(fixed.workspace, 'learning', onContentGraphChange);
+  fixed.update(fixed.changedGraphText);
+  await expect.poll(() => onContentGraphChange).toHaveBeenCalledWith(fixed.changedGraphText);
+  expect(fixed.commit).not.toHaveBeenCalled();
+});
 
 it('refreshes unchanged document markup when only its external image changes', async () => {
   const fixed = fixture();

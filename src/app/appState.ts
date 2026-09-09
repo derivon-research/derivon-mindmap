@@ -20,6 +20,8 @@ export type AppState = {
   readonly learningView: LearningView;
   /** The learner has seen and accepted the route these targets and known concepts produce. */
   readonly learningRouteConfirmed: boolean;
+  /** The graph the accepted route was solved from; a different graph needs a new acceptance. */
+  readonly learningRouteGraphText: string | null;
   /** The selection already handed to learning, so a return trip does not re-carry it. */
   readonly carriedConceptId: string | null;
 };
@@ -45,6 +47,7 @@ export function initialAppState({ hostId, modes, workspace = null }: InitialAppS
     learningKnownIds: [],
     learningView: 'orientation',
     learningRouteConfirmed: false,
+    learningRouteGraphText: null,
     carriedConceptId: null,
   };
 }
@@ -65,6 +68,7 @@ export function openWorkspace(state: AppState, workspace: WorkspaceHandle): AppS
     learningKnownIds: [],
     learningView: 'orientation',
     learningRouteConfirmed: false,
+    learningRouteGraphText: null,
     carriedConceptId: null,
   };
 }
@@ -106,8 +110,26 @@ export function enterLearningView(state: AppState, view: LearningView): AppState
 }
 
 /** The learner accepted the previewed route. */
-export function confirmLearningRoute(state: AppState): AppState {
-  return { ...state, learningRouteConfirmed: true, learningView: 'route' };
+export function confirmLearningRoute(state: AppState, graphText: string): AppState {
+  return {
+    ...state,
+    learningRouteConfirmed: true,
+    learningRouteGraphText: graphText,
+    learningView: 'route',
+  };
+}
+
+/**
+ * Effective graph content moved under an accepted route. The learner keeps targets, known
+ * concepts and completed records, but must see and accept the route produced by this graph.
+ */
+export function workspaceGraphChanged(state: AppState, graphText: string): AppState {
+  if (!state.learningRouteConfirmed || state.learningRouteGraphText === graphText) return state;
+  return {
+    ...state,
+    learningRouteConfirmed: false,
+    learningView: state.learningView === 'route' ? 'preview' : state.learningView,
+  };
 }
 
 /**

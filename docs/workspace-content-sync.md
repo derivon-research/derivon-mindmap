@@ -169,6 +169,17 @@ when a user submits a nonempty search query. Existing unowned files are not remo
 | Learning mode | Read effective content, retain learner intent and records, invalidate affected routes after content changes | Workspace writes or synchronization policy |
 | Host adapter behind `WorkspaceSource` | Carry out the authorized reads and writes using host capabilities | Product editing intent or mode-specific state |
 
+Learning progress remains application/session state. Route acceptance records the graph text
+it was confirmed against; a later effective graph change un-confirms the route and returns a
+visible route walk to the preview. Targets, known concepts, revealed definitions and task
+records are retained rather than rewritten into workspace content.
+
+A comprehension-task record carries the graph basis, route order, generated task, and the basis
+of both the derivation and definition documents it verified. When a document changes, only
+that task is treated as unverified; the learner is returned to the earliest stale step, while
+unrelated completions remain marked. Unread documents are checked through the shared reader,
+so an external body update is not accepted just because the manifest is unchanged.
+
 The content module hides ID and document-directory allocation, templates, graph changes,
 reference impact and validation behind complete operations. Callers do not build a concept
 by independently creating its manifest entry and its document files. This depth provides

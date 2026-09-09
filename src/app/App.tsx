@@ -10,6 +10,7 @@ import {
   selectConcept,
   setLearningKnown,
   setLearningTargets,
+  workspaceGraphChanged,
   type AppState,
 } from './appState';
 import type { Host, LearningView, RecentWorkspace, WorkspaceHandle } from './host';
@@ -133,8 +134,12 @@ export default function App({ host }: { host: Host }) {
     setState((current) => (current ? enterLearningView(current, view) : current));
   }, []);
 
-  const handleConfirmRoute = useCallback(() => {
-    setState((current) => (current ? confirmLearningRoute(current) : current));
+  const handleConfirmRoute = useCallback((graphText: string) => {
+    setState((current) => (current ? confirmLearningRoute(current, graphText) : current));
+  }, []);
+
+  const handleContentGraphChange = useCallback((graphText: string) => {
+    setState((current) => (current ? workspaceGraphChanged(current, graphText) : current));
   }, []);
 
   if (failure) {
@@ -162,7 +167,8 @@ export default function App({ host }: { host: Host }) {
           <WorkspaceSurface key={workspace.id} workspace={workspace} state={state} modes={modes}
             routeSolver={routeSolver} onSelectConcept={handleSelectConcept} onChangeTargets={handleChangeTargets}
             onChangeKnown={handleChangeKnown} onEnterLearningView={handleEnterLearningView}
-            onConfirmRoute={handleConfirmRoute} onProtectionChange={handleProtectionChange} />
+            onConfirmRoute={handleConfirmRoute} onContentGraphChange={handleContentGraphChange}
+            onProtectionChange={handleProtectionChange} />
         </Suspense>
       ) : (
         <WorkspaceLaunch recentWorkspaces={recentWorkspaces} busy={opening} failure={openFailure}
