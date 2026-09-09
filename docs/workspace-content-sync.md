@@ -8,6 +8,8 @@ no on-disk protocol change.
 Domain terms are defined in [CONTEXT.md](../CONTEXT.md). The load-bearing decisions are
 [mode-independent synchronization](adr/0004-synchronize-workspace-content-independently-of-modes.md)
 and [deletion with owned documents](adr/0005-delete-owned-documents-with-their-objects.md).
+Learning state keeps its own session-local, content-version-aware boundary in
+[ADR-0009](adr/0009-keep-learning-state-session-local-until-shaped.md).
 The [current WorkspaceSource contract](workspace-source.md) remains the description of
 implemented port behaviour.
 
@@ -48,8 +50,13 @@ warns before its close-workspace command or browser unload, and offers retry. PR
 window-close protection, revision observation and explicit conflict discard, checked lazy assets,
 and file-system failure tests through the same session and port. It clears old diagnostic logs
 at actual frontend/native startup. Unchanged hidden graphs retain their viewport; hidden topology
-changes invalidate the renderer until return. These additions do not complete #55: schema-upgrade
-consent and learning-state integration remain open. Older schemas still open read-only.
+changes invalidate the renderer until return. #55 adds the remaining learning-state integration:
+an accepted route is held with its graph signature, task submissions record the document versions
+they were checked against, affected routes block until a new preview is accepted, stale tasks must
+be submitted again without clearing unrelated progress, and deleted targets are reported without
+being replaced. Schema-upgrade consent is not applicable to `derivon.workspace/v1`, which has no
+released predecessor; an unknown schema remains a broken workspace. Older schemas still open
+read-only.
 No atomic read/CAS/crash-recovery guarantee is implied by the current port.
 
 The restored editor is not completion of #53. Document updates validate the owning source
@@ -169,10 +176,12 @@ when a user submits a nonempty search query. Existing unowned files are not remo
 | Learning mode | Read effective content, retain learner intent and records, invalidate affected routes after content changes | Workspace writes or synchronization policy |
 | Host adapter behind `WorkspaceSource` | Carry out the authorized reads and writes using host capabilities | Product editing intent or mode-specific state |
 
-Learning progress remains application/session state. Route acceptance records the graph text
-it was confirmed against; a later effective graph change un-confirms the route and returns a
-visible route walk to the preview. Targets, known concepts, revealed definitions and task
-records are retained rather than rewritten into workspace content.
+Learning progress remains application/session state. The learning mode records the accepted
+route and its content basis. Only a route-affecting graph change—order, cost, topology, or
+reachability—invalidates that route and blocks the current walk with an explicit re-preview
+prompt; label, description, tag, and unrelated graph changes do not. Targets, known concepts,
+revealed definitions and task records are retained rather than rewritten into workspace
+content.
 
 A comprehension-task record carries the graph basis, route order, generated task, and the basis
 of both the derivation and definition documents it verified. When a document changes, only

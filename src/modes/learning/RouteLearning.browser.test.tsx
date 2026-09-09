@@ -43,27 +43,31 @@ function workspace(documents: WorkspaceContent['documents'] = {
   }), documents });
 }
 
-function Harness({ view = 'route' as const, onEnterView = vi.fn(), onConfirmRoute = vi.fn() }: {
+function Harness({ content = workspace(), view = 'route' as const, onEnterView = vi.fn(), onConfirmRoute = vi.fn(), onRouteInvalidated = vi.fn() }: {
+  content?: WorkspaceContent;
   view?: LearningModeProps['view'];
   onEnterView?: LearningModeProps['onEnterView'];
   onConfirmRoute?: LearningModeProps['onConfirmRoute'];
+  onRouteInvalidated?: LearningModeProps['onRouteInvalidated'];
 }) {
-  const [content] = useState(workspace);
   const [targets, setTargets] = useState<readonly string[]>(['c']);
   const [known, setKnown] = useState<readonly string[]>(['a']);
   return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
     targetIds={targets} knownIds={known} routeSolver={fixtureRouteSolver()}
     view={view} onEnterView={onEnterView} onConfirmRoute={onConfirmRoute}
-    onChangeTargets={setTargets} onChangeKnown={setKnown} />;
+    onRouteInvalidated={onRouteInvalidated} onChangeTargets={setTargets} onChangeKnown={setKnown} />;
 }
 
-function ControlledContent({ content }: { content: WorkspaceContent }) {
+function ControlledContent({ content, onRouteInvalidated }: {
+  content: WorkspaceContent;
+  onRouteInvalidated?: LearningModeProps['onRouteInvalidated'];
+}) {
   const [targets, setTargets] = useState<readonly string[]>(['c']);
   const [known, setKnown] = useState<readonly string[]>(['a']);
   return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
     targetIds={targets} knownIds={known} routeSolver={fixtureRouteSolver()}
     view="route" onEnterView={vi.fn()} onConfirmRoute={vi.fn()}
-    onChangeTargets={setTargets} onChangeKnown={setKnown} />;
+    onRouteInvalidated={onRouteInvalidated ?? vi.fn()} onChangeTargets={setTargets} onChangeKnown={setKnown} />;
 }
 
 async function render(over: Parameters<typeof Harness>[0] = {}) {
@@ -73,9 +77,9 @@ async function render(over: Parameters<typeof Harness>[0] = {}) {
   await act(async () => { await Promise.resolve(); });
 }
 
-async function renderContent(content: WorkspaceContent) {
+async function renderContent(content: WorkspaceContent, onRouteInvalidated?: LearningModeProps['onRouteInvalidated']) {
   root = createRoot(container);
-  await act(async () => root?.render(<ControlledContent content={content} />));
+  await act(async () => root?.render(<ControlledContent content={content} onRouteInvalidated={onRouteInvalidated} />));
   await act(async () => { await Promise.resolve(); });
 }
 
@@ -199,6 +203,70 @@ it('holds the route being walked, so a later solve cannot renumber the steps', a
   expect(container.querySelector('[data-learning-known]')?.getAttribute('data-learning-known')).toBe('a b');
 });
 
+it('blocks a walk when a content update changes the route', async () => {
+  const initial = workspace();
+  const changed = {
+    ...initial,
+    graphText: `${initial.graphText}\n`,
+    graph: {
+      ...initial.graph,
+      hyperedges: initial.graph.hyperedges.map((edge) => edge.id === 'd2' ? { ...edge, weight: 4 } : edge),
+    },
+  };
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={initial} />));
+  await act(async () => { await Promise.resolve(); });
+  expect(container.textContent).toContain('第 1 / 2 步');
+
+  await act(async () => root?.render(<Harness content={changed} />));
+  await act(async () => { await Promise.resolve(); });
+  await expect.element(page.getByRole('alert')).toBeVisible();
+  expect(container.textContent).toContain('这条路线的内容变了，需要重新预览');
+  expect(container.textContent).not.toContain('第 1 / 2 步');
+});
+
+it('keeps walking when only a label changes and the route signature is unchanged', async () => {
+  const initial = workspace();
+  const changed = {
+    ...initial,
+    graphText: `${initial.graphText}\n`,
+    graph: {
+      ...initial.graph,
+      points: initial.graph.points.map((point) => point.id === 'b'
+        ? { ...point, data: { ...point.data, label: 'Renamed B' } }
+        : point),
+    },
+  };
+  const onRouteInvalidated = vi.fn();
+  await renderContent(initial, onRouteInvalidated);
+  await act(async () => root?.render(<ControlledContent content={changed} onRouteInvalidated={onRouteInvalidated} />));
+  await act(async () => { await Promise.resolve(); });
+
+  await expect.element(page.getByText('第 1 / 2 步')).toBeVisible();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(onRouteInvalidated).not.toHaveBeenCalled();
+});
+
+it('reports a deleted target instead of replacing or dropping it', async () => {
+  const initial = workspace();
+  const changed = {
+    ...initial,
+    graphText: `${initial.graphText}\n`,
+    graph: {
+      ...initial.graph,
+      points: initial.graph.points.filter((point) => point.id !== 'c'),
+      hyperedges: initial.graph.hyperedges.filter((edge) => edge.id !== 'd2'),
+    },
+  };
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={initial} />));
+  await act(async () => { await Promise.resolve(); });
+  await act(async () => root?.render(<Harness content={changed} />));
+  await act(async () => { await Promise.resolve(); });
+  await expect.element(page.getByRole('alert')).toBeVisible();
+  expect(container.textContent).toContain('目标 c 已被删除，不会自动替换');
+});
+
 it('does not ask the host to solve again for content that parsed to the same graph', async () => {
   let solves = 0;
   const counting: RouteSolver = {
@@ -210,6 +278,7 @@ it('does not ask the host to solve again for content that parsed to the same gra
     return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
       targetIds={targets} knownIds={known} routeSolver={counting}
       view="route" onEnterView={vi.fn()} onConfirmRoute={vi.fn()}
+      onRouteInvalidated={vi.fn()}
       onChangeTargets={setTargets} onChangeKnown={setKnown} />;
   }
   root = createRoot(container);

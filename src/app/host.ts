@@ -70,6 +70,8 @@ export type LearningModeProps = {
   readonly onEnterView: (view: LearningView) => void;
   /** The learner accepted the previewed route; only this opens the route view. */
   readonly onConfirmRoute: () => void;
+  /** The accepted route became unusable; the application gate must require a new preview. */
+  readonly onRouteInvalidated: () => void;
 };
 
 /**

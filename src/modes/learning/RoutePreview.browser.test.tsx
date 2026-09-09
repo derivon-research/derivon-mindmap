@@ -44,6 +44,7 @@ function Harness({ routeSolver, onConfirmRoute = vi.fn(), onEnterView = vi.fn(),
   return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
     targetIds={targets} knownIds={known} routeSolver={routeSolver}
     view="preview" onEnterView={onEnterView} onConfirmRoute={onConfirmRoute}
+    onRouteInvalidated={vi.fn()}
     onChangeTargets={setTargets} onChangeKnown={setKnown} />;
 }
 

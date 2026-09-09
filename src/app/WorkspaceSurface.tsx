@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type LazyExoticComponent } from 'react';
+import { Suspense, useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type LazyExoticComponent } from 'react';
 import type { RouteSolver } from '../ports/RouteSolver';
 import { openWorkspaceSession, type WorkspaceSession } from '../synchronization';
 import type { AppState } from './appState';
@@ -16,8 +16,8 @@ export type WorkspaceSurfaceProps = {
   onChangeTargets(ids: readonly string[]): void;
   onChangeKnown(ids: readonly string[]): void;
   onEnterLearningView(view: LearningView): void;
-  onConfirmRoute(graphText: string): void;
-  onContentGraphChange(graphText: string): void;
+  onConfirmRoute(): void;
+  onRouteInvalidated(): void;
   onProtectionChange(protectedChanges: boolean): void;
 };
 
@@ -37,20 +37,9 @@ export default function WorkspaceSurface(props: WorkspaceSurfaceProps) {
   return <SessionModes {...props} session={session} />;
 }
 
-function SessionModes({ session, state, workspace, modes, routeSolver, onSelectConcept, onChangeTargets, onChangeKnown, onEnterLearningView, onConfirmRoute, onContentGraphChange, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
+function SessionModes({ session, state, workspace, modes, routeSolver, onSelectConcept, onChangeTargets, onChangeKnown, onEnterLearningView, onConfirmRoute, onRouteInvalidated, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
   const snapshot = useSyncExternalStore(session.reader.subscribe, session.reader.getSnapshot);
-  const graphBasis = useRef<string | null>(null);
   const [closeGuardError, setCloseGuardError] = useState<string>();
-  useEffect(() => {
-    const graphText = snapshot.content.graphText;
-    if (graphBasis.current === null) {
-      graphBasis.current = graphText;
-      return;
-    }
-    if (graphBasis.current === graphText) return;
-    graphBasis.current = graphText;
-    onContentGraphChange(graphText);
-  }, [onContentGraphChange, snapshot.content.graphText]);
   const readAsset = useMemo(() => async (path: string) => {
     const assertCurrent = () => {
       if (session.reader.getSnapshot().content !== snapshot.content) throw new Error('工作区预览已更新');
@@ -103,7 +92,7 @@ function SessionModes({ session, state, workspace, modes, routeSolver, onSelectC
         {mode === 'learning' ? <LearningMode active={mode === state.mode} workspace={identity} content={snapshot.content}
           targetIds={state.learningTargetIds} knownIds={state.learningKnownIds} onChangeTargets={onChangeTargets}
           onChangeKnown={onChangeKnown} view={state.learningView} onEnterView={onEnterLearningView}
-          onConfirmRoute={() => onConfirmRoute(snapshot.content.graphText)} routeSolver={routeSolver}
+          onConfirmRoute={onConfirmRoute} onRouteInvalidated={onRouteInvalidated} routeSolver={routeSolver}
           readAsset={readAsset} readDocuments={readDocuments} />
           : AuthoringMode && <AuthoringMode key={snapshot.authoringEpoch} active={mode === state.mode} workspace={identity} content={snapshot.content}
             authoring={session.authoring} readAsset={readAsset} readDocuments={readDocuments} routeSolver={routeSolver} selectedConceptId={state.selectedConceptId} onSelectConcept={onSelectConcept}

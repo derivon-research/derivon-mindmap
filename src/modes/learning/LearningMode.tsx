@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
-import type { RouteSolution } from '../../ports/RouteSolver';
 import { GraphBrowse } from './GraphBrowse';
 import './learning.css';
 import { applyOrientationIntent, beginOrientation, planOrientation, type OrientationIntent, type OrientationRun } from './orientation';
 import { OrientationView } from './OrientationView';
-import { routeKey as routeKeyOf, type TaskCompletion } from './progress';
 import { DEFAULT_PANELS, type PanelLayout } from './panels';
 import { RouteLearning } from './RouteLearning';
 import { RoutePreviewView } from './RoutePreviewView';
 import { useRoutePreview } from '../routePreview';
+import type { TaskCompletion } from './progress';
+import {
+  clearRouteInvalidation, holdRoute, initialLearningWalkState, invalidateRoute, leaveRoute,
+  missingTargetIds, moveLearningCursor, recordTaskCompletion, restartRoute, revealDefinition,
+  routeSignature,
+} from './state';
 
 /**
  * The learning side. One mode, four views: orientation, the route preview, walking the
@@ -22,11 +26,9 @@ import { useRoutePreview } from '../routePreview';
  */
 export function LearningMode({
   active = true, content, targetIds, knownIds, onChangeTargets, onChangeKnown,
-  routeSolver, view, onEnterView, onConfirmRoute, readAsset, readDocuments,
+  routeSolver, view, onEnterView, onConfirmRoute, onRouteInvalidated, readAsset, readDocuments,
 }: LearningModeProps) {
   const plan = useMemo(() => planOrientation(content), [content]);
-  // Only the question bookkeeping is local. Targets and known concepts are application
-  // state, so a target carried in from the authoring side is the one that counts.
   const [flow, setFlow] = useState(() => beginOrientation(plan));
   const run: OrientationRun = useMemo(
     () => ({ ...flow, targets: [...targetIds], known: [...knownIds] }),
@@ -34,12 +36,10 @@ export function LearningMode({
   );
   const seeded = useRef(false);
   useEffect(() => {
-    // The author's seed applies only to a run the application has nothing of its own for.
-    if (seeded.current) return;
     seeded.current = true;
     if (!targetIds.length && flow.targets.length) onChangeTargets(flow.targets);
     if (!knownIds.length && flow.known.length) onChangeKnown(flow.known);
-  }, [flow.known, flow.targets, knownIds.length, targetIds.length]);
+  }, [flow.known, flow.targets, knownIds.length, targetIds.length, onChangeKnown, onChangeTargets]);
 
   const intent = (value: OrientationIntent) => {
     const next = applyOrientationIntent(plan, run, value);
@@ -48,52 +48,60 @@ export function LearningMode({
     onChangeKnown(next.known);
   };
 
-  // The same manifest parsed again is the same graph. Acquiring a document body or
-  // re-accepting unchanged content hands down a new object; asking the host to solve the
-  // route again for it would cost an answer nobody asked for.
   const graph = useMemo(() => content.graph, [content.graphText]);
   const preview = useRoutePreview(routeSolver, graph, targetIds, knownIds);
-  const [cursor, setCursor] = useState(0);
-  const [revealed, setRevealed] = useState<readonly string[]>([]);
-  const [tasksDone, setTasksDone] = useState<readonly TaskCompletion[]>([]);
   const [panels, setPanels] = useState<PanelLayout>(DEFAULT_PANELS);
+  const [walk, setWalk] = useState(initialLearningWalkState);
+  const { acceptedRoute, cursor, revealed, taskCompletions, routeInvalidReason } = walk;
   const solved = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
-  /**
-   * The route a learner walks is the one they accepted on the preview screen.
-   *
-   * While the route view is up it is held: a solve that lands later — the same route
-   * computed again, or a shorter one because the learner said they already knew a step —
-   * must not renumber the steps under them. A new route is a new walk, and the learner
-   * starts it deliberately, by looking at the preview again and accepting it.
-   */
-  const [walked, setWalked] = useState<{ readonly graphText: string; readonly solution: RouteSolution } | null>(null);
+
   useEffect(() => {
-    if (view !== 'route') {
-      setWalked(null);
+    if (view !== 'route') setWalk(leaveRoute);
+    else if (solved) setWalk((current) => holdRoute(current, content.graph, solved, content.graphText));
+  }, [content.graph, content.graphText, solved, view]);
+
+  const solution = view === 'route' ? acceptedRoute?.solution ?? solved : solved;
+  const missingTargets = useMemo(
+    () => missingTargetIds(content.graph, targetIds),
+    [content.graph, targetIds],
+  );
+
+  useEffect(() => {
+    if (!acceptedRoute || view !== 'route') return;
+    if (missingTargets.length > 0) {
+      if (routeInvalidReason !== 'target') onRouteInvalidated();
+      setWalk((current) => invalidateRoute(current, 'target'));
       return;
     }
-    setWalked((current) => {
-      if (current && current.graphText !== content.graphText) return null;
-      return current ?? (solved ? { graphText: content.graphText, solution: solved } : null);
-    });
-  }, [content.graphText, solved, view]);
-  const solution = view === 'route' ? walked?.solution ?? solved : solved;
-  // A different route is a different walk: keeping a cursor across it would point at a step
-  // that is no longer there.
-  const routeKey = solution ? routeKeyOf(solution) : '';
-  useEffect(() => { setCursor(0); }, [routeKey]);
-  const completeTask = (completion: TaskCompletion) => setTasksDone((current) => [
-    ...current.filter((existing) => !(
-      existing.routeKey === completion.routeKey
-      && existing.graphText === completion.graphText
-      && existing.conceptId === completion.conceptId
-      && existing.derivationId === completion.derivationId
-    )),
-    completion,
-  ]);
+    if (acceptedRoute.graphText === content.graphText) {
+      setWalk(clearRouteInvalidation);
+      return;
+    }
+    if (preview.status === 'solving') return;
+    if (preview.status !== 'ready'
+      || !preview.solution.reachable
+      || routeSignature(content.graph, preview.solution) !== acceptedRoute.signature) {
+      if (routeInvalidReason !== 'changed') onRouteInvalidated();
+      setWalk((current) => invalidateRoute(current, 'changed'));
+    } else {
+      setWalk(clearRouteInvalidation);
+    }
+  }, [acceptedRoute, content.graph, content.graphText, missingTargets, preview, routeInvalidReason, onRouteInvalidated, view]);
+
+  const moveCursor = (index: number) => {
+    setWalk((current) => moveLearningCursor(current, index));
+  };
+
+  const completeTask = (completion: TaskCompletion) => {
+    setWalk((current) => recordTaskCompletion(current, completion));
+  };
+
+  const confirmRoute = () => {
+    setWalk(restartRoute);
+    onConfirmRoute();
+  };
 
   const know = (conceptId: string) => intent({ kind: 'know', conceptIds: [conceptId] });
-  // Every claim the learner makes is reversible, wherever they made it.
   const toggleKnown = (conceptId: string) => intent(knownIds.includes(conceptId)
     ? { kind: 'set-known', conceptIds: knownIds.filter((id) => id !== conceptId) }
     : { kind: 'know', conceptIds: [conceptId] });
@@ -108,14 +116,24 @@ export function LearningMode({
       readAsset={readAsset} readDocuments={readDocuments} />}
 
     {view === 'preview' && <RoutePreviewView active={active} graph={content.graph} tags={content.tags}
-      preview={preview} targetIds={targetIds} knownIds={knownIds} onConfirm={onConfirmRoute}
+      preview={preview} targetIds={targetIds} knownIds={knownIds} onConfirm={confirmRoute}
       onBackToOrientation={() => onEnterView('orientation')} onBrowse={() => onEnterView('browse')} />}
 
-    {view === 'route' && (solution
+    {view === 'route' && routeInvalidReason === 'target' && <div className="learning-route-empty" role="alert">
+      <p>目标 {missingTargets.join('、')} 已被删除，不会自动替换。</p>
+      <button type="button" className="learning-primary" onClick={() => onEnterView('orientation')}>重新选择目标</button>
+    </div>}
+
+    {view === 'route' && routeInvalidReason === 'changed' && <div className="learning-route-empty" role="alert">
+      <p>这条路线的内容变了，需要重新预览后再继续。</p>
+      <button type="button" className="learning-primary" onClick={() => onEnterView('preview')}>重新预览</button>
+    </div>}
+
+    {view === 'route' && !routeInvalidReason && (solution
       ? <RouteLearning active={active} content={content} solution={solution} targetIds={targetIds}
-        knownIds={knownIds} cursor={cursor} onCursor={setCursor}
-        revealed={revealed} onReveal={(id) => setRevealed((current) => [...new Set([...current, id])])}
-        tasksDone={tasksDone} onTaskDone={completeTask}
+        knownIds={knownIds} cursor={cursor} onCursor={moveCursor}
+        revealed={revealed} onReveal={(id) => setWalk((current) => revealDefinition(current, id))}
+        tasksDone={taskCompletions} onTaskDone={completeTask}
         panels={panels} onPanels={setPanels} onKnow={know}
         onBackToPreview={() => onEnterView('preview')} readAsset={readAsset} readDocuments={readDocuments} />
       : <div className="learning-route-empty" role="status">

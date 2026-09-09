@@ -21,7 +21,8 @@ function props(over: Partial<LearningModeProps> & Pick<LearningModeProps, 'conte
   return {
     workspace: { id: 'fixture', name: 'Fixture' }, targetIds: [], knownIds: [],
     onChangeTargets: vi.fn(), onChangeKnown: vi.fn(),
-    view: 'orientation', onEnterView: vi.fn(), onConfirmRoute: vi.fn(), active: true,
+    view: 'orientation', onEnterView: vi.fn(), onConfirmRoute: vi.fn(),
+    onRouteInvalidated: vi.fn(), active: true,
     ...over,
   };
 }

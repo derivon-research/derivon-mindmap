@@ -49,10 +49,15 @@ function fixture() {
 
 let documentPath = '';
 const modes = {
-  learning: lazy(async () => ({ default: function Document({ content, readAsset, readDocuments }: LearningModeProps) {
+  learning: lazy(async () => ({ default: function Learning({ content, readAsset, readDocuments }: LearningModeProps) {
     const resource = useObjectDocument(documentPath, content.documents[documentPath], readDocuments);
-    return resource?.status === 'ready' ? <MarkdownPreview title="Document" markdown={resource.text}
-      documentPath={documentPath} readAsset={readAsset} /> : <p role="status">Loading</p>;
+    return <>
+      <p>{content.title}</p>
+      {resource?.status === 'ready'
+        ? <MarkdownPreview title={content.title} markdown={resource.text}
+          documentPath={documentPath} readAsset={readAsset} />
+        : <p role="status">Loading</p>}
+    </>;
   } })),
   authoring: lazy(async () => ({ default: function Draft({ authoring }: AuthoringModeProps) {
     const [draft, setDraft] = useState('');
@@ -62,23 +67,23 @@ const modes = {
   } })),
 };
 
-async function render(workspace: WorkspaceHandle, mode: 'authoring' | 'learning', onContentGraphChange = vi.fn()) {
+async function render(workspace: WorkspaceHandle, mode: 'authoring' | 'learning') {
   container = document.createElement('div'); document.body.append(container);
   root = createRoot(container);
   const state = initialAppState({ hostId: 'desktop', modes: [mode], workspace });
   await act(async () => root!.render(<WorkspaceSurface workspace={workspace} state={state} modes={modes}
     onSelectConcept={vi.fn()} onChangeTargets={vi.fn()} onChangeKnown={vi.fn()}
-    onEnterLearningView={vi.fn()} onConfirmRoute={vi.fn()} onContentGraphChange={onContentGraphChange}
+    onEnterLearningView={vi.fn()} onConfirmRoute={vi.fn()} onRouteInvalidated={vi.fn()}
     onProtectionChange={vi.fn()} />));
 }
 
-it('reports an external graph change to application state without writing', async () => {
+it('passes an external graph change to learning without writing', async () => {
   const fixed = fixture();
-  const onContentGraphChange = vi.fn();
   documentPath = fixed.documentPath;
-  await render(fixed.workspace, 'learning', onContentGraphChange);
+  await render(fixed.workspace, 'learning');
+  await expect.poll(() => container.textContent).toContain('Test');
   fixed.update(fixed.changedGraphText);
-  await expect.poll(() => onContentGraphChange).toHaveBeenCalledWith(fixed.changedGraphText);
+  await expect.poll(() => container.textContent).toContain('Changed');
   expect(fixed.commit).not.toHaveBeenCalled();
 });
 
