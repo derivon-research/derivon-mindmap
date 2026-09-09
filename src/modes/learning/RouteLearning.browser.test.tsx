@@ -43,12 +43,12 @@ function workspace(): WorkspaceContent {
   } });
 }
 
-function Harness({ view = 'route' as const, onEnterView = vi.fn(), onConfirmRoute = vi.fn() }: {
+function Harness({ content = workspace(), view = 'route' as const, onEnterView = vi.fn(), onConfirmRoute = vi.fn() }: {
+  content?: WorkspaceContent;
   view?: LearningModeProps['view'];
   onEnterView?: LearningModeProps['onEnterView'];
   onConfirmRoute?: LearningModeProps['onConfirmRoute'];
 }) {
-  const [content] = useState(workspace);
   const [targets, setTargets] = useState<readonly string[]>(['c']);
   const [known, setKnown] = useState<readonly string[]>(['a']);
   return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
@@ -138,6 +138,80 @@ it('holds the route being walked, so a later solve cannot renumber the steps', a
   await act(async () => { await Promise.resolve(); });
   expect(container.textContent).toContain('第 2 / 2 步');
   expect(container.querySelector('[data-learning-known]')?.getAttribute('data-learning-known')).toBe('a b');
+});
+
+it('blocks a walk when a content update changes the route', async () => {
+  const initial = workspace();
+  const changed = {
+    ...initial,
+    graphText: `${initial.graphText}\n`,
+    graph: {
+      ...initial.graph,
+      hyperedges: initial.graph.hyperedges.map((edge) => edge.id === 'd2' ? { ...edge, weight: 4 } : edge),
+    },
+  };
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={initial} />));
+  await act(async () => { await Promise.resolve(); });
+  expect(container.textContent).toContain('第 1 / 2 步');
+
+  await act(async () => root?.render(<Harness content={changed} />));
+  await act(async () => { await Promise.resolve(); });
+  await expect.element(page.getByRole('alert')).toBeVisible();
+  expect(container.textContent).toContain('这条路线的内容变了，需要重新预览');
+  expect(container.textContent).not.toContain('第 1 / 2 步');
+});
+
+it('makes an earlier task stale when its document changes, without clearing the record', async () => {
+  const initial = workspace();
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={initial} />));
+  await act(async () => { await Promise.resolve(); });
+  await page.getByRole('button', { name: '跟下来了，给我定义 ↓' }).click();
+  await page.getByRole('textbox', { name: '理解验证的回答' }).fill('没有 B 就写不下 C。');
+  await page.getByRole('button', { name: '交上去' }).click();
+  await click('.learning-text-actions .learning-primary');
+  await expect.element(page.getByText('第 2 / 2 步')).toBeVisible();
+  await page.getByRole('button', { name: '跟下来了，给我定义 ↓' }).click();
+  await page.getByRole('textbox', { name: '理解验证的回答' }).fill('有了 C 才能继续。');
+  await page.getByRole('button', { name: '交上去' }).click();
+  await click('.learning-text-actions .learning-primary');
+  await expect.element(page.getByText('这条路线走完了')).toBeVisible();
+
+  const changed = {
+    ...initial,
+    documents: {
+      ...initial.documents,
+      'docs/b/document.md': { status: 'ready' as const, text: '<main>新的 B 定义</main>' },
+    },
+  };
+  await act(async () => root?.render(<Harness content={changed} />));
+  await act(async () => { await Promise.resolve(); });
+  await expect.element(page.getByText('这一步的教材更新了，之前的提交不能当作新版验证。')).toBeVisible();
+  await expect.element(page.getByText('第 1 / 2 步')).toBeVisible();
+  expect(container.querySelectorAll('.learning-rail-list li')[1].querySelector('svg')).not.toBeNull();
+  const next = container.querySelector('.learning-text-actions .learning-primary') as HTMLButtonElement;
+  expect(next.disabled).toBe(true);
+});
+
+it('reports a deleted target instead of replacing or dropping it', async () => {
+  const initial = workspace();
+  const changed = {
+    ...initial,
+    graphText: `${initial.graphText}\n`,
+    graph: {
+      ...initial.graph,
+      points: initial.graph.points.filter((point) => point.id !== 'c'),
+      hyperedges: initial.graph.hyperedges.filter((edge) => edge.id !== 'd2'),
+    },
+  };
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={initial} />));
+  await act(async () => { await Promise.resolve(); });
+  await act(async () => root?.render(<Harness content={changed} />));
+  await act(async () => { await Promise.resolve(); });
+  await expect.element(page.getByRole('alert')).toBeVisible();
+  expect(container.textContent).toContain('目标 c 已被删除，不会自动替换');
 });
 
 it('does not ask the host to solve again for content that parsed to the same graph', async () => {

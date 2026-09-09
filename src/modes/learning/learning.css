@@ -145,6 +145,7 @@
 .learning-task-actions { display: flex; gap: 8px; margin-top: 10px; }
 .learning-task-actions button { min-height: 34px; padding: 7px 14px; border: 1px solid var(--app-line); border-radius: 10px; background: #fff; color: var(--app-ink); }
 .learning-task-done { color: #15803d; font-size: 13px; }
+.learning-task-stale { margin: 0; color: #b45309; font-size: 13px; }
 .learning-route-done, .learning-route-empty { padding-top: 40px; }
 .learning-route-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 40px; }
 .learning-route-empty button { min-height: 38px; padding: 8px 16px; border: 1px solid var(--app-line); border-radius: 10px; }

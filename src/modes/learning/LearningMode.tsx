@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
-import type { RouteSolution } from '../../ports/RouteSolver';
+import type { WorkspaceContent } from '../../workspace/index';
 import { GraphBrowse } from './GraphBrowse';
 import './learning.css';
 import { applyOrientationIntent, beginOrientation, planOrientation, type OrientationIntent, type OrientationRun } from './orientation';
@@ -8,7 +8,12 @@ import { OrientationView } from './OrientationView';
 import { DEFAULT_PANELS, type PanelLayout } from './panels';
 import { RouteLearning } from './RouteLearning';
 import { RoutePreviewView } from './RoutePreviewView';
-import { useRoutePreview } from '../routePreview';
+import { routeSteps, useRoutePreview } from '../routePreview';
+import {
+  clearRouteInvalidation, documentVersion, holdRoute, initialLearningWalkState, invalidateRoute,
+  leaveRoute, missingTargetIds, moveLearningCursor, restartRoute, revealDefinition,
+  routeDocumentPaths, routeSignature, submitTask, taskRecordIsCurrent, type RouteDocumentVersions,
+} from './state';
 
 /**
  * The learning side. One mode, four views: orientation, the route preview, walking the
@@ -52,9 +57,6 @@ export function LearningMode({
   // route again for it would cost an answer nobody asked for.
   const graph = useMemo(() => content.graph, [content.graphText]);
   const preview = useRoutePreview(routeSolver, graph, targetIds, knownIds);
-  const [cursor, setCursor] = useState(0);
-  const [revealed, setRevealed] = useState<readonly string[]>([]);
-  const [tasksDone, setTasksDone] = useState<readonly string[]>([]);
   const [panels, setPanels] = useState<PanelLayout>(DEFAULT_PANELS);
   const solved = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
   /**
@@ -65,16 +67,104 @@ export function LearningMode({
    * must not renumber the steps under them. A new route is a new walk, and the learner
    * starts it deliberately, by looking at the preview again and accepting it.
    */
-  const [walked, setWalked] = useState<RouteSolution | null>(null);
+  const [walk, setWalk] = useState(initialLearningWalkState);
+  const { acceptedRoute, cursor, revealed, taskRecords, routeInvalidReason } = walk;
+  const [fetchedDocuments, setFetchedDocuments] = useState<{
+    readonly content: WorkspaceContent;
+    readonly versions: RouteDocumentVersions;
+  } | null>(null);
   useEffect(() => {
-    if (view !== 'route') setWalked(null);
-    else setWalked((current) => current ?? solved);
-  }, [solved, view]);
-  const solution = view === 'route' ? walked ?? solved : solved;
-  // A different route is a different walk: keeping a cursor across it would point at a step
-  // that is no longer there.
-  const routeKey = solution ? solution.order.join(' ') : '';
-  useEffect(() => { setCursor(0); }, [routeKey]);
+    if (view !== 'route') setWalk(leaveRoute);
+    else if (solved) setWalk((current) => holdRoute(current, content.graph, solved, content.graphText));
+  }, [content.graph, content.graphText, solved, view]);
+  const solution = view === 'route' ? acceptedRoute?.solution ?? solved : solved;
+  const routePaths = useMemo(
+    () => solution ? routeDocumentPaths(content.graph, solution) : [],
+    [content.graph, solution],
+  );
+  useEffect(() => {
+    if (!readDocuments || routePaths.length === 0) return;
+    let cancelled = false;
+    void readDocuments(routePaths)
+      .then((resources) => {
+        if (cancelled) return;
+        const versions: Record<string, string> = {};
+        for (const [path, resource] of Object.entries(resources)) {
+          if (resource.status === 'ready') versions[path] = documentVersion(resource.text);
+        }
+        setFetchedDocuments({ content, versions });
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedDocuments({ content, versions: {} });
+      });
+    return () => { cancelled = true; };
+  }, [content, readDocuments, routePaths]);
+  const documentVersions = useMemo(() => {
+    const versions: Record<string, string> = {};
+    if (fetchedDocuments?.content === content) Object.assign(versions, fetchedDocuments.versions);
+    for (const [path, resource] of Object.entries(content.documents)) {
+      if (resource.status === 'ready') versions[path] = documentVersion(resource.text);
+    }
+    return versions;
+  }, [content, fetchedDocuments]);
+  const documentVersionsReady = routePaths.every((path) => documentVersions[path] !== undefined);
+  const steps = useMemo(
+    () => solution ? routeSteps(content.graph, solution) : [],
+    [content.graph, solution],
+  );
+  const missingTargets = useMemo(
+    () => missingTargetIds(content.graph, targetIds),
+    [content.graph, targetIds],
+  );
+  useEffect(() => {
+    if (!acceptedRoute || view !== 'route') return;
+    if (missingTargets.length > 0) {
+      setWalk((current) => invalidateRoute(current, 'target'));
+      return;
+    }
+    if (acceptedRoute.graphText === content.graphText) {
+      setWalk(clearRouteInvalidation);
+      return;
+    }
+    if (preview.status === 'solving') return;
+    if (preview.status !== 'ready'
+      || !preview.solution.reachable
+      || routeSignature(content.graph, preview.solution) !== acceptedRoute.signature) {
+      setWalk((current) => invalidateRoute(current, 'changed'));
+    } else {
+      setWalk(clearRouteInvalidation);
+    }
+  }, [acceptedRoute, content.graph, content.graphText, missingTargets, preview, view]);
+  const taskRecordStatus = useMemo(() => {
+    if (!documentVersionsReady) return { tasksDone: [] as string[], staleTaskIds: [] as string[] };
+    const tasksDone: string[] = [];
+    const staleTaskIds: string[] = [];
+    for (const record of taskRecords) {
+      if (taskRecordIsCurrent(record, documentVersions)) tasksDone.push(record.conceptId);
+      else staleTaskIds.push(record.conceptId);
+    }
+    return { tasksDone, staleTaskIds };
+  }, [documentVersions, documentVersionsReady, taskRecords]);
+  const { tasksDone, staleTaskIds } = taskRecordStatus;
+  const staleStepIndex = steps.findIndex((step) => staleTaskIds.includes(step.conceptId));
+  useEffect(() => {
+    if (staleStepIndex >= 0 && cursor > staleStepIndex) {
+      setWalk((current) => moveLearningCursor(current, staleStepIndex));
+    }
+  }, [cursor, staleStepIndex]);
+  const moveCursor = (index: number) => {
+    if (staleStepIndex >= 0 && index > staleStepIndex) return;
+    setWalk((current) => moveLearningCursor(current, index));
+  };
+  const completeCurrentTask = (conceptId: string) => {
+    const step = steps[cursor];
+    if (!step || step.conceptId !== conceptId || !documentVersionsReady) return;
+    setWalk((current) => submitTask(current, content.graph, step.derivationId, documentVersions));
+  };
+  const confirmRoute = () => {
+    setWalk(restartRoute);
+    onConfirmRoute();
+  };
 
   const know = (conceptId: string) => intent({ kind: 'know', conceptIds: [conceptId] });
   // Every claim the learner makes is reversible, wherever they made it.
@@ -92,14 +182,28 @@ export function LearningMode({
       readAsset={readAsset} readDocuments={readDocuments} />}
 
     {view === 'preview' && <RoutePreviewView active={active} graph={content.graph} tags={content.tags}
-      preview={preview} targetIds={targetIds} knownIds={knownIds} onConfirm={onConfirmRoute}
+      preview={preview} targetIds={targetIds} knownIds={knownIds} onConfirm={confirmRoute}
       onBackToOrientation={() => onEnterView('orientation')} onBrowse={() => onEnterView('browse')} />}
 
-    {view === 'route' && (solution
+    {view === 'route' && routeInvalidReason === 'target' && <div className="learning-route-empty" role="alert">
+      <p>目标 {missingTargets.join('、')} 已被删除，不会自动替换。</p>
+      <button type="button" className="learning-primary" onClick={() => onEnterView('orientation')}>重新选择目标</button>
+    </div>}
+
+    {view === 'route' && routeInvalidReason === 'changed' && <div className="learning-route-empty" role="alert">
+      <p>这条路线的内容变了，需要重新预览后再继续。</p>
+      <button type="button" className="learning-primary" onClick={() => onEnterView('preview')}>重新预览</button>
+    </div>}
+
+    {view === 'route' && !routeInvalidReason && !documentVersionsReady && <div className="learning-route-empty" role="status">
+      <p>正在确认这条路线的教材版本…</p>
+    </div>}
+
+    {view === 'route' && !routeInvalidReason && documentVersionsReady && (solution
       ? <RouteLearning active={active} content={content} solution={solution} targetIds={targetIds}
-        knownIds={knownIds} cursor={cursor} onCursor={setCursor}
-        revealed={revealed} onReveal={(id) => setRevealed((current) => [...new Set([...current, id])])}
-        tasksDone={tasksDone} onTaskDone={(id) => setTasksDone((current) => [...new Set([...current, id])])}
+        knownIds={knownIds} cursor={cursor} onCursor={moveCursor}
+        revealed={revealed} onReveal={(id) => setWalk((current) => revealDefinition(current, id))}
+        tasksDone={tasksDone} staleTaskIds={staleTaskIds} onTaskDone={completeCurrentTask}
         panels={panels} onPanels={setPanels} onKnow={know}
         onBackToPreview={() => onEnterView('preview')} readAsset={readAsset} readDocuments={readDocuments} />
       : <div className="learning-route-empty" role="status">

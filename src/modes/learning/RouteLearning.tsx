@@ -25,6 +25,7 @@ export type RouteLearningProps = {
   readonly revealed: readonly string[];
   readonly onReveal: (conceptId: string) => void;
   readonly tasksDone: readonly string[];
+  readonly staleTaskIds: readonly string[];
   readonly onTaskDone: (conceptId: string) => void;
   readonly panels: PanelLayout;
   readonly onPanels: (layout: PanelLayout) => void;
@@ -44,7 +45,7 @@ export type RouteLearningProps = {
  */
 export function RouteLearning({
   active, content, solution, targetIds, knownIds, cursor, onCursor, revealed, onReveal,
-  tasksDone, onTaskDone, panels, onPanels, onKnow, onBackToPreview, readAsset, readDocuments,
+  tasksDone, staleTaskIds, onTaskDone, panels, onPanels, onKnow, onBackToPreview, readAsset, readDocuments,
 }: RouteLearningProps) {
   const graph = content.graph;
   const steps = useMemo(() => routeSteps(graph, solution), [graph, solution]);
@@ -89,7 +90,8 @@ export function RouteLearning({
       <div className="learning-text-column">
         {current
           ? <Step active={active} content={content} step={current} total={steps.length} label={label}
-            definitionOpen={definitionOpen} taskDone={taskDone} nextTask={comprehensionTask(steps, current)}
+            definitionOpen={definitionOpen} taskDone={taskDone} taskStale={staleTaskIds.includes(current.conceptId)}
+            nextTask={comprehensionTask(steps, current)}
             onReveal={() => onReveal(current.conceptId)}
             onTaskDone={() => onTaskDone(current.conceptId)}
             onNext={() => onCursor(cursor + 1)}
@@ -182,7 +184,7 @@ function premiseQuestions(
 }
 
 function Step({
-  active, content, step, total, label, definitionOpen, taskDone, nextTask,
+  active, content, step, total, label, definitionOpen, taskDone, taskStale, nextTask,
   onReveal, onTaskDone, onNext, onKnow, onAskAgent, readAsset, readDocuments,
 }: {
   readonly active: boolean;
@@ -192,6 +194,7 @@ function Step({
   readonly label: (conceptId: string) => string;
   readonly definitionOpen: boolean;
   readonly taskDone: boolean;
+  readonly taskStale: boolean;
   readonly nextTask: string;
   readonly onReveal: () => void;
   readonly onTaskDone: () => void;
@@ -242,6 +245,9 @@ function Step({
             : <>
               <textarea value={draft} aria-label="理解验证的回答" placeholder="写一句就行…"
                 onChange={(event) => setDraft(event.target.value)} />
+              {taskStale && <p className="learning-task-stale" role="alert">
+                这一步的教材更新了，之前的提交不能当作新版验证。
+              </p>}
               <div className="learning-task-actions">
                 <button type="button" className="learning-primary" disabled={!draft.trim()}
                   onClick={onTaskDone}>交上去</button>
