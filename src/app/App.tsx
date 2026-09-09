@@ -10,6 +10,7 @@ import {
   selectConcept,
   setLearningKnown,
   setLearningTargets,
+  invalidateLearningRoute,
   type AppState,
 } from './appState';
 import type { Host, LearningView, RecentWorkspace, WorkspaceHandle } from './host';
@@ -137,6 +138,10 @@ export default function App({ host }: { host: Host }) {
     setState((current) => (current ? confirmLearningRoute(current) : current));
   }, []);
 
+  const handleRouteInvalidated = useCallback(() => {
+    setState((current) => (current ? invalidateLearningRoute(current) : current));
+  }, []);
+
   if (failure) {
     return <main className="app-failure" role="alert">应用没能启动：{failure}</main>;
   }
@@ -162,7 +167,8 @@ export default function App({ host }: { host: Host }) {
           <WorkspaceSurface key={workspace.id} workspace={workspace} state={state} modes={modes}
             routeSolver={routeSolver} onSelectConcept={handleSelectConcept} onChangeTargets={handleChangeTargets}
             onChangeKnown={handleChangeKnown} onEnterLearningView={handleEnterLearningView}
-            onConfirmRoute={handleConfirmRoute} onProtectionChange={handleProtectionChange} />
+            onConfirmRoute={handleConfirmRoute} onRouteInvalidated={handleRouteInvalidated}
+            onProtectionChange={handleProtectionChange} />
         </Suspense>
       ) : (
         <WorkspaceLaunch recentWorkspaces={recentWorkspaces} busy={opening} failure={openFailure}

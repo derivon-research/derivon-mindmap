@@ -10,6 +10,10 @@ import { routeGraphView, routeSteps, type RouteStep } from '../routePreview';
 import { LearningAgentPane } from './LearningAgentPane';
 import { ObjectDocument } from './ObjectDocument';
 import { setPanel, type PanelLayout, type PanelSide, type PanelState } from './panels';
+import {
+  hasStaleTaskCompletion, isTaskComplete, routeKey as routeKeyOf, stepDocumentBasis,
+  stepDocumentPaths, type TaskCompletion, type TaskVerification,
+} from './progress';
 import { comprehensionTask } from './suggestions';
 
 export type RouteLearningProps = {
@@ -24,9 +28,8 @@ export type RouteLearningProps = {
   /** Steps whose definition the learner asked for, keyed by the concept the step arrives at. */
   readonly revealed: readonly string[];
   readonly onReveal: (conceptId: string) => void;
-  readonly tasksDone: readonly string[];
-  readonly staleTaskIds: readonly string[];
-  readonly onTaskDone: (conceptId: string) => void;
+  readonly tasksDone: readonly TaskCompletion[];
+  readonly onTaskDone: (completion: TaskCompletion) => void;
   readonly panels: PanelLayout;
   readonly onPanels: (layout: PanelLayout) => void;
   readonly onKnow: (conceptId: string) => void;
@@ -45,14 +48,36 @@ export type RouteLearningProps = {
  */
 export function RouteLearning({
   active, content, solution, targetIds, knownIds, cursor, onCursor, revealed, onReveal,
-  tasksDone, staleTaskIds, onTaskDone, panels, onPanels, onKnow, onBackToPreview, readAsset, readDocuments,
+  tasksDone, onTaskDone, panels, onPanels, onKnow, onBackToPreview, readAsset, readDocuments,
 }: RouteLearningProps) {
   const graph = content.graph;
   const steps = useMemo(() => routeSteps(graph, solution), [graph, solution]);
+  const routeKey = routeKeyOf(solution);
   const current: RouteStep | undefined = steps[cursor];
   const label = (conceptId: string) => labelOf(graph, conceptId);
   const definitionOpen = Boolean(current && revealed.includes(current.conceptId));
-  const taskDone = Boolean(current && tasksDone.includes(current.conceptId));
+  const taskBases = useTaskDocumentBases(content, steps, tasksDone, cursor, readDocuments);
+  const verificationFor = (step: RouteStep, documentBasis: string | null): TaskVerification => ({
+    graphText: content.graphText, routeKey, step,
+    task: comprehensionTask(steps, step), documentBasis,
+  });
+  const currentTask = current ? comprehensionTask(steps, current) : '';
+  const currentBasis = current ? taskBases.bases.get(current.derivationId) ?? null : null;
+  const currentVerification = current ? verificationFor(current, currentBasis) : undefined;
+  const taskDone = Boolean(current && taskBases.status === 'ready'
+    && currentVerification && isTaskComplete(tasksDone, currentVerification));
+  const taskStale = Boolean(current && taskBases.status === 'ready'
+    && currentVerification && hasStaleTaskCompletion(tasksDone, currentVerification));
+  const stepCompleted = (step: RouteStep) => taskBases.status === 'ready'
+    && isTaskComplete(tasksDone, verificationFor(step, taskBases.bases.get(step.derivationId) ?? null));
+  const earliestStaleTask = useMemo(() => {
+    if (taskBases.status !== 'ready') return -1;
+    return steps.findIndex((step, index) => index < cursor
+      && hasStaleTaskCompletion(tasksDone, verificationFor(step, taskBases.bases.get(step.derivationId) ?? null)));
+  }, [cursor, routeKey, steps, taskBases, tasksDone]);
+  useEffect(() => {
+    if (earliestStaleTask >= 0) onCursor(earliestStaleTask);
+  }, [earliestStaleTask, onCursor]);
 
   const movePanel = (side: PanelSide, state: PanelState) => {
     const startedAtMs = currentInputStartedAtMs();
@@ -90,10 +115,14 @@ export function RouteLearning({
       <div className="learning-text-column">
         {current
           ? <Step active={active} content={content} step={current} total={steps.length} label={label}
-            definitionOpen={definitionOpen} taskDone={taskDone} taskStale={staleTaskIds.includes(current.conceptId)}
-            nextTask={comprehensionTask(steps, current)}
+            definitionOpen={definitionOpen} taskDone={taskDone} taskStale={taskStale}
+            taskChecking={taskBases.status === 'loading'} taskReady={currentBasis !== null} nextTask={currentTask}
             onReveal={() => onReveal(current.conceptId)}
-            onTaskDone={() => onTaskDone(current.conceptId)}
+            onTaskDone={() => currentBasis !== null && onTaskDone({
+              graphText: content.graphText, routeKey,
+              conceptId: current.conceptId, derivationId: current.derivationId,
+              task: currentTask, documentBasis: currentBasis,
+            })}
             onNext={() => onCursor(cursor + 1)}
             onKnow={() => { onKnow(current.conceptId); onCursor(cursor + 1); }}
             onAskAgent={() => movePanel('tutor', 'default')}
@@ -125,7 +154,7 @@ export function RouteLearning({
               onClick={() => onCursor(index)}>
               <span className="learning-rail-index">{step.index}</span>
               <span className="learning-rail-label">{step.label}</span>
-              {tasksDone.includes(step.conceptId) && <Check size={13} aria-hidden="true" />}
+              {stepCompleted(step) && <Check size={13} aria-hidden="true" />}
             </button>
           </li>)}
         </ol>
@@ -144,6 +173,60 @@ export function RouteLearning({
       </p>
     </nav>}
   </div>;
+}
+
+type TaskDocumentBases = {
+  readonly status: 'loading' | 'ready';
+  readonly bases: ReadonlyMap<string, string | null>;
+};
+
+function useTaskDocumentBases(
+  content: WorkspaceContent,
+  steps: readonly RouteStep[],
+  completions: readonly TaskCompletion[],
+  cursor: number,
+  readDocuments: LearningModeProps['readDocuments'],
+): TaskDocumentBases {
+  const needed = useMemo(() => {
+    const derivationIds = new Set([steps[cursor]?.derivationId, ...completions.map(({ derivationId }) => derivationId)]);
+    return steps.filter((step) => derivationIds.has(step.derivationId));
+  }, [completions, cursor, steps]);
+  const pathsKey = needed.map((step) => `${step.derivationId}:${step.conceptId}`).join('|');
+  const contentBases = useMemo(() => new Map(needed.map((step) => [
+    step.derivationId,
+    stepDocumentBasis(content, step),
+  ])), [content, needed]);
+  const [loaded, setLoaded] = useState<{
+    readonly content: WorkspaceContent;
+    readonly reader: LearningModeProps['readDocuments'];
+    readonly pathsKey: string;
+    readonly bases: ReadonlyMap<string, string | null>;
+  }>();
+  useEffect(() => {
+    if (!readDocuments || needed.length === 0) return;
+    let cancelled = false;
+    const paths = needed.flatMap((step) => stepDocumentPaths(content, step));
+    void readDocuments([...new Set(paths)])
+      .then((resources) => {
+        if (cancelled) return;
+        setLoaded({
+          content, reader: readDocuments, pathsKey,
+          bases: new Map(needed.map((step) => [step.derivationId, stepDocumentBasis(content, step, resources)])),
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoaded({ content, reader: readDocuments, pathsKey, bases: new Map(needed.map((step) => [step.derivationId, null])) });
+      });
+    return () => { cancelled = true; };
+  }, [content, needed, pathsKey, readDocuments]);
+
+  if (!readDocuments || [...contentBases.values()].every((basis) => basis !== null)) {
+    return { status: 'ready', bases: contentBases };
+  }
+  return loaded?.content === content && loaded.reader === readDocuments && loaded.pathsKey === pathsKey
+    ? { status: 'ready', bases: loaded.bases }
+    : { status: 'loading', bases: contentBases };
 }
 
 /** The three-state control: widen, return to default width, hide. */
@@ -184,7 +267,7 @@ function premiseQuestions(
 }
 
 function Step({
-  active, content, step, total, label, definitionOpen, taskDone, taskStale, nextTask,
+  active, content, step, total, label, definitionOpen, taskDone, taskStale, taskChecking, taskReady, nextTask,
   onReveal, onTaskDone, onNext, onKnow, onAskAgent, readAsset, readDocuments,
 }: {
   readonly active: boolean;
@@ -195,6 +278,8 @@ function Step({
   readonly definitionOpen: boolean;
   readonly taskDone: boolean;
   readonly taskStale: boolean;
+  readonly taskChecking: boolean;
+  readonly taskReady: boolean;
   readonly nextTask: string;
   readonly onReveal: () => void;
   readonly onTaskDone: () => void;
@@ -243,13 +328,14 @@ function Step({
           {taskDone
             ? <p className="learning-task-done">已交。这一次没有判对错，也没有存下来 —— 判定会回头改这条推导的学习成本，那部分还没做。</p>
             : <>
+              {taskStale && <p className="learning-task-stale" role="alert">内容更新了，这份回答不能当作新版验证。重新交一次。</p>}
+              {taskChecking && <p role="status">正在核对新版文档…</p>}
               <textarea value={draft} aria-label="理解验证的回答" placeholder="写一句就行…"
+                disabled={taskChecking || !taskReady}
                 onChange={(event) => setDraft(event.target.value)} />
-              {taskStale && <p className="learning-task-stale" role="alert">
-                这一步的教材更新了，之前的提交不能当作新版验证。
-              </p>}
               <div className="learning-task-actions">
-                <button type="button" className="learning-primary" disabled={!draft.trim()}
+                <button type="button" className="learning-primary"
+                  disabled={taskChecking || !taskReady || !draft.trim()}
                   onClick={onTaskDone}>交上去</button>
               </div>
             </>}

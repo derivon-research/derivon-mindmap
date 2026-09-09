@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
-import type { WorkspaceContent } from '../../workspace/index';
 import { GraphBrowse } from './GraphBrowse';
 import './learning.css';
 import { applyOrientationIntent, beginOrientation, planOrientation, type OrientationIntent, type OrientationRun } from './orientation';
@@ -8,11 +7,12 @@ import { OrientationView } from './OrientationView';
 import { DEFAULT_PANELS, type PanelLayout } from './panels';
 import { RouteLearning } from './RouteLearning';
 import { RoutePreviewView } from './RoutePreviewView';
-import { routeSteps, useRoutePreview } from '../routePreview';
+import { useRoutePreview } from '../routePreview';
+import type { TaskCompletion } from './progress';
 import {
-  clearRouteInvalidation, documentVersion, holdRoute, initialLearningWalkState, invalidateRoute,
-  leaveRoute, missingTargetIds, moveLearningCursor, restartRoute, revealDefinition,
-  routeDocumentPaths, routeSignature, submitTask, taskRecordIsCurrent, type RouteDocumentVersions,
+  clearRouteInvalidation, holdRoute, initialLearningWalkState, invalidateRoute, leaveRoute,
+  missingTargetIds, moveLearningCursor, recordTaskCompletion, restartRoute, revealDefinition,
+  routeSignature,
 } from './state';
 
 /**
@@ -26,11 +26,9 @@ import {
  */
 export function LearningMode({
   active = true, content, targetIds, knownIds, onChangeTargets, onChangeKnown,
-  routeSolver, view, onEnterView, onConfirmRoute, readAsset, readDocuments,
+  routeSolver, view, onEnterView, onConfirmRoute, onRouteInvalidated, readAsset, readDocuments,
 }: LearningModeProps) {
   const plan = useMemo(() => planOrientation(content), [content]);
-  // Only the question bookkeeping is local. Targets and known concepts are application
-  // state, so a target carried in from the authoring side is the one that counts.
   const [flow, setFlow] = useState(() => beginOrientation(plan));
   const run: OrientationRun = useMemo(
     () => ({ ...flow, targets: [...targetIds], known: [...knownIds] }),
@@ -38,12 +36,10 @@ export function LearningMode({
   );
   const seeded = useRef(false);
   useEffect(() => {
-    // The author's seed applies only to a run the application has nothing of its own for.
-    if (seeded.current) return;
     seeded.current = true;
     if (!targetIds.length && flow.targets.length) onChangeTargets(flow.targets);
     if (!knownIds.length && flow.known.length) onChangeKnown(flow.known);
-  }, [flow.known, flow.targets, knownIds.length, targetIds.length]);
+  }, [flow.known, flow.targets, knownIds.length, targetIds.length, onChangeKnown, onChangeTargets]);
 
   const intent = (value: OrientationIntent) => {
     const next = applyOrientationIntent(plan, run, value);
@@ -52,73 +48,28 @@ export function LearningMode({
     onChangeKnown(next.known);
   };
 
-  // The same manifest parsed again is the same graph. Acquiring a document body or
-  // re-accepting unchanged content hands down a new object; asking the host to solve the
-  // route again for it would cost an answer nobody asked for.
   const graph = useMemo(() => content.graph, [content.graphText]);
   const preview = useRoutePreview(routeSolver, graph, targetIds, knownIds);
   const [panels, setPanels] = useState<PanelLayout>(DEFAULT_PANELS);
-  const solved = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
-  /**
-   * The route a learner walks is the one they accepted on the preview screen.
-   *
-   * While the route view is up it is held: a solve that lands later — the same route
-   * computed again, or a shorter one because the learner said they already knew a step —
-   * must not renumber the steps under them. A new route is a new walk, and the learner
-   * starts it deliberately, by looking at the preview again and accepting it.
-   */
   const [walk, setWalk] = useState(initialLearningWalkState);
-  const { acceptedRoute, cursor, revealed, taskRecords, routeInvalidReason } = walk;
-  const [fetchedDocuments, setFetchedDocuments] = useState<{
-    readonly content: WorkspaceContent;
-    readonly versions: RouteDocumentVersions;
-  } | null>(null);
+  const { acceptedRoute, cursor, revealed, taskCompletions, routeInvalidReason } = walk;
+  const solved = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
+
   useEffect(() => {
     if (view !== 'route') setWalk(leaveRoute);
     else if (solved) setWalk((current) => holdRoute(current, content.graph, solved, content.graphText));
   }, [content.graph, content.graphText, solved, view]);
+
   const solution = view === 'route' ? acceptedRoute?.solution ?? solved : solved;
-  const routePaths = useMemo(
-    () => solution ? routeDocumentPaths(content.graph, solution) : [],
-    [content.graph, solution],
-  );
-  useEffect(() => {
-    if (!readDocuments || routePaths.length === 0) return;
-    let cancelled = false;
-    void readDocuments(routePaths)
-      .then((resources) => {
-        if (cancelled) return;
-        const versions: Record<string, string> = {};
-        for (const [path, resource] of Object.entries(resources)) {
-          if (resource.status === 'ready') versions[path] = documentVersion(resource.text);
-        }
-        setFetchedDocuments({ content, versions });
-      })
-      .catch(() => {
-        if (!cancelled) setFetchedDocuments({ content, versions: {} });
-      });
-    return () => { cancelled = true; };
-  }, [content, readDocuments, routePaths]);
-  const documentVersions = useMemo(() => {
-    const versions: Record<string, string> = {};
-    if (fetchedDocuments?.content === content) Object.assign(versions, fetchedDocuments.versions);
-    for (const [path, resource] of Object.entries(content.documents)) {
-      if (resource.status === 'ready') versions[path] = documentVersion(resource.text);
-    }
-    return versions;
-  }, [content, fetchedDocuments]);
-  const documentVersionsReady = routePaths.every((path) => documentVersions[path] !== undefined);
-  const steps = useMemo(
-    () => solution ? routeSteps(content.graph, solution) : [],
-    [content.graph, solution],
-  );
   const missingTargets = useMemo(
     () => missingTargetIds(content.graph, targetIds),
     [content.graph, targetIds],
   );
+
   useEffect(() => {
     if (!acceptedRoute || view !== 'route') return;
     if (missingTargets.length > 0) {
+      if (routeInvalidReason !== 'target') onRouteInvalidated();
       setWalk((current) => invalidateRoute(current, 'target'));
       return;
     }
@@ -130,44 +81,27 @@ export function LearningMode({
     if (preview.status !== 'ready'
       || !preview.solution.reachable
       || routeSignature(content.graph, preview.solution) !== acceptedRoute.signature) {
+      if (routeInvalidReason !== 'changed') onRouteInvalidated();
       setWalk((current) => invalidateRoute(current, 'changed'));
     } else {
       setWalk(clearRouteInvalidation);
     }
-  }, [acceptedRoute, content.graph, content.graphText, missingTargets, preview, view]);
-  const taskRecordStatus = useMemo(() => {
-    if (!documentVersionsReady) return { tasksDone: [] as string[], staleTaskIds: [] as string[] };
-    const tasksDone: string[] = [];
-    const staleTaskIds: string[] = [];
-    for (const record of taskRecords) {
-      if (taskRecordIsCurrent(record, documentVersions)) tasksDone.push(record.conceptId);
-      else staleTaskIds.push(record.conceptId);
-    }
-    return { tasksDone, staleTaskIds };
-  }, [documentVersions, documentVersionsReady, taskRecords]);
-  const { tasksDone, staleTaskIds } = taskRecordStatus;
-  const staleStepIndex = steps.findIndex((step) => staleTaskIds.includes(step.conceptId));
-  useEffect(() => {
-    if (staleStepIndex >= 0 && cursor > staleStepIndex) {
-      setWalk((current) => moveLearningCursor(current, staleStepIndex));
-    }
-  }, [cursor, staleStepIndex]);
+  }, [acceptedRoute, content.graph, content.graphText, missingTargets, preview, routeInvalidReason, onRouteInvalidated, view]);
+
   const moveCursor = (index: number) => {
-    if (staleStepIndex >= 0 && index > staleStepIndex) return;
     setWalk((current) => moveLearningCursor(current, index));
   };
-  const completeCurrentTask = (conceptId: string) => {
-    const step = steps[cursor];
-    if (!step || step.conceptId !== conceptId || !documentVersionsReady) return;
-    setWalk((current) => submitTask(current, content.graph, step.derivationId, documentVersions));
+
+  const completeTask = (completion: TaskCompletion) => {
+    setWalk((current) => recordTaskCompletion(current, completion));
   };
+
   const confirmRoute = () => {
     setWalk(restartRoute);
     onConfirmRoute();
   };
 
   const know = (conceptId: string) => intent({ kind: 'know', conceptIds: [conceptId] });
-  // Every claim the learner makes is reversible, wherever they made it.
   const toggleKnown = (conceptId: string) => intent(knownIds.includes(conceptId)
     ? { kind: 'set-known', conceptIds: knownIds.filter((id) => id !== conceptId) }
     : { kind: 'know', conceptIds: [conceptId] });
@@ -195,15 +129,11 @@ export function LearningMode({
       <button type="button" className="learning-primary" onClick={() => onEnterView('preview')}>重新预览</button>
     </div>}
 
-    {view === 'route' && !routeInvalidReason && !documentVersionsReady && <div className="learning-route-empty" role="status">
-      <p>正在确认这条路线的教材版本…</p>
-    </div>}
-
-    {view === 'route' && !routeInvalidReason && documentVersionsReady && (solution
+    {view === 'route' && !routeInvalidReason && (solution
       ? <RouteLearning active={active} content={content} solution={solution} targetIds={targetIds}
         knownIds={knownIds} cursor={cursor} onCursor={moveCursor}
         revealed={revealed} onReveal={(id) => setWalk((current) => revealDefinition(current, id))}
-        tasksDone={tasksDone} staleTaskIds={staleTaskIds} onTaskDone={completeCurrentTask}
+        tasksDone={taskCompletions} onTaskDone={completeTask}
         panels={panels} onPanels={setPanels} onKnow={know}
         onBackToPreview={() => onEnterView('preview')} readAsset={readAsset} readDocuments={readDocuments} />
       : <div className="learning-route-empty" role="status">

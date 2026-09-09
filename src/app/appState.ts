@@ -105,9 +105,22 @@ export function enterLearningView(state: AppState, view: LearningView): AppState
   return { ...state, learningView: reached };
 }
 
-/** The learner accepted the previewed route. */
+/** The learner accepted the previewed route. Learning mode retains its content basis. */
 export function confirmLearningRoute(state: AppState): AppState {
-  return { ...state, learningRouteConfirmed: true, learningView: 'route' };
+  return {
+    ...state,
+    learningRouteConfirmed: true,
+    learningView: 'route',
+  };
+}
+
+/**
+ * Learning mode determined that the accepted route no longer applies. The current view stays
+ * where it is so the mode can explain the change; later route entry requires a new preview.
+ */
+export function invalidateLearningRoute(state: AppState): AppState {
+  if (!state.learningRouteConfirmed) return state;
+  return { ...state, learningRouteConfirmed: false };
 }
 
 /**

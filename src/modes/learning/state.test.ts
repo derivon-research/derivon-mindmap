@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { RouteSolution } from '../../ports/RouteSolver';
 import type { WorkspaceGraph } from '../../workspace/index';
+import type { TaskCompletion } from './progress';
 import {
-  completeTask, documentVersion, missingTargetIds, routeSignature, taskRecordIsCurrent,
-  type RouteDocumentVersions,
+  initialLearningWalkState, missingTargetIds, recordTaskCompletion, routeSignature,
 } from './state';
 
 const graph: WorkspaceGraph = {
@@ -21,10 +21,10 @@ const solution: RouteSolution = {
   provenOptimal: true, blocked: [],
 };
 
-const versions: RouteDocumentVersions = {
-  'docs/b/document.md': documentVersion('B definition'),
-  'docs/d1/document.md': documentVersion('B derivation'),
-};
+const completion = (conceptId: string): TaskCompletion => ({
+  graphText: '{}', routeKey: 'd1', conceptId, derivationId: `d-${conceptId}`,
+  task: `task ${conceptId}`, documentBasis: `basis ${conceptId}`,
+});
 
 describe('content-aware learning state', () => {
   it('signs the route topology and result, not labels or unrelated graph metadata', () => {
@@ -42,34 +42,16 @@ describe('content-aware learning state', () => {
     expect(routeSignature(changedStructure, solution)).not.toBe(routeSignature(graph, solution));
   });
 
-  it('keeps a submitted task only while both documents it was checked against are unchanged', () => {
-    const record = completeTask(graph, solution.order[0], versions);
-    expect(taskRecordIsCurrent(record, versions)).toBe(true);
+  it('keeps unrelated task completions when another step is submitted again', () => {
+    let state = initialLearningWalkState();
+    state = recordTaskCompletion(state, completion('b'));
+    state = recordTaskCompletion(state, completion('c'));
+    const resubmitted = { ...completion('b'), documentBasis: 'new basis b' };
+    state = recordTaskCompletion(state, resubmitted);
 
-    expect(taskRecordIsCurrent(record, {
-      ...versions,
-      'docs/b/document.md': documentVersion('New B definition'),
-    })).toBe(false);
-    expect(taskRecordIsCurrent(record, {
-      ...versions,
-      'docs/d1/document.md': documentVersion('New B derivation'),
-    })).toBe(false);
-  });
-
-  it('keeps a later record current when an earlier document changes', () => {
-    const first = completeTask(graph, 'd1', versions);
-    const second = { ...first, conceptId: 'c', derivationId: 'd2',
-      conceptDocument: { path: 'docs/c/document.md', version: documentVersion('C definition') },
-      derivationDocument: { path: 'docs/d2/document.md', version: documentVersion('C derivation') } };
-    const staleVersions: RouteDocumentVersions = {
-      ...versions,
-      'docs/b/document.md': documentVersion('New B definition'),
-      'docs/c/document.md': second.conceptDocument.version,
-      'docs/d2/document.md': second.derivationDocument.version,
-    };
-
-    expect(taskRecordIsCurrent(first, staleVersions)).toBe(false);
-    expect(taskRecordIsCurrent(second, staleVersions)).toBe(true);
+    expect(state.taskCompletions).toHaveLength(2);
+    expect(state.taskCompletions).toContainEqual(resubmitted);
+    expect(state.taskCompletions).toContainEqual(completion('c'));
   });
 
   it('reports missing targets without removing or replacing them', () => {

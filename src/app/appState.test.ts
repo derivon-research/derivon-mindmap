@@ -5,6 +5,7 @@ import {
   enterLearningView,
   enterMode,
   initialAppState,
+  invalidateLearningRoute,
   openWorkspace,
   selectConcept,
   setLearningKnown,
@@ -153,6 +154,14 @@ describe('the learning side views', () => {
     expect(setLearningTargets(confirmed, ['svd', 'pseudoinverse']).learningRouteConfirmed).toBe(false);
     expect(setLearningKnown(confirmed, ['basis']).learningRouteConfirmed).toBe(false);
     expect(enterLearningView(setLearningKnown(confirmed, ['basis']), 'route').learningView).toBe('preview');
+  });
+
+  it('keeps an invalidated route visible but requires a new preview on return', () => {
+    const confirmed = confirmLearningRoute(learning());
+    const invalidated = invalidateLearningRoute(confirmed);
+    expect(invalidated.learningRouteConfirmed).toBe(false);
+    expect(invalidated.learningView).toBe('route');
+    expect(enterLearningView(invalidated, 'route').learningView).toBe('preview');
   });
 
   it('leaves the confirmation alone when the sets are republished unchanged', () => {

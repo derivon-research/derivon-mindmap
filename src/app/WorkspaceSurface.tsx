@@ -17,6 +17,7 @@ export type WorkspaceSurfaceProps = {
   onChangeKnown(ids: readonly string[]): void;
   onEnterLearningView(view: LearningView): void;
   onConfirmRoute(): void;
+  onRouteInvalidated(): void;
   onProtectionChange(protectedChanges: boolean): void;
 };
 
@@ -36,7 +37,7 @@ export default function WorkspaceSurface(props: WorkspaceSurfaceProps) {
   return <SessionModes {...props} session={session} />;
 }
 
-function SessionModes({ session, state, workspace, modes, routeSolver, onSelectConcept, onChangeTargets, onChangeKnown, onEnterLearningView, onConfirmRoute, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
+function SessionModes({ session, state, workspace, modes, routeSolver, onSelectConcept, onChangeTargets, onChangeKnown, onEnterLearningView, onConfirmRoute, onRouteInvalidated, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
   const snapshot = useSyncExternalStore(session.reader.subscribe, session.reader.getSnapshot);
   const [closeGuardError, setCloseGuardError] = useState<string>();
   const readAsset = useMemo(() => async (path: string) => {
@@ -91,7 +92,8 @@ function SessionModes({ session, state, workspace, modes, routeSolver, onSelectC
         {mode === 'learning' ? <LearningMode active={mode === state.mode} workspace={identity} content={snapshot.content}
           targetIds={state.learningTargetIds} knownIds={state.learningKnownIds} onChangeTargets={onChangeTargets}
           onChangeKnown={onChangeKnown} view={state.learningView} onEnterView={onEnterLearningView}
-          onConfirmRoute={onConfirmRoute} routeSolver={routeSolver} readAsset={readAsset} readDocuments={readDocuments} />
+          onConfirmRoute={onConfirmRoute} onRouteInvalidated={onRouteInvalidated} routeSolver={routeSolver}
+          readAsset={readAsset} readDocuments={readDocuments} />
           : AuthoringMode && <AuthoringMode key={snapshot.authoringEpoch} active={mode === state.mode} workspace={identity} content={snapshot.content}
             authoring={session.authoring} readAsset={readAsset} readDocuments={readDocuments} routeSolver={routeSolver} selectedConceptId={state.selectedConceptId} onSelectConcept={onSelectConcept}
             syncStatus={workspace.authoringSource && state.mode === 'authoring' ? { state: snapshot.saveState, label: saveLabel } : undefined}
