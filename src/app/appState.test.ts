@@ -9,6 +9,7 @@ import {
   selectConcept,
   setLearningKnown,
   setLearningTargets,
+  workspaceGraphChanged,
   type AppState,
 } from './appState';
 import type { WorkspaceHandle } from './host';
@@ -143,32 +144,45 @@ describe('the learning side views', () => {
   });
 
   it('opens the route once the preview has been confirmed', () => {
-    const confirmed = confirmLearningRoute(learning());
+    const confirmed = confirmLearningRoute(learning(), 'graph-one');
     expect(confirmed.learningView).toBe('route');
     expect(enterLearningView(enterLearningView(confirmed, 'browse'), 'route').learningView).toBe('route');
   });
 
   it('makes a changed target or known set go back through the preview', () => {
-    const confirmed = confirmLearningRoute(learning());
+    const confirmed = confirmLearningRoute(learning(), 'graph-one');
     expect(setLearningTargets(confirmed, ['svd', 'pseudoinverse']).learningRouteConfirmed).toBe(false);
     expect(setLearningKnown(confirmed, ['basis']).learningRouteConfirmed).toBe(false);
     expect(enterLearningView(setLearningKnown(confirmed, ['basis']), 'route').learningView).toBe('preview');
   });
 
+  it('makes a changed graph go back through the preview before the route reopens', () => {
+    const confirmed = confirmLearningRoute(learning(), 'graph-one');
+    const changed = workspaceGraphChanged(confirmed, 'graph-two');
+    expect(changed.learningRouteConfirmed).toBe(false);
+    expect(changed.learningView).toBe('preview');
+    expect(enterLearningView(changed, 'route').learningView).toBe('preview');
+  });
+
+  it('leaves an accepted route alone when the graph text is republished unchanged', () => {
+    const confirmed = confirmLearningRoute(learning(), 'graph-one');
+    expect(workspaceGraphChanged(confirmed, 'graph-one')).toBe(confirmed);
+  });
+
   it('leaves the confirmation alone when the sets are republished unchanged', () => {
-    const confirmed = confirmLearningRoute(learning());
+    const confirmed = confirmLearningRoute(learning(), 'graph-one');
     expect(setLearningTargets(confirmed, ['svd']).learningRouteConfirmed).toBe(true);
   });
 
   it('goes back to orientation when another workspace opens', () => {
-    const confirmed = confirmLearningRoute(learning());
+    const confirmed = confirmLearningRoute(learning(), 'graph-one');
     const reopened = openWorkspace(confirmed, workspace);
     expect(reopened.learningView).toBe('orientation');
     expect(reopened.learningRouteConfirmed).toBe(false);
   });
 
   it('restages the preview when authoring hands learning a new target', () => {
-    const confirmed = confirmLearningRoute(enterMode(selectConcept(desktopState(), 'svd'), 'learning'));
+    const confirmed = confirmLearningRoute(enterMode(selectConcept(desktopState(), 'svd'), 'learning'), 'graph-one');
     const reselected = selectConcept(enterMode(confirmed, 'authoring'), 'kalman-filter');
     expect(enterMode(reselected, 'learning').learningRouteConfirmed).toBe(false);
   });

@@ -5,6 +5,7 @@ import { GraphBrowse } from './GraphBrowse';
 import './learning.css';
 import { applyOrientationIntent, beginOrientation, planOrientation, type OrientationIntent, type OrientationRun } from './orientation';
 import { OrientationView } from './OrientationView';
+import { routeKey as routeKeyOf, type TaskCompletion } from './progress';
 import { DEFAULT_PANELS, type PanelLayout } from './panels';
 import { RouteLearning } from './RouteLearning';
 import { RoutePreviewView } from './RoutePreviewView';
@@ -54,7 +55,7 @@ export function LearningMode({
   const preview = useRoutePreview(routeSolver, graph, targetIds, knownIds);
   const [cursor, setCursor] = useState(0);
   const [revealed, setRevealed] = useState<readonly string[]>([]);
-  const [tasksDone, setTasksDone] = useState<readonly string[]>([]);
+  const [tasksDone, setTasksDone] = useState<readonly TaskCompletion[]>([]);
   const [panels, setPanels] = useState<PanelLayout>(DEFAULT_PANELS);
   const solved = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
   /**
@@ -65,16 +66,31 @@ export function LearningMode({
    * must not renumber the steps under them. A new route is a new walk, and the learner
    * starts it deliberately, by looking at the preview again and accepting it.
    */
-  const [walked, setWalked] = useState<RouteSolution | null>(null);
+  const [walked, setWalked] = useState<{ readonly graphText: string; readonly solution: RouteSolution } | null>(null);
   useEffect(() => {
-    if (view !== 'route') setWalked(null);
-    else setWalked((current) => current ?? solved);
-  }, [solved, view]);
-  const solution = view === 'route' ? walked ?? solved : solved;
+    if (view !== 'route') {
+      setWalked(null);
+      return;
+    }
+    setWalked((current) => {
+      if (current && current.graphText !== content.graphText) return null;
+      return current ?? (solved ? { graphText: content.graphText, solution: solved } : null);
+    });
+  }, [content.graphText, solved, view]);
+  const solution = view === 'route' ? walked?.solution ?? solved : solved;
   // A different route is a different walk: keeping a cursor across it would point at a step
   // that is no longer there.
-  const routeKey = solution ? solution.order.join(' ') : '';
+  const routeKey = solution ? routeKeyOf(solution) : '';
   useEffect(() => { setCursor(0); }, [routeKey]);
+  const completeTask = (completion: TaskCompletion) => setTasksDone((current) => [
+    ...current.filter((existing) => !(
+      existing.routeKey === completion.routeKey
+      && existing.graphText === completion.graphText
+      && existing.conceptId === completion.conceptId
+      && existing.derivationId === completion.derivationId
+    )),
+    completion,
+  ]);
 
   const know = (conceptId: string) => intent({ kind: 'know', conceptIds: [conceptId] });
   // Every claim the learner makes is reversible, wherever they made it.
@@ -99,7 +115,7 @@ export function LearningMode({
       ? <RouteLearning active={active} content={content} solution={solution} targetIds={targetIds}
         knownIds={knownIds} cursor={cursor} onCursor={setCursor}
         revealed={revealed} onReveal={(id) => setRevealed((current) => [...new Set([...current, id])])}
-        tasksDone={tasksDone} onTaskDone={(id) => setTasksDone((current) => [...new Set([...current, id])])}
+        tasksDone={tasksDone} onTaskDone={completeTask}
         panels={panels} onPanels={setPanels} onKnow={know}
         onBackToPreview={() => onEnterView('preview')} readAsset={readAsset} readDocuments={readDocuments} />
       : <div className="learning-route-empty" role="status">
