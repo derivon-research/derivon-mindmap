@@ -13,7 +13,15 @@ const HOST_ENTRY: Record<'web' | 'desktop', string> = {
 };
 
 /** Heavy dependencies the first screen may never carry, and the tour that is not coming back. */
-const FORBIDDEN_ON_FIRST_SCREEN = ['@antv/g6', 'katex', '@tiptap', 'd3-force', '@dagrejs/dagre', 'react-joyride'];
+const FORBIDDEN_ON_FIRST_SCREEN = [
+  '@antv/g6',
+  'katex',
+  '@tiptap',
+  'd3-force',
+  '@dagrejs/dagre',
+  'react-joyride',
+  '@earendil-works/pi-coding-agent',
+];
 
 type ModuleImports = { staticImports: string[]; dynamicImports: string[] };
 type ResolvedModule = { file: string; imports: ModuleImports };
@@ -183,5 +191,21 @@ describe('orientation on the web', () => {
   it('carries the flow, so a workspace without a conversation provider still opens', async () => {
     const { modules } = await wholeBuild('web');
     expect(modules).toContain('modes/learning/orientation.ts');
+  });
+});
+
+describe('Pi companion isolation', () => {
+  it.each(['web', 'desktop'] as const)('keeps the Node-only Pi SDK out of the first screen on %s', async (host) => {
+    const { packages, modules } = await firstScreen(host);
+    expect([...packages].some((name) => name === '@earendil-works/pi-coding-agent'
+      || name.startsWith('@earendil-works/pi-coding-agent/'))).toBe(false);
+    expect([...modules].some((module) => module.startsWith('companion/'))).toBe(false);
+  });
+
+  it('keeps the companion implementation out of the web build', async () => {
+    const { modules, packages } = await wholeBuild('web');
+    expect([...modules].some((module) => module.startsWith('companion/'))).toBe(false);
+    expect([...packages].some((name) => name === '@earendil-works/pi-coding-agent'
+      || name.startsWith('@earendil-works/pi-coding-agent/'))).toBe(false);
   });
 });

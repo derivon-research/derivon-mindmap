@@ -17,7 +17,7 @@ const QUESTIONS = [
 async function render(onWideAnswer = vi.fn()) {
   root = createRoot(container);
   await act(async () => root?.render(
-    <LearningAgentPane contextLabel="A → B" quickQuestions={QUESTIONS} onWideAnswer={onWideAnswer} />));
+    <LearningAgentPane quickQuestions={QUESTIONS} onWideAnswer={onWideAnswer} />));
   return onWideAnswer;
 }
 
@@ -27,7 +27,7 @@ it('says plainly that nothing is connected rather than pretending to answer', as
   await page.getByRole('button', { name: '发送消息' }).click();
 
   await expect.element(page.getByText('未连接模型，没有生成任何讲解。')).toBeVisible();
-  expect(container.textContent).toContain('模拟计划 · 未执行');
+  expect(container.textContent).toContain('错误');
 });
 
 it('leaves the panel alone for an answer that reads fine in a narrow column', async () => {

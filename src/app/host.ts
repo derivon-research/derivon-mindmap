@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import type { ConversationProvider } from '../ports/ConversationProvider';
 import type { RouteSolver } from '../ports/RouteSolver';
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import type { AuthoringCommands, WorkspaceReader } from '../synchronization';
@@ -51,6 +52,7 @@ export type AuthoringModeProps = {
   readonly onSelectConcept: (conceptId: string | null) => void;
   readonly syncStatus?: { readonly state: 'saved' | 'pending' | 'saving' | 'error'; readonly label: string };
   readonly onRetrySync?: () => void;
+  readonly conversation?: ConversationProvider;
 };
 
 export type LearningModeProps = {
@@ -72,6 +74,7 @@ export type LearningModeProps = {
   readonly onConfirmRoute: () => void;
   /** The accepted route became unusable; the application gate must require a new preview. */
   readonly onRouteInvalidated: () => void;
+  readonly conversation?: ConversationProvider;
 };
 
 /**
@@ -100,4 +103,5 @@ export type Host = {
   loadAuthoringMode?(): Promise<ComponentType<AuthoringModeProps>>;
   /** Route solving is a host capability; a host without an engine omits it. */
   loadRouteSolver?(): Promise<RouteSolver>;
+  createConversationProvider?(variant: 'learning' | 'authoring'): ConversationProvider;
 };

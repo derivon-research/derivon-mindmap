@@ -26,6 +26,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["binaries/node"],
+    "resources": {
+      "../dist-companion/companion.mjs": "companion.mjs"
+    },
     "license": "MIT",
     "licenseFile": "../LICENSE",
     "linux": {

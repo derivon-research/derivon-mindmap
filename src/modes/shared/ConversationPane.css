@@ -1,0 +1,30 @@
+.conversation-pane { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.conversation-transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 16px; }
+.conversation-welcome { display: flex; align-items: center; gap: 9px; color: var(--app-muted); font-size: 13px; }
+.conversation-exchange { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.conversation-user small, .conversation-assistant small { color: var(--app-muted); font-size: 11px; }
+.conversation-user p, .conversation-assistant p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.conversation-user { padding: 10px 12px; border-radius: 12px; background: #f2f4f7; }
+.conversation-assistant { padding: 10px 12px; border: 1px solid var(--app-line); border-radius: 12px; background: #fff; }
+.conversation-assistant > strong { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.conversation-assistant.is-error { border-color: #fecaca; background: #fef2f2; }
+.conversation-assistant.is-stopped { border-style: dashed; color: var(--app-muted); }
+.conversation-quick { display: flex; flex-direction: column; gap: 6px; padding: 0 14px 10px; }
+.conversation-quick button { padding: 8px 10px; border: 1px solid var(--app-line); border-radius: 10px; background: none; color: var(--app-accent); text-align: left; font-size: 12px; }
+.conversation-composer { position: relative; flex: none; padding: 12px; border-top: 1px solid var(--app-line); }
+.conversation-composer textarea { display: block; width: 100%; min-height: 68px; max-height: 140px; resize: vertical; border: 1px solid var(--app-line); border-radius: 10px; padding: 10px; font: inherit; }
+.conversation-composer footer { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.conversation-model { position: relative; flex: 1; min-width: 0; }
+.conversation-model-button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 9px; border: 1px solid var(--app-line); border-radius: 9px; background: #fff; color: var(--app-text); font-size: 11px; }
+.conversation-model-backdrop { position: fixed; inset: 0; z-index: 30; border: 0; background: transparent; }
+.conversation-model-menu { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 31; overflow: hidden; border: 1px solid var(--app-line); border-radius: 10px; background: #fff; box-shadow: 0 12px 32px rgb(15 23 42 / 12%); }
+.conversation-model-menu input { width: 100%; border: 0; border-bottom: 1px solid var(--app-line); padding: 9px 10px; font: inherit; font-size: 12px; outline: none; }
+.conversation-model-list { max-height: 240px; overflow-y: auto; padding: 6px; }
+.conversation-model-list section + section { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--app-line); }
+.conversation-model-list small { display: block; padding: 2px 6px 4px; color: var(--app-muted); font-size: 10px; }
+.conversation-model-list button { display: block; width: 100%; padding: 7px 8px; border: 0; border-radius: 7px; background: none; color: var(--app-text); text-align: left; font-size: 12px; }
+.conversation-model-list button.is-selected { background: #eef2ff; color: var(--app-accent); }
+.conversation-model-list p { margin: 8px; color: var(--app-muted); font-size: 12px; }
+.conversation-icon, .conversation-primary { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 32px; border: 1px solid var(--app-line); border-radius: 9px; background: #fff; color: var(--app-text); }
+.conversation-primary { border-color: var(--app-accent); background: var(--app-accent); color: #fff; }
+.conversation-primary:disabled { opacity: .45; }

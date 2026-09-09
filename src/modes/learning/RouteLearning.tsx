@@ -36,6 +36,7 @@ export type RouteLearningProps = {
   readonly onBackToPreview: () => void;
   readonly readAsset?: LearningModeProps['readAsset'];
   readonly readDocuments?: LearningModeProps['readDocuments'];
+  readonly conversation?: LearningModeProps['conversation'];
 };
 
 /**
@@ -48,7 +49,7 @@ export type RouteLearningProps = {
  */
 export function RouteLearning({
   active, content, solution, targetIds, knownIds, cursor, onCursor, revealed, onReveal,
-  tasksDone, onTaskDone, panels, onPanels, onKnow, onBackToPreview, readAsset, readDocuments,
+  tasksDone, onTaskDone, panels, onPanels, onKnow, onBackToPreview, readAsset, readDocuments, conversation,
 }: RouteLearningProps) {
   const graph = content.graph;
   const steps = useMemo(() => routeSteps(graph, solution), [graph, solution]);
@@ -106,9 +107,8 @@ export function RouteLearning({
           onChange={(state) => movePanel('tutor', state)} />
       </header>
       <LearningAgentPane key={current?.conceptId ?? 'done'}
-        contextLabel={current ? `${current.requires.map(label).join(' + ')} → ${current.label}` : '这条路线'}
         quickQuestions={current ? premiseQuestions(steps, current, label) : []}
-        onWideAnswer={() => movePanel('tutor', 'expanded')} />
+        onWideAnswer={() => movePanel('tutor', 'expanded')} conversation={conversation} />
     </aside>}
 
     <article className="learning-text">
