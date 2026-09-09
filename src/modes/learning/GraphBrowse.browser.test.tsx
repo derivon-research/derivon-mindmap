@@ -44,6 +44,7 @@ function Harness({ onEnterView = vi.fn() }: { onEnterView?: LearningModeProps['o
   return <LearningMode workspace={{ id: 'w', name: '浏览工作区' }} content={content} active
     targetIds={targets} knownIds={known}
     view="browse" onEnterView={onEnterView} onConfirmRoute={vi.fn()}
+    onRouteInvalidated={vi.fn()}
     onChangeTargets={setTargets} onChangeKnown={setKnown} />;
 }
 

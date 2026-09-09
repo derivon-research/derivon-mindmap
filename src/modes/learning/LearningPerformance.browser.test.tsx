@@ -99,6 +99,7 @@ benchmark('measures switching a target and moving a route panel within 200ms at 
     return <LearningMode workspace={{ id: 'bench', name: 'Benchmark' }} content={snapshot.content}
       targetIds={targetIds} knownIds={knownIds} onChangeTargets={setTargetIds} onChangeKnown={setKnownIds}
       view={view} onEnterView={setView} onConfirmRoute={() => setView('route')} routeSolver={solver}
+      onRouteInvalidated={() => {}}
       readAsset={current.reader.readAsset} readDocuments={current.reader.readDocuments} />;
   }
 

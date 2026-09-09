@@ -278,6 +278,7 @@ it('does not ask the host to solve again for content that parsed to the same gra
     return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
       targetIds={targets} knownIds={known} routeSolver={counting}
       view="route" onEnterView={vi.fn()} onConfirmRoute={vi.fn()}
+      onRouteInvalidated={vi.fn()}
       onChangeTargets={setTargets} onChangeKnown={setKnown} />;
   }
   root = createRoot(container);
