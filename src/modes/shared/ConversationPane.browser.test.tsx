@@ -35,14 +35,17 @@ class FakeProvider implements ConversationProvider {
   });
   readonly newConversation = vi.fn(async () => {});
   readonly setWorkspace = vi.fn(async () => {});
-  readonly setModel = vi.fn(async () => {});
+  readonly setModel = vi.fn(async (model: ConversationModel) => { this.selected = model; });
   diagnosis: string | undefined;
+  readonly models: readonly ConversationModel[] = [
+    { providerId: 'anthropic', modelId: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
+    // No catalog name: the picker must show this one by its id.
+    { providerId: 'openai', modelId: 'gpt-5-codex' },
+  ];
+  selected: ConversationModel | undefined = this.models[0];
   readonly listModels = vi.fn(async () => ({
-    models: [
-      { providerId: 'anthropic', modelId: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
-      // No catalog name: the picker must show this one by its id.
-      { providerId: 'openai', modelId: 'gpt-5-codex' },
-    ] satisfies readonly ConversationModel[],
+    models: this.models,
+    selected: this.selected,
     ...(this.diagnosis ? { diagnosis: this.diagnosis } : {}),
   }));
 
@@ -63,7 +66,7 @@ async function render(provider?: FakeProvider) {
   root = createRoot(container);
   await act(async () => root?.render(
     <ConversationPane
-      variant="learning"
+      mode="learning"
       provider={value}
       placeholder="卡在哪一步？说出来。"
       fallbackMessage="未连接模型。"
@@ -163,7 +166,7 @@ it('answers a quick question from the graph even when a model is connected', asy
   root = createRoot(container);
   await act(async () => root?.render(
     <ConversationPane
-      variant="learning"
+      mode="learning"
       provider={provider}
       placeholder="卡在哪一步？说出来。"
       fallbackMessage="未连接模型。"

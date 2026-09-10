@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import type { ConversationProvider } from '../ports/ConversationProvider';
+import type { ConversationMode, ConversationProvider } from '../ports/ConversationProvider';
 import type { RouteSolver } from '../ports/RouteSolver';
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import type { AuthoringCommands, WorkspaceReader } from '../synchronization';
@@ -103,5 +103,5 @@ export type Host = {
   loadAuthoringMode?(): Promise<ComponentType<AuthoringModeProps>>;
   /** Route solving is a host capability; a host without an engine omits it. */
   loadRouteSolver?(): Promise<RouteSolver>;
-  createConversationProvider?(variant: 'learning' | 'authoring'): ConversationProvider;
+  createConversationProvider?(mode: ConversationMode): ConversationProvider;
 };

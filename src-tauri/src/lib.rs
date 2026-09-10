@@ -53,12 +53,7 @@ pub fn run() {
             workspace::workspace_source_revision,
             workspace::list_workspace_source_owned_files,
             workspace::commit_workspace_source_changes,
-            conversation::conversation_list_models,
-            conversation::conversation_set_model,
-            conversation::conversation_set_workspace,
-            conversation::conversation_send,
-            conversation::conversation_abort,
-            conversation::conversation_new,
+            conversation::conversation_request,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Derivon");

@@ -1,9 +1,7 @@
 import { Bot, MessageSquarePlus, Send, Square } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ConversationModel, ConversationProvider } from '../../ports/ConversationProvider';
+import type { ConversationMode, ConversationModel, ConversationProvider } from '../../ports/ConversationProvider';
 import './ConversationPane.css';
-
-export type ConversationVariant = 'learning' | 'authoring';
 
 type Message = {
   readonly id: number;
@@ -30,14 +28,14 @@ function ModelIdentity({ model }: { model: ConversationModel }) {
 }
 
 export function ConversationPane({
-  variant,
+  mode,
   provider,
   placeholder,
   quickQuestions,
   fallbackMessage,
   onMessageComplete,
 }: {
-  variant: ConversationVariant;
+  mode: ConversationMode;
   provider?: ConversationProvider;
   placeholder: string;
   quickQuestions?: readonly QuickQuestion[];
@@ -56,7 +54,13 @@ export function ConversationPane({
   const nextId = useRef(1);
   const activeAssistantId = useRef<number | undefined>(undefined);
 
-  const storageKey = `derivon.agent.model.${variant}`;
+  /**
+   * The completion callback is held rather than depended on: callers pass an inline
+   * arrow, so depending on it would resubscribe on every render — and the provider
+   * queues events while nobody is listening, so that gap is real during a stream.
+   */
+  const completionHandler = useRef(onMessageComplete);
+  completionHandler.current = onMessageComplete;
 
   useEffect(() => {
     if (!provider) return;
@@ -66,13 +70,8 @@ export function ConversationPane({
         if (cancelled) return;
         setModels(catalog.models);
         setDiagnosis(catalog.diagnosis);
-        const stored = localStorage.getItem(storageKey);
-        const parsed = stored ? JSON.parse(stored) as ConversationModel : undefined;
-        const model = catalog.models.find((candidate) =>
-          candidate.providerId === parsed?.providerId && candidate.modelId === parsed?.modelId)
-          ?? catalog.models[0];
-        setSelectedModel(model);
-        if (model) void provider.setModel(model);
+        // The provider owns the selection and remembers it; the panel only shows it.
+        setSelectedModel(catalog.selected);
       })
       .catch((error: unknown) => {
         // A provider that rejects instead of reporting still owes the operator a reason;
@@ -82,7 +81,7 @@ export function ConversationPane({
         setDiagnosis(error instanceof Error ? error.message : String(error));
       });
     return () => { cancelled = true; };
-  }, [provider, storageKey]);
+  }, [provider]);
 
   useEffect(() => {
     if (!provider) return;
@@ -97,7 +96,7 @@ export function ConversationPane({
           message.id === activeAssistantId.current
             ? { ...message, text: event.text, state: 'done' }
             : message));
-        onMessageComplete?.(event.text);
+        completionHandler.current?.(event.text);
       } else if (event.kind === 'error') {
         setMessages((current) => current.map((message) =>
           message.id === activeAssistantId.current
@@ -111,7 +110,7 @@ export function ConversationPane({
             : message));
       }
     });
-  }, [provider, onMessageComplete]);
+  }, [provider]);
 
   /**
    * The menu closes from outside itself. It deliberately does not lay a full-window
@@ -193,7 +192,6 @@ export function ConversationPane({
     setSelectedModel(model);
     setModelOpen(false);
     setModelQuery('');
-    localStorage.setItem(storageKey, JSON.stringify(model));
     await provider?.setModel(model);
   };
 

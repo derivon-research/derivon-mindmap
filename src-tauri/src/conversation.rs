@@ -8,7 +8,6 @@ use std::{
     },
 };
 
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
@@ -16,16 +15,6 @@ use tokio::{
     process::{Child, ChildStdin, Command},
     sync::{oneshot, Mutex as AsyncMutex},
 };
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversationModel {
-    pub provider_id: String,
-    pub model_id: String,
-    /// The catalog's display name when it declares one; the panel falls back to the id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-}
 
 struct ConversationProcess {
     stdin: ChildStdin,
@@ -344,68 +333,15 @@ async fn request(app: &AppHandle, mut command: Value) -> Result<Value, String> {
     Ok(response)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationCatalog {
-    pub models: Vec<ConversationModel>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub diagnosis: Option<String>,
-}
-
+/// Carry one request to the companion and bring its reply back.
+///
+/// This is the whole surface. The payload is the companion protocol
+/// (`src/companion/protocol.ts`), which is defined once on the TypeScript side and
+/// passed through untouched: Rust reads only the envelope it adds itself, so renaming a
+/// field there cannot desynchronise a copy kept here.
 #[tauri::command]
-pub async fn conversation_list_models(app: AppHandle) -> Result<ConversationCatalog, String> {
-    let response = request(&app, json!({ "type": "listModels" })).await?;
-    let models = response.get("models").cloned().unwrap_or(Value::Null);
-    let models: Vec<ConversationModel> = serde_json::from_value(models)
-        .map_err(|error| format!("invalid Pi model list: {error}"))?;
-    let diagnosis = response
-        .get("diagnosis")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    Ok(ConversationCatalog { models, diagnosis })
-}
-
-#[tauri::command]
-pub async fn conversation_set_model(
-    app: AppHandle,
-    mode: String,
-    provider_id: String,
-    model_id: String,
-) -> Result<(), String> {
-    request(
-        &app,
-        json!({
-            "type": "setModel",
-            "mode": mode,
-            "providerId": provider_id,
-            "modelId": model_id,
-        }),
-    )
-    .await?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn conversation_set_workspace(app: AppHandle, path: Option<String>) -> Result<(), String> {
-    request(&app, json!({ "type": "setWorkspace", "path": path })).await?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn conversation_send(app: AppHandle, mode: String, prompt: String) -> Result<(), String> {
-    request(&app, json!({ "type": "send", "mode": mode, "prompt": prompt })).await?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn conversation_abort(app: AppHandle, mode: String) -> Result<(), String> {
-    request(&app, json!({ "type": "abort", "mode": mode })).await?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn conversation_new(app: AppHandle, mode: String) -> Result<(), String> {
-    request(&app, json!({ "type": "new", "mode": mode })).await?;
-    Ok(())
+pub async fn conversation_request(app: AppHandle, payload: Value) -> Result<Value, String> {
+    request(&app, payload).await
 }
 
 pub fn shutdown(app: &AppHandle) {

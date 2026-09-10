@@ -237,7 +237,7 @@ v1 是唯一的工作区协议。v1.0.0 之前没有发布过的版本，因此�
 | `src/rendering/` | `src/rendering/index.ts` | 渲染视图模型、事件契约和懒加载的 G6 实现 | 改图的可视表达或图交互事件 |
 | `src/companion/` | `src/companion/index.ts` | 桌面 companion process 的实现：Pi SDK 会话、模型配置与诊断。只在 Node 侧构建，不进任何 webview 构建 | 改模型配置、会话生命周期或 companion 协议 |
 
-`src/companion/` 与 `src/hosts/desktop/` 隔着一个进程边界：桌面宿主实现 `ConversationProvider` 并经受控 IPC 说话，companion 拥有 Pi SDK 与凭证。两侧都不 import 对方。
+`src/companion/` 与 `src/hosts/desktop/` 隔着一个进程边界：桌面宿主实现 `ConversationProvider` 并经受控 IPC 说话，companion 拥有 Pi SDK 与凭证。两侧共享的只有 `src/companion/protocol.ts` 这一份线上契约，且只以 `import type` 引用——类型会被擦除，companion 的实现不进任何 webview 构建。
 
 宿主入口下的 `host.ts` 是构建实际解析的那个模块：`vite --mode desktop` 把 `#host` 指向 `src/hosts/desktop/host.ts`，其余构建指向 `src/hosts/web/host.ts`。应用只依赖这个模块声明的能力与模式；web 宿主不引用创作侧模块，创作侧因此不在 web 构建的模块图里，而不是在运行时被藏起来。应用入口直接 `import` 该文件而不经过 `index.ts` 门面，以免门面的其它导出进入首屏 chunk。
 

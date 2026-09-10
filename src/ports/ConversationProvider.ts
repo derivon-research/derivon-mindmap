@@ -1,3 +1,6 @@
+/** The two application modes, as the conversation layer sees them. See CONTEXT.md. */
+export type ConversationMode = 'learning' | 'authoring';
+
 export type ConversationModel = {
   readonly providerId: string;
   readonly modelId: string;
@@ -19,6 +22,13 @@ export type ConversationModel = {
 export type ConversationCatalog = {
   readonly models: readonly ConversationModel[];
   readonly diagnosis?: string;
+  /**
+   * The model this mode is currently on. The provider owns this, remembers it, and
+   * decides the default; the panel renders it. Two copies of "which model" is one copy
+   * too many, and the panel is the one that cannot be the source of truth — the session
+   * lives on the other side of the port.
+   */
+  readonly selected?: ConversationModel;
 };
 
 export type ConversationEvent =

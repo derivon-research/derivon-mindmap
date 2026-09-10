@@ -9,18 +9,16 @@ import { collectHooks, collectedHooks } from './hookProbe';
 
 const parseManifest = (text: string) => parseWorkspaceManifest(text).manifest;
 
-const CONVERSATION_CATALOG = {
-  models: [
-    { providerId: 'anthropic', modelId: 'claude-opus-5', name: 'Claude Opus 5' },
-    { providerId: 'openai', modelId: 'gpt-5', name: 'GPT-5' },
-    // The catalog names neither of these; the picker shows them by id.
-    { providerId: 'openai', modelId: 'gpt-5-codex' },
-    { providerId: 'deepseek', modelId: 'deepseek-flash', name: 'DeepSeek V4.1 Flash' },
-  ],
-};
+const CONVERSATION_MODELS = [
+  { providerId: 'anthropic', modelId: 'claude-opus-5', name: 'Claude Opus 5' },
+  { providerId: 'openai', modelId: 'gpt-5', name: 'GPT-5' },
+  // The catalog names neither of these; the picker shows them by id.
+  { providerId: 'openai', modelId: 'gpt-5-codex' },
+  { providerId: 'deepseek', modelId: 'deepseek-flash', name: 'DeepSeek V4.1 Flash' },
+];
 
 let directory: string;
-let conversationCommands: { command: string; args?: unknown }[];
+let conversationCommands: { type: string; [key: string]: unknown }[];
 let commits: number;
 let holdWrites: Promise<void> | undefined;
 let releaseWrites: (() => void) | undefined;
@@ -47,9 +45,14 @@ test.beforeEach(async ({ page }) => {
     if (command.startsWith('plugin:event|')) return 0;
     // The Pi companion is a separate process behind the same IPC boundary; only its
     // catalog is substituted, so the shared conversation pane runs unchanged.
-    if (command.startsWith('conversation_')) {
-      conversationCommands.push({ command, args });
-      return command === 'conversation_list_models' ? CONVERSATION_CATALOG : null;
+    if (command === 'conversation_request') {
+      // One command carrying the companion protocol; the payload is what to assert on.
+      const payload = (args as { payload: { type: string } }).payload;
+      conversationCommands.push(payload);
+      if (payload.type === 'listModels') {
+        return { type: 'models', models: CONVERSATION_MODELS, selected: CONVERSATION_MODELS[0] };
+      }
+      return { type: 'ok' };
     }
     if (command === 'choose_workspace_source_directory') return { path: directory, name: path.basename(directory) };
     if (args?.rootPath !== directory) throw new Error('Unexpected fixture root');
@@ -487,13 +490,13 @@ test('opens the model menu without covering or restyling the rest of the window'
 test('roots the agent at the workspace the application has open', async ({ page }) => {
   await openWorkspace(page);
   await expect
-    .poll(() => conversationCommands.filter((entry) => entry.command === 'conversation_set_workspace'))
-    .toContainEqual({ command: 'conversation_set_workspace', args: { path: directory } });
+    .poll(() => conversationCommands.filter((entry) => entry.type === 'setWorkspace'))
+    .toContainEqual({ type: 'setWorkspace', path: directory });
 
   // Closing the workspace leaves the agent rooted nowhere rather than at a folder the
   // user has just left.
   await page.getByRole('button', { name: '关闭工作区', exact: true }).click();
   await expect
-    .poll(() => conversationCommands.filter((entry) => entry.command === 'conversation_set_workspace'))
-    .toContainEqual({ command: 'conversation_set_workspace', args: { path: null } });
+    .poll(() => conversationCommands.filter((entry) => entry.type === 'setWorkspace'))
+    .toContainEqual({ type: 'setWorkspace', path: null });
 });

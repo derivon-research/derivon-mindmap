@@ -1,1 +1,1 @@
-export { ConversationPane, type ConversationVariant, type QuickQuestion } from './ConversationPane';
+export { ConversationPane, type QuickQuestion } from './ConversationPane';

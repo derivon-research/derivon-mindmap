@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
 type Output =
-  | { id: number; type: 'models'; models: { providerId: string; modelId: string; name?: string }[] }
+  | { id: number; type: 'models'; models: { providerId: string; modelId: string; name?: string }[]; selected?: unknown }
   | { id: number; type: 'ok' }
   | { id: number; type: 'error'; message: string }
   | { type: 'event'; mode: string; event: Record<string, unknown> };
@@ -130,12 +130,15 @@ afterAll(async () => {
 });
 
 it('streams, completes, reports errors, aborts, and exits cleanly', { timeout: 30_000 }, async () => {
-  request({ id: 1, type: 'listModels' });
+  request({ id: 1, type: 'listModels', mode: 'learning' });
   const models = await waitFor((line) => line.type === 'models' && line.id === 1);
+  const streamModel = { providerId: 'test', modelId: 'stream-model', name: 'Stream Model' };
   expect(models).toEqual({
     id: 1,
     type: 'models',
-    models: [{ providerId: 'test', modelId: 'stream-model', name: 'Stream Model' }],
+    models: [streamModel],
+    // The companion owns the selection and defaults it, so the panel has one to show.
+    selected: streamModel,
   });
 
   request({ id: 2, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
@@ -192,5 +195,26 @@ it('roots the session at the workspace it is told to use', { timeout: 30_000 }, 
     expect(failure).toMatchObject({ message: expect.stringContaining('工作区目录不可用') });
   } finally {
     companion.stop();
+  }
+});
+
+it('remembers the chosen model across companion restarts', async () => {
+  const first = startCompanion(temporaryDirectory);
+  try {
+    first.send({ id: 1, type: 'setModel', mode: 'authoring', providerId: 'test', modelId: 'stream-model' });
+    await first.await((line) => line.type === 'ok' && line.id === 1);
+  } finally {
+    first.stop();
+  }
+
+  // A new process, and the selection is still the companion's to report — it is not
+  // held in the webview, so nothing about the panel's storage can lose it.
+  const second = startCompanion(temporaryDirectory);
+  try {
+    second.send({ id: 1, type: 'listModels', mode: 'authoring' });
+    const catalog = await second.await((line) => line.type === 'models' && line.id === 1);
+    expect(catalog).toMatchObject({ selected: { providerId: 'test', modelId: 'stream-model' } });
+  } finally {
+    second.stop();
   }
 });

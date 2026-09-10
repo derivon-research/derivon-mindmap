@@ -6,29 +6,22 @@ import {
   type AgentSession,
   type ResourceLoader,
 } from '@earendil-works/pi-coding-agent';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { statSync } from 'node:fs';
+import path from 'node:path';
+import type { ConversationMode } from '../ports/ConversationProvider';
 import { openModelConfiguration, type CatalogModel, type ModelCatalog } from './modelConfiguration';
+import type {
+  ConversationNotification,
+  ConversationRequest,
+  ConversationResponse,
+  Envelope,
+} from './protocol';
 
-type Mode = 'learning' | 'authoring';
-
-type Request =
-  | { id: number; type: 'listModels' }
-  | { id: number; type: 'setWorkspace'; path: string | null }
-  | { id: number; type: 'setModel'; mode: Mode; providerId: string; modelId: string }
-  | { id: number; type: 'send'; mode: Mode; prompt: string }
-  | { id: number; type: 'abort'; mode: Mode }
-  | { id: number; type: 'new'; mode: Mode };
-
-type Response =
-  | { id: number; type: 'models'; models: readonly CatalogModel[]; diagnosis?: string }
-  | { id: number; type: 'ok' }
-  | { id: number; type: 'error'; message: string };
-
-type Event =
-  | { kind: 'delta'; text: string }
-  | { kind: 'message'; text: string }
-  | { kind: 'error'; message: string }
-  | { kind: 'settled' };
+type Mode = ConversationMode;
+type Request = ConversationRequest & Envelope;
+type Response = ConversationResponse & Envelope;
+type Event = ConversationNotification['event'];
 
 function argument(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -45,7 +38,31 @@ const sessions = new Map<Mode, AgentSession>();
  * rather than leaving them pointed somewhere the user has closed.
  */
 let workspacePath: string | null = null;
-const selectedModels = new Map<Mode, CatalogModel>();
+/**
+ * Which model each mode is on, remembered next to the configuration it names. The panel
+ * used to keep this in the webview's localStorage, which meant two answers to one
+ * question and a selection that could not survive being read by anything but that panel.
+ */
+const selectionPath = path.join(configDirectory, 'selected-models.json');
+const selectedModels = new Map<Mode, CatalogModel>(readSelection());
+
+function readSelection(): [Mode, CatalogModel][] {
+  try {
+    const stored = JSON.parse(readFileSync(selectionPath, 'utf8')) as Record<string, CatalogModel>;
+    return Object.entries(stored).filter(([mode]) => mode === 'learning' || mode === 'authoring')
+      .map(([mode, model]) => [mode as Mode, model]);
+  } catch {
+    return [];
+  }
+}
+
+function rememberSelection() {
+  try {
+    writeFileSync(selectionPath, `${JSON.stringify(Object.fromEntries(selectedModels), null, 2)}\n`);
+  } catch {
+    // Remembering is a convenience; failing to write it must not fail the request.
+  }
+}
 const modeQueues = new Map<Mode, Promise<void>>();
 
 const resourceLoader: ResourceLoader = {
@@ -93,16 +110,24 @@ function textOf(content: unknown): string {
  * Not cached: the operator edits the two configuration files while the application is
  * running, and re-reading is cheap next to leaving them looking at a stale empty list.
  */
-async function listModels(): Promise<ModelCatalog> {
-  return (await configurationPromise).listAvailable();
+async function listModels(mode: Mode): Promise<ModelCatalog & { selected?: CatalogModel }> {
+  const catalog = await (await configurationPromise).listAvailable();
+  const remembered = selectedModels.get(mode);
+  // A remembered model that is no longer offered is not a selection; fall back rather
+  // than reporting something the panel could not use.
+  const selected = catalog.models.find((model) =>
+    model.providerId === remembered?.providerId && model.modelId === remembered?.modelId)
+    ?? catalog.models[0];
+  if (selected) selectedModels.set(mode, selected);
+  return { ...catalog, ...(selected ? { selected } : {}) };
 }
 
 async function createSession(mode: Mode) {
   const existing = sessions.get(mode);
   if (existing) return existing;
   const configuration = await configurationPromise;
-  const catalog = await listModels();
-  const selected = selectedModels.get(mode) ?? catalog.models[0];
+  const catalog = await listModels(mode);
+  const selected = catalog.selected;
   if (!selected) throw new Error(catalog.diagnosis ?? '没有可用模型');
   const model = await configuration.resolve(selected.providerId, selected.modelId);
   const modelRuntime = configuration.runtime;
@@ -164,7 +189,12 @@ async function setModel(mode: Mode, providerId: string, modelId: string) {
   const model = await (await configurationPromise).resolve(providerId, modelId);
   const session = sessions.get(mode);
   if (session) await session.setModel(model);
-  selectedModels.set(mode, { providerId, modelId, ...(model.name && model.name !== modelId ? { name: model.name } : {}) });
+  selectedModels.set(mode, {
+    providerId,
+    modelId,
+    ...(model.name && model.name !== modelId ? { name: model.name } : {}),
+  });
+  rememberSelection();
 }
 
 function serialize<T>(mode: Mode, operation: () => Promise<T>): Promise<T> {
@@ -177,12 +207,13 @@ function serialize<T>(mode: Mode, operation: () => Promise<T>): Promise<T> {
 async function handle(request: Request): Promise<Response> {
   try {
     if (request.type === 'listModels') {
-      const catalog = await listModels();
+      const catalog = await listModels(request.mode);
       return {
         id: request.id,
         type: 'models',
         models: catalog.models,
         ...(catalog.diagnosis ? { diagnosis: catalog.diagnosis } : {}),
+        ...(catalog.selected ? { selected: catalog.selected } : {}),
       };
     }
     if (request.type === 'setModel') {

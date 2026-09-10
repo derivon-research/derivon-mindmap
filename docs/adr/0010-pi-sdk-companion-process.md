@@ -32,6 +32,12 @@ Each mode gets its own agent instance and remembers its own model. The panels sh
 same chat UI and provider contract. Sessions are in-memory and are disposed on "new
 conversation"; switching modes does not reset either transcript.
 
+The protocol between the two is written once, in `src/companion/protocol.ts`, and
+imported by both ends. Tauri exposes a single command that carries a payload through
+untouched, so the Rust layer supervises a process and routes envelopes without knowing
+the conversation vocabulary — a middle layer that restated the contract would be a third
+copy to keep in step, and the one no compiler checks.
+
 ### The application owns its model configuration
 
 The application reads its own `models.json` and `auth.json` from the Tauri application

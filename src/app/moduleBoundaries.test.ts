@@ -36,7 +36,12 @@ function readImports(file: string, source: string): ModuleImports {
     if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
       && node.moduleSpecifier
       && ts.isStringLiteral(node.moduleSpecifier)) {
-      staticImports.push(node.moduleSpecifier.text);
+      // `import type` is erased before bundling, so it cannot put anything in a chunk.
+      // Counting it would make sharing a type definition look like shipping the module.
+      const typeOnly = ts.isImportDeclaration(node)
+        ? node.importClause?.isTypeOnly === true
+        : node.isTypeOnly;
+      if (!typeOnly) staticImports.push(node.moduleSpecifier.text);
     } else if (ts.isCallExpression(node)
       && node.expression.kind === ts.SyntaxKind.ImportKeyword
       && node.arguments.length > 0

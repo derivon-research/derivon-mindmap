@@ -88,6 +88,7 @@ companion 起不来时，那里显示的是它退出前打印的内容，而不�
 
 - 凭证是明文 JSON 文件，无 OS 钥匙串集成（ADR-0010 的安全后续项）。
 - Companion 固定系统提示、禁用全部内置工具。
-- 模型选择按模式（学习 / 创作）各记一个，存在 webview 的 localStorage 里，重启后保留；
-  没选过时取列表第一个。companion 侧那份是内存态，由面板在启动时补发一次 `setModel` 对齐。
+- 模型选择按模式（学习 / 创作）各记一个，由 companion 持有并写在
+  `<配置目录>/selected-models.json`，重启后保留；没选过时取列表第一个。
+  记住的模型若已不在目录里，会回落到第一个可用的。
 - Web 构建（`--mode web`）没有 provider，Agent 面板不可用，与本配置无关。
