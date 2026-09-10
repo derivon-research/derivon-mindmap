@@ -55,6 +55,7 @@ pub fn run() {
             workspace::commit_workspace_source_changes,
             conversation::conversation_list_models,
             conversation::conversation_set_model,
+            conversation::conversation_set_workspace,
             conversation::conversation_send,
             conversation::conversation_abort,
             conversation::conversation_new,

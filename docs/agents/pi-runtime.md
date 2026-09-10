@@ -18,17 +18,55 @@ slice. The architecture is fixed by
 
 3. **Node companion**
    - Owns `AgentSession`, `ModelRuntime`, settings, and model discovery.
-   - Uses Pi’s default `auth.json` and `models.json` until secure credential storage is
-     added.
+   - Reads the application's own `models.json` and `auth.json` from the configuration
+     directory Rust passes as `--config-dir`. It never reads `~/.pi/`.
    - Runs one process with one session per mode.
 
 ## Provider/model configuration
 
-- Use Pi’s default `~/.pi/agent/models.json` for provider and model discovery.
-- Use Pi’s default `~/.pi/agent/auth.json` for local credentials in the first slice.
-- Do not hardcode a provider or model.
+`src/companion/modelConfiguration.ts` owns this. Its interface is one function of one
+argument — `openModelConfiguration(configDir)` — and everything else about where models
+come from sits behind it. Extend it there, not at the call sites.
+
+- Discovery and credentials both come from `<configDir>/models.json` and
+  `<configDir>/auth.json`, in Pi's file syntax. Rust supplies `configDir` from Tauri's
+  application configuration directory.
+- A provider is offered only when `ModelRuntime.getProviderAuthStatus` attributes its
+  credential to one of those files (`stored`, `models_json_key`, `models_json_command`).
+  `environment` and `fallback` are refused: they mean the operator's machine configured
+  it, not this application. See ADR-0010.
+- Do not reintroduce a path to `~/.pi/`, and do not hardcode a provider or model.
 - Each mode remembers its own selected model; switching modes does not change the other
   mode’s selection.
+
+## Working directory
+
+The companion roots each session at the workspace the application has open: the webview
+calls `ConversationProvider.setWorkspace(workspaceId)`, and on the desktop host that
+identifier is the workspace directory (`src/hosts/desktop/desktopWorkspaces.ts` is the
+only place a desktop `WorkspaceHandle.id` is made).
+
+- Pi fixes `cwd` when a session is created and offers no way to move it, so changing
+  workspaces ends the sessions rooted at the old one.
+- `noTools: 'all'` does **not** make `cwd` irrelevant: Pi appends
+  `Current working directory: <cwd>` to the system prompt either way, and `cwd` also keys
+  project settings, project resource discovery and session metadata. The companion
+  supplies its own `ResourceLoader` and in-memory `SessionManager`, so nothing is read
+  from or written to the workspace today — but the agent is told where it is.
+- Pi does not check that `cwd` exists; a missing directory fails much later and
+  obscurely. The companion checks before creating a session and refuses by name.
+
+## Diagnosis
+
+An empty catalog is a configuration state, not an error, so it travels as
+`{ models: [], diagnosis }` rather than a rejected promise. Anything that discards
+evidence on the way to the panel is a regression:
+
+- The companion surfaces `ModelRuntime.getError()` and names the files it read.
+- Rust pipes the companion's stderr, keeps the recent lines, and quotes them when the
+  process exits unexpectedly. Do not route that stream to `/dev/null` again.
+- The panel renders the diagnosis next to “没有可用模型”; it must not collapse a rejected
+  `listModels()` into a bare empty list.
 
 ## Prompt and tool extension
 
@@ -39,17 +77,29 @@ slice. The architecture is fixed by
 - Keep built-in filesystem and shell tools disabled unless a mode explicitly needs them.
 - Future authoring tools should be composed into the authoring harness only.
 
+## Environment isolation
+
+Rust starts the companion with `env_clear()` and a five-name allowlist (`PATH`, `HOME`,
+`TMPDIR`, `LANG`, `LC_ALL`). That is defence in depth, not the rule — Pi's ambient
+credential fallback reads `process.env` live, downstream of any injected
+`CredentialStore`, and also consults Google ADC and AWS profile files that no
+environment allowlist covers. The attribution filter above is what actually holds.
+
 ## Security follow-up
 
-The first slice intentionally uses Pi’s default local credential files. A later slice
-should replace that with an OS credential store or a custom Pi `CredentialStore`
+Credentials sit in a plain JSON file in the application configuration directory. A later
+slice should replace that with an OS credential store or a custom Pi `CredentialStore`
 adapter. Until then, do not add remote providers or web-hosted model access.
 
 ## Testing
 
 - `npm run build:companion` produces the single-file Node companion.
 - `npm run test:node` runs the companion integration test against a local OpenAI-compatible
-  test provider; it does not call a real model service.
+  test provider; it does not call a real model service. It deliberately spawns the
+  companion with a machine-wide `ANTHROPIC_API_KEY` set and asserts the catalog is
+  unchanged. A test whose result depends on the developer's shell is a defect in the
+  isolation it exists to prove — `src/companion/modelConfiguration.test.ts` covers the
+  same ground without spawning a process.
 - `npm run test` also runs that integration test, the browser tests, typechecking, and the
   initial JavaScript budget.
 - `npm run build:desktop` builds the companion, copies the current Node runtime into

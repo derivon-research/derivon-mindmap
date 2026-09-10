@@ -44,6 +44,13 @@ export default function WorkspaceSurface(props: WorkspaceSurfaceProps) {
 
 function SessionModes({ session, state, workspace, modes, routeSolver, conversationProviders, onSelectConcept, onChangeTargets, onChangeKnown, onEnterLearningView, onConfirmRoute, onRouteInvalidated, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
   const snapshot = useSyncExternalStore(session.reader.subscribe, session.reader.getSnapshot);
+  // The agent is about this workspace, so it is rooted there rather than wherever the
+  // application was started from. Both modes talk about the same one.
+  useEffect(() => {
+    const providers = [conversationProviders?.learning, conversationProviders?.authoring];
+    for (const provider of providers) void provider?.setWorkspace(workspace.id);
+    return () => { for (const provider of providers) void provider?.setWorkspace(null); };
+  }, [conversationProviders, workspace.id]);
   const [closeGuardError, setCloseGuardError] = useState<string>();
   const readAsset = useMemo(() => async (path: string) => {
     const assertCurrent = () => {

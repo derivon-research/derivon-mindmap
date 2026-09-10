@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type {
+  ConversationCatalog,
   ConversationEvent,
   ConversationModel,
   ConversationProvider,
@@ -26,6 +27,12 @@ export function createDesktopConversationProvider(variant: Variant): Conversatio
     });
 
   return {
+    // A desktop workspace is identified by its directory (see `desktopWorkspaces.ts`,
+    // which is the only place a desktop `WorkspaceHandle.id` is made), so the identifier
+    // the application hands back is exactly the path to root the agent at.
+    async setWorkspace(workspaceId: string | null) {
+      await invoke('conversation_set_workspace', { path: workspaceId });
+    },
     async send(prompt: string) {
       await invoke('conversation_send', { mode: variant, prompt });
     },
@@ -35,8 +42,13 @@ export function createDesktopConversationProvider(variant: Variant): Conversatio
     async newConversation() {
       await invoke('conversation_new', { mode: variant });
     },
-    async listModels() {
-      return invoke<readonly ConversationModel[]>('conversation_list_models');
+    async listModels(): Promise<ConversationCatalog> {
+      try {
+        return await invoke<ConversationCatalog>('conversation_list_models');
+      } catch (error) {
+        // The bridge could not reach the companion at all: no catalog, but a reason.
+        return { models: [], diagnosis: error instanceof Error ? error.message : String(error) };
+      }
     },
     async setModel(model: ConversationModel) {
       await invoke('conversation_set_model', {

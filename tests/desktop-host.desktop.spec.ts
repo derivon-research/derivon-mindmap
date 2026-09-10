@@ -9,7 +9,18 @@ import { collectHooks, collectedHooks } from './hookProbe';
 
 const parseManifest = (text: string) => parseWorkspaceManifest(text).manifest;
 
+const CONVERSATION_CATALOG = {
+  models: [
+    { providerId: 'anthropic', modelId: 'claude-opus-5', name: 'Claude Opus 5' },
+    { providerId: 'openai', modelId: 'gpt-5', name: 'GPT-5' },
+    // The catalog names neither of these; the picker shows them by id.
+    { providerId: 'openai', modelId: 'gpt-5-codex' },
+    { providerId: 'deepseek', modelId: 'deepseek-flash', name: 'DeepSeek V4.1 Flash' },
+  ],
+};
+
 let directory: string;
+let conversationCommands: { command: string; args?: unknown }[];
 let commits: number;
 let holdWrites: Promise<void> | undefined;
 let releaseWrites: (() => void) | undefined;
@@ -22,6 +33,7 @@ const emptyGraph = JSON.stringify({
 
 test.beforeEach(async ({ page }) => {
   directory = await mkdtemp(path.join(tmpdir(), 'derivon-gui-'));
+  conversationCommands = [];
   commits = 0;
   writesInFlight = [];
   holdWrites = undefined;
@@ -33,6 +45,12 @@ test.beforeEach(async ({ page }) => {
     changes?: { graph?: string; createOnly?: boolean; documents: Array<{ path: string; content: string | null }>; assets?: Array<{ path: string; content: number[] | null }> };
   }) => {
     if (command.startsWith('plugin:event|')) return 0;
+    // The Pi companion is a separate process behind the same IPC boundary; only its
+    // catalog is substituted, so the shared conversation pane runs unchanged.
+    if (command.startsWith('conversation_')) {
+      conversationCommands.push({ command, args });
+      return command === 'conversation_list_models' ? CONVERSATION_CATALOG : null;
+    }
     if (command === 'choose_workspace_source_directory') return { path: directory, name: path.basename(directory) };
     if (args?.rootPath !== directory) throw new Error('Unexpected fixture root');
     if (command === 'workspace_source_revision') return String(commits);
@@ -101,8 +119,53 @@ async function openWorkspace(page: Page): Promise<void> {
   await page.goto('/');
   await page.getByRole('button', { name: /GUI fixture/ }).click();
   await expect(page.locator('[data-derivon-mode="authoring"]')).toBeVisible();
-  await page.getByLabel('新建概念', { exact: true }).focus();
   await expect(page.getByText('原生关闭保护未能启用', { exact: false })).toHaveCount(0);
+}
+
+/** The workbench opens on graph browsing; object editing is a different view. */
+async function openObjects(page: Page): Promise<void> {
+  await page.getByRole('button', { name: '对象', exact: true }).click();
+  await expect(page.getByRole('button', { name: '对象', exact: true })).toHaveAttribute('aria-pressed', 'true');
+}
+
+/**
+ * Open the concept form. Creation is one entry — the workbar's 新建 — which asks for the
+ * kind first; the empty objects view offers a shortcut straight to the concept step.
+ */
+async function openConceptForm(page: Page): Promise<void> {
+  const shortcut = page.getByRole('button', { name: '新建概念', exact: true });
+  if (await shortcut.count()) await shortcut.click();
+  else {
+    await page.getByRole('button', { name: '新建', exact: true }).click();
+    await page.getByRole('button', { name: /^概念/ }).click();
+  }
+  await expect(page.getByRole('textbox', { name: '概念名称' })).toBeVisible();
+}
+
+async function createConcept(page: Page, label: string): Promise<void> {
+  await openConceptForm(page);
+  await page.getByRole('textbox', { name: '概念名称' }).fill(label);
+  await page.getByRole('textbox', { name: '概念名称' }).press('Enter');
+  await expect(page.getByRole('dialog', { name: '新建对象' })).toHaveCount(0);
+  await expect(page.getByLabel('名称', { exact: true })).toHaveValue(label);
+}
+
+/**
+ * Open the carried-over concept's document on the learning side.
+ *
+ * A whole-window mode switch brings the authoring selection along as the learner's
+ * target, so the concept is painted in the target colour rather than the unmarked grey
+ * of a concept nobody has decided about.
+ */
+const TARGET_FILL = [185, 28, 28];
+
+async function openCarriedConceptDocument(page: Page, title: string): Promise<void> {
+  const learning = page.locator('[data-derivon-mode="learning"]');
+  await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
+  const point = await page.evaluate(findCanvasPixel, { clientCoordinates: true, color: TARGET_FILL });
+  expect(point, 'the carried-over target is not painted on the learning graph').toBeDefined();
+  await page.mouse.click(point!.x, point!.y);
+  await expect(learning.locator(`iframe[title="${title} 文档"]`)).toBeVisible();
 }
 
 test('opens on recent workspaces with native open/create commands, not a mode chooser', async ({ page }) => {
@@ -119,16 +182,24 @@ test('opens on recent workspaces with native open/create commands, not a mode ch
 
 test('preserves an unfinished draft across whole-window mode switches without saving it', async ({ page }) => {
   await openWorkspace(page);
-  await page.getByLabel('新建概念', { exact: true }).fill('Unfinished');
+  await openObjects(page);
+  await createConcept(page, 'Vector space');
+  await expect(page.getByLabel('保存状态')).toHaveText('已保存');
+  const committed = commits;
+
+  // The creation dialog is modal, so an unfinished draft that can outlive a mode switch
+  // is a document draft: typed, not yet applied.
+  const editor = page.getByLabel('Markdown 正文', { exact: true });
+  await editor.fill('Unfinished');
   await page.getByRole('button', { name: '学习', exact: true }).click();
   await expect(page.locator('[data-derivon-mode="authoring"]')).toBeHidden();
-  await expect(page.locator('[data-derivon-mode="learning"]')).toContainText('0 个概念');
+  await expect(page.locator('[data-derivon-mode="learning"]')).toContainText('1 个概念');
   await expect(page.getByLabel('保存状态')).toContainText('未提交草稿');
   await page.waitForTimeout(1100);
-  expect(commits).toBe(0);
+  expect(commits).toBe(committed);
   await page.getByRole('button', { name: '创作', exact: true }).click();
-  await expect(page.getByLabel('新建概念', { exact: true })).toHaveValue('Unfinished');
-  await page.getByLabel('新建概念', { exact: true }).press('Escape');
+  await expect(editor).toContainText('Unfinished');
+  await page.getByRole('button', { name: '放弃草稿', exact: true }).click();
   await expect(page.getByLabel('保存状态')).toHaveText('已保存');
 });
 
@@ -153,10 +224,8 @@ for (const width of [1440, 390, 320]) {
       await expect.poll(agentHeight).toBe(38);
     }
     holdWrites = new Promise<void>((resolve) => { releaseWrites = resolve; });
-    await page.getByLabel('新建概念', { exact: true }).focus();
-    await page.getByLabel('新建概念', { exact: true }).fill('Vector space');
-    await page.getByLabel('新建概念', { exact: true }).press('Enter');
-    await expect(page.getByLabel('名称', { exact: true })).toHaveValue('Vector space');
+    await openObjects(page);
+    await createConcept(page, 'Vector space');
     expect(parseManifest(await readFile(path.join(directory, manifestPath), 'utf8')).graph.points).toEqual([]);
     const titleBounds = await page.getByLabel('名称', { exact: true }).boundingBox();
     expect(titleBounds!.x + titleBounds!.width).toBeLessThanOrEqual(width);
@@ -165,13 +234,9 @@ for (const width of [1440, 390, 320]) {
     await page.getByRole('button', { name: '学习', exact: true }).click();
     const learning = page.locator('[data-derivon-mode="learning"]');
     await expect(learning).toContainText('1 个概念');
-    await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
-    const conceptPoint = await page.evaluate(findCanvasPixel, { clientCoordinates: true });
-    expect(conceptPoint).toBeDefined();
     // The learning side reads what authoring has in hand, still unsaved: pointing at the new
     // concept opens its document without anything having been committed.
-    await page.mouse.click(conceptPoint!.x, conceptPoint!.y);
-    await expect(learning.locator('iframe[title="Vector space 文档"]')).toBeVisible();
+    await openCarriedConceptDocument(page, 'Vector space');
     await learning.getByRole('button', { name: '这个我会', exact: true }).click();
     expect(commits).toBe(1); // Empty workspace initialization only.
     releaseWrites!();
@@ -210,23 +275,34 @@ for (const width of [1440, 390, 320]) {
 
 test('warns before closing a protected draft and does not restore an explicitly discarded session', async ({ page }) => {
   await openWorkspace(page);
-  await page.getByLabel('新建概念', { exact: true }).fill('Discard this draft');
+  await openObjects(page);
+  await createConcept(page, 'Vector space');
+  await expect(page.getByLabel('保存状态')).toHaveText('已保存');
+  // The creation dialog is modal and covers the top bar, so the draft that reaches the
+  // close guard is a document draft. Everything after this point must not commit.
+  const committed = commits;
+  const editor = page.getByLabel('Markdown 正文', { exact: true });
+  await editor.fill('Discard this draft');
+
   page.once('dialog', (dialog) => { void dialog.dismiss(); });
   await page.getByRole('button', { name: '关闭工作区', exact: true }).click();
-  await expect(page.getByLabel('新建概念', { exact: true })).toHaveValue('Discard this draft');
+  await expect(editor).toContainText('Discard this draft');
+
   page.once('dialog', (dialog) => { void dialog.accept(); });
   await page.getByRole('button', { name: '关闭工作区', exact: true }).click();
   await page.getByRole('button', { name: '打开文件夹…', exact: true }).click();
-  await page.getByLabel('新建概念', { exact: true }).focus();
-  await expect(page.getByLabel('新建概念', { exact: true })).toHaveValue('');
-  expect(commits).toBe(0);
+  await openObjects(page);
+  await page.getByLabel('搜索概念与推导文档').fill('Vector');
+  await page.getByRole('option', { name: /Vector space/ }).click();
+  await expect(page.getByLabel('Markdown 正文', { exact: true })).not.toContainText('Discard this draft');
+  expect(commits).toBe(committed);
 });
 
 test('edits rich documents with protected drafts, atomic images, effective preview and reopen', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await openWorkspace(page);
-  await page.getByLabel('新建概念', { exact: true }).fill('Vector space');
-  await page.getByLabel('新建概念', { exact: true }).press('Enter');
+  await openObjects(page);
+  await createConcept(page, 'Vector space');
   await expect(page.getByLabel('保存状态')).toHaveText('已保存');
   const editor = page.getByLabel('Markdown 正文', { exact: true });
   await editor.fill('Draft body');
@@ -240,7 +316,7 @@ test('edits rich documents with protected drafts, atomic images, effective previ
   await expect(editor).toBeFocused();
   await page.getByLabel('Agent 消息').fill('检查文档的前提');
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
-  await expect(page.getByRole('log', { name: 'Agent 对话' })).toContainText('模拟计划');
+  await expect(page.getByRole('log', { name: 'Agent 对话' })).toContainText('检查文档的前提');
   await page.getByRole('button', { name: '图浏览', exact: true }).click();
   await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
   await page.getByRole('button', { name: '收起 Agent', exact: true }).click();
@@ -276,6 +352,7 @@ test('edits rich documents with protected drafts, atomic images, effective previ
   });
   await expect(editor.locator('img[src^="blob:"]')).toBeVisible();
   await page.getByRole('button', { name: '学习', exact: true }).click();
+  await openCarriedConceptDocument(page, 'Vector space');
   await expect(page.frameLocator('iframe[title="Vector space 文档"]').locator('body')).not.toContainText('Draft body');
   await expect(page.getByLabel('保存状态')).toContainText('未提交草稿');
   expect(commits).toBe(1);
@@ -285,6 +362,7 @@ test('edits rich documents with protected drafts, atomic images, effective previ
   holdWrites = new Promise<void>((resolve) => { releaseWrites = resolve; });
   await page.getByRole('button', { name: '应用修改', exact: true }).click();
   await page.getByRole('button', { name: '学习', exact: true }).click();
+  await openCarriedConceptDocument(page, 'Vector space');
   const preview = page.frameLocator('iframe[title="Vector space 文档"]');
   await expect(preview.locator('body')).toContainText('Draft body');
   await expect(preview.locator('img[src^="data:image/"]')).toBeVisible();
@@ -370,4 +448,52 @@ test('announces interactive on the desktop launch frame', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByLabel('打开工作区')).toBeVisible();
   await expect.poll(async () => (await collectedHooks(page)).filter((hook) => hook.kind === 'interactive').length).toBe(1);
+});
+
+test('opens the model menu without covering or restyling the rest of the window', async ({ page }) => {
+  // Regression: the menu used to lay a full-window <button> over the application to catch
+  // the dismissing click. The authoring mode blanket-styles its own buttons, so that
+  // overlay was painted as one window-sized button — white, then green on hover — and it
+  // also made every other control inert while the menu was open.
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await seedRecentWorkspace(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: /GUI fixture/ }).click();
+  await expect(page.locator('[data-derivon-mode="authoring"]')).toBeVisible();
+  const modelButton = page.getByRole('button', { name: /Claude Opus 5/ });
+  await expect(modelButton).toBeVisible();
+
+  const topBar = { x: 0, y: 0, width: 700, height: 110 };
+  const before = await page.screenshot({ clip: topBar });
+  await modelButton.click();
+  await expect(page.getByRole('textbox', { name: '搜索模型' })).toBeVisible();
+
+  expect(await page.screenshot({ clip: topBar })).toEqual(before);
+  const atTopBar = await page.evaluate(() =>
+    document.elementFromPoint(120, 27)?.closest('[data-shared-pane]') !== null);
+  expect(atTopBar, 'the agent pane reaches outside itself while the menu is open').toBe(false);
+
+  // The mode's control skin stops at the shared pane: its list entries stay flat.
+  const listEntry = await page.getByRole('button', { name: /GPT-5/ }).evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { border: style.borderTopWidth, background: style.backgroundColor };
+  });
+  expect(listEntry).toEqual({ border: '0px', background: 'rgba(0, 0, 0, 0)' });
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('textbox', { name: '搜索模型' })).toHaveCount(0);
+});
+
+test('roots the agent at the workspace the application has open', async ({ page }) => {
+  await openWorkspace(page);
+  await expect
+    .poll(() => conversationCommands.filter((entry) => entry.command === 'conversation_set_workspace'))
+    .toContainEqual({ command: 'conversation_set_workspace', args: { path: directory } });
+
+  // Closing the workspace leaves the agent rooted nowhere rather than at a folder the
+  // user has just left.
+  await page.getByRole('button', { name: '关闭工作区', exact: true }).click();
+  await expect
+    .poll(() => conversationCommands.filter((entry) => entry.command === 'conversation_set_workspace'))
+    .toContainEqual({ command: 'conversation_set_workspace', args: { path: null } });
 });

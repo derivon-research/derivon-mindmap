@@ -1,30 +1,26 @@
 import {
   createAgentSession,
   createExtensionRuntime,
-  ModelRuntime,
   SessionManager,
   SettingsManager,
   type AgentSession,
   type ResourceLoader,
 } from '@earendil-works/pi-coding-agent';
+import { statSync } from 'node:fs';
+import { openModelConfiguration, type CatalogModel, type ModelCatalog } from './modelConfiguration';
 
 type Mode = 'learning' | 'authoring';
 
-type ModelDto = {
-  providerId: string;
-  modelId: string;
-  label: string;
-};
-
 type Request =
   | { id: number; type: 'listModels' }
+  | { id: number; type: 'setWorkspace'; path: string | null }
   | { id: number; type: 'setModel'; mode: Mode; providerId: string; modelId: string }
   | { id: number; type: 'send'; mode: Mode; prompt: string }
   | { id: number; type: 'abort'; mode: Mode }
   | { id: number; type: 'new'; mode: Mode };
 
 type Response =
-  | { id: number; type: 'models'; models: ModelDto[] }
+  | { id: number; type: 'models'; models: readonly CatalogModel[]; diagnosis?: string }
   | { id: number; type: 'ok' }
   | { id: number; type: 'error'; message: string };
 
@@ -39,17 +35,18 @@ function argument(name: string): string | undefined {
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
-const modelsPath = argument('--models-path');
-const authPath = argument('--auth-path');
-const modelRuntimePromise = ModelRuntime.create({
-  ...(modelsPath ? { modelsPath } : {}),
-  ...(authPath ? { authPath } : {}),
-});
-void modelRuntimePromise.catch(() => {});
+const configDirectory = argument('--config-dir');
+if (!configDirectory) throw new Error('companion 需要 --config-dir');
+const configurationPromise = openModelConfiguration(configDirectory);
 const sessions = new Map<Mode, AgentSession>();
-const selectedModels = new Map<Mode, ModelDto>();
+/**
+ * The workspace the conversation is about. Pi fixes a session's working directory when
+ * the session is created, so changing workspaces ends the sessions rooted at the old one
+ * rather than leaving them pointed somewhere the user has closed.
+ */
+let workspacePath: string | null = null;
+const selectedModels = new Map<Mode, CatalogModel>();
 const modeQueues = new Map<Mode, Promise<void>>();
-let availableModels: ModelDto[] | undefined;
 
 const resourceLoader: ResourceLoader = {
   getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
@@ -92,29 +89,35 @@ function textOf(content: unknown): string {
     .join('');
 }
 
-async function listModels(): Promise<ModelDto[]> {
-  if (availableModels) return availableModels;
-  const modelRuntime = await modelRuntimePromise;
-  const models = await modelRuntime.getAvailable();
-  availableModels = models.map((model) => ({
-    providerId: model.provider,
-    modelId: model.id,
-    label: model.name ?? model.id,
-  }));
-  return availableModels;
+/**
+ * Not cached: the operator edits the two configuration files while the application is
+ * running, and re-reading is cheap next to leaving them looking at a stale empty list.
+ */
+async function listModels(): Promise<ModelCatalog> {
+  return (await configurationPromise).listAvailable();
 }
 
 async function createSession(mode: Mode) {
   const existing = sessions.get(mode);
   if (existing) return existing;
-  const models = await listModels();
-  const selected = selectedModels.get(mode) ?? models[0];
-  if (!selected) throw new Error('没有可用模型');
-  const modelRuntime = await modelRuntimePromise;
-  const model = modelRuntime.getModel(selected.providerId, selected.modelId);
-  if (!model) throw new Error(`模型不存在：${selected.providerId}/${selected.modelId}`);
+  const configuration = await configurationPromise;
+  const catalog = await listModels();
+  const selected = selectedModels.get(mode) ?? catalog.models[0];
+  if (!selected) throw new Error(catalog.diagnosis ?? '没有可用模型');
+  const model = await configuration.resolve(selected.providerId, selected.modelId);
+  const modelRuntime = configuration.runtime;
+  // Pi does not check `cwd`; a missing directory surfaces much later as a confusing
+  // failure, so refuse here where the workspace can still be named.
+  if (workspacePath) {
+    try {
+      if (!statSync(workspacePath).isDirectory()) throw new Error('not a directory');
+    } catch {
+      throw new Error(`工作区目录不可用：${workspacePath}`);
+    }
+  }
   const { session } = await createAgentSession({
     model,
+    ...(workspacePath ? { cwd: workspacePath } : {}),
     thinkingLevel: 'off',
     modelRuntime,
     resourceLoader,
@@ -140,13 +143,28 @@ async function createSession(mode: Mode) {
   return session;
 }
 
+async function endSession(mode: Mode) {
+  const session = sessions.get(mode);
+  if (!session) return;
+  try {
+    await session.abort();
+  } finally {
+    sessions.delete(mode);
+    session.dispose();
+  }
+}
+
+async function setWorkspace(path: string | null) {
+  if (path === workspacePath) return;
+  workspacePath = path;
+  for (const mode of [...sessions.keys()]) await endSession(mode);
+}
+
 async function setModel(mode: Mode, providerId: string, modelId: string) {
-  const modelRuntime = await modelRuntimePromise;
-  const model = modelRuntime.getModel(providerId, modelId);
-  if (!model) throw new Error(`模型不存在：${providerId}/${modelId}`);
+  const model = await (await configurationPromise).resolve(providerId, modelId);
   const session = sessions.get(mode);
   if (session) await session.setModel(model);
-  selectedModels.set(mode, { providerId, modelId, label: model.name ?? model.id });
+  selectedModels.set(mode, { providerId, modelId, ...(model.name && model.name !== modelId ? { name: model.name } : {}) });
 }
 
 function serialize<T>(mode: Mode, operation: () => Promise<T>): Promise<T> {
@@ -159,7 +177,13 @@ function serialize<T>(mode: Mode, operation: () => Promise<T>): Promise<T> {
 async function handle(request: Request): Promise<Response> {
   try {
     if (request.type === 'listModels') {
-      return { id: request.id, type: 'models', models: await listModels() };
+      const catalog = await listModels();
+      return {
+        id: request.id,
+        type: 'models',
+        models: catalog.models,
+        ...(catalog.diagnosis ? { diagnosis: catalog.diagnosis } : {}),
+      };
     }
     if (request.type === 'setModel') {
       await serialize(request.mode, () =>
@@ -181,17 +205,11 @@ async function handle(request: Request): Promise<Response> {
       return { id: request.id, type: 'ok' };
     }
     if (request.type === 'new') {
-      await serialize(request.mode, async () => {
-        const session = sessions.get(request.mode);
-        if (session) {
-          try {
-            await session.abort();
-          } finally {
-            sessions.delete(request.mode);
-            session.dispose();
-          }
-        }
-      });
+      await serialize(request.mode, () => endSession(request.mode));
+      return { id: request.id, type: 'ok' };
+    }
+    if (request.type === 'setWorkspace') {
+      await setWorkspace(request.path);
       return { id: request.id, type: 'ok' };
     }
     throw new Error(`未知请求：${(request as Request).type}`);

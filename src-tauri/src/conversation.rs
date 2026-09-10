@@ -22,11 +22,66 @@ use tokio::{
 pub struct ConversationModel {
     pub provider_id: String,
     pub model_id: String,
-    pub label: String,
+    /// The catalog's display name when it declares one; the panel falls back to the id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 struct ConversationProcess {
     stdin: ChildStdin,
+}
+
+/// How many companion stderr lines to keep for diagnosis.
+const STDERR_HISTORY: usize = 40;
+
+/// Blank out anything shaped like a credential before it is kept or shown.
+///
+/// The companion is not supposed to print keys, but its output reaches both the
+/// application log and the panel, and #59 requires that a key never lands in either.
+/// Over-redacting a diagnostic is cheap; leaking one is not.
+///
+/// Runs of credential-ish characters are scanned directly rather than whitespace-
+/// separated words, so `token=<key>` and `"apiKey": "<key>"` are covered too.
+fn redact_credentials(line: &str) -> String {
+    fn secretish(run: &str) -> bool {
+        if run.starts_with("sk-") && run.len() >= 12 {
+            return true;
+        }
+        run.len() >= 24 && run.chars().any(|c| c.is_ascii_digit())
+    }
+
+    let mut out = String::with_capacity(line.len());
+    let mut run = String::new();
+    let flush = |run: &mut String, out: &mut String| {
+        if secretish(run) {
+            out.push_str("<REDACTED>");
+        } else {
+            out.push_str(run);
+        }
+        run.clear();
+    };
+    for character in line.chars() {
+        if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+            run.push(character);
+        } else {
+            flush(&mut run, &mut out);
+            out.push(character);
+        }
+    }
+    flush(&mut run, &mut out);
+    out
+}
+
+fn describe_exit(stderr: &Arc<Mutex<Vec<String>>>) -> String {
+    let recent = stderr.lock().unwrap();
+    if recent.is_empty() {
+        "Pi companion exited unexpectedly, with no output.".to_owned()
+    } else {
+        format!(
+            "Pi companion exited unexpectedly:\n{}",
+            recent.join("\n")
+        )
+    }
 }
 
 pub struct ConversationState {
@@ -34,6 +89,9 @@ pub struct ConversationState {
     child: Arc<Mutex<Option<Child>>>,
     next_id: AtomicU64,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
+    /// The companion's last diagnostic lines. Without this a failed start is
+    /// indistinguishable from an empty catalog once it reaches the panel.
+    stderr: Arc<Mutex<Vec<String>>>,
 }
 
 impl ConversationState {
@@ -43,6 +101,7 @@ impl ConversationState {
             child: Arc::new(Mutex::new(None)),
             next_id: AtomicU64::new(1),
             pending: Arc::new(Mutex::new(HashMap::new())),
+            stderr: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -68,35 +127,78 @@ fn script_path(app: &AppHandle) -> Result<PathBuf, String> {
     }
 }
 
-fn node_path() -> PathBuf {
-    let executable = std::env::current_exe().ok();
-    if let Some(directory) = executable.as_ref().and_then(|path| path.parent()) {
-        if let Ok(entries) = std::fs::read_dir(directory) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if name.starts_with("node-") {
-                    return entry.path();
-                }
+/// The Node runtime shipped beside the executable.
+///
+/// Never the operator's own `node`: the application must not require one, and silently
+/// borrowing it would let a bundle ship without its sidecar and still appear to work
+/// here while failing on a machine that has no Node.
+fn node_path() -> Result<PathBuf, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("cannot locate the application executable: {error}"))?;
+    let directory = executable
+        .parent()
+        .ok_or_else(|| "the application executable has no directory".to_owned())?;
+    if let Ok(entries) = std::fs::read_dir(directory) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with("node-") {
+                return Ok(entry.path());
             }
         }
-        let bundled = directory.join("node");
-        if bundled.is_file() {
-            return bundled;
-        }
     }
-    PathBuf::from("node")
+    let bundled = directory.join("node");
+    if bundled.is_file() {
+        return Ok(bundled);
+    }
+    Err(format!(
+        "the bundled Node runtime is missing from {}; run npm run prepare:companion",
+        directory.to_string_lossy()
+    ))
 }
+
+/// The application's own configuration directory, created if this is a first run.
+///
+/// The companion reads `models.json` and `auth.json` from here and nowhere else; it does
+/// not consult `~/.pi/`. See ADR-0010.
+fn config_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("no application configuration directory: {error}"))?;
+    std::fs::create_dir_all(&directory).map_err(|error| {
+        format!(
+            "could not create {}: {error}",
+            directory.to_string_lossy()
+        )
+    })?;
+    Ok(directory)
+}
+
+/// Variables the companion is allowed to inherit.
+///
+/// Everything else is dropped, so no provider credential, agent directory or cloud
+/// profile from the operator's environment can reach Pi's ambient credential fallback.
+/// This is defence in depth: the companion also refuses any credential Pi does not
+/// attribute to the application's own files.
+const INHERITED_ENVIRONMENT: [&str; 5] = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL"];
 
 async fn start(app: &AppHandle) -> Result<ConversationProcess, String> {
     let script = script_path(app)?;
-    let node = node_path();
+    let node = node_path()?;
+    let config = config_directory(app)?;
+    let inherited: Vec<(String, String)> = INHERITED_ENVIRONMENT
+        .iter()
+        .filter_map(|name| std::env::var(name).ok().map(|value| ((*name).to_owned(), value)))
+        .collect();
     let mut command = Command::new(node);
     command
         .arg(script)
+        .arg("--config-dir")
+        .arg(&config)
+        .env_clear()
+        .envs(inherited)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     let mut child = command
         .spawn()
         .map_err(|error| format!("failed to start Pi companion: {error}"))?;
@@ -108,12 +210,32 @@ async fn start(app: &AppHandle) -> Result<ConversationProcess, String> {
         .stdout
         .take()
         .ok_or_else(|| "Pi companion stdout is unavailable".to_owned())?;
+    let child_stderr = child.stderr.take();
     let state = app.state::<ConversationState>();
     let pending = state.pending.clone();
     let process = state.process.clone();
     let child_handle = state.child.clone();
     let event_app = app.clone();
+    let stderr_log = state.stderr.clone();
     *state.child.lock().unwrap() = Some(child);
+    if let Some(stream) = child_stderr {
+        let stderr_log = stderr_log.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut lines = BufReader::new(stream).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let line = redact_credentials(&line);
+                eprintln!("[pi-companion] {line}");
+                let mut log = stderr_log.lock().unwrap();
+                if log.len() == STDERR_HISTORY {
+                    log.remove(0);
+                }
+                log.push(line);
+            }
+        });
+    }
     tauri::async_runtime::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
@@ -148,17 +270,18 @@ async fn start(app: &AppHandle) -> Result<ConversationProcess, String> {
                 let _ = child.start_kill();
             }
         }
+        let reason = describe_exit(&stderr_log);
         let failed: HashMap<_, _> = pending.lock().unwrap().drain().collect();
         for (_, sender) in failed {
             let _ = sender.send(json!({
                 "type": "error",
-                "message": "Pi companion exited unexpectedly",
+                "message": reason,
             }));
         }
         for mode in ["learning", "authoring"] {
             let _ = event_app.emit("conversation://event", json!({
                 "mode": mode,
-                "event": { "kind": "error", "message": "Pi companion exited unexpectedly" },
+                "event": { "kind": "error", "message": reason },
             }));
             let _ = event_app.emit("conversation://event", json!({
                 "mode": mode,
@@ -221,12 +344,24 @@ async fn request(app: &AppHandle, mut command: Value) -> Result<Value, String> {
     Ok(response)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationCatalog {
+    pub models: Vec<ConversationModel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnosis: Option<String>,
+}
+
 #[tauri::command]
-pub async fn conversation_list_models(app: AppHandle) -> Result<Vec<ConversationModel>, String> {
+pub async fn conversation_list_models(app: AppHandle) -> Result<ConversationCatalog, String> {
     let response = request(&app, json!({ "type": "listModels" })).await?;
     let models = response.get("models").cloned().unwrap_or(Value::Null);
-    serde_json::from_value(models)
-        .map_err(|error| format!("invalid Pi model list: {error}"))
+    let models: Vec<ConversationModel> = serde_json::from_value(models)
+        .map_err(|error| format!("invalid Pi model list: {error}"))?;
+    let diagnosis = response
+        .get("diagnosis")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    Ok(ConversationCatalog { models, diagnosis })
 }
 
 #[tauri::command]
@@ -246,6 +381,12 @@ pub async fn conversation_set_model(
         }),
     )
     .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn conversation_set_workspace(app: AppHandle, path: Option<String>) -> Result<(), String> {
+    request(&app, json!({ "type": "setWorkspace", "path": path })).await?;
     Ok(())
 }
 
@@ -272,5 +413,55 @@ pub fn shutdown(app: &AppHandle) {
     let mut guard = child.lock().unwrap();
     if let Some(mut child) = guard.take() {
         let _ = child.start_kill();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_exit_with_no_output_says_so_rather_than_showing_nothing() {
+        let stderr = Arc::new(Mutex::new(Vec::new()));
+        assert_eq!(
+            describe_exit(&stderr),
+            "Pi companion exited unexpectedly, with no output."
+        );
+    }
+
+    #[test]
+    fn an_exit_quotes_what_the_companion_last_said() {
+        let stderr = Arc::new(Mutex::new(vec![
+            "Error: cannot find module".to_owned(),
+            "  at loader".to_owned(),
+        ]));
+        let described = describe_exit(&stderr);
+        assert!(described.contains("cannot find module"), "{described}");
+        assert!(described.contains("at loader"), "{described}");
+    }
+
+    #[test]
+    fn a_credential_never_reaches_the_log_or_the_panel() {
+        assert_eq!(
+            redact_credentials("auth failed for key sk-ant-api03-ZZZZZZZZZZZZZZZZZZZZZZZZZZ"),
+            "auth failed for key <REDACTED>"
+        );
+        assert_eq!(
+            redact_credentials("token=aaaaaaaaaaaa1234aaaaaaaaaaaaaaaa"),
+            "token=<REDACTED>"
+        );
+        assert_eq!(
+            redact_credentials("{\"apiKey\": \"abcd1234abcd1234abcd1234abcd\"}"),
+            "{\"apiKey\": \"<REDACTED>\"}"
+        );
+        // Ordinary diagnostics survive intact, including long ordinary words and paths.
+        assert_eq!(
+            redact_credentials("Error: cannot find module companion.mjs"),
+            "Error: cannot find module companion.mjs"
+        );
+        assert_eq!(
+            redact_credentials("/Users/someone/Library/Application Support/net.derivon.mindmap"),
+            "/Users/someone/Library/Application Support/net.derivon.mindmap"
+        );
     }
 }

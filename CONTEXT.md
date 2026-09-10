@@ -54,6 +54,14 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 应用内对话能力的纯接口。学习侧和创作侧通过它发送消息、接收流式事件、中止或新建对话；实现可以来自桌面 Pi companion，也可以来自未来的远端服务。学习与创作的状态机只认识这个接口，不感知具体 provider 或进程形态。
 
+**模型配置（model configuration）**
+
+本应用自己的 `models.json` 与 `auth.json`，放在 Tauri 应用配置目录下，语法与 Pi 一致。它们是这个应用的文件：companion 不读也不写 `~/.pi/`，不要求装 Pi CLI。**面板能选到什么，是这两个文件的函数，除此之外什么都不算数**——本机环境变量、Google ADC、AWS profile 提供的凭证一律不采纳。这条不是"传了自己的路径"就自动成立的，需要按凭证归属显式过滤，理由与机制记在 `docs/adr/0010-pi-sdk-companion-process.md`。
+
+**诊断（diagnosis）**
+
+模型目录为空时随目录一起返回的那句原因。空目录是合法的配置状态而不是错误，所以它不走异常通道；但"没有可用模型"单独出现时无法与 companion 没起来区分，因此目录为空时必须带上原因。目录非空时只报真实的加载或组合错误，不报提示。
+
 **整窗模式切换（whole-window mode switch）**
 
 模式之间的切换方式：一次只有一个模式占据整个窗口，切换把整窗换掉，而不是并排、停靠或分屏。从创作进入学习会带走创作里当前选中的概念作为目标，已知取工作区的默认路线种子，因此切换不重新走一遍开局；退回创作时选中、视野和未提交的编辑都不丢。两个模式因此是互斥子树，这也是懒加载边界的切点。决策与被否掉的替代形态记录在 `docs/adr/0001-whole-window-mode-switching.md`。
@@ -221,11 +229,15 @@ v1 是唯一的工作区协议。v1.0.0 之前没有发布过的版本，因此�
 | `src/app/` | `src/app/App.tsx` | composition root、宿主能力选择、应用级模式切换与顶栏，接入不依附模式的工作区同步生命周期 | 增加宿主能力或应用级模式入口 |
 | `src/modes/learning/` | `src/modes/learning/index.ts` | 开局状态机、路线预览、路线学习，以及大图浏览中的学习者操作与应用状态 | 改目标/已知/进度行为或学习侧界面 |
 | `src/modes/authoring/` | `src/modes/authoring/index.ts` | 桌面创作工作流、编辑界面，以及大图浏览中的作者操作 | 增加创作功能或 tag 编辑；同时检查工作区提交契约 |
+| `src/modes/shared/` | `src/modes/shared/index.ts` | 两侧共用的界面构件，只依赖端口，不认识任何一侧的状态机 | 改 Agent 面板一类两侧共享的界面 |
 | `src/workspace/` | `src/workspace/index.ts` | 工作区清单、对象文档、tag、伴随文档的解析、校验与完整内容变更，不做宿主 I/O | 改工作区内容模型、引用影响规则或开局配置 |
 | `src/ports/` | `src/ports/WorkspaceSource.ts`, `src/ports/ConversationProvider.ts`, `src/ports/RouteSolver.ts` | `WorkspaceSource`、`ConversationProvider`、`RouteSolver` 及其它小接口 | 改跨边界能力；随后检查每个实现和契约测试 |
 | `src/hosts/web/` | `src/hosts/web/index.ts` | web composition 与只读端口实现 | 改 web 能力、内置工作区加载或确定性 provider |
 | `src/hosts/desktop/` | `src/hosts/desktop/index.ts` | desktop composition、本地工作区和 Pi SDK bridge | 改本地文件、桌面 IPC 或桌面对话实现 |
 | `src/rendering/` | `src/rendering/index.ts` | 渲染视图模型、事件契约和懒加载的 G6 实现 | 改图的可视表达或图交互事件 |
+| `src/companion/` | `src/companion/index.ts` | 桌面 companion process 的实现：Pi SDK 会话、模型配置与诊断。只在 Node 侧构建，不进任何 webview 构建 | 改模型配置、会话生命周期或 companion 协议 |
+
+`src/companion/` 与 `src/hosts/desktop/` 隔着一个进程边界：桌面宿主实现 `ConversationProvider` 并经受控 IPC 说话，companion 拥有 Pi SDK 与凭证。两侧都不 import 对方。
 
 宿主入口下的 `host.ts` 是构建实际解析的那个模块：`vite --mode desktop` 把 `#host` 指向 `src/hosts/desktop/host.ts`，其余构建指向 `src/hosts/web/host.ts`。应用只依赖这个模块声明的能力与模式；web 宿主不引用创作侧模块，创作侧因此不在 web 构建的模块图里，而不是在运行时被藏起来。应用入口直接 `import` 该文件而不经过 `index.ts` 门面，以免门面的其它导出进入首屏 chunk。
 
