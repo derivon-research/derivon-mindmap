@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Accepted. The turn-level exclusion this decision first recorded is superseded: the application
+and the agent write optimistically, and ordering plus each command's own precondition carry the
+safety.
 
 ## Context
 
@@ -60,14 +62,14 @@ read them ([ADR-0009](0009-persist-learner-records-outside-the-workspace.md),
 checked per entry on the real path, never by string prefix — a prefix check is exactly what let
 `/mnt/finance/data-archived` through an allowance of `/mnt/finance/data`.
 
-The application and the agent never write concurrently. Both are driven by one person in one
-window, so the rule is a turn-level exclusion: while a conversation turn is in flight the
-application suspends autosave and refuses in-application editing, and an unresolved editing draft
-blocks starting a turn until the user saves or discards it. The commit carries its own
-precondition as well — the manifest is re-read and compared against the one the command read — so
-a change that raced loses cleanly instead of overwriting. That is compare-and-swap at the
-manifest, which is the artifact both parties contend for; it is not a lock, and not a whole-tree
-revision.
+The application and the agent write optimistically, as a coding agent's sidebar and its editor
+do: the application autosaves throughout a conversation turn and in-application editing is never
+refused. Ordering and each command's own precondition carry the safety instead. The application
+drains its write-back queue before a turn begins, so the first content the agent reads is the
+content the user has already accepted. A command carries the workspace revision it read, and
+refuses rather than overwrites when the workspace has changed since, so the model re-reads and
+tries again. The two writers may therefore overlap, and the one that raced loses cleanly and says
+so. What is not provided is a lock.
 
 **Atomic means semantically atomic.** A command writes its documents first and replaces the
 manifest last, by temporary file and rename, so the workspace is loadable and truthful at every
@@ -82,6 +84,18 @@ session receives is their intersection. Neither side alone can answer "what may 
 which is the point: a second hand-maintained list is a second thing to keep in step.
 
 ## Rejected alternatives
+
+### Rejected: a turn-level exclusion
+
+The first version of this decision made the two writers exclusive: while a conversation turn was
+in flight the application suspended autosave and refused in-application editing, and an
+unresolved editing draft blocked starting a turn. That is not what a coding agent's editor does.
+VS Code's agent leaves the editor usable, lands its edits and marks them pending for keep-or-undo,
+and settles a race by refusing the write whose file changed in the meantime. Exclusion also bought
+little that ordering does not: it held for the window of one turn only, and it made the sidebar
+unusable for the one thing this application is for — authoring while the agent works. What it was
+protecting stays protected by draining the queue before a turn rather than by refusing to edit
+during one.
 
 ### Rejected: enforcing the path instead of validating the artifact
 
@@ -111,6 +125,11 @@ replacement and changes nothing by itself, though change detection reads it once
 
 ## Consequences
 
+- The exclusion is replaced before it was ever built, and the drain that replaces it is not built
+either: the application autosaves on its own timer, does not flush before a turn begins, and
+records nothing about a turn being in flight. The window is small — the autosave delay is under a
+second, and the agent's first read comes after the user's key press — but it is a window in which
+the agent can read content the user has already replaced.
 - The existing scripts are not yet this surface. Only `crosslink-documents.mjs` writes workspace
   content, only documents, in place, with no precondition; the atomic manifest replacement that
   `SKILL.md` describes is performed by shell `mv` in `references/unix-recipes.md`; and a
