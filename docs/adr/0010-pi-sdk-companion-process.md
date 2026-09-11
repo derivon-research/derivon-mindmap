@@ -114,6 +114,9 @@ explicit follow-up, not a solved problem.
 - Tests that exercise model discovery must be able to determine the whole answer from a
   fixture directory. A test whose result depends on the developer's shell is a defect in
   the test and in the isolation it is meant to prove.
-- Built-in tools are disabled in the first slice. Future tools, mode-specific prompts,
-  OAuth, and secure credential adapters extend the companion without leaking those
-  details into the webview.
+- Built-in tools are disabled in the first slice, and script commands are registered in
+  their place as the only tools; the tool set is constructed per mode, so a session holds only
+  the capabilities its mode grants (see
+  `0011-change-workspace-content-through-the-script-command-surface.md`). Mode-specific prompts,
+  OAuth, and secure credential adapters extend the companion without leaking those details into
+  the webview.
