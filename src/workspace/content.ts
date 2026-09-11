@@ -1,7 +1,8 @@
 import type { WorkspaceCommit } from '../ports/WorkspaceSource';
 import { imageMimeType } from './imageReference';
 import {
-  WORKSPACE_SCHEMA, generateObjectId, isValidWeight, objectSourcePath, parseWorkspaceManifest, serializeWorkspaceManifest,
+  WORKSPACE_ID_RULE, WORKSPACE_SCHEMA, generateObjectId, isValidWeight, isValidWorkspaceId,
+  objectSourcePath, parseWorkspaceManifest, serializeWorkspaceManifest,
   type ConceptPoint, type DerivationHyperedge, type DocumentReference, type ManifestGraph, type TagDeclaration,
   type WorkspaceManifest,
 } from './manifest';
@@ -222,11 +223,17 @@ export function updateObjectDocument(content: WorkspaceContent, intent: UpdateDo
   };
 }
 
-export function createWorkspace(intent: { title: string }): ContentChange {
+export function createWorkspace(intent: { id: string; title: string }): ContentChange {
   const title = intent.title.trim();
   if (!title) throw new Error('工作区名称不能为空');
+  /* Identity is refused here rather than at the first read: a manifest this operation cannot
+   * name is not a workspace it may create. */
+  if (!isValidWorkspaceId(intent.id)) {
+    throw new Error(`工作区 id「${intent.id}」不可用：必须是${WORKSPACE_ID_RULE}`);
+  }
   const graph = serializeWorkspaceManifest({
     schema: WORKSPACE_SCHEMA,
+    id: intent.id,
     document: { title, description: '' },
     tags: [],
     graph: { points: [], hyperedges: [] },

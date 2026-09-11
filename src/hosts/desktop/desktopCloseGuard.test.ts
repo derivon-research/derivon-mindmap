@@ -15,7 +15,7 @@ it('uses the native SDK close path, permits confirmed close, and unregisters the
   const destroy = vi.fn();
   mockWindows('main');
   mockIPC((command) => {
-    if (command === 'read_workspace_source_graph') return createWorkspace({ title: 'Test' }).content.graphText;
+    if (command === 'read_workspace_source_graph') return createWorkspace({ id: 'test-workspace', title: 'Test' }).content.graphText;
     if (command === 'plugin:window|destroy') {
       expect(capability.permissions).toContain('core:window:allow-destroy');
       destroy();

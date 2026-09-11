@@ -15,6 +15,12 @@ const MAX_MILLIS: u64 = 5_000;
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceDocument {
     pub schema: String,
+    /// Carried, not interpreted, for the same reason `document` is: the manifest is validated at
+    /// one boundary, and Rust only reads the graph out of it. It must survive a write, though —
+    /// `write_workspace_files` serializes this struct back to `.derivon/workspace.json`, and the
+    /// workspace identity is the key learner records are stored under.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub id: Value,
     /// Only the graph is projected onto the mathematical model; manifest metadata is
     /// optional, so a request may carry the graph alone.
     #[serde(default)]
@@ -318,6 +324,7 @@ mod tests {
     fn workspace(points: &[&str], edges: &[(&str, f64, &[&str], &str)]) -> WorkspaceDocument {
         WorkspaceDocument {
             schema: "derivon.workspace/v1".to_owned(),
+            id: Value::Null,
             document: serde_json::json!({}),
             graph: WorkspaceGraph {
                 points: points

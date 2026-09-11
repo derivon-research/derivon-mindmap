@@ -6,7 +6,7 @@ import {
 } from './integrity';
 
 const graph = JSON.stringify({
-  schema: WORKSPACE_SCHEMA, document: { title: 'T', description: '' }, tags: [],
+  schema: WORKSPACE_SCHEMA, id: 'test-workspace', document: { title: 'T', description: '' }, tags: [],
   graph: {
     points: [
       { id: 'c-a', data: { label: 'A', document: 'docs/concept-a' } },

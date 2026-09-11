@@ -3,7 +3,7 @@ import type { WorkspaceCommit, WritableWorkspaceSource } from '../ports/Workspac
 import { createConcept, createWorkspace } from '../workspace/index';
 import { openWorkspaceSession } from './index';
 
-function memorySource(graph = createWorkspace({ title: 'Test' }).content.graphText) {
+function memorySource(graph = createWorkspace({ id: 'test-workspace', title: 'Test' }).content.graphText) {
   const files = new Map<string, string>([['.derivon/workspace.json', graph]]);
   const assets = new Map<string, Uint8Array>();
   const commits: WorkspaceCommit[] = [];
@@ -41,7 +41,7 @@ function memorySource(graph = createWorkspace({ title: 'Test' }).content.graphTe
 afterEach(() => vi.useRealTimers());
 
 function lazyDocumentSource() {
-  const content = createConcept(createWorkspace({ title: 'Lazy' }).content, { label: 'A' }).content;
+  const content = createConcept(createWorkspace({ id: 'test-workspace', title: 'Lazy' }).content, { label: 'A' }).content;
   const fixture = memorySource(content.graphText);
   const path = `${content.graph.points[0].data.document}/document.md`;
   fixture.files.set(path, 'Original');
@@ -166,7 +166,7 @@ describe('application-scoped workspace synchronization', () => {
     source.revision = async () => String(revision);
     const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50 });
 
-    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    files.set('.derivon/workspace.json', createWorkspace({ id: 'test-workspace', title: 'External' }).content.graphText);
     revision += 1;
     await vi.advanceTimersByTimeAsync(50);
     expect(session.reader.getSnapshot()).toMatchObject({
@@ -174,7 +174,7 @@ describe('application-scoped workspace synchronization', () => {
     });
 
     session.authoring!.protectDraft('new-concept', true);
-    files.set('.derivon/workspace.json', createWorkspace({ title: 'Conflict' }).content.graphText);
+    files.set('.derivon/workspace.json', createWorkspace({ id: 'test-workspace', title: 'Conflict' }).content.graphText);
     revision += 1;
     await vi.advanceTimersByTimeAsync(50);
     expect(session.reader.getSnapshot()).toMatchObject({
@@ -203,7 +203,7 @@ describe('application-scoped workspace synchronization', () => {
     assets.set(path, new Uint8Array([1]));
     const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50 });
     session.authoring!.createConcept({ label: 'Local' });
-    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    files.set('.derivon/workspace.json', createWorkspace({ id: 'test-workspace', title: 'External' }).content.graphText);
     assets.set(path, new Uint8Array([2]));
     revision = 'external';
     await vi.advanceTimersByTimeAsync(50);
@@ -228,7 +228,7 @@ describe('application-scoped workspace synchronization', () => {
     source.commit = async (changes) => { await commit(changes); revision = 'saved'; return revision; };
     const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50, autosaveDelayMs: 100 });
     session.authoring!.createConcept({ label: 'Local' });
-    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    files.set('.derivon/workspace.json', createWorkspace({ id: 'test-workspace', title: 'External' }).content.graphText);
     revision = 'external';
     await vi.advanceTimersByTimeAsync(200);
     expect(commits).toEqual([]);
@@ -317,7 +317,7 @@ describe('application-scoped workspace synchronization', () => {
     const { source, files, commits } = memorySource();
     const session = await openWorkspaceSession(source, { authoring: source });
     session.authoring!.protectDraft('new-concept', true);
-    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    files.set('.derivon/workspace.json', createWorkspace({ id: 'test-workspace', title: 'External' }).content.graphText);
     expect(await session.reload()).toBe('protected');
     expect(session.reader.getSnapshot()).toMatchObject({
       hasDrafts: true, hasProtectedChanges: true, saveState: 'saved', content: { title: 'Test' },
@@ -347,7 +347,7 @@ describe('application-scoped workspace synchronization', () => {
     };
     const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 10_000 });
     session.authoring!.createConcept({ label: 'Local' });
-    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    files.set('.derivon/workspace.json', createWorkspace({ id: 'test-workspace', title: 'External' }).content.graphText);
     revision += 1;
 
     await session.flush();
@@ -404,7 +404,7 @@ describe('application-scoped workspace synchronization', () => {
       data: { document: `docs/derivation-${derivation.slice(2)}` } });
     reopened.dispose();
 
-    files.set('.derivon/workspace.json', createWorkspace({ title: 'External' }).content.graphText);
+    files.set('.derivon/workspace.json', createWorkspace({ id: 'test-workspace', title: 'External' }).content.graphText);
     source.revision = async () => 'external';
     await session.reload();
     expect(() => stale.updateDerivationStructure({ derivationId: derivation, tails: [], head: a, weight: 1 })).toThrow();

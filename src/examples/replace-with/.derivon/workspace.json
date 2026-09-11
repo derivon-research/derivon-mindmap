@@ -1,5 +1,6 @@
 {
   "schema": "derivon.workspace/v1",
+  "id": "replace-with",
   "document": {
     "title": "A + B → X",
     "description": "C、D 位于替换关系之外；点集视图使用 A、B，替换视图使用 X。"

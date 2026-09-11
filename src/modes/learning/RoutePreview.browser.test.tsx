@@ -18,7 +18,7 @@ afterEach(async () => { if (root) await act(async () => root?.unmount()); root =
 
 function workspace(): WorkspaceContent {
   return parseWorkspaceContent({ graph: JSON.stringify({
-    schema: WORKSPACE_SCHEMA,
+    schema: WORKSPACE_SCHEMA, id: 'test-workspace',
     document: { title: '路线工作区', description: '' },
     tags: [{ id: 'basics', label: '基础' }, { id: 'advanced', label: '进阶' }],
     graph: { points: [

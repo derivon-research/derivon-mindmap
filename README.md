@@ -220,6 +220,14 @@ my-workspace/
 约束：
 
 - `.derivon/workspace.json` 是图结构和共享视图的事实来源。
+- 清单顶层有一个 **工作区 id**：用户命名、事后不可改（改它等于换工作区身份），是工作区身份的写法，
+  也是学习者记录在应用数据目录下的目录名。它必须是一段文件系统安全的路径名：小写 ASCII 字母
+  （`a`–`z`）、数字与连字符，首尾必须是字母或数字，最长 64 字符，不含 `/`、`\`、空白与 `..`，
+  也不是 Windows 保留的设备名（`con`、`prn`、`aux`、`nul`、`com1`–`com9`、`lpt1`–`lpt9`）。同 id 即同身份——
+  任何两份清单拥有同一个 id，就是同一个工作区与同一份学习者记录，复制工作区共享记录；
+  `document.title` 只是可变的显示名。大小写不需要折叠：大写字母不在字母表里，所以只在大小写上
+  不同的两个 id 不会同时存在，读到就照实报错。没有 `id` 的清单是一份坏工作区，不会自动补、
+  不做输入方言，也不从文件夹路径推一个出来。
 - 每个概念和推导独占一个文档目录；不同对象不能共享目录。
 - 每个对象只持久化 `document.md`，其中可以内嵌 HTML/CSS/JavaScript；浏览时才在隔离预览中渲染。
   工作区清单不引用 HTML 页面，创建、编辑和自动保存也不会生成它。
@@ -235,6 +243,7 @@ my-workspace/
 ```json
 {
   "schema": "derivon.workspace/v1",
+  "id": "example-workspace",
   "document": {
     "title": "示例知识图",
     "description": "从 A 推导 B"
@@ -280,8 +289,9 @@ my-workspace/
 `description` 在概念和推导上都可选，是给选择器、搜索结果和列表用的一句话，不是文档的摘要。
 推导的 `label` 也可选；不写就按端点显示成「A + B → C」。
 
-v1 是唯一的工作区协议，没有旧版本需要迁移：schema 串不是 `derivon.workspace/v1`、或者清单里
-还留着 `view` 或 `format`，都会被当作一份坏工作区照实报错。
+v1 是唯一的工作区协议，没有旧版本需要迁移：schema 串不是 `derivon.workspace/v1`、缺少顶层 `id`、
+`id` 不是一段可用的路径名、清单里还留着 `view` 或 `format`，或者顶层出现了协议未定义的键，
+都会被当作一份坏工作区照实报错。
 
 ### 开局配置
 
@@ -309,6 +319,16 @@ v1 是唯一的工作区协议，没有旧版本需要迁移：schema 串不是 
 规则：`next` 缺省表示顺文档顺序落到下一题，`finish` 是结束开局的保留 id；多选题的跳转挂在题上，
 选项不能各自跳转。清单不为这份文档增加字段，清单版本也不随它移动；没有配置的工作区仍然有效，
 学习侧走通用入口。
+
+### 学习者记录
+
+学习者的掌握与已确认路线不在工作区里。它们以工作区 `id` 为键存在应用数据目录下的
+`learner-records/<工作区 id>/` 里，协议分别为 `derivon.learning/v1`（`state.json`）与
+`derivon.routes/v1`（`routes.json`）。目录布局只有一份说明，与字段、约束、`basis` 的覆盖范围
+与失效行为同在 [`docs/learner-records.md`](docs/learner-records.md)。
+它们不进工作区清单、不进 `WorkspaceSource`、不参与工作区同步，也不进工作区的 `revision`；
+复制工作区共享同一份记录。应用自身的界面与脚本命令面是两条写入路径，但必须产出同一份
+规范的工件。路线上的完成标记只在显示时来自 `state.json`，路线记录本身不携带任何完成标记。
 
 仓库内的 v0.4.2 兼容工作区 fixture 位于 [`src/examples/replace-with`](src/examples/replace-with)，其中包含 v1 不再提供产品行为的旧 replacement 数据；原生路线验收 fixture 位于 [`src-tauri/tests/fixtures/complete-workspace`](src-tauri/tests/fixtures/complete-workspace)。
 

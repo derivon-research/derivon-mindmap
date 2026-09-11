@@ -1,5 +1,6 @@
 {
   "schema": "derivon.workspace/v1",
+  "id": "complete-workspace",
   "document": {
     "title": "Complete symbolic workspace",
     "description": "Stable in-repository fixture covering the complete Derivon workspace surface."

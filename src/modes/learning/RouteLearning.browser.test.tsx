@@ -29,7 +29,7 @@ function workspace(documents: WorkspaceContent['documents'] = {
   'docs/d2/document.md': { status: 'ready', text: '<main>第二步的推导正文</main>' },
 }): WorkspaceContent {
   return parseWorkspaceContent({ graph: JSON.stringify({
-    schema: WORKSPACE_SCHEMA,
+    schema: WORKSPACE_SCHEMA, id: 'test-workspace',
     document: { title: '路线工作区', description: '' },
     tags: [{ id: 'basics', label: '基础' }],
     graph: { points: [

@@ -39,7 +39,7 @@ const CONFIG: OrientationConfig = {
 
 function workspace(): WorkspaceContent {
   return parseWorkspaceContent({ graph: JSON.stringify({
-    schema: WORKSPACE_SCHEMA,
+    schema: WORKSPACE_SCHEMA, id: 'test-workspace',
     document: { title: '开局工作区', description: '' },
     tags: [{ id: 'basics', label: '基础' }],
     graph: { points: [

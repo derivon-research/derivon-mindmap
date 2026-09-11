@@ -43,7 +43,7 @@ export function createGeneratedWorkspaceGraph(conceptCount: number): GeneratedWo
     data: { document: `docs/derivation-${index}` },
   }));
   const graph = `${JSON.stringify({
-    schema: 'derivon.workspace/v1',
+    schema: 'derivon.workspace/v1', id: 'generated-workspace',
     document: { title: `Authoring performance ${conceptCount}`, description: 'Generated cyclic B-hypergraph' },
     tags: [],
     graph: { points, hyperedges },

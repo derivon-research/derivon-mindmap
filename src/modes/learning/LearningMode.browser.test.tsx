@@ -47,7 +47,7 @@ it('retains an unchanged hidden overview and invalidates changed topology until 
 
 function content(): WorkspaceContent {
   return parseWorkspaceContent({ graph: JSON.stringify({
-    schema: WORKSPACE_SCHEMA,
+    schema: WORKSPACE_SCHEMA, id: 'test-workspace',
     document: { title: '工作区', description: '' },
     tags: [],
     graph: { points: [

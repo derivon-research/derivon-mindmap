@@ -1,5 +1,6 @@
 {
   "schema": "derivon.workspace/v1",
+  "id": "math-reforged",
   "document": {
     "description": "依据 Sheldon Axler《线性代数应该这样学（第四版）》重构的非线性知识图。概念节点仅承载定义；超边承载书中明确的推导关系。",
     "title": "线性代数应该这样学：概念与推导图"

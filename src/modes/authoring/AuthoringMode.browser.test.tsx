@@ -131,7 +131,7 @@ it('opens the deletion plan from the object page and leaves no page behind once 
   const authoring = fakeAuthoringCommands({
     deletionPreview: vi.fn(async (plan) => ({
       impact: referenceImpact(parseWorkspaceContent({ graph: JSON.stringify({
-        schema: WORKSPACE_SCHEMA, document: { title: 'T', description: '' }, tags: [],
+        schema: WORKSPACE_SCHEMA, id: 'test-workspace', document: { title: 'T', description: '' }, tags: [],
         graph: { points: content.graph.points, hyperedges: [] },
       }), documents: Object.fromEntries(content.graph.points.map((point) =>
         [`${point.data.document}/document.md`, { status: 'ready' as const, text: '' }])) }), plan),
