@@ -7,7 +7,14 @@ const desktopBaseURL = `http://127.0.0.1:${desktopPort}`;
 
 export default defineConfig({
   testDir: './tests',
-  timeout: 30_000,
+  timeout: 60_000,
+  /**
+   * These are eventual states — the application booted, the graph settled — not latency
+   * budgets; those are measured by the separate performance configurations, alone on the
+   * machine. Five seconds made the verdict depend on how loaded the machine was, because
+   * the graph-heavy specs saturate every worker in parallel.
+   */
+  expect: { timeout: 15_000 },
   use: {
     trace: 'retain-on-failure',
   },

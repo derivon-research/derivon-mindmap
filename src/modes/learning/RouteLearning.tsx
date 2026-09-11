@@ -106,7 +106,10 @@ export function RouteLearning({
         <PanelControls state={panels.tutor} expandLabel="展开对话"
           onChange={(state) => movePanel('tutor', state)} />
       </header>
-      <LearningAgentPane key={current?.conceptId ?? 'done'}
+      {/* Not keyed on the step: the companion session outlives a step, so a transcript
+          that vanished at every step would disagree with what the model remembers.
+          Only 新对话 ends a conversation. */}
+      <LearningAgentPane
         quickQuestions={current ? premiseQuestions(steps, current, label) : []}
         onWideAnswer={() => movePanel('tutor', 'expanded')} conversation={conversation} />
     </aside>}

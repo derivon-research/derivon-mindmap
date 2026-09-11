@@ -4,7 +4,7 @@
   "version": "0.4.2",
   "identifier": "net.derivon.mindmap",
   "build": {
-    "beforeDevCommand": "npm run dev:desktop",
+    "beforeDevCommand": "npm run prepare:companion && npm run dev:desktop",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build:desktop",
     "frontendDist": "../dist"

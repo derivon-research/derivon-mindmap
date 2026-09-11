@@ -8,7 +8,7 @@ export function LearningAgentPane({ quickQuestions, onWideAnswer, conversation }
   conversation?: ConversationProvider;
 }) {
   return <ConversationPane
-    variant="learning"
+    mode="learning"
     provider={conversation}
     placeholder="卡在哪一步？说出来。"
     quickQuestions={quickQuestions}

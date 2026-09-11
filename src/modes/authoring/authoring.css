@@ -1,8 +1,8 @@
 .authoring-workbench { --relations-width: 240px; --agent-width: 340px; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #f7f8fa; color: #24272d; font-size: 14px; letter-spacing: 0; }
-.authoring-workbench button, .authoring-workbench input, .authoring-workbench select, .authoring-workbench textarea { font: inherit; letter-spacing: 0; }
-.authoring-workbench button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 7px 12px; border: 1px solid #e0e3e8; border-radius: 5px; background: #fff; color: inherit; line-height: 1.4; }
-.authoring-workbench button:hover:not(:disabled) { border-color: #9fbfb5; background: #edf3f1; }
-.authoring-workbench button:disabled { cursor: not-allowed; opacity: .45; }
+.authoring-workbench :is(button, input, select, textarea):not(:where([data-shared-pane] *)) { font: inherit; letter-spacing: 0; }
+.authoring-workbench button:not(:where([data-shared-pane] *)) { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 7px 12px; border: 1px solid #e0e3e8; border-radius: 5px; background: #fff; color: inherit; line-height: 1.4; }
+.authoring-workbench button:hover:not(:disabled):not(:where([data-shared-pane] *)) { border-color: #9fbfb5; background: #edf3f1; }
+.authoring-workbench button:disabled:not(:where([data-shared-pane] *)) { cursor: not-allowed; opacity: .45; }
 .authoring-workbench :is(button, input, select, textarea):focus-visible { outline: 2px solid #168b72; outline-offset: 2px; }
 .authoring-workbench :is(h1, h2, p) { overflow-wrap: anywhere; }
 .authoring-workbench svg { flex: none; }
@@ -103,9 +103,6 @@
 .authoring-graph-caption { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; color: #717782; font-size: 12px; }
 .authoring-agent-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .authoring-agent-context { display: flex; align-items: center; gap: 7px; padding: 9px 14px; border-bottom: 1px solid #e0e3e8; color: #717782; font-size: 11px; overflow-wrap: anywhere; }
-.authoring-agent-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; color: #717782; text-align: center; }
-.authoring-agent-empty strong { color: #24272d; font-size: 13px; }
-.authoring-agent-empty p { margin: 3px 0; font-size: 12px; }
 .authoring-diagnostics { flex: none; max-height: 120px; overflow: auto; margin: 0; padding: 7px 12px; border-top: 1px solid #fed7aa; background: #fff7ed; color: #9a3412; font-size: 12px; }
 .authoring-diagnostics p { margin: 6px 0; }
 @media (min-width: 701px) and (max-width: 1150px) { .authoring-workbench { --relations-width: 200px; --agent-width: 280px; } .authoring-current-object { display: none; } .authoring-focus-editor { padding: 18px; } }
@@ -129,26 +126,8 @@
   .authoring-document iframe { min-height: 420px; }
   .authoring-graph-page { padding: 16px 12px; }
 }
-.authoring-agent-transcript { flex: 1; min-height: 0; overflow: auto; padding: 16px 14px; }
-.authoring-agent-welcome { display: flex; align-items: center; gap: 9px; color: #717782; padding: 18px 0; font-size: 13px; }
-.authoring-agent-exchange + .authoring-agent-exchange { margin-top: 22px; padding-top: 18px; border-top: 1px solid #e0e3e8; }
-.authoring-agent-prompt { border-radius: 6px; background: #f2f4f7; padding: 10px 12px; }
-.authoring-agent-prompt p { margin: 5px 0 0; white-space: pre-wrap; font-size: 13px; }
-.authoring-agent-response { margin-top: 16px; }
-.authoring-agent-response > strong { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
-.authoring-agent-response small, .authoring-agent-prompt small { color: #717782; font-size: 10px; }
-.authoring-agent-response p { margin: 10px 0; font-size: 13px; line-height: 1.7; }
-.authoring-agent-tool { display: flex; gap: 8px; padding: 10px 0; border-top: 1px solid #e0e3e8; font-size: 12px; }
-.authoring-agent-tool small { display: block; margin-top: 4px; }
-.authoring-agent-composer { flex: none; padding: 12px; border-top: 1px solid #e0e3e8; }
-.authoring-agent-composer textarea { display: block; width: 100%; min-height: 74px; max-height: 140px; resize: vertical; border: 1px solid #e0e3e8; border-radius: 5px; padding: 10px; font-size: 13px; line-height: 1.6; }
-.authoring-agent-composer footer { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-.authoring-agent-composer select { min-width: 0; max-width: 190px; padding: 5px 8px; border: 1px solid #e0e3e8; border-radius: 5px; background: white; font-size: 11px; }
 @media (max-width: 700px) {
-  .authoring-agent-composer { padding: 8px; }
-  .authoring-agent-composer textarea { min-height: 54px; max-height: 80px; }
   .authoring-agent-context { padding: 5px 12px; }
-  .authoring-agent-transcript { padding: 10px 12px; }
 }
 
 
