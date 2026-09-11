@@ -105,12 +105,13 @@ function SessionModes({ session, state, workspace, modes, routeSolver, conversat
           targetIds={state.learningTargetIds} knownIds={state.learningKnownIds} onChangeTargets={onChangeTargets}
           onChangeKnown={onChangeKnown} view={state.learningView} onEnterView={onEnterLearningView}
           onConfirmRoute={onConfirmRoute} onRouteInvalidated={onRouteInvalidated} routeSolver={routeSolver}
-          readAsset={readAsset} readDocuments={readDocuments} conversation={conversationProviders?.learning} />
+          readAsset={readAsset} readDocuments={readDocuments} conversation={conversationProviders?.learning}
+          drainPendingChanges={session.flush} />
           : AuthoringMode && <AuthoringMode key={snapshot.authoringEpoch} active={mode === state.mode} workspace={identity} content={snapshot.content}
             authoring={session.authoring} readAsset={readAsset} readDocuments={readDocuments} routeSolver={routeSolver} selectedConceptId={state.selectedConceptId} onSelectConcept={onSelectConcept}
             syncStatus={workspace.authoringSource && state.mode === 'authoring' ? { state: snapshot.saveState, label: saveLabel } : undefined}
             onRetrySync={snapshot.saveState === 'error' ? () => { void session.flush(); } : undefined}
-            conversation={conversationProviders?.authoring} />}
+            conversation={conversationProviders?.authoring} drainPendingChanges={session.flush} />}
       </Suspense>
     </div>)}
   </>;

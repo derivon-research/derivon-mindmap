@@ -1,12 +1,13 @@
 import { Bot, FileText, MessageSquarePlus, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import type { ConversationProvider } from '../../ports/ConversationProvider';
-import { ConversationPane } from '../shared/ConversationPane';
+import { ConversationPane } from '../shared';
 
-export function AuthoringAgentPane({ open, onToggle, contextLabel, conversation }: {
+export function AuthoringAgentPane({ open, onToggle, contextLabel, conversation, drainPendingChanges }: {
   open: boolean;
   onToggle: () => void;
   contextLabel: string;
   conversation?: ConversationProvider;
+  drainPendingChanges?: () => Promise<void>;
 }) {
   return <aside className={`authoring-agent-pane ${open ? '' : 'is-collapsed'}`} aria-label="创作 Agent">
     <header>
@@ -35,6 +36,7 @@ export function AuthoringAgentPane({ open, onToggle, contextLabel, conversation 
         provider={conversation}
         placeholder="描述你想完成的修改…"
         fallbackMessage="未连接模型，未修改工作区。"
+        drainPendingChanges={drainPendingChanges}
       />
     </div>
   </aside>;

@@ -4,6 +4,7 @@ import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
 import type { LearningModeProps } from '../../app/host';
+import type { ConversationProvider } from '../../ports/ConversationProvider';
 import type { RouteSolver } from '../../ports/RouteSolver';
 import { fixtureRouteSolver } from '../../testing/routeSolver';
 import { WORKSPACE_SCHEMA, parseWorkspaceContent, type WorkspaceContent } from '../../workspace/index';
@@ -43,19 +44,22 @@ function workspace(documents: WorkspaceContent['documents'] = {
   }), documents });
 }
 
-function Harness({ content = workspace(), view = 'route' as const, onEnterView = vi.fn(), onConfirmRoute = vi.fn(), onRouteInvalidated = vi.fn() }: {
+function Harness({ content = workspace(), view = 'route' as const, onEnterView = vi.fn(), onConfirmRoute = vi.fn(), onRouteInvalidated = vi.fn(), conversation, drainPendingChanges }: {
   content?: WorkspaceContent;
   view?: LearningModeProps['view'];
   onEnterView?: LearningModeProps['onEnterView'];
   onConfirmRoute?: LearningModeProps['onConfirmRoute'];
   onRouteInvalidated?: LearningModeProps['onRouteInvalidated'];
+  conversation?: LearningModeProps['conversation'];
+  drainPendingChanges?: LearningModeProps['drainPendingChanges'];
 }) {
   const [targets, setTargets] = useState<readonly string[]>(['c']);
   const [known, setKnown] = useState<readonly string[]>(['a']);
   return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
     targetIds={targets} knownIds={known} routeSolver={fixtureRouteSolver()}
     view={view} onEnterView={onEnterView} onConfirmRoute={onConfirmRoute}
-    onRouteInvalidated={onRouteInvalidated} onChangeTargets={setTargets} onChangeKnown={setKnown} />;
+    onRouteInvalidated={onRouteInvalidated} onChangeTargets={setTargets} onChangeKnown={setKnown}
+    conversation={conversation} drainPendingChanges={drainPendingChanges} />;
 }
 
 function ControlledContent({ content, onRouteInvalidated }: {
@@ -321,4 +325,20 @@ it('offers an Agent window that answers from the graph and says plainly that no 
   await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
   await page.getByRole('button', { name: '发送消息' }).click();
   expect(container.textContent).toContain('未连接模型，没有生成任何讲解');
+});
+
+it('drains the workspace write-back queue on the learning side too, before the Agent reads', async () => {
+  const order: string[] = [];
+  const provider: ConversationProvider = {
+    send: async () => { order.push('send'); },
+    abort: async () => {}, newConversation: async () => {}, setWorkspace: async () => {},
+    setModel: async () => {}, listModels: async () => ({ models: [] }), subscribe: () => () => {},
+  };
+  await render({ conversation: provider, drainPendingChanges: async () => { order.push('drain'); } });
+
+  await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
+  await page.getByRole('button', { name: '发送消息' }).click();
+
+  // The learning session reads the same disk, so the same rule applies here.
+  await expect.poll(() => order).toEqual(['drain', 'send']);
 });
