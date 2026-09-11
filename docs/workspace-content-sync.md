@@ -202,6 +202,46 @@ or arbitrary-file existence guarantee is claimed.
   "工作区在读取期间持续变化，无法取得一致内容", and a genuinely unreadable workspace still
   reports its error.
 
+## Delivered In #96
+
+- Change detection no longer reads the whole workspace on every poll. A revision is still a hash
+  of every file's content digest, but a repeated acquisition compares a cheap signal — size,
+  modification time and, where the platform reports one, inode change time — and reads the bytes
+  only of the files whose signal moved. Files that held still keep the digest read from their
+  bytes, so an unchanged workspace costs one metadata walk per poll instead of a recursive read.
+  The cache is per process and keyed by canonical root. It keeps an observation while the
+  workspace is still being watched and drops idle ones once it is carrying more than it is
+  willing to, so a second window cannot evict the workspace a poll is about to reuse. The first
+  acquisition of a workspace and the acquisition after a commit read every file again: a commit
+  discards what the cache remembered, so the version a poll reports after a write is the
+  content-verified one that write predicted.
+- The comparison runs over the same traversal a full verification uses, so what counts as
+  workspace content cannot drift between the two. Root `.git` is still skipped, a symlink still
+  refuses the whole acquisition, an unreadable file or directory still contributes an
+  access-error/metadata fingerprint and is still not claimed to have been verified, and empty
+  directories still change nothing. Added, renamed and removed files are compared by path rather
+  than inferred from a directory timestamp, so they are seen.
+- What the cheap signal cannot prove is not claimed. A change that leaves size, modification time
+  and — where the platform reports one — change time identical is not observed by a poll, and the
+  poll does not pretend otherwise: it reports the version it last verified from bytes and invents
+  nothing. On a platform that reports no change time the signature is size and modification time,
+  so the limit is wider there, and the code says so instead of presenting a guess as certainty.
+  No write rests on that observation anyway — every commit verifies the whole source from bytes,
+  so a change the poll did not see refuses the commit instead of being overwritten by it. The
+  poll's accuracy and the write's certainty are two different questions, and only the second is
+  answered by reading everything.
+- Tests assert both the cost and the equivalence. A cold observation reads every file, an
+  unchanged workspace reads none, a one-file change reads one, and the full verification a commit
+  performs still reads them all. The cheap observation concludes exactly what reading every file
+  concludes after a same-length content change, a file touched without new content, an empty
+  directory appearing and going, and files added, renamed and removed; a content change that
+  keeps the modification time is still detected; a commit leaves no cheap observation behind for
+  the poll after it; a refused acquisition leaves no cache behind for the next poll; the cache
+  drops an idle observation only once it is over its bound; and an unreadable file is still a
+  localized diagnostic that agrees with the full walk. An ignored budget test holds the cost
+  claim: twenty polls over an unchanged 64 MiB workspace cost less than the first acquisition of
+  it.
+
 ## Markdown-Only, On-Demand Documents
 
 [ADR-0008](adr/0008-persist-markdown-not-rendered-pages.md) supersedes the dual-file

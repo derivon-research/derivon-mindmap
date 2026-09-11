@@ -124,9 +124,15 @@ its target and lives for milliseconds.
   deferred where there is (the poll path), so a workspace the agent is writing to no longer turns
   a retry scheduled for one second later into an error banner. A read that fails for any other
   reason — an unparseable manifest, a refused file — is still reported on both paths.
-- Change detection costs a recursive byte hash of the whole workspace on every poll, twice per
-  acquisition attempt. Agent writes make that cost visible. It is a performance question, not a
-  boundary one.
+- Change detection no longer costs a recursive byte hash of the whole workspace on every poll.
+  A repeated acquisition compares a cheap signal — size, modification time and, where the
+  platform reports one, inode change time — reads the bytes only of the files whose signal moved,
+  and keeps the digest it read for the rest. The first acquisition still reads everything, and
+  the value is still a hash of every file's content digest, so the token the poll compares is the
+  one a full read would produce. Cheap signal equality is an observation, not a proof, and no
+  write is authorized on it: a commit verifies the whole source from bytes before it writes, so a
+  change the poll did not see refuses the commit instead of being overwritten by it. It was, and
+  remains, a performance question; the boundary never depended on the poll.
 - Adopting an external change clears the loaded document and asset caches, so every committed
   change costs the application a re-read. That is a cost, not a corruption.
 - Removing the required dry run removes the audit surface that `crosslink-documents.mjs --all

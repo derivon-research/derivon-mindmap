@@ -1,10 +1,12 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
-use std::time::UNIX_EPOCH;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -485,6 +487,7 @@ where
         }
         let revision = workspace_source_revision_from_fingerprints(&files);
         create_workspace_source_files(&prepared)?;
+        forget_workspace_source_observation(root);
         return Ok(revision);
     }
 
@@ -521,6 +524,7 @@ where
     }
     let revision = workspace_source_revision_from_fingerprints(&files);
     apply_prepared_workspace_source_changes(&prepared, apply)?;
+    forget_workspace_source_observation(root);
     Ok(revision)
 }
 
@@ -815,30 +819,199 @@ fn unreadable_source_fingerprint(path: &Path, error: &std::io::Error) -> Result<
     Ok(hasher.finalize().to_vec())
 }
 
-fn collect_workspace_source_fingerprints(
-    root: &Path,
-    directory: &Path,
-    files: &mut BTreeMap<String, Vec<u8>>,
-) -> Result<(), String> {
+/// The cheap signal a poll compares before it reads a file's bytes again: how large it is,
+/// when it was last modified, and — where the platform reports one — when its inode last
+/// changed.
+///
+/// Size and modification time alone would make "the modification time did not move" read as
+/// "the content did not change", and a writer that rewrites a file and restores its
+/// modification time would then be invisible to a poll. The inode change time is not settable
+/// from userspace, so that write moves it too. Where no change time is available the signature
+/// is size and modification time, and that limit is stated rather than hidden: a change leaving
+/// both identical is not observed by a poll. It is still caught by the full content
+/// verification every commit performs, which refuses the commit instead of overwriting it.
+#[derive(Clone, PartialEq, Eq)]
+struct SourceEntrySignature {
+    length: u64,
+    modified_nanos: Option<u128>,
+    #[cfg(unix)]
+    changed: Option<(i64, i64)>,
+}
+
+impl SourceEntrySignature {
+    fn of(metadata: &fs::Metadata) -> Self {
+        #[cfg(unix)]
+        let changed = {
+            use std::os::unix::fs::MetadataExt;
+            Some((metadata.ctime(), metadata.ctime_nsec()))
+        };
+        Self {
+            length: metadata.len(),
+            modified_nanos: metadata
+                .modified()
+                .ok()
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_nanos()),
+            #[cfg(unix)]
+            changed,
+        }
+    }
+}
+
+/// A digest that came from reading a file's bytes, kept so an unchanged file does not have to
+/// be read again by the next poll.
+struct CachedSourceFile {
+    signature: SourceEntrySignature,
+    digest: Vec<u8>,
+}
+
+/// The last cheap observation of each workspace this process is still watching, keyed by
+/// canonical root.
+type CachedSourceFiles = BTreeMap<String, CachedSourceFile>;
+
+struct RetainedWorkspaceObservation {
+    root: PathBuf,
+    files: CachedSourceFiles,
+    last_used: Instant,
+}
+
+type WorkspaceSourceObservations = Mutex<Vec<RetainedWorkspaceObservation>>;
+
+static WORKSPACE_SOURCE_OBSERVATIONS: OnceLock<WorkspaceSourceObservations> = OnceLock::new();
+
+/// How long an observation survives without being used. A workspace being polled is used every
+/// second, so this expires only workspaces this process has stopped watching.
+const RETAINED_OBSERVATION_IDLE: Duration = Duration::from_secs(300);
+
+/// How many observations the cache carries before it starts dropping idle ones. The bound is
+/// applied to idle entries only, and that is the point: evicting the entry a poll is about to
+/// reuse would make switching back to a workspace cost a full read, and would let one window's
+/// work decide another window's cost.
+const RETAINED_WORKSPACE_OBSERVATIONS: usize = 8;
+
+fn workspace_source_observations() -> &'static WorkspaceSourceObservations {
+    WORKSPACE_SOURCE_OBSERVATIONS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn take_workspace_source_observation(root: &Path) -> CachedSourceFiles {
+    let mut observations = workspace_source_observations()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    match observations.iter().position(|observation| observation.root == root) {
+        Some(index) => observations.remove(index).files,
+        None => CachedSourceFiles::new(),
+    }
+}
+
+fn retain_workspace_source_observation(root: &Path, files: CachedSourceFiles) {
+    let mut observations = workspace_source_observations()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    observations.retain(|observation| observation.root != root);
+    let now = Instant::now();
+    observations.push(RetainedWorkspaceObservation {
+        root: root.to_owned(),
+        files,
+        last_used: now,
+    });
+    prune_workspace_source_observations(&mut observations, now);
+}
+
+/// Drop observations no poll has used for a while, once the cache carries more than it is
+/// willing to. `now` is a parameter rather than a call to the clock so the rule can be tested
+/// without waiting for it.
+fn prune_workspace_source_observations(
+    observations: &mut Vec<RetainedWorkspaceObservation>,
+    now: Instant,
+) {
+    if observations.len() <= RETAINED_WORKSPACE_OBSERVATIONS {
+        return;
+    }
+    let expiry = now - RETAINED_OBSERVATION_IDLE;
+    observations.retain(|observation| observation.last_used >= expiry);
+}
+
+/// Forget what a cheap observation remembers about a root, so the next poll reads every file
+/// again. A commit has just replaced content the cache was built from; re-reading once is what
+/// makes the version that poll reports the content-verified one the commit predicted, whatever
+/// the filesystem's clocks did while the replacement landed.
+fn forget_workspace_source_observation(root: &Path) {
+    workspace_source_observations()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .retain(|observation| observation.root != root);
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Files whose bytes the current test thread read while walking a workspace. A poll over an
+    /// unchanged workspace must add nothing here, which is the cost assertion this cache exists
+    /// for; the full content verification a commit performs adds one per file, as it always has.
+    static SOURCE_CONTENT_READS: Cell<u64> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+fn count_source_content_read() {
+    SOURCE_CONTENT_READS.with(|reads| reads.set(reads.get() + 1));
+}
+
+#[cfg(test)]
+fn source_content_reads() -> u64 {
+    SOURCE_CONTENT_READS.with(|reads| reads.get())
+}
+
+/// One entry a workspace-source walk reached. Directories that could be listed are not
+/// reported, because the walk descends into them; what a caller has to decide about is a file
+/// whose bytes are content and a path whose kind or listing could not be read.
+enum SourceWalkEntry<'a> {
+    File {
+        name: &'a str,
+        path: &'a Path,
+    },
+    Inaccessible {
+        name: &'a str,
+        path: &'a Path,
+        error: &'a std::io::Error,
+    },
+}
+
+/// The single traversal behind both the full content verification a commit performs and the
+/// cheap observation a poll performs. They must reach the same entries and treat root `.git`,
+/// symlinks and unreadable paths identically, so they differ only in what they do with a file,
+/// never in what they visit.
+fn walk_workspace_source<F>(root: &Path, directory: &Path, visit: &mut F) -> Result<(), String>
+where
+    F: FnMut(SourceWalkEntry<'_>) -> Result<(), String>,
+{
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) => {
-            files.insert(format!("{}/", workspace_source_relative_name(root, directory)?),
-                unreadable_source_fingerprint(directory, &error)?);
-            return Ok(());
+            let name = format!("{}/", workspace_source_relative_name(root, directory)?);
+            return visit(SourceWalkEntry::Inaccessible {
+                name: &name,
+                path: directory,
+                error: &error,
+            });
         }
     };
-    let mut entries = entries.collect::<Result<Vec<_>, _>>()
+    let mut entries = entries
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("cannot read workspace entry: {error}"))?;
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
         let path = entry.path();
-        if path == root.join(".git") { continue; }
+        if path == root.join(".git") {
+            continue;
+        }
         let kind = match entry.file_type() {
             Ok(kind) => kind,
             Err(error) => {
-                files.insert(workspace_source_relative_name(root, &path)?,
-                    unreadable_source_fingerprint(&path, &error)?);
+                let name = workspace_source_relative_name(root, &path)?;
+                visit(SourceWalkEntry::Inaccessible {
+                    name: &name,
+                    path: &path,
+                    error: &error,
+                })?;
                 continue;
             }
         };
@@ -849,31 +1022,121 @@ fn collect_workspace_source_fingerprints(
             ));
         }
         if kind.is_dir() {
-            collect_workspace_source_fingerprints(root, &path, files)?;
+            walk_workspace_source(root, &path, visit)?;
             continue;
         }
         if !kind.is_file() {
             continue;
         }
-        let fingerprint = match fs::read(&path) {
-            Ok(bytes) => source_file_fingerprint(&bytes),
-            Err(error) => {
-                // Unreadable object text remains a local diagnostic at acquisition. Observe
-                // metadata and access-state changes without pretending to have read its bytes.
-                unreadable_source_fingerprint(&path, &error)?
-            }
-        };
-        files.insert(workspace_source_relative_name(root, &path)?, fingerprint);
+        let name = workspace_source_relative_name(root, &path)?;
+        visit(SourceWalkEntry::File {
+            name: &name,
+            path: &path,
+        })?;
     }
     Ok(())
 }
 
+/// Every file's content digest, read from bytes. This is the verification a commit compares its
+/// precondition against, and it never consults the cheap observation's cache.
 fn workspace_source_fingerprints(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
     let root = fs::canonicalize(root)
         .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
     let mut files = BTreeMap::new();
-    collect_workspace_source_fingerprints(&root, &root, &mut files)?;
+    walk_workspace_source(&root, &root, &mut |entry| match entry {
+        SourceWalkEntry::File { name, path } => {
+            #[cfg(test)]
+            count_source_content_read();
+            let fingerprint = match fs::read(path) {
+                Ok(bytes) => source_file_fingerprint(&bytes),
+                // Unreadable object text remains a local diagnostic at acquisition. Observe
+                // metadata and access-state changes without pretending to have read its bytes.
+                Err(error) => unreadable_source_fingerprint(path, &error)?,
+            };
+            files.insert(name.to_owned(), fingerprint);
+            Ok(())
+        }
+        SourceWalkEntry::Inaccessible { name, path, error } => {
+            files.insert(name.to_owned(), unreadable_source_fingerprint(path, error)?);
+            Ok(())
+        }
+    })?;
     Ok(files)
+}
+
+/// The revision a poll reports: the last content-verified digest of every file whose cheap
+/// signal has not moved, and a fresh read of every file whose has.
+///
+/// Cheap-signal equality is an observation, not a proof. A change that leaves size, modification
+/// time and — where the platform reports one — change time identical is not seen here, and this
+/// function does not paper over that by inventing a version: it reports the one it last
+/// verified. What keeps the observation honest is that it never authorizes a write. A commit
+/// verifies the whole source from bytes, so a change this walk did not see refuses that commit
+/// instead of being overwritten by it.
+fn observe_workspace_source(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    let root = fs::canonicalize(root)
+        .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
+    let previous = take_workspace_source_observation(&root);
+    let mut fingerprints = BTreeMap::new();
+    let mut files = CachedSourceFiles::new();
+    walk_workspace_source(&root, &root, &mut |entry| {
+        let (name, path) = match entry {
+            SourceWalkEntry::File { name, path } => (name, path),
+            SourceWalkEntry::Inaccessible { name, path, error } => {
+                // A path whose kind or listing could not be read is never remembered: its
+                // fingerprint comes from metadata and access state, so it is re-derived every
+                // time rather than reused on a signature that does not cover what produced it.
+                fingerprints.insert(name.to_owned(), unreadable_source_fingerprint(path, error)?);
+                return Ok(());
+            }
+        };
+        let signature = fs::metadata(path)
+            .ok()
+            .map(|metadata| SourceEntrySignature::of(&metadata));
+        if let (Some(signature), Some(cached)) = (&signature, previous.get(name)) {
+            if &cached.signature == signature {
+                fingerprints.insert(name.to_owned(), cached.digest.clone());
+                files.insert(
+                    name.to_owned(),
+                    CachedSourceFile {
+                        signature: signature.clone(),
+                        digest: cached.digest.clone(),
+                    },
+                );
+                return Ok(());
+            }
+        }
+        #[cfg(test)]
+        count_source_content_read();
+        match fs::read(path) {
+            Ok(bytes) => {
+                let digest = source_file_fingerprint(&bytes);
+                if let Some(signature) = signature {
+                    files.insert(
+                        name.to_owned(),
+                        CachedSourceFile {
+                            signature,
+                            digest: digest.clone(),
+                        },
+                    );
+                }
+                fingerprints.insert(name.to_owned(), digest);
+            }
+            Err(error) => {
+                // An unreadable file is not remembered either: it would be reused on the same
+                // signature the read failed under, and a permission a poll did not read would
+                // then read as "unchanged". Re-deriving it keeps the localized diagnostic this
+                // has always reported, without any claim to have verified the bytes.
+                fingerprints.insert(
+                    name.to_owned(),
+                    unreadable_source_fingerprint(path, &error)?,
+                );
+            }
+        }
+        Ok(())
+    })?;
+    retain_workspace_source_observation(&root, files);
+    Ok(fingerprints)
 }
 
 fn workspace_source_revision_from_fingerprints(files: &BTreeMap<String, Vec<u8>>) -> String {
@@ -887,7 +1150,9 @@ fn workspace_source_revision_from_fingerprints(files: &BTreeMap<String, Vec<u8>>
 }
 
 fn workspace_source_revision_for_root(root: &Path) -> Result<String, String> {
-    Ok(workspace_source_revision_from_fingerprints(&workspace_source_fingerprints(root)?))
+    Ok(workspace_source_revision_from_fingerprints(
+        &observe_workspace_source(root)?,
+    ))
 }
 
 fn verify_workspace_source_fingerprints(
@@ -1266,6 +1531,31 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "runtime budget; run separately from parallel filesystem tests"]
+    fn workspace_source_poll_cost_is_metadata_not_content() {
+        let root = tempfile::tempdir().unwrap();
+        // Generated HTML-sized payload; no external workspace content is redistributed.
+        fs::write(root.path().join("index.html"), vec![b'x'; 64 * 1024 * 1024]).unwrap();
+
+        let start = std::time::Instant::now();
+        workspace_source_revision_for_root(root.path()).unwrap();
+        let cold = start.elapsed();
+
+        let start = std::time::Instant::now();
+        let polls = 20;
+        for _ in 0..polls {
+            workspace_source_revision_for_root(root.path()).unwrap();
+        }
+        let warm = start.elapsed();
+        println!("cold revision {cold:?}, {polls} polls over an unchanged workspace {warm:?}");
+        assert!(
+            warm < cold,
+            "{polls} polls over an unchanged workspace ({warm:?}) cost more than the first read \
+             of every file ({cold:?})"
+        );
+    }
+
+    #[test]
     fn rejects_paths_outside_workspace() {
         assert!(safe_relative_path("../secret").is_err());
         assert!(safe_relative_path("/tmp/secret").is_err());
@@ -1489,6 +1779,216 @@ mod tests {
         assert_ne!(workspace_source_revision_for_root(root.path()).unwrap(), revision);
     }
 
+    /// A cheap observation must conclude exactly what reading every file would conclude.
+    fn observed_revision(root: &Path) -> String {
+        let observed = workspace_source_revision_for_root(root).unwrap();
+        let verified = workspace_source_revision_from_fingerprints(
+            &workspace_source_fingerprints(root).unwrap(),
+        );
+        assert_eq!(
+            observed, verified,
+            "cheap observation disagrees with the full hash for {}",
+            root.display()
+        );
+        observed
+    }
+
+    #[test]
+    fn workspace_source_observation_is_dropped_only_after_it_has_gone_idle() {
+        let now = Instant::now();
+        let observation = |name: &str, age: Duration| RetainedWorkspaceObservation {
+            root: PathBuf::from(name),
+            files: CachedSourceFiles::new(),
+            last_used: now - age,
+        };
+        let fresh = Duration::from_secs(1);
+        let idle = RETAINED_OBSERVATION_IDLE + fresh;
+
+        // Under the bound, an old observation stays: nothing a poll has not used is worth
+        // dropping while there is room for it.
+        let mut observations = vec![observation("a", idle), observation("b", idle)];
+        prune_workspace_source_observations(&mut observations, now);
+        assert_eq!(observations.len(), 2);
+
+        // Over the bound, only the idle entry goes. The workspace a poll just used is the one
+        // the user is watching, and evicting it would make the next poll read everything.
+        let mut observations = (0..RETAINED_WORKSPACE_OBSERVATIONS)
+            .map(|index| observation(&format!("fresh-{index}"), fresh))
+            .collect::<Vec<_>>();
+        observations.push(observation("idle", idle));
+        prune_workspace_source_observations(&mut observations, now);
+        assert_eq!(observations.len(), RETAINED_WORKSPACE_OBSERVATIONS);
+        assert!(observations
+            .iter()
+            .all(|observation| observation.root != Path::new("idle")));
+    }
+
+    #[test]
+    fn workspace_source_poll_reads_only_the_files_whose_signal_moved() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs/nested")).unwrap();
+        fs::write(root.path().join("docs/a.md"), "a\n").unwrap();
+        fs::write(root.path().join("docs/nested/b.md"), "b\n").unwrap();
+
+        let reads = source_content_reads();
+        let revision = workspace_source_revision_for_root(root.path()).unwrap();
+        assert_eq!(source_content_reads() - reads, 2, "a cold observation reads every file once");
+
+        let reads = source_content_reads();
+        assert_eq!(workspace_source_revision_for_root(root.path()).unwrap(), revision);
+        assert_eq!(source_content_reads() - reads, 0, "an unchanged workspace reads no file");
+
+        fs::write(root.path().join("docs/nested/b.md"), "changed\n").unwrap();
+        let reads = source_content_reads();
+        let changed = workspace_source_revision_for_root(root.path()).unwrap();
+        assert_eq!(source_content_reads() - reads, 1, "only the candidate is read");
+        assert_ne!(changed, revision);
+
+        // The verification a commit performs still reads every file, whatever the cheap
+        // observation remembers, and reaches the version the poll reported.
+        let reads = source_content_reads();
+        let verified = workspace_source_revision_from_fingerprints(
+            &workspace_source_fingerprints(root.path()).unwrap(),
+        );
+        assert_eq!(source_content_reads() - reads, 2);
+        assert_eq!(verified, changed);
+    }
+
+    #[test]
+    fn a_commit_drops_the_cheap_observation_so_the_next_poll_reads_every_file() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        fs::write(root.path().join("docs/a.md"), "a\n").unwrap();
+        fs::write(root.path().join("docs/b.md"), "b\n").unwrap();
+
+        let revision = workspace_source_revision_for_root(root.path()).unwrap();
+        let reads = source_content_reads();
+        assert_eq!(workspace_source_revision_for_root(root.path()).unwrap(), revision);
+        assert_eq!(source_content_reads() - reads, 0);
+
+        let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+            "expectedRevision": revision,
+            "documents": [{ "path": "docs/a.md", "content": "a\n" }]
+        }))
+        .unwrap();
+        assert_eq!(
+            commit_workspace_source_changes_to_disk(root.path(), &changes).unwrap(),
+            revision
+        );
+
+        // The commit replaced the basis the cache was built from, so the next poll verifies
+        // every file from bytes again and reaches the version the commit predicted.
+        let reads = source_content_reads();
+        let observed = workspace_source_revision_for_root(root.path()).unwrap();
+        assert_eq!(
+            source_content_reads() - reads,
+            2,
+            "a commit must not leave a cheap observation behind"
+        );
+        assert_eq!(observed, revision);
+    }
+
+    #[test]
+    fn workspace_source_observation_concludes_what_reading_every_file_concludes() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs/nested")).unwrap();
+        fs::write(root.path().join("docs/a.md"), "a\n").unwrap();
+        fs::write(root.path().join("docs/nested/b.md"), "b\n").unwrap();
+
+        let initial = observed_revision(root.path());
+
+        // A file touched without new content is re-read and concludes the same version.
+        let moved = fs::metadata(root.path().join("docs/a.md"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(root.path().join("docs/a.md"))
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(moved))
+            .unwrap();
+        assert_eq!(observed_revision(root.path()), initial);
+
+        // A content change of the same length, in a nested file.
+        fs::write(root.path().join("docs/nested/b.md"), "c\n").unwrap();
+        let changed = observed_revision(root.path());
+        assert_ne!(changed, initial);
+
+        // Empty directories are not workspace content, whether they appear or go.
+        fs::create_dir_all(root.path().join("docs/empty")).unwrap();
+        assert_eq!(observed_revision(root.path()), changed);
+        fs::remove_dir(root.path().join("docs/empty")).unwrap();
+        assert_eq!(observed_revision(root.path()), changed);
+
+        // An added, a renamed and a removed file each move the version, and removing the file
+        // that was added returns to the version the same content had before.
+        fs::write(root.path().join("docs/c.md"), "c\n").unwrap();
+        let added = observed_revision(root.path());
+        assert_ne!(added, changed);
+        fs::rename(root.path().join("docs/c.md"), root.path().join("docs/d.md")).unwrap();
+        let renamed = observed_revision(root.path());
+        assert_ne!(renamed, added);
+        fs::remove_file(root.path().join("docs/d.md")).unwrap();
+        let removed = observed_revision(root.path());
+        assert_ne!(removed, renamed);
+        assert_eq!(removed, changed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_source_revision_sees_a_content_change_that_keeps_the_modification_time() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        let path = root.path().join("docs/a.md");
+        fs::write(&path, "one\n").unwrap();
+        let revision = observed_revision(root.path());
+
+        // Two observations cannot share one clock tick, so the write below has a change time of
+        // its own even though the modification time is put back to what it was.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        let mut file = fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.write_all(b"two\n").unwrap();
+        file.set_times(fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+        drop(file);
+
+        let restored = fs::metadata(&path).unwrap();
+        assert_eq!(
+            restored.len(),
+            4,
+            "the change must keep the size to mean anything"
+        );
+        assert_eq!(
+            restored.modified().unwrap(),
+            modified,
+            "the change must keep the modification time to mean anything"
+        );
+        assert_ne!(
+            observed_revision(root.path()),
+            revision,
+            "a content change that restored the modification time was missed"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_source_revision_refuses_a_symlink_and_recovers_without_it() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        fs::write(root.path().join("docs/a.md"), "a\n").unwrap();
+        let revision = observed_revision(root.path());
+
+        std::os::unix::fs::symlink("a.md", root.path().join("docs/link.md")).unwrap();
+        let error = workspace_source_revision_for_root(root.path()).unwrap_err();
+        assert!(error.contains("symlink"), "{error}");
+
+        // A refused observation leaves no cache behind to be trusted by the next poll.
+        fs::remove_file(root.path().join("docs/link.md")).unwrap();
+        assert_eq!(observed_revision(root.path()), revision);
+    }
+
     #[cfg(unix)]
     #[test]
     fn workspace_source_revision_keeps_unreadable_documents_local() {
@@ -1501,6 +2001,16 @@ mod tests {
         fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
         let unreadable = workspace_source_revision_for_root(root.path());
         let denied = fs::read(&path).is_err();
+        if denied {
+            // The cheap observation makes no claim about bytes it could not read: it agrees
+            // with the full walk over the same unreadable file.
+            assert_eq!(
+                unreadable.as_ref().unwrap(),
+                &workspace_source_revision_from_fingerprints(
+                    &workspace_source_fingerprints(root.path()).unwrap()
+                )
+            );
+        }
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
         let unreadable = unreadable.unwrap();
         if denied { assert_ne!(readable, unreadable); }
