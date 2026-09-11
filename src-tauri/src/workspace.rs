@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
@@ -245,10 +247,96 @@ struct PreparedWorkspaceSourceChange {
     previous_content: Option<Vec<u8>>,
 }
 
+// A temporary sibling exists for the duration of one replacement and never outlives it. It is
+// named after its target so a leftover is attributable, and its name carries the process's own
+// token plus a counter. A counter alone restarts at zero in a new process, so a temporary file
+// left by a crash could be handed the same name by a later process with a recycled process id
+// and block that replacement forever.
+const TEMPORARY_FILE_MARKER: &str = ".derivon-part-";
+
+static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn temporary_file_token() -> &'static str {
+    static TOKEN: OnceLock<String> = OnceLock::new();
+    TOKEN.get_or_init(|| {
+        let started = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos());
+        format!("{}-{started}", std::process::id())
+    })
+}
+
+fn temporary_sibling_path(target: &Path) -> PathBuf {
+    let counter = TEMPORARY_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let name = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workspace-file");
+    target.with_file_name(format!(
+        "{name}{TEMPORARY_FILE_MARKER}{}-{counter}",
+        temporary_file_token()
+    ))
+}
+
+// Replacement goes through a temporary file in the target's own directory and a `rename` over
+// the target. A reader therefore observes either the whole previous file or the whole new one,
+// never a prefix: an in-place write lets a reader catch the truncation, and a truncated manifest
+// is a workspace that cannot be opened at all. Both versions live in one directory, so the
+// rename stays on one filesystem.
+fn replace_workspace_source_file(target: &Path, content: &[u8]) -> Result<(), String> {
+    replace_workspace_source_file_with(target, content, || Ok(()))
+}
+
+// `before_replace` is the replacement point, made injectable so a test can observe what a reader
+// sees while the temporary file is complete and the target is still the previous one.
+fn replace_workspace_source_file_with<F>(
+    target: &Path,
+    content: &[u8],
+    before_replace: F,
+) -> Result<(), String>
+where
+    F: FnOnce() -> Result<(), String>,
+{
+    let temporary = temporary_sibling_path(target);
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| format!("cannot write {}: {error}", target.display()))?;
+        file.write_all(content)
+            .map_err(|error| format!("cannot write {}: {error}", target.display()))?;
+        drop(file);
+        // The temporary file is a new file, so the target's permission bits have to be carried
+        // over or a restricted document would come back with the default ones. An unreadable
+        // target leaves the temporary file with those defaults.
+        if let Ok(metadata) = fs::metadata(target) {
+            fs::set_permissions(&temporary, metadata.permissions())
+                .map_err(|error| format!("cannot write {}: {error}", target.display()))?;
+        }
+        before_replace()?;
+        fs::rename(&temporary, target)
+            .map_err(|error| format!("cannot replace {}: {error}", target.display()))
+    })();
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) => match fs::remove_file(&temporary) {
+            Ok(()) => Err(error),
+            Err(cleanup) if cleanup.kind() == std::io::ErrorKind::NotFound => Err(error),
+            // The workspace observer hashes the whole tree, `.derivon` included, so a temporary
+            // file left behind would read as an external change. Its survival is a second
+            // failure and is reported as one.
+            Err(cleanup) => Err(format!(
+                "{error}; temporary file cleanup also failed: cannot remove {}: {cleanup}",
+                temporary.display()
+            )),
+        },
+    }
+}
+
 fn write_workspace_source_content(target: &Path, content: Option<&[u8]>) -> Result<(), String> {
     match content {
-        Some(bytes) => fs::write(target, bytes)
-            .map_err(|error| format!("cannot write {}: {error}", target.display())),
+        Some(bytes) => replace_workspace_source_file(target, bytes),
         None => match fs::remove_file(target) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -280,6 +368,11 @@ fn prepare_workspace_source_change(
     })
 }
 
+// Rollback covers the targets this attempt already acted on, and it restores them by the same
+// temporary-file-and-rename replacement a forward write uses. A failure while writing a target
+// leaves that target as it was, so only replacements already renamed into place and deletions
+// already performed need restoring. This is not a crash guarantee and not a transaction against
+// an uncooperative writer: a process that dies mid-attempt leaves whatever the filesystem holds.
 fn apply_prepared_workspace_source_changes<F>(
     changes: &[PreparedWorkspaceSourceChange],
     mut apply: F,
@@ -335,9 +428,6 @@ where
         .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
     let root = canonical_root.as_path();
     let mut requested = Vec::new();
-    if let Some(graph) = &changes.graph {
-        requested.push((MANIFEST_PATH, Some(graph.as_bytes().to_vec()), false));
-    }
     requested.extend(changes.documents.iter().map(|change| {
         (
             change.path.as_str(),
@@ -364,6 +454,13 @@ where
             change.create_only,
         )
     }));
+    // The manifest is replaced last: it is what references the documents, so a reader that finds
+    // the new graph already finds what it names. Documents a failure leaves unreferenced are
+    // inert, while a graph published before its documents would point at files that are not
+    // there yet.
+    if let Some(graph) = &changes.graph {
+        requested.push((MANIFEST_PATH, Some(graph.as_bytes().to_vec()), false));
+    }
 
     if changes.create_only {
         if changes.graph.is_none() {
@@ -1133,8 +1230,6 @@ fn write_workspace_files(
         serde_json::to_string_pretty(&manifest)
             .map_err(|error| format!("cannot serialize workspace: {error}"))?
     );
-    fs::write(&manifest_path, manifest_text)
-        .map_err(|error| format!("cannot write {}: {error}", manifest_path.display()))?;
     for (relative, content) in files {
         let path = root.join(safe_relative_path(&relative)?);
         let parent = path
@@ -1142,10 +1237,10 @@ fn write_workspace_files(
             .ok_or_else(|| format!("workspace file `{relative}` has no parent"))?;
         fs::create_dir_all(parent)
             .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
-        fs::write(&path, content)
-            .map_err(|error| format!("cannot write {}: {error}", path.display()))?;
+        replace_workspace_source_file(&path, content.as_bytes())?;
     }
-    Ok(())
+    // Same order as a commit: the manifest that names the documents is replaced after them.
+    replace_workspace_source_file(&manifest_path, manifest_text.as_bytes())
 }
 
 #[cfg(test)]
@@ -1480,6 +1575,259 @@ mod tests {
         assert!(error.contains("injected partial write failure"));
         assert!(error.contains("rollback also failed"));
         assert_eq!(fs::read_to_string(root.path().join("docs/updated.md")).unwrap(), "original");
+    }
+
+    /** Every file under a workspace, workspace-relative, for leftover-file assertions. */
+    fn workspace_entry_names(root: &Path) -> Vec<String> {
+        fn walk(root: &Path, directory: &Path, names: &mut Vec<String>) {
+            for entry in fs::read_dir(directory).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if entry.file_type().unwrap().is_dir() {
+                    walk(root, &path, names);
+                } else {
+                    names.push(
+                        path.strip_prefix(root)
+                            .unwrap()
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
+                }
+            }
+        }
+        let mut names = Vec::new();
+        walk(root, root, &mut names);
+        names.sort();
+        names
+    }
+
+    fn large_manifest(filler: char) -> String {
+        // Large enough that an in-place write is observably truncated by a reader polling it.
+        format!(
+            "{{\n  \"schema\": \"derivon.workspace/v1\",\n  \"document\": {{ \"title\": \"{filler}\", \"description\": \"{}\" }},\n  \"graph\": {{ \"points\": [], \"hyperedges\": [] }}\n}}\n",
+            filler.to_string().repeat(256 * 1024)
+        )
+    }
+
+    #[test]
+    fn replacement_temporary_files_are_siblings_of_their_targets() {
+        let target = Path::new("workspace/.derivon/workspace.json");
+        let temporary = temporary_sibling_path(target);
+
+        // The rename must not cross a filesystem, and the name must stay attributable.
+        assert_eq!(temporary.parent(), target.parent());
+        assert_ne!(temporary, target);
+        assert!(temporary
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("workspace.json"));
+        assert_ne!(temporary, temporary_sibling_path(target));
+    }
+
+    #[test]
+    fn manifest_replacement_is_whole_at_the_replacement_point() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        let manifest_path = root.path().join(MANIFEST_PATH);
+        let previous = large_manifest('a');
+        let next = large_manifest('b');
+        fs::write(&manifest_path, &previous).unwrap();
+
+        // A reader arriving while the temporary file is complete and the replacement has not
+        // happened yet still gets the previous manifest in full, never a prefix of the new one.
+        let mut observed = None;
+        replace_workspace_source_file_with(&manifest_path, next.as_bytes(), || {
+            observed = Some(fs::read(&manifest_path).map_err(|error| error.to_string())?);
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(observed.as_deref(), Some(previous.as_bytes()));
+        assert_eq!(fs::read(&manifest_path).unwrap(), next.as_bytes());
+    }
+
+    #[test]
+    fn a_reader_polling_during_a_manifest_replacement_never_sees_a_partial_file() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        let manifest_path = root.path().join(MANIFEST_PATH);
+        let versions = [large_manifest('a'), large_manifest('b')];
+        fs::write(&manifest_path, versions[0].as_bytes()).unwrap();
+
+        let reading = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let reader_path = manifest_path.clone();
+        let expected = versions.clone();
+        let reader = {
+            let reading = std::sync::Arc::clone(&reading);
+            std::thread::spawn(move || -> Result<u64, String> {
+                let mut observations = 0;
+                while reading.load(Ordering::Relaxed) {
+                    let bytes = fs::read(&reader_path).map_err(|error| {
+                        format!("manifest vanished during replacement: {error}")
+                    })?;
+                    let whole = expected
+                        .iter()
+                        .any(|version| version.as_bytes() == bytes.as_slice());
+                    if !whole {
+                        return Err(format!(
+                            "reader observed {} bytes that are neither manifest version",
+                            bytes.len()
+                        ));
+                    }
+                    observations += 1;
+                }
+                Ok(observations)
+            })
+        };
+
+        for round in 0..64 {
+            replace_workspace_source_file(&manifest_path, versions[round % 2].as_bytes()).unwrap();
+        }
+        reading.store(false, Ordering::Relaxed);
+
+        let observations = reader.join().unwrap().unwrap();
+        assert!(observations > 0, "the reader never read the manifest");
+    }
+
+    #[test]
+    fn a_failed_replacement_keeps_the_previous_manifest_and_removes_its_temporary_file() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        let manifest_path = root.path().join(MANIFEST_PATH);
+        let previous = large_manifest('a');
+        fs::write(&manifest_path, &previous).unwrap();
+
+        let error = replace_workspace_source_file_with(
+            &manifest_path,
+            large_manifest('b').as_bytes(),
+            || Err("injected replacement failure".to_owned()),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("injected replacement failure"), "{error}");
+        assert_eq!(fs::read(&manifest_path).unwrap(), previous.as_bytes());
+        assert_eq!(
+            workspace_entry_names(root.path()),
+            vec![MANIFEST_PATH.to_owned()]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_replacement_keeps_the_targets_permission_bits() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        let target = root.path().join("docs/concept.md");
+        fs::write(&target, "previous\n").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+
+        // The target becomes a new file, so its mode has to travel with the replacement or a
+        // restricted document would silently come back readable by everyone.
+        write_workspace_source_content(&target, Some(b"next\n")).unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "next\n");
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    #[test]
+    fn a_commit_leaves_no_temporary_file_in_the_workspace() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
+        let root = tempfile::tempdir().unwrap();
+        let original_graph = fs::read_to_string(fixture.join(MANIFEST_PATH)).unwrap();
+        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        fs::write(root.path().join(MANIFEST_PATH), &original_graph).unwrap();
+
+        let mut changed_graph: serde_json::Value = serde_json::from_str(&original_graph).unwrap();
+        changed_graph["document"]["title"] = serde_json::json!("Renamed");
+        let changed_graph = serde_json::to_string_pretty(&changed_graph).unwrap();
+        let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+            "graph": changed_graph.clone(),
+            "documents": [{ "path": "docs/points/new/document.md", "content": "# New\n" }]
+        }))
+        .unwrap();
+
+        commit_workspace_source_changes_to_disk(root.path(), &changes).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.path().join(MANIFEST_PATH)).unwrap(),
+            changed_graph
+        );
+        let committed = workspace_entry_names(root.path());
+        assert!(!committed
+            .iter()
+            .any(|name| name.contains(TEMPORARY_FILE_MARKER)));
+
+        // A failing commit is a failure to produce the new manifest, not a half-written one,
+        // and it cleans up after itself as well. The manifest is the last target, so this is
+        // also the rollback of a manifest replacement that already happened.
+        let error = commit_workspace_source_changes_using(root.path(), &changes, |change| {
+            write_workspace_source_content(&change.target, change.content.as_deref())?;
+            if change.target.ends_with("workspace.json") {
+                return Err("injected commit failure".to_owned());
+            }
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.contains("injected commit failure"), "{error}");
+        assert_eq!(
+            fs::read_to_string(root.path().join(MANIFEST_PATH)).unwrap(),
+            changed_graph
+        );
+        assert_eq!(workspace_entry_names(root.path()), committed);
+    }
+
+    #[test]
+    fn a_commit_replaces_documents_before_the_manifest() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complete-workspace");
+        let root = tempfile::tempdir().unwrap();
+        let original_graph = fs::read_to_string(fixture.join(MANIFEST_PATH)).unwrap();
+        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        fs::write(root.path().join(MANIFEST_PATH), &original_graph).unwrap();
+        let manifest_path = root.path().join(MANIFEST_PATH);
+
+        let mut changed_graph: serde_json::Value = serde_json::from_str(&original_graph).unwrap();
+        changed_graph["document"]["title"] = serde_json::json!("Renamed");
+        let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
+            "graph": serde_json::to_string_pretty(&changed_graph).unwrap(),
+            "documents": [
+                { "path": "docs/points/new/document.md", "content": "# New\n" },
+                { "path": "docs/points/other/document.md", "content": "# Other\n" }
+            ]
+        }))
+        .unwrap();
+
+        // A reader arriving while the documents are being written still finds the previous
+        // manifest. Replacing it first would publish a graph naming documents that are not there
+        // yet; replacing it last keeps the workspace loadable and truthful throughout.
+        let mut manifest_during_document_writes = Vec::new();
+        let error = commit_workspace_source_changes_using(root.path(), &changes, |change| {
+            if change.target.ends_with("document.md") {
+                manifest_during_document_writes.push(fs::read_to_string(&manifest_path).unwrap());
+            }
+            write_workspace_source_content(&change.target, change.content.as_deref())?;
+            if change.target.ends_with("other/document.md") {
+                return Err("injected commit failure".to_owned());
+            }
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert!(error.contains("injected commit failure"), "{error}");
+        assert_eq!(
+            manifest_during_document_writes,
+            vec![original_graph.clone(), original_graph.clone()]
+        );
+        // The failure never reached the manifest, so the manifest that was there is still there.
+        assert_eq!(
+            fs::read_to_string(&manifest_path).unwrap(),
+            original_graph
+        );
     }
 
     #[test]

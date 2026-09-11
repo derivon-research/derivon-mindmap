@@ -114,10 +114,13 @@ its target and lives for milliseconds.
   manifest-writing command does not exist at all, which means the client cannot currently perform
   a graph change through the sanctioned path. The command surface, its capability declarations and
   its single result envelope are a contract change in `derivon-research/skills`.
-- The application needs two repairs of its own, neither of them caused by the agent: its manifest
-  write is an in-place `fs::write`, which a reader can observe truncated, and the poll path reports
-  "the workspace kept changing while I read it" as an error banner rather than retrying something
-  it will retry in a second anyway.
+- The application needed two repairs of its own, neither of them caused by the agent. One has
+  landed: the manifest — and every other file a commit replaces — is written to a temporary
+  sibling in the target's directory and renamed over it, with the manifest last, so a reader
+  observes the whole previous file or the whole new one instead of a truncated manifest that
+  fails the whole workspace open, and never a new manifest naming documents that are not there
+  yet. The other stands: the poll path reports "the workspace kept changing while I read it" as an
+  error banner rather than retrying something it will retry in a second anyway.
 - Change detection costs a recursive byte hash of the whole workspace on every poll, twice per
   acquisition attempt. Agent writes make that cost visible. It is a performance question, not a
   boundary one.
