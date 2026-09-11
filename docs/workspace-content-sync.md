@@ -164,38 +164,48 @@ or arbitrary-file existence guarantee is claimed.
 ## Delivered In #94
 
 - The desktop binding replaces a file's contents with a temporary sibling and a rename instead of
-  an in-place write, so a reader polling a workspace observes a whole manifest at every moment.
-  The previous in-place `fs::write` let a reader catch a truncated manifest, which fails opening
-  the workspace outright. Every replacement a commit performs — document, asset, companion
-  metadata and graph — goes through the same function, with the manifest last, so a reader that
-  finds the new graph already finds the documents it names.
+  an in-place write, so a reader polling a workspace observes a manifest whole — the previous one
+  or the new one — at every moment a commit replaces it. Initialization is the exception written
+  down as one below: a workspace being created has no previous file to keep whole. The previous
+  in-place `fs::write` let a reader catch a truncated manifest, which fails opening the workspace
+  outright. Every replacement a commit performs — document, asset, companion metadata and graph —
+  goes through the same function, with the manifest last, so a reader that finds the new graph
+  already finds the documents it names.
 - The failure description is narrower because the mechanism is: a failure while preparing a
   target leaves that target as it was, and the restoration the binding attempts covers only the
   targets the attempt reached, through the same replacement. The temporary file is removed on
-  every failure path and is gone before the commit returns, and its name carries the process's
-  own token so a crash leftover cannot block a later replacement. Initialization (`createOnly`)
-  creates its targets rather than replacing one, and its direct creation is stated for what it
-  is. No crash atomicity and no CAS against an uncooperative writer are claimed, before or now.
+  every failure path; when that removal itself fails, the commit reports that second failure and
+  the leftover stays on disk, where change detection reads it once as an added file. Its name
+  carries the process's own token so a crash leftover cannot block a later replacement.
+  Initialization (`createOnly`) creates its targets rather than replacing one, and its direct
+  creation is stated for what it is. No crash atomicity and no CAS against an uncooperative
+  writer are claimed, before or now.
 - Tests on real temporary files poll the manifest during replacement, observe the replacement
   point directly, fail a replacement and check the previous manifest survives with no temporary
   file left, check that documents are replaced before the manifest, and assert that a commit
-  leaves no temporary file behind whether it succeeds or fails.
+  leaves no temporary file behind whether it succeeds or fails (a removal that itself fails is not
+  among them).
 
 ## Delivered In #95
 
-- Acquisition has one written policy separating its two callers, instead of each call site
-  wrapping the same throw in its own `try`/`catch`. Opening a workspace, and an explicit reload,
-  require a stable version: until one is acquired there is no accepted content for the read to
-  report on, so a workspace that keeps changing under it fails and says so. The poll path defers
-  instead: accepted content is already held and the next poll is a second away, so an unsettled
-  read publishes nothing, writes no `snapshot.error`, and is not an error — the round reaches no
-  verdict, and the next poll reaches the one it deferred once the writer stops. "Files are the
-  source of truth" ([ADR-0011](adr/0011-change-workspace-content-through-the-script-command-surface.md))
+- Acquisition has one written policy separating its two callers, instead of the split being
+  implied by whichever call site happened to catch the throw. Opening a workspace requires a
+  stable version: until one is acquired there is no accepted content for the read to report on,
+  so a workspace that keeps changing under it fails and says so. An explicit reload requires one
+  too, for the other reason: the user asked for a fresh read, and "nothing was published" is not
+  an answer to that request. The poll path defers instead: accepted content is already held and
+  the next poll is a second away, so an unsettled read publishes nothing, writes no
+  `snapshot.error`, and is not an error — the round reaches no verdict, and the next poll reaches
+  the one it deferred once the writer stops. The same policy covers the lazy reads that go
+  through the poll's check (`flush`, and a `readChecked` whose token has moved), so an unsettled
+  workspace publishes nothing there either and the read's own error is what its caller sees.
+  "Files are the source of truth" ([ADR-0011](adr/0011-change-workspace-content-through-the-script-command-surface.md))
   makes external writes ordinary, so sustained change is an expected condition on the poll path,
   not a defect to announce.
 - Only "never settled" is deferred. A read that fails for any other reason — an unparseable
-  manifest, a refused file — still reaches the poll path's failure handling and is reported on
-  both paths, so deferral does not swallow a genuine breakage.
+  manifest, a refused file — is a genuine failure, reaches the poll path's failure handling as it
+  always did, and is not deferred on either path, so deferral does not swallow a genuine
+  breakage.
 - Tests drive a writer that lands inside every read window: polling over it produces no error
   banner and keeps the accepted content, the external version is accepted on the first poll after
   it settles, an explicit reload over the same workspace still fails, opening it still fails with
@@ -364,7 +374,7 @@ still not a concurrency or crash-atomicity guarantee. See the current
 | --- | --- | --- |
 | Consistent reads | Establish how graph, documents and configuration refer to one accepted content version, including externally changing files and lazy reads | #51 establishes the shared content model; #55 verifies external-update handling |
 | External-write protection | Define observation and commit-time validation, then test a change occurring between inspection and write; a UI preflight check alone is insufficient | #55, using the same synchronization interface introduced by #51 |
-| Failure guarantees | Test partial write failures and rollback failures without claiming success; state the limit for process crashes and uncooperative external writers. #94 replaces in-place writes with temporary-file-and-rename, so a reader never observes a truncated file and a failure before the replacement leaves its target untouched | #55 with host-adapter tests; #52 exercises multi-file deletion; #94 delivers single-step replacement |
+| Failure guarantees | Test partial write failures and rollback failures without claiming success; state the limit for process crashes and uncooperative external writers. A replacement must be observable as one step — never a truncated replaced file — and a failure before the replacement must leave its target untouched | #55 with host-adapter tests; #52 exercises multi-file deletion; #94 delivers single-step replacement |
 
 Do not promise a compare-and-swap property for arbitrary filesystem writers merely by adding
 a revision parameter. The achievable guarantee, interaction with external tools, and remaining

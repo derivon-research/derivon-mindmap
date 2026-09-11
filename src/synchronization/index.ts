@@ -107,9 +107,9 @@ async function readContent(source: WorkspaceSource): Promise<WorkspaceContent> {
  * verdict, publishes nothing and is not reported as an error. Once the writer stops, the next
  * poll reaches the verdict this one deferred.
  *
- * Stating the policy at acquisition is the point. Two call sites each wrapping the same throw
- * in their own `try`/`catch` is how a retry became a failure banner, and reading "the workspace
- * kept changing" as a defect would be the same mistake again.
+ * Stating the policy at acquisition is the point. One `catch` wrapping the poll's read is how a
+ * retry became a failure banner, and reading "the workspace kept changing" as a defect would be
+ * the same mistake again.
  */
 type AcquisitionPolicy = 'require' | 'defer';
 
