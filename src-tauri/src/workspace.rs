@@ -819,32 +819,43 @@ fn unreadable_source_fingerprint(path: &Path, error: &std::io::Error) -> Result<
     Ok(hasher.finalize().to_vec())
 }
 
+/// The inode change time, where the platform reports one. This is the only part of a cheap
+/// signature that proves a file did not change: size and modification time are both settable
+/// by the writer, while the change time is not settable from userspace.
+///
+/// `std` exposes it on Unix and nothing equivalent on Windows, where a file's change time is
+/// reachable only through the Win32 API. A platform without one reports `None`, which is what
+/// stops its cache from ever being reused.
+#[cfg(unix)]
+fn source_change_stamp(metadata: &fs::Metadata) -> Option<(i64, i64)> {
+    use std::os::unix::fs::MetadataExt;
+    Some((metadata.ctime(), metadata.ctime_nsec()))
+}
+
+#[cfg(not(unix))]
+fn source_change_stamp(_metadata: &fs::Metadata) -> Option<(i64, i64)> {
+    None
+}
+
 /// The cheap signal a poll compares before it reads a file's bytes again: how large it is,
 /// when it was last modified, and — where the platform reports one — when its inode last
 /// changed.
 ///
 /// Size and modification time alone would make "the modification time did not move" read as
 /// "the content did not change", and a writer that rewrites a file and restores its
-/// modification time would then be invisible to a poll. The inode change time is not settable
-/// from userspace, so that write moves it too. Where no change time is available the signature
-/// is size and modification time, and that limit is stated rather than hidden: a change leaving
-/// both identical is not observed by a poll. It is still caught by the full content
-/// verification every commit performs, which refuses the commit instead of overwriting it.
+/// modification time would then be invisible to a poll. `proves_unchanged` is therefore the
+/// only thing that authorizes reuse, and it answers from the change stamp: where the platform
+/// reports none, a cached digest is never reused and every acquisition reads the bytes again —
+/// the cost this cache exists to avoid, paid rather than guessed at.
 #[derive(Clone, PartialEq, Eq)]
 struct SourceEntrySignature {
     length: u64,
     modified_nanos: Option<u128>,
-    #[cfg(unix)]
     changed: Option<(i64, i64)>,
 }
 
 impl SourceEntrySignature {
     fn of(metadata: &fs::Metadata) -> Self {
-        #[cfg(unix)]
-        let changed = {
-            use std::os::unix::fs::MetadataExt;
-            Some((metadata.ctime(), metadata.ctime_nsec()))
-        };
         Self {
             length: metadata.len(),
             modified_nanos: metadata
@@ -852,18 +863,39 @@ impl SourceEntrySignature {
                 .ok()
                 .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
                 .map(|duration| duration.as_nanos()),
-            #[cfg(unix)]
-            changed,
+            changed: source_change_stamp(metadata),
         }
+    }
+
+    /// Whether equality of two of these proves the file's bytes are unchanged.
+    ///
+    /// Size and modification time do not prove it: both are settable by the writer, so a
+    /// rewrite that restores them leaves the signature identical. The inode change time is not
+    /// settable from userspace, so where it was observed, equality through it does prove it —
+    /// and where it was not, this says so and the walk reads the file again.
+    fn proves_unchanged(&self) -> bool {
+        self.changed.is_some()
     }
 }
 
 /// A digest that came from reading a file's bytes, kept so an unchanged file does not have to
-/// be read again by the next poll.
+/// be read again by the next poll, with the instant its bytes were last read.
 struct CachedSourceFile {
     signature: SourceEntrySignature,
     digest: Vec<u8>,
+    verified_at: Instant,
 }
+
+/// How long a cached digest may be reported without the bytes behind it being read again.
+///
+/// The change stamp narrows the signal but does not make it a proof, and nothing a stat can
+/// report will: a writer can leave size, modification time and change time all identical — an
+/// `mmap` write whose page has not been written back yet, a filesystem with coarse timestamp
+/// granularity, a network filesystem serving cached attributes. So every file is read from bytes
+/// again at least this often, which bounds how long such a change can stay unobserved instead of
+/// leaving it unobserved forever. The poll stays a metadata walk in between; the bound costs one
+/// full read per file per interval.
+const FULL_VERIFICATION_INTERVAL: Duration = Duration::from_secs(60);
 
 /// The last cheap observation of each workspace this process is still watching, keyed by
 /// canonical root.
@@ -1065,15 +1097,25 @@ fn workspace_source_fingerprints(root: &Path) -> Result<BTreeMap<String, Vec<u8>
 }
 
 /// The revision a poll reports: the last content-verified digest of every file whose cheap
-/// signal has not moved, and a fresh read of every file whose has.
+/// signal has not moved and whose digest has been verified recently, and a fresh read of every
+/// other file.
 ///
-/// Cheap-signal equality is an observation, not a proof. A change that leaves size, modification
-/// time and — where the platform reports one — change time identical is not seen here, and this
-/// function does not paper over that by inventing a version: it reports the one it last
-/// verified. What keeps the observation honest is that it never authorizes a write. A commit
-/// verifies the whole source from bytes, so a change this walk did not see refuses that commit
-/// instead of being overwritten by it.
+/// The change stamp is what authorizes reuse, and it is a narrower signal than size and
+/// modification time: both of those are settable by the writer, the change time is not. It is
+/// still an observation rather than a proof, because a writer can leave all three identical
+/// (`FULL_VERIFICATION_INTERVAL` names how that is bounded), so no write is ever authorized on
+/// it: a commit verifies the whole source from bytes, and a change this walk did not see refuses
+/// that commit instead of being overwritten by it.
 fn observe_workspace_source(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    observe_workspace_source_at(root, Instant::now())
+}
+
+/// The same walk at an instant the caller supplies, so the verification bound is testable
+/// without waiting a minute for it.
+fn observe_workspace_source_at(
+    root: &Path,
+    now: Instant,
+) -> Result<BTreeMap<String, Vec<u8>>, String> {
     let root = fs::canonicalize(root)
         .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
     let previous = take_workspace_source_observation(&root);
@@ -1094,13 +1136,20 @@ fn observe_workspace_source(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, St
             .ok()
             .map(|metadata| SourceEntrySignature::of(&metadata));
         if let (Some(signature), Some(cached)) = (&signature, previous.get(name)) {
-            if &cached.signature == signature {
+            // Reuse needs the change stamp (size and modification time are settable by the
+            // writer) and needs the digest behind it to be recent enough that the stamp's
+            // remaining uncertainty stays bounded.
+            if signature.proves_unchanged()
+                && &cached.signature == signature
+                && now.saturating_duration_since(cached.verified_at) < FULL_VERIFICATION_INTERVAL
+            {
                 fingerprints.insert(name.to_owned(), cached.digest.clone());
                 files.insert(
                     name.to_owned(),
                     CachedSourceFile {
                         signature: signature.clone(),
                         digest: cached.digest.clone(),
+                        verified_at: cached.verified_at,
                     },
                 );
                 return Ok(());
@@ -1111,12 +1160,16 @@ fn observe_workspace_source(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, St
         match fs::read(path) {
             Ok(bytes) => {
                 let digest = source_file_fingerprint(&bytes);
-                if let Some(signature) = signature {
+                // Only a signature that could prove "unchanged" is worth remembering. Keeping
+                // one that cannot would grow the cache for a poll that must read this file
+                // again regardless.
+                if let Some(signature) = signature.filter(SourceEntrySignature::proves_unchanged) {
                     files.insert(
                         name.to_owned(),
                         CachedSourceFile {
                             signature,
                             digest: digest.clone(),
+                            verified_at: now,
                         },
                     );
                 }
@@ -1531,8 +1584,12 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     #[ignore = "runtime budget; run separately from parallel filesystem tests"]
     fn workspace_source_poll_cost_is_metadata_not_content() {
+        // Unix-only: the reuse this holds to account needs an inode change time, so on a platform
+        // that reports none a poll reads the workspace by design and there is no cheap cost to
+        // assert.
         let root = tempfile::tempdir().unwrap();
         // Generated HTML-sized payload; no external workspace content is redistributed.
         fs::write(root.path().join("index.html"), vec![b'x'; 64 * 1024 * 1024]).unwrap();
@@ -1823,8 +1880,12 @@ mod tests {
             .all(|observation| observation.root != Path::new("idle")));
     }
 
+    /// The cost rule is platform-dependent, and both halves are asserted: a change stamp proves
+    /// "unchanged" and the cached digest is reused, while a platform that reports no change
+    /// stamp has no such proof, so the walk reads the bytes again instead of trusting size and
+    /// modification time.
     #[test]
-    fn workspace_source_poll_reads_only_the_files_whose_signal_moved() {
+    fn workspace_source_poll_reads_only_the_files_whose_signal_proves_them_unchanged() {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join("docs/nested")).unwrap();
         fs::write(root.path().join("docs/a.md"), "a\n").unwrap();
@@ -1836,12 +1897,28 @@ mod tests {
 
         let reads = source_content_reads();
         assert_eq!(workspace_source_revision_for_root(root.path()).unwrap(), revision);
-        assert_eq!(source_content_reads() - reads, 0, "an unchanged workspace reads no file");
+        let unchanged_reads = source_content_reads() - reads;
+        #[cfg(unix)]
+        assert_eq!(
+            unchanged_reads, 0,
+            "an unchanged workspace reads no file where the platform reports a change time"
+        );
+        #[cfg(not(unix))]
+        assert_eq!(
+            unchanged_reads, 2,
+            "without a change time nothing proves the bytes unchanged, so they are read again"
+        );
 
+        // A file whose signal moved is a candidate on every platform. Where the cheap signal
+        // cannot prove anything, every file is one.
         fs::write(root.path().join("docs/nested/b.md"), "changed\n").unwrap();
         let reads = source_content_reads();
         let changed = workspace_source_revision_for_root(root.path()).unwrap();
-        assert_eq!(source_content_reads() - reads, 1, "only the candidate is read");
+        assert_eq!(
+            source_content_reads() - reads,
+            if cfg!(unix) { 1 } else { 2 },
+            "a moved signal is the candidate a poll reads"
+        );
         assert_ne!(changed, revision);
 
         // The verification a commit performs still reads every file, whatever the cheap
@@ -1854,6 +1931,99 @@ mod tests {
         assert_eq!(verified, changed);
     }
 
+    /// A cached digest is reused only on a signature that carries a change stamp, and only while
+    /// the bytes behind it are recent enough. Size and modification time are settable by the
+    /// writer, so a signature without a change stamp — what a platform that reports none produces
+    /// — must never be reused: a same-size rewrite that restores modification time would
+    /// otherwise be reported as the version it replaced.
+    #[test]
+    fn a_cheap_observation_is_reused_only_on_a_signature_that_proves_unchanged() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("a.md"), "a\n").unwrap();
+        let revision = workspace_source_revision_for_root(root.path()).unwrap();
+
+        let metadata = fs::metadata(root.path().join("a.md")).unwrap();
+        let mut without_a_change_stamp = SourceEntrySignature::of(&metadata);
+        without_a_change_stamp.changed = None;
+        assert!(
+            !without_a_change_stamp.proves_unchanged(),
+            "size and modification time are both settable by the writer"
+        );
+        let mut with_a_change_stamp = SourceEntrySignature::of(&metadata);
+        with_a_change_stamp.changed = Some((1, 2));
+        assert!(
+            with_a_change_stamp.proves_unchanged(),
+            "an inode change time is not settable from userspace"
+        );
+
+        let now = Instant::now();
+        let canonical = fs::canonicalize(root.path()).unwrap();
+        retain_workspace_source_observation(
+            &canonical,
+            [(
+                "a.md".to_owned(),
+                CachedSourceFile {
+                    signature: without_a_change_stamp,
+                    digest: b"a digest nothing verified".to_vec(),
+                    verified_at: now,
+                },
+            )]
+            .into_iter()
+            .collect(),
+        );
+
+        let reads = source_content_reads();
+        let observed = observe_workspace_source_at(root.path(), now).unwrap();
+        assert_eq!(
+            source_content_reads() - reads,
+            1,
+            "a signature that cannot prove unchanged must not be reused"
+        );
+        assert_eq!(
+            workspace_source_revision_from_fingerprints(&observed),
+            revision,
+            "the digest reported is the one read from the bytes"
+        );
+    }
+
+    /// The change stamp narrows the signal but is not a proof: a writer can leave size,
+    /// modification time and change time identical (an `mmap` write before its writeback, a
+    /// filesystem with coarse timestamp granularity, a network filesystem caching attributes).
+    /// Every file is therefore read from bytes again at least once per interval, which is what
+    /// bounds how long such a change can stay unobserved.
+    #[test]
+    fn a_cheap_observation_is_verified_from_bytes_once_per_interval() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        fs::write(root.path().join("docs/a.md"), "a\n").unwrap();
+        fs::write(root.path().join("docs/b.md"), "b\n").unwrap();
+        let now = Instant::now();
+
+        observe_workspace_source_at(root.path(), now).unwrap();
+        let reads = source_content_reads();
+        observe_workspace_source_at(root.path(), now + Duration::from_secs(1)).unwrap();
+        assert_eq!(source_content_reads() - reads, 0, "inside the interval the signal decides");
+
+        // One instant past the interval, every cached digest has to be earned again from bytes —
+        // including the ones whose signature, by every field it carries, looks untouched.
+        let reads = source_content_reads();
+        let observed = observe_workspace_source_at(
+            root.path(),
+            now + FULL_VERIFICATION_INTERVAL,
+        )
+        .unwrap();
+        assert_eq!(
+            source_content_reads() - reads,
+            2,
+            "the interval bounds how long a signal can speak for the bytes"
+        );
+        assert_eq!(
+            observed,
+            workspace_source_fingerprints(root.path()).unwrap(),
+            "the version reported is the one a full read produces"
+        );
+    }
+
     #[test]
     fn a_commit_drops_the_cheap_observation_so_the_next_poll_reads_every_file() {
         let root = tempfile::tempdir().unwrap();
@@ -1864,7 +2034,11 @@ mod tests {
         let revision = workspace_source_revision_for_root(root.path()).unwrap();
         let reads = source_content_reads();
         assert_eq!(workspace_source_revision_for_root(root.path()).unwrap(), revision);
-        assert_eq!(source_content_reads() - reads, 0);
+        assert_eq!(
+            source_content_reads() - reads,
+            if cfg!(unix) { 0 } else { 2 },
+            "before the commit, reuse follows the platform's signal"
+        );
 
         let changes: WorkspaceSourceChanges = serde_json::from_value(serde_json::json!({
             "expectedRevision": revision,

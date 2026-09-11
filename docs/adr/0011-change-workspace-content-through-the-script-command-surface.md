@@ -100,11 +100,12 @@ being "how do we sandbox file writes".
 
 ### Rejected: a staging directory inside the workspace
 
-The application's change detection is a recursive byte hash of the whole tree, `.derivon`
-included, taken on every poll. A long-lived staging directory inside the workspace therefore reads
-as a continuous external change, and a command that stages there is fighting the observer it is
-supposed to cooperate with. Candidates are built in memory; the only temporary file is adjacent to
-its target and lives for milliseconds.
+The application's change detection re-observes the whole tree on every poll, `.derivon`
+included — comparing each file's cheap signal where the platform reports a change time, and
+reading the bytes where it does not. A long-lived staging directory inside the workspace therefore
+reads as a continuous external change, and a command that stages there is fighting the observer it
+is supposed to cooperate with. Candidates are built in memory; the only temporary file is adjacent
+to its target and lives for milliseconds.
 
 ## Consequences
 
@@ -124,15 +125,19 @@ its target and lives for milliseconds.
   deferred where there is (the poll path), so a workspace the agent is writing to no longer turns
   a retry scheduled for one second later into an error banner. A read that fails for any other
   reason — an unparseable manifest, a refused file — is still reported on both paths.
-- Change detection no longer costs a recursive byte hash of the whole workspace on every poll.
-  A repeated acquisition compares a cheap signal — size, modification time and, where the
-  platform reports one, inode change time — reads the bytes only of the files whose signal moved,
-  and keeps the digest it read for the rest. The first acquisition still reads everything, and
-  the value is still a hash of every file's content digest, so the token the poll compares is the
-  one a full read would produce. Cheap signal equality is an observation, not a proof, and no
-  write is authorized on it: a commit verifies the whole source from bytes before it writes, so a
-  change the poll did not see refuses the commit instead of being overwritten by it. It was, and
-  remains, a performance question; the boundary never depended on the poll.
+- Change detection no longer reads the whole workspace on every poll, on a platform that reports
+  an inode change time. A repeated acquisition compares a cheap signal — size, modification time
+  and the change time — and reuses the digest it last read from bytes only for a file whose signal
+  has not moved and whose bytes were read within the last minute. A signature carrying no change
+  stamp is never reused, because size and modification time are both settable by the writer: where
+  the platform reports no change time — Windows — every acquisition reads the files and the poll
+  costs what it did before. The first acquisition always reads everything. The signal is narrowed
+  rather than trusted: no stat proves a file's bytes unchanged, since a writer can leave all three
+  fields identical, so every file is read again at least once a minute and the value stays a hash
+  of every file's content digest. No write is authorized on the observation either: a commit
+  verifies the whole source from bytes before it writes, so a change the poll did not see refuses
+  the commit instead of being overwritten by it. It was, and remains, a performance question; the
+  boundary never depended on the poll.
 - Adopting an external change clears the loaded document and asset caches, so every committed
   change costs the application a re-read. That is a cost, not a corruption.
 - Removing the required dry run removes the audit surface that `crosslink-documents.mjs --all

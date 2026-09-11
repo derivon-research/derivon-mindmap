@@ -204,43 +204,53 @@ or arbitrary-file existence guarantee is claimed.
 
 ## Delivered In #96
 
-- Change detection no longer reads the whole workspace on every poll. A revision is still a hash
-  of every file's content digest, but a repeated acquisition compares a cheap signal — size,
-  modification time and, where the platform reports one, inode change time — and reads the bytes
-  only of the files whose signal moved. Files that held still keep the digest read from their
-  bytes, so an unchanged workspace costs one metadata walk per poll instead of a recursive read.
-  The cache is per process and keyed by canonical root. It keeps an observation while the
-  workspace is still being watched and drops idle ones once it is carrying more than it is
-  willing to, so a second window cannot evict the workspace a poll is about to reuse. The first
-  acquisition of a workspace and the acquisition after a commit read every file again: a commit
-  discards what the cache remembered, so the version a poll reports after a write is the
-  content-verified one that write predicted.
+- Change detection no longer reads the whole workspace on every poll, where the platform reports an
+  inode change time. A revision is still a hash of every file's content digest, but a repeated
+  acquisition compares a cheap signal — size, modification time and the change time — and reuses
+  the digest it last read from bytes only for a file whose signal has not moved and whose bytes
+  were read within the last minute. A signature carrying no change stamp is never reused, because
+  size and modification time are both settable by the writer: on a platform that reports no change
+  time — Windows — every file is read again and a poll costs what it did before. An unchanged
+  workspace therefore costs one metadata walk per poll where a change time is reported, plus one
+  full read of each file per minute, and a full read every poll where it is not. The cache is per
+  process and keyed by canonical root. Eviction touches idle entries only, and only once the cache
+  carries more than its bound, so a second window cannot evict the workspace a poll is about to
+  reuse and the cache grows with the workspaces this process is watching rather than with the ones
+  it has ever seen. The first acquisition of a workspace and the acquisition after a commit read
+  every file again: a commit discards what the cache remembered, so the version a poll reports
+  after a write is the content-verified one that write predicted.
 - The comparison runs over the same traversal a full verification uses, so what counts as
   workspace content cannot drift between the two. Root `.git` is still skipped, a symlink still
   refuses the whole acquisition, an unreadable file or directory still contributes an
   access-error/metadata fingerprint and is still not claimed to have been verified, and empty
   directories still change nothing. Added, renamed and removed files are compared by path rather
   than inferred from a directory timestamp, so they are seen.
-- What the cheap signal cannot prove is not claimed. A change that leaves size, modification time
-  and — where the platform reports one — change time identical is not observed by a poll, and the
-  poll does not pretend otherwise: it reports the version it last verified from bytes and invents
-  nothing. On a platform that reports no change time the signature is size and modification time,
-  so the limit is wider there, and the code says so instead of presenting a guess as certainty.
-  No write rests on that observation anyway — every commit verifies the whole source from bytes,
-  so a change the poll did not see refuses the commit instead of being overwritten by it. The
-  poll's accuracy and the write's certainty are two different questions, and only the second is
-  answered by reading everything.
-- Tests assert both the cost and the equivalence. A cold observation reads every file, an
-  unchanged workspace reads none, a one-file change reads one, and the full verification a commit
-  performs still reads them all. The cheap observation concludes exactly what reading every file
-  concludes after a same-length content change, a file touched without new content, an empty
-  directory appearing and going, and files added, renamed and removed; a content change that
-  keeps the modification time is still detected; a commit leaves no cheap observation behind for
-  the poll after it; a refused acquisition leaves no cache behind for the next poll; the cache
-  drops an idle observation only once it is over its bound; and an unreadable file is still a
-  localized diagnostic that agrees with the full walk. An ignored budget test holds the cost
-  claim: twenty polls over an unchanged 64 MiB workspace cost less than the first acquisition of
-  it.
+- The signal is narrowed, not trusted. A cached digest is reused only where the signature carries
+  an inode change time, which is not settable from userspace, and only while the bytes behind it
+  are recent; no stat proves a file's bytes unchanged, since a writer can leave size, modification
+  time and change time all identical (an `mmap` write before its writeback, a filesystem with
+  coarse timestamp granularity, a network filesystem caching attributes), so every file is read
+  from bytes again at least once a minute. That bounds how long such a change can stay unobserved
+  instead of leaving it unobserved forever. Nothing rests on the observation anyway — every commit
+  verifies the whole source from bytes, so a change the poll did not see refuses the commit
+  instead of being overwritten by it. The poll's accuracy and the write's certainty are two
+  different questions, and only the second is bought at write time.
+- Tests assert both the cost and the equivalence. A cold observation reads every file, a one-file
+  change reads the candidate, and the full verification a commit performs still reads them all; an
+  unchanged workspace reads none where the platform reports a change time, and every file where it
+  does not. A signature matching a file's size and modification time but carrying no change stamp
+  is never reused, and the digest reported is the one read from the bytes; a cached digest that has
+  gone a minute without its bytes being read is dropped and earned again, and the version that
+  observation reports equals the full walk's. The cheap observation
+  concludes exactly what reading every file concludes after a same-length content change, a file
+  touched without new content, an empty directory appearing and going, and files added, renamed
+  and removed; a content change that keeps the modification time is still detected; a commit
+  leaves no cheap observation behind for the poll after it; a refused acquisition leaves no cache
+  behind for the next poll; the cache drops an idle observation only once it is over its bound;
+  and an unreadable file is still a localized diagnostic that agrees with the full walk. An
+  ignored budget test holds the cost claim where it applies: twenty polls over an unchanged
+  64 MiB workspace cost less than the first acquisition of it, on a platform that reports a
+  change time.
 
 ## Markdown-Only, On-Demand Documents
 
