@@ -39,10 +39,11 @@ describe('complete workspace content operations', () => {
   it('names the workspace with a user id, and refuses to create one the protocol rejects', () => {
     const named = createWorkspace({ id: 'linear-algebra', title: 'Linear algebra' });
     expect(parseWorkspaceManifest(named.content.graphText).manifest.id).toBe('linear-algebra');
-    expect(createConcept(named.content, { label: 'Vector space' }).content.graphText)
-      .toContain('"id": "linear-algebra"');
-    for (const id of ['Linear Algebra', 'a/b', '']) {
-      expect(() => createWorkspace({ id, title: 'T' })).toThrow(/id/);
+    /* A later edit keeps the identity: it is not a field an operation may rewrite. */
+    const edited = createConcept(named.content, { label: 'Vector space' });
+    expect(parseWorkspaceManifest(edited.changes.graph!).manifest.id).toBe('linear-algebra');
+    for (const id of ['Linear Algebra', 'a/b', '', '-a']) {
+      expect(() => createWorkspace({ id, title: 'T' })).toThrow(/工作区 id/);
     }
   });
 

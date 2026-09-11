@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
@@ -24,13 +25,18 @@ let holdWrites: Promise<void> | undefined;
 let releaseWrites: (() => void) | undefined;
 let writesInFlight: Promise<unknown>[];
 const manifestPath = '.derivon/workspace.json';
-const emptyGraph = JSON.stringify({
-  schema: 'derivon.workspace/v1', id: 'test-workspace', document: { title: 'GUI fixture', description: '' },
+/* The fixture manifest names the workspace with the directory's own basename, which is what the
+ * create flow writes: one fixture, one identity rule, no second convention. */
+const emptyGraphManifest = () => JSON.stringify({
+  schema: 'derivon.workspace/v1', id: path.basename(directory), document: { title: 'GUI fixture', description: '' },
   graph: { points: [], hyperedges: [] },
 });
 
 test.beforeEach(async ({ page }) => {
-  directory = await mkdtemp(path.join(tmpdir(), 'derivon-gui-'));
+  /* The chosen folder's own name becomes the workspace id the create flow writes, and an id
+   * may not carry uppercase, so the fixture directory is named the way the protocol requires. */
+  directory = path.join(tmpdir(), `derivon-gui-${randomUUID().slice(0, 8)}`);
+  await mkdir(directory);
   conversationCommands = [];
   commits = 0;
   writesInFlight = [];
@@ -110,7 +116,7 @@ test.afterEach(async ({ page }) => {
 
 async function seedRecentWorkspace(page: Page): Promise<void> {
   await mkdir(path.join(directory, '.derivon'));
-  await writeFile(path.join(directory, manifestPath), emptyGraph);
+  await writeFile(path.join(directory, manifestPath), emptyGraphManifest());
   await page.addInitScript(({ key, value }) => { localStorage.setItem(key, value); }, {
     key: RECENT_WORKSPACES_KEY,
     value: JSON.stringify({ version: 1, workspaces: [{ path: directory, name: 'GUI fixture', openedAtMs: 1 }] }),
@@ -229,7 +235,10 @@ for (const width of [1440, 390, 320]) {
     holdWrites = new Promise<void>((resolve) => { releaseWrites = resolve; });
     await openObjects(page);
     await createConcept(page, 'Vector space');
-    expect(parseManifest(await readFile(path.join(directory, manifestPath), 'utf8')).graph.points).toEqual([]);
+    const created = parseManifest(await readFile(path.join(directory, manifestPath), 'utf8'));
+    // The folder's own name is the identity the create flow wrote, taken as it is.
+    expect(created.id).toBe(path.basename(directory));
+    expect(created.graph.points).toEqual([]);
     const titleBounds = await page.getByLabel('名称', { exact: true }).boundingBox();
     expect(titleBounds!.x + titleBounds!.width).toBeLessThanOrEqual(width);
     await expect(page.getByLabel('Markdown 正文', { exact: true })).toBeVisible();
@@ -394,7 +403,7 @@ test('edits rich documents with protected drafts, atomic images, effective previ
 
 test('retains Markdown object references and renders inline HTML without persisting HTML files', async ({ page }) => {
   await seedRecentWorkspace(page);
-  const graph = JSON.parse(emptyGraph);
+  const graph = JSON.parse(emptyGraphManifest());
   graph.graph.points = [
     { id: 'markdown', data: { label: 'Markdown concept', document: 'docs/markdown' } },
     { id: 'html', data: { label: 'HTML concept', document: 'docs/html' } },

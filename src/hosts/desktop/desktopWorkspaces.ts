@@ -1,6 +1,6 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type { WorkspaceHandle } from '../../app/host';
-import { createWorkspace, parseWorkspaceGraph, workspaceIdFromName } from '../../workspace/index';
+import { WORKSPACE_ID_RULE, createWorkspace, isValidWorkspaceId, parseWorkspaceGraph } from '../../workspace/index';
 import { createDesktopWorkspaceSource, type DesktopInvoke } from './desktopWorkspaceSource';
 import { rememberWorkspace, type RecentWorkspaceStorage } from './recentWorkspaces';
 
@@ -41,7 +41,15 @@ export function createDesktopWorkspaceActions(invoke: DesktopInvoke = tauriInvok
       const directory = await invoke<Directory | null>('choose_workspace_source_directory');
       if (!directory) return null;
       const source = createDesktopWorkspaceSource(directory.path, invoke);
-      const change = createWorkspace({ id: workspaceIdFromName(directory.name), title: directory.name });
+      /* This host's only naming step is a directory picker, so the name the user gave the folder
+       * is the identity, taken as it is. Nothing is generated and nothing is rewritten: folding
+       * or truncating an unusable name would hand two different folders one identity, so it is
+       * refused and the application shows the refusal. Asking for the id outright is the naming
+       * flow, not this bridge. */
+      if (!isValidWorkspaceId(directory.name)) {
+        throw new Error(`「${directory.name}」不能作为工作区 id：必须是${WORKSPACE_ID_RULE}，请重命名这个文件夹`);
+      }
+      const change = createWorkspace({ id: directory.name, title: directory.name });
       await source.commit(change.changes);
       return handle(directory);
     },

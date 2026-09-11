@@ -2015,6 +2015,12 @@ mod tests {
         let saved = read_snapshot(destination.path(), true).unwrap();
         assert_eq!(saved.workspace.manifest.graph.points.len(), 6);
         assert_eq!(saved.workspace.files.len(), 28);
+        // The copy carries the workspace identity: writing a manifest back must not drop the
+        // key learner records are stored under.
+        assert_eq!(
+            saved.workspace.manifest.id,
+            serde_json::json!("complete-workspace")
+        );
 
         let error = write_new_workspace_files(destination.path(), source.manifest, source.files)
             .unwrap_err();

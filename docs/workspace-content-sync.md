@@ -60,9 +60,9 @@ being replaced. That session-local, cursor-and-task-submission model is supersed
 [ADR-0012](adr/0012-learning-state-is-mastery.md): mastery records and confirmed routes live in
 [learner records](learner-records.md) outside the workspace, and a route's current step is derived
 from mastery rather than stored. #98–#103 replace the implementation; the content-version checks
-above survive as the record and route `basis` semantics. Schema-upgrade consent is not applicable to `derivon.workspace/v1`, which has no
-released predecessor; an unknown schema remains a broken workspace. Older schemas still open
-read-only.
+above survive as the record and route `basis` semantics. Schema-upgrade consent is not
+applicable to `derivon.workspace/v1`, which has no released predecessor; an unknown schema
+remains a broken workspace. Older schemas still open read-only.
 No atomic read/CAS/crash-recovery guarantee is implied by the current port.
 
 The restored editor is not completion of #53. Document updates validate the owning source
@@ -184,7 +184,8 @@ when a user submits a nonempty search query. Existing unowned files are not remo
 
 Learner records are not application/session state and are not workspace content. They persist in
 the application data directory, keyed by the workspace `id`, and are described in
-[learner records](learner-records.md) ([ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md)).
+[learner records](learner-records.md)
+([ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md)).
 What used to be called progress is not stored: a route's current step is derived at display time
 from the mastery record and the route record ([ADR-0012](adr/0012-learning-state-is-mastery.md)).
 Which routes a content change affects is decided by `basis`: a record or route whose stored `basis`

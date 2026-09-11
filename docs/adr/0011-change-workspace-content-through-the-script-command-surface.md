@@ -54,7 +54,9 @@ The tool set is constructed per mode, so a session holds only the capabilities i
 the learning session has no write command registered in it at all. "Learning mode cannot edit" is
 structural, not a switch that some other code path could turn back on. Reading follows where the
 truth lives: workspace content is on disk and is read on demand through read-capability commands,
-while learning state is application state and reaches the model only by injection. Containment is
+while learner records are not workspace content and reach the model only through the commands that
+read them ([ADR-0009](0009-persist-learner-records-outside-the-workspace.md),
+[ADR-0012](0012-learning-state-is-mastery.md)). Containment is
 checked per entry on the real path, never by string prefix — a prefix check is exactly what let
 `/mnt/finance/data-archived` through an allowance of `/mnt/finance/data`.
 

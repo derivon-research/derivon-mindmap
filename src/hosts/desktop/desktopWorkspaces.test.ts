@@ -8,7 +8,7 @@ describe('desktop workspace entry workflow', () => {
     let graph: string | undefined;
     const writes: unknown[] = [];
     const invoke = (async (command: string, args?: Record<string, unknown>) => {
-      if (command === 'choose_workspace_source_directory') return { path: '/tmp/graph', name: 'My graph' };
+      if (command === 'choose_workspace_source_directory') return { path: '/tmp/graph', name: 'my-graph' };
       if (command === 'commit_workspace_source_changes') {
         writes.push(args);
         const changes = args!.changes as { graph: string; createOnly?: boolean };
@@ -31,14 +31,14 @@ describe('desktop workspace entry workflow', () => {
     expect(reopened!.id).toBe(created!.id);
     expect(await reopened!.source.readGraph()).toBe(graph);
     await expect(actions.createWorkspace()).rejects.toThrow('Already a workspace');
-    expect(parseWorkspaceManifest(graph!).manifest.document.title).toBe('My graph');
+    expect(parseWorkspaceManifest(graph!).manifest.document.title).toBe('my-graph');
     expect(parseWorkspaceManifest(graph!).manifest.id).toBe('my-graph');
   });
 
   it('keeps a newly persisted workspace usable when the optional recent-list storage is unavailable', async () => {
     let graph = '';
     const invoke = (async (command: string, args?: Record<string, unknown>) => {
-      if (command === 'choose_workspace_source_directory') return { path: '/tmp/graph', name: 'My graph' };
+      if (command === 'choose_workspace_source_directory') return { path: '/tmp/graph', name: 'my-graph' };
       if (command === 'commit_workspace_source_changes') { graph = (args!.changes as { graph: string }).graph; return; }
       if (command === 'read_workspace_source_graph') return graph;
       throw new Error(command);
@@ -48,8 +48,25 @@ describe('desktop workspace entry workflow', () => {
       setItem: () => { throw new Error('Storage unavailable'); },
     });
     const created = await actions.createWorkspace();
-    expect(parseWorkspaceManifest(await created!.source.readGraph()).manifest.document.title).toBe('My graph');
+    expect(parseWorkspaceManifest(await created!.source.readGraph()).manifest.document.title).toBe('my-graph');
     expect((await actions.chooseWorkspace())!.id).toBe(created!.id);
+  });
+
+  /* Each of these is unusable as it stands, and each would be usable only after a rewrite —
+   * folding case, replacing a separator, dropping a trailing dot. Rewriting is what the host
+   * must not do: it would hand two different folders one identity. */
+  it('refuses a folder name that a rewrite would make usable, and writes nothing', async () => {
+    for (const name of ['My graph', 'My-Graph', 'night_owl', 'graph.']) {
+      const commands: string[] = [];
+      const invoke = (async (command: string) => {
+        if (command === 'choose_workspace_source_directory') return { path: '/tmp/graph', name };
+        commands.push(command);
+        throw new Error(command);
+      }) as DesktopInvoke;
+      const actions = createDesktopWorkspaceActions(invoke, null);
+      await expect(actions.createWorkspace(), name).rejects.toThrow(/不能作为工作区 id/);
+      expect(commands, name).toEqual([]);
+    }
   });
 
   it('does not read or write when the native picker is cancelled', async () => {

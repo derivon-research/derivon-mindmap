@@ -17,6 +17,11 @@ that is not workspace content. There are two files, and they answer two differen
 Both are written beside each other but read and replaced independently. Deleting one leaves
 the other complete and readable.
 
+Both are read the same way: a `schema` string that is not the file's own is an unreadable file,
+and a key the protocol does not define — at the top level, inside a record, or inside a route —
+is reported rather than ignored. Free-form state belongs in a record's `data`, namespaced by its
+writer.
+
 ## Where they live
 
 ```text
@@ -41,7 +46,9 @@ Rules the layout depends on:
    no segment yet; adding a second learner inserts a segment above `<workspace id>` and changes
    no other part of the layout.
 2. **The key is the workspace `id` from the manifest.** Copy a workspace folder and the copy
-   shares the record — same id, same identity. Two workspaces must not share an id.
+   shares the record — same id, same identity. Two workspaces must not share an id. The id's
+   own rule (alphabet, length, immutability) is the workspace protocol's, in the README's
+   工作区格式; this document only fixes that it is the key.
 3. **A workspace with no `id` is a broken workspace.** It never reaches this directory, so
    there is no fallback branch and no path-derived key.
 4. **Any index from `id` to the last path it was seen at is application startup state**, kept
@@ -82,7 +89,7 @@ one route is mastered everywhere it appears.
 ```
 
 - `schema` is `derivon.learning/v1`. Any other string is an unreadable record, reported as
-  one; there is no input dialect. Unknown top-level keys are reported, not ignored.
+  one; there is no input dialect.
 - `concepts` and `derivations` are objects keyed by object id. They are the same protocol:
   concept mastery and derivation mastery are **isomorphic**, with the same fields and the same
   rules. A reader that handles one handles the other.
@@ -124,17 +131,40 @@ why. It therefore carries no object inventory, no list of files and no reason.
 
 Its coverage is fixed:
 
-- the manifest entry for this object — the point or hyperedge object exactly as it appears in
-  `.derivon/workspace.json`, including its `data` — and
+- the manifest entry for this object — the point or hyperedge object and its `data`, whose
+  **values** are covered (the file's indentation and key order are not; the encoding below fixes
+  what the values contribute), and
 - every file under that object's document directory, recursively, as workspace-relative paths
   and bytes.
 
 So a change to the object's label, description, tags, endpoints or weight invalidates the
 judgement, and so does any change to a document or asset the object owns. A change to some
 *other* object does not: prerequisites and dependents are separate objects with separate
-records. The concrete framing is the workspace revision's — sorted, length-framed relative
-paths and fixed-size file digests — so the application and the command surface compute the
-same value from one shared mechanism rather than two.
+records.
+
+`basis` is computed the way the workspace revision is computed — one SHA-256 stream, rendered as
+lowercase hexadecimal, over records sorted ascending by name, each record being the name's length
+as an unsigned 64-bit little-endian integer, the name's UTF-8 bytes, and a 32-byte digest — but
+its records are these, and this is the **only** place they are defined:
+
+- a **document file**: the name is the file's workspace-relative path, and the digest is the
+  workspace revision's digest for that file — for a readable file, SHA-256 over the four bytes
+  `file` followed by its bytes; for one that cannot be read, the revision's `unreadable:` digest
+  over the metadata it looks up — the error kind, length, modification time and permissions of
+  the nearest accessible ancestor when the file itself cannot be stat'd;
+- the **object's manifest entry**: the name is `.derivon/workspace.json#<object id>`, which no
+  document file can claim because an object's document directory is never under `.derivon/`, and
+  the digest is SHA-256 over the four bytes `entry` followed by the entry's **canonical JSON**:
+  object keys in ascending code-unit order, no insignificant whitespace, arrays in their recorded
+  order, numbers in ECMAScript's shortest round-tripping form (`2`, not `2.0` or `2e0`), encoded
+  as UTF-8.
+
+The two-domain prefixes are what keeps a file's record from ever colliding with an entry's. Both
+writers digest the same bytes, so a manifest rewritten with the same values — different
+indentation, different key order — keeps every judgement alive, while any changed value retires
+the judgement whose object changed. A `derivon.routes/v1` record's `basis` covers exactly these
+records for every concept and derivation it names in `conceptIds` and `derivationIds`, and nothing
+else.
 
 ### Invalidation: mark, keep, never re-decide
 
@@ -184,7 +214,9 @@ subgraph with all `data` stripped; it references the manifest's graph and copies
   graph edit does not invalidate the route.
 - `conceptIds`, `derivationIds`, `order` and `cost` are the subgraph: the concepts and
   derivations it uses, the executable order of the derivations, and the solved cost. They are
-  references into the manifest, never copies of object `data`.
+  references into the manifest, never copies of object `data`. `cost` is in the same unit and
+  precision as a manifest `weight` (at most one decimal place), and is the cost the solve
+  reported; a route is only written when that solve reported a finite one.
 
 Rules the format depends on:
 

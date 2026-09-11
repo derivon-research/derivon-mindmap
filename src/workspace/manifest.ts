@@ -8,36 +8,42 @@
 export const WORKSPACE_SCHEMA = 'derivon.workspace/v1' as const;
 
 /**
- * The workspace identity. The user names it, it never changes, and it becomes a directory
- * name under the application data directory, so it is exactly one filesystem-safe path
- * segment: lowercase ASCII letters, digits and hyphens, at most 64 characters. Case never
- * has to be folded because uppercase is not in the alphabet, so two ids differing only in
- * case cannot both exist. `document.title` is the mutable display name; this is identity.
+ * The longest workspace id, counted in characters. The rule is stated once, in
+ * `WORKSPACE_ID_RULE` below, because three messages have to explain it.
  */
-export const WORKSPACE_ID_MAX_LENGTH = 64;
+const WORKSPACE_ID_MAX_LENGTH = 64;
 const WORKSPACE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
+/* An id is a directory name under the application data directory, and Windows refuses to create
+ * these exact names as directory names. Uppercase never reaches this set because uppercase is
+ * not in the alphabet, and a name carrying an extension cannot either: the alphabet has no dot. */
+const RESERVED_WORKSPACE_IDS = new Set([
+  'con', 'prn', 'aux', 'nul',
+  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
+]);
+
+/**
+ * What an id may be, stated once for every message that has to explain it: the validator's
+ * issue, and the messages the application and the host show. The normative text is the
+ * workspace protocol's (README 的「工作区格式」).
+ */
+export const WORKSPACE_ID_RULE =
+  `小写 ASCII 字母、数字与连字符组成的一段路径名，首尾必须是字母或数字，最长 ${WORKSPACE_ID_MAX_LENGTH}`
+  + ' 字符，且不是 Windows 保留的设备名（con、prn、aux、nul、com1–com9、lpt1–lpt9）';
+
+/**
+ * The workspace identity. The user names it, it never changes, and it becomes a directory name
+ * under the application data directory, so it is exactly one filesystem-safe path segment —
+ * `WORKSPACE_ID_RULE`. Case never has to be folded because uppercase is not in the alphabet,
+ * so two ids differing only in case cannot both exist. `document.title` is the mutable display
+ * name; this is identity.
+ */
 export function isValidWorkspaceId(value: unknown): value is string {
   return typeof value === 'string'
     && value.length <= WORKSPACE_ID_MAX_LENGTH
-    && WORKSPACE_ID_PATTERN.test(value);
-}
-
-/**
- * Bridge for hosts whose only naming step is a directory picker: derive the id from the
- * user's chosen folder name. This is normalization, not allocation — an unusable name is
- * refused rather than silently renamed to something else, and the naming flow itself still
- * belongs to the workspace-identity work. Throws when nothing usable remains.
- */
-export function workspaceIdFromName(name: string): string {
-  const id = name.toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .slice(0, WORKSPACE_ID_MAX_LENGTH)
-    .replace(/^-+|-+$/g, '');
-  if (!isValidWorkspaceId(id)) {
-    throw new Error(`无法从「${name}」得到工作区 id：请用小写字母、数字与连字符命名`);
-  }
-  return id;
+    && WORKSPACE_ID_PATTERN.test(value)
+    && !RESERVED_WORKSPACE_IDS.has(value);
 }
 
 const WEIGHT_SCALE = 10;
@@ -166,7 +172,7 @@ export function validateWorkspaceManifest(value: unknown): ManifestIssue[] {
   }
   if (value.id === undefined) issues.push({ path: 'id', message: '缺少工作区 id：工作区身份由用户命名且不可改' });
   else if (!isValidWorkspaceId(value.id)) {
-    issues.push({ path: 'id', message: `必须是文件系统安全的一段路径名：小写字母、数字与连字符，最长 ${WORKSPACE_ID_MAX_LENGTH} 字符` });
+    issues.push({ path: 'id', message: `必须是${WORKSPACE_ID_RULE}` });
   }
   if (value.view !== undefined) issues.push({ path: 'view', message: 'v1 没有替换视图，请移除 view' });
   if (!isRecord(value.document)) issues.push({ path: 'document', message: '缺少文档元数据' });
