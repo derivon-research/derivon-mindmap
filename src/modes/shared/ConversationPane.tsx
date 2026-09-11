@@ -33,6 +33,7 @@ export function ConversationPane({
   placeholder,
   quickQuestions,
   fallbackMessage,
+  drainPendingChanges,
   onMessageComplete,
 }: {
   mode: ConversationMode;
@@ -40,6 +41,8 @@ export function ConversationPane({
   placeholder: string;
   quickQuestions?: readonly QuickQuestion[];
   fallbackMessage: string;
+  /** See `AuthoringModeProps.drainPendingChanges`; absent when there is nothing to write. */
+  drainPendingChanges?: () => Promise<void>;
   onMessageComplete?: (text: string) => void;
 }) {
   const [messages, setMessages] = useState<readonly Message[]>([]);
@@ -164,6 +167,9 @@ export function ConversationPane({
     }
     activeAssistantId.current = appendMessage('assistant');
     setRunning(true);
+    // Before the Agent is asked anything, so its first read sees what the user has accepted.
+    // Best effort: a drain that fails is the save-state banner's story, not this turn's.
+    await drainPendingChanges?.().catch(() => {});
     try {
       await provider.send(text);
     } catch (error) {

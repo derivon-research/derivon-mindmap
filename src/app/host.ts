@@ -52,6 +52,15 @@ export type AuthoringModeProps = {
   readonly onSelectConcept: (conceptId: string | null) => void;
   readonly syncStatus?: { readonly state: 'saved' | 'pending' | 'saving' | 'error'; readonly label: string };
   readonly onRetrySync?: () => void;
+  /**
+   * Writes the pending accepted changes to disk. A conversation pane awaits it before a turn
+   * reaches the provider, so the Agent's first read sees the effective content rather than what
+   * the user has already replaced. Best effort and silent: an external version that has paused
+   * saving leaves it nothing to do, a save that failed is retried, and either way the turn starts
+   * — the save-state banner is the whole explanation, and this is never a second refusal path. It
+   * is not a gate on editing, and nothing is suspended while it runs.
+   */
+  readonly drainPendingChanges?: () => Promise<void>;
   readonly conversation?: ConversationProvider;
 };
 
@@ -74,6 +83,8 @@ export type LearningModeProps = {
   readonly onConfirmRoute: () => void;
   /** The accepted route became unusable; the application gate must require a new preview. */
   readonly onRouteInvalidated: () => void;
+  /** See `AuthoringModeProps.drainPendingChanges`; the learning side reads the same disk. */
+  readonly drainPendingChanges?: () => Promise<void>;
   readonly conversation?: ConversationProvider;
 };
 

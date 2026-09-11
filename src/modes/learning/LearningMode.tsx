@@ -27,7 +27,7 @@ import {
 export function LearningMode({
   active = true, content, targetIds, knownIds, onChangeTargets, onChangeKnown,
   routeSolver, view, onEnterView, onConfirmRoute, onRouteInvalidated, readAsset, readDocuments,
-  conversation,
+  conversation, drainPendingChanges,
 }: LearningModeProps) {
   const plan = useMemo(() => planOrientation(content), [content]);
   const [flow, setFlow] = useState(() => beginOrientation(plan));
@@ -137,7 +137,7 @@ export function LearningMode({
         tasksDone={taskCompletions} onTaskDone={completeTask}
         panels={panels} onPanels={setPanels} onKnow={know}
         onBackToPreview={() => onEnterView('preview')} readAsset={readAsset} readDocuments={readDocuments}
-        conversation={conversation} />
+        conversation={conversation} drainPendingChanges={drainPendingChanges} />
       : <div className="learning-route-empty" role="status">
         <p>路线不见了 —— 目标或者已知变过，得重新算一次。</p>
         <button type="button" className="learning-primary" onClick={() => onEnterView('preview')}>回去看路线</button>

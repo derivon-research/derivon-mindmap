@@ -77,7 +77,11 @@ export type AuthoringCommands = {
 export type WorkspaceSession = {
   readonly reader: WorkspaceReader;
   readonly authoring?: AuthoringCommands;
-  /** Explicit retry/close integration point; mode changes never call this. */
+  /**
+   * Explicit retry/close integration point, and the drain a conversation turn awaits before its
+   * first read; mode changes never call this. Best effort: a write that fails is published as the
+   * save state rather than thrown, so a caller that only needs the queue emptied can wait on it.
+   */
   flush(): Promise<void>;
   reload(): Promise<'loaded' | 'protected'>;
   /** Caller must confirm discarding local drafts and queued changes. Never interrupts a write. */

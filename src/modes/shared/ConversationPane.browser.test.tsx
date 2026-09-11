@@ -179,3 +179,48 @@ it('answers a quick question from the graph even when a model is connected', asy
   await expect.element(page.getByText('取自图上文档的答案。')).toBeVisible();
   expect(provider.send).not.toHaveBeenCalled();
 });
+
+/** Renders a pane whose turn is gated on a drain the test controls. */
+async function renderWithDrain(provider: FakeProvider, drain: () => Promise<void>) {
+  root = createRoot(container);
+  await act(async () => root?.render(
+    <ConversationPane
+      mode="authoring"
+      provider={provider}
+      placeholder="描述你想完成的修改…"
+      fallbackMessage="未连接模型。"
+      drainPendingChanges={drain}
+    />));
+}
+
+it('drains pending changes before the turn reaches the provider', async () => {
+  const provider = new FakeProvider();
+  const order: string[] = [];
+  provider.send.mockImplementation(async () => { order.push('send'); });
+  let release!: () => void;
+  const drain = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
+  await renderWithDrain(provider, drain);
+
+  await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
+  await page.getByRole('button', { name: '发送消息' }).click();
+
+  // The message is already in the transcript; what waits is the Agent being asked.
+  await expect.element(page.getByText('这一步为什么成立？')).toBeVisible();
+  expect(drain).toHaveBeenCalledTimes(1);
+  expect(provider.send).not.toHaveBeenCalled();
+
+  await act(async () => { release(); });
+  await expect.poll(() => order).toEqual(['send']);
+});
+
+it('starts the turn even when the drain fails', async () => {
+  const provider = new FakeProvider();
+  await renderWithDrain(provider, async () => { throw new Error('保存失败'); });
+
+  await page.getByRole('textbox', { name: 'Agent 消息' }).fill('照样开始');
+  await page.getByRole('button', { name: '发送消息' }).click();
+
+  // A failed drain adds no refusal path of its own: the save banner is the whole explanation.
+  await expect.element(page.getByText('Hello')).toBeVisible();
+  expect(provider.send).toHaveBeenCalledWith('照样开始');
+});

@@ -125,11 +125,13 @@ replacement and changes nothing by itself, though change detection reads it once
 
 ## Consequences
 
-- The exclusion is replaced before it was ever built, and the drain that replaces it is not built
-either: the application autosaves on its own timer, does not flush before a turn begins, and
-records nothing about a turn being in flight. The window is small — the autosave delay is under a
-second, and the agent's first read comes after the user's key press — but it is a window in which
-the agent can read content the user has already replaced.
+- The exclusion is replaced before it was ever built, and the drain that replaces it is built: as the
+user presses send, and before the message reaches the agent, the application drains its write-back
+queue, so the first content the agent reads is the content the user has already accepted. The drain
+is best-effort and suspends nothing — autosave and in-application editing continue throughout a
+turn, and it records nothing about a turn being in flight. When saving has failed, or an external
+version has paused it, draining may leave the queue non-empty; the turn starts anyway, and the
+save-state banner is the whole explanation — a send is not a second refusal path.
 - The existing scripts are not yet this surface. Only `crosslink-documents.mjs` writes workspace
   content, only documents, in place, with no precondition; the atomic manifest replacement that
   `SKILL.md` describes is performed by shell `mv` in `references/unix-recipes.md`; and a

@@ -37,6 +37,7 @@ export type RouteLearningProps = {
   readonly readAsset?: LearningModeProps['readAsset'];
   readonly readDocuments?: LearningModeProps['readDocuments'];
   readonly conversation?: LearningModeProps['conversation'];
+  readonly drainPendingChanges?: LearningModeProps['drainPendingChanges'];
 };
 
 /**
@@ -50,6 +51,7 @@ export type RouteLearningProps = {
 export function RouteLearning({
   active, content, solution, targetIds, knownIds, cursor, onCursor, revealed, onReveal,
   tasksDone, onTaskDone, panels, onPanels, onKnow, onBackToPreview, readAsset, readDocuments, conversation,
+  drainPendingChanges,
 }: RouteLearningProps) {
   const graph = content.graph;
   const steps = useMemo(() => routeSteps(graph, solution), [graph, solution]);
@@ -111,7 +113,8 @@ export function RouteLearning({
           Only 新对话 ends a conversation. */}
       <LearningAgentPane
         quickQuestions={current ? premiseQuestions(steps, current, label) : []}
-        onWideAnswer={() => movePanel('tutor', 'expanded')} conversation={conversation} />
+        onWideAnswer={() => movePanel('tutor', 'expanded')} conversation={conversation}
+        drainPendingChanges={drainPendingChanges} />
     </aside>}
 
     <article className="learning-text">
