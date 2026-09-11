@@ -105,9 +105,30 @@ evidence on the way to the panel is a regression:
 - Start from a neutral, fixed system prompt.
 - Add mode-specific prompts by composing a new harness config in the companion, not by
   branching inside the webview.
-- Add tools only through Pi’s custom tool API.
-- Keep built-in filesystem and shell tools disabled unless a mode explicitly needs them.
-- Future authoring tools should be composed into the authoring harness only.
+- Register no built-in filesystem or shell tool in any mode — not `read`, not `write`, not
+  `edit`, not `bash`. This is not a default a mode may switch back on: excluding `bash` is
+  what makes the capability limit real rather than decorative (ADR-0011).
+- A tool is either a script command wrapped with Pi’s custom tool API, or one of the
+  mode’s own custom tools below. The capability words and the rule that a session holds the
+  intersection of command → capability and mode → capability have one owner — ADR-0011 and
+  `CONTEXT.md` — so do not restate them here and do not keep a second list in the companion.
+- The learning session registers no write capability at all: “learning mode cannot edit” is
+  structural, not a switch another code path could turn back on. It holds for workspace
+  content and for learner records alike — a learning session reads learner records through
+  the learner-record read commands and writes none, because a record is written either by
+  the application’s own learning actions or by the command surface with no client running
+  ([learner records](../learner-records.md)).
+- The learning session registers exactly two custom tools, both of them application state:
+  setting or appending a goal, and requesting a route recompute (entering preview). There
+  is no step-advance tool: a route’s current step is derived from mastery, so there is no
+  cursor to move.
+- Authoring is the only mode that registers script commands writing workspace content;
+  compose them into the authoring harness only.
+
+Both modes run with `noTools: 'all'` today. The tool sets above are what the v1.0.0 tickets
+build (#50 for the learning side, #104 for authoring). `noTools: 'all'` also filters custom
+tools out of the registry, so a mode that registers any passes an explicit `tools` allowlist
+instead of leaning on `noTools` to keep the built-ins out.
 
 ## Environment isolation
 
