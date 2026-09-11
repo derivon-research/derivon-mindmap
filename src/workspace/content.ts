@@ -222,11 +222,12 @@ export function updateObjectDocument(content: WorkspaceContent, intent: UpdateDo
   };
 }
 
-export function createWorkspace(intent: { title: string }): ContentChange {
+export function createWorkspace(intent: { id: string; title: string }): ContentChange {
   const title = intent.title.trim();
   if (!title) throw new Error('工作区名称不能为空');
   const graph = serializeWorkspaceManifest({
     schema: WORKSPACE_SCHEMA,
+    id: intent.id,
     document: { title, description: '' },
     tags: [],
     graph: { points: [], hyperedges: [] },

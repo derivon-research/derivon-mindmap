@@ -11,7 +11,7 @@ import { DeleteObject } from './DeleteObject';
 import { fakeAuthoringCommands } from '../../testing/authoringCommands';
 
 const graph = JSON.stringify({
-  schema: WORKSPACE_SCHEMA, document: { title: 'T', description: '' }, tags: [],
+  schema: WORKSPACE_SCHEMA, id: 'test-workspace', document: { title: 'T', description: '' }, tags: [],
   graph: {
     points: [
       { id: 'c-a', data: { label: '数域', document: 'docs/concept-a' } },

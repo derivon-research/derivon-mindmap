@@ -8,8 +8,10 @@ no on-disk protocol change.
 Domain terms are defined in [CONTEXT.md](../CONTEXT.md). The load-bearing decisions are
 [mode-independent synchronization](adr/0004-synchronize-workspace-content-independently-of-modes.md)
 and [deletion with owned documents](adr/0005-delete-owned-documents-with-their-objects.md).
-Learning state keeps its own session-local, content-version-aware boundary in
-[ADR-0009](adr/0009-keep-learning-state-session-local-until-shaped.md).
+Learning state has its own boundary outside the workspace, keyed by workspace identity, in
+[ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) and
+[ADR-0012](adr/0012-learning-state-is-mastery.md); the protocols are in
+[learner records](learner-records.md).
 The [current WorkspaceSource contract](workspace-source.md) remains the description of
 implemented port behaviour.
 
@@ -54,7 +56,11 @@ changes invalidate the renderer until return. #55 adds the remaining learning-st
 an accepted route is held with its graph signature, task submissions record the document versions
 they were checked against, affected routes block until a new preview is accepted, stale tasks must
 be submitted again without clearing unrelated progress, and deleted targets are reported without
-being replaced. Schema-upgrade consent is not applicable to `derivon.workspace/v1`, which has no
+being replaced. That session-local, cursor-and-task-submission model is superseded by
+[ADR-0012](adr/0012-learning-state-is-mastery.md): mastery records and confirmed routes live in
+[learner records](learner-records.md) outside the workspace, and a route's current step is derived
+from mastery rather than stored. #98–#103 replace the implementation; the content-version checks
+above survive as the record and route `basis` semantics. Schema-upgrade consent is not applicable to `derivon.workspace/v1`, which has no
 released predecessor; an unknown schema remains a broken workspace. Older schemas still open
 read-only.
 No atomic read/CAS/crash-recovery guarantee is implied by the current port.
@@ -171,23 +177,22 @@ when a user submits a nonempty search query. Existing unowned files are not remo
 | Module | Interface responsibility | Does not own |
 | --- | --- | --- |
 | Content module, under `src/workspace/` | Accept a complete editing intent; validate it and return effective content, a complete change set and affected references or diagnostics | Host I/O, timers, UI state, save scheduling |
-| Workspace synchronization module, composed at application scope | Coordinate effective in-memory content, consistent read-only preview, automatic save/load, draft protection, conflicts and failures | Form rules, route solving, learning progress |
+| Workspace synchronization module, composed at application scope | Coordinate effective in-memory content, consistent read-only preview, automatic save/load, draft protection, conflicts and failures | Form rules, route solving, learner records |
 | Authoring mode | Present editing controls, protect unfinished drafts, submit content intents through the shared workflow and resolve user decisions | Its own file-writing queue or external-change detector |
-| Learning mode | Read effective content, retain learner intent and records, invalidate affected routes after content changes | Workspace writes or synchronization policy |
+| Learning mode | Read effective content, retain learner intent, read and write learner records through their own boundary, report affected judgements after content changes | Workspace writes or synchronization policy |
 | Host adapter behind `WorkspaceSource` | Carry out the authorized reads and writes using host capabilities | Product editing intent or mode-specific state |
 
-Learning progress remains application/session state. The learning mode records the accepted
-route and its content basis. Only a route-affecting graph change—order, cost, topology, or
-reachability—invalidates that route and blocks the current walk with an explicit re-preview
-prompt; label, description, tag, and unrelated graph changes do not. Targets, known concepts,
-revealed definitions and task records are retained rather than rewritten into workspace
-content.
-
-A comprehension-task record carries the graph basis, route order, generated task, and the basis
-of both the derivation and definition documents it verified. When a document changes, only
-that task is treated as unverified; the learner is returned to the earliest stale step, while
-unrelated completions remain marked. Unread documents are checked through the shared reader,
-so an external body update is not accepted just because the manifest is unchanged.
+Learner records are not application/session state and are not workspace content. They persist in
+the application data directory, keyed by the workspace `id`, and are described in
+[learner records](learner-records.md) ([ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md)).
+What used to be called progress is not stored: a route's current step is derived at display time
+from the mastery record and the route record ([ADR-0012](adr/0012-learning-state-is-mastery.md)).
+Which routes a content change affects is decided by `basis`: a record or route whose stored `basis`
+no longer matches is marked stale and kept, while unrelated records keep counting. Only a
+route-affecting graph change—order, cost, topology, or reachability—makes a route inconsistent
+with the current graph; label, description, tag, and unrelated graph changes do not. Targets and
+known concepts are solve inputs, not records: targets are application state, and known is derived
+from `complete` mastery records. Neither is written into workspace content.
 
 The content module hides ID and document-directory allocation, templates, graph changes,
 reference impact and validation behind complete operations. Callers do not build a concept
@@ -232,11 +237,11 @@ are acceptance cases to implement, not claims about existing test coverage.
 | C3-05: delete object | Include its owned documents and assets in the deletion, including documents owned by derivations removed with a concept; preserve unrelated files | #52, #53 |
 | C3-06: deletion has incoming references | Block direct deletion; allow GUI repair or an explicitly confirmed complete repair/deletion plan; never silently strip links or images | #52, #53, #58 |
 | C3-07: authoring to learning | Preview one consistent effective version of graph, documents and orientation configuration without waiting for or triggering a save | #51, #53, #58 |
-| C3-08: switch modes with a queued save | Continue an already authorized authoring save; learning navigation, targets, known concepts and progress produce no workspace writes | #51, #55 |
+| C3-08: switch modes with a queued save | Continue an already authorized authoring save; learning navigation, targets, mastery records and routes produce no workspace writes | #51, #55 |
 | C3-09: external update | Automatically load valid updates when no local edits require protection; otherwise preserve local work and external content and require resolution, without automatic merging | #55 |
 | C3-10: save failure | Retain effective content; allow editing and preview, show unsaved/error status, offer retry and warn before closing the workspace | #55 |
-| C3-11: update affects learning | Publish content changes; learning retains intent/records but invalidates affected routes, stops unlocking through stale results and reports deleted targets rather than replacing them | #55 integration with #47, #48, #49 |
-| C3-12: document changed after completion | Report the change; do not treat earlier completion as verification of the new content or clear unrelated progress | #53, #55 integration with #48 |
+| C3-11: update affects learning | Publish content changes; learning retains records but reports affected judgements as stale, stops deriving the current step through them and reports deleted targets rather than replacing them | #55 integration with #47, #48, #49 |
+| C3-12: document changed after a judgement | Report the change; do not treat an earlier judgement as verification of the new content, and do not clear unrelated records | #53, #55 integration with #48 |
 | C3-13: external update with draft but no queued save | Protect the draft's editing basis instead of automatically replacing it; draft remains unsaved until accepted | #51, #53, #55, #58 |
 
 A content change must not mix the new graph with documents or configuration from an older

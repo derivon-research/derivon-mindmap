@@ -10,7 +10,7 @@ import {
 function workspace(): WorkspaceContent {
   // A hand-written manifest, so the ids in CONFIG below are the ids a real graph has.
   return parseWorkspaceContent({ graph: JSON.stringify({
-    schema: WORKSPACE_SCHEMA,
+    schema: WORKSPACE_SCHEMA, id: 'test-workspace',
     document: { title: 'T', description: '' },
     tags: [{ id: 'basics', label: '基础' }],
     graph: { points: [

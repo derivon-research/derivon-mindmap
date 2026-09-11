@@ -64,6 +64,16 @@ Immutable web sources implement neither revision observation nor the owned-file 
 
 ## State boundary
 
-Workspace content belongs behind this port. A learner's targets, known concepts, current route position, and progress are application state and must not be added to `WorkspaceSource`, companion metadata, or a workspace commit.
+Workspace content belongs behind this port. A learner's targets and solve results are
+application state and must not be added to `WorkspaceSource`, companion metadata, or a
+workspace commit.
 
-Returning learning records is a separate outbound boundary beside `WorkspaceSource`, not a workspace write. Its payload, lifetime, privacy rules, and local or remote destination are still undecided, so this phase intentionally defines no `LearningRecordSink` interface and no no-op implementation. The boundary should be specified when those decisions are made, without changing `WorkspaceSource`.
+Learner records — mastery (`derivon.learning/v1`) and confirmed routes (`derivon.routes/v1`) —
+are neither workspace content nor a separate outbound interface. They are files in the
+application data directory, keyed by the workspace `id`, written by the application and by the
+script command surface from one shared specification. Because they are not workspace content,
+`WorkspaceSource` exposes no storage location for them, a workspace commit can never carry one,
+and they are absent from workspace synchronization and from the workspace `revision`. See
+[learner records](learner-records.md),
+[ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) and
+[ADR-0012](adr/0012-learning-state-is-mastery.md).

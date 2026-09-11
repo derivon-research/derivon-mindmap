@@ -20,8 +20,8 @@ afterEach(async () => {
 });
 
 function fixture() {
-  const content = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A' }).content;
-  const changedContent = createConcept(createWorkspace({ title: 'Changed' }).content, { label: 'B' }).content;
+  const content = createConcept(createWorkspace({ id: 'test-workspace', title: 'Test' }).content, { label: 'A' }).content;
+  const changedContent = createConcept(createWorkspace({ id: 'test-workspace', title: 'Changed' }).content, { label: 'B' }).content;
   const documentPath = `${content.graph.points[0].data.document}/document.md`;
   let revision = 'initial';
   let bytes = new Uint8Array([1]);

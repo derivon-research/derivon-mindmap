@@ -32,6 +32,7 @@ describe('desktop workspace entry workflow', () => {
     expect(await reopened!.source.readGraph()).toBe(graph);
     await expect(actions.createWorkspace()).rejects.toThrow('Already a workspace');
     expect(parseWorkspaceManifest(graph!).manifest.document.title).toBe('My graph');
+    expect(parseWorkspaceManifest(graph!).manifest.id).toBe('my-graph');
   });
 
   it('keeps a newly persisted workspace usable when the optional recent-list storage is unavailable', async () => {

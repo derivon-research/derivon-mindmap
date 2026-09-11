@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import nativeRouteFixture from '../../src-tauri/tests/fixtures/complete-workspace/.derivon/workspace.json';
 import {
+  WORKSPACE_ID_MAX_LENGTH,
   WORKSPACE_SCHEMA,
   conceptTags,
   conceptsWithTag,
+  isValidWorkspaceId,
   parseWorkspaceManifest,
   serializeWorkspaceManifest,
   validateWorkspaceManifest,
+  workspaceIdFromName,
 } from './manifest';
 
 const v1 = (extra: Record<string, unknown> = {}) => JSON.stringify({
   schema: WORKSPACE_SCHEMA,
+  id: 'test-workspace',
   document: { title: 'Linear algebra', description: '' },
   tags: [{ id: 'algebra', label: '代数' }],
   graph: {
@@ -30,6 +34,49 @@ describe('derivon.workspace/v1 manifest', () => {
     expect(conceptTags(parsed.manifest.graph.points[0])).toEqual(['algebra']);
     expect(conceptTags(parsed.manifest.graph.points[1])).toEqual([]);
     expect(conceptsWithTag(parsed.manifest.graph, 'algebra').map((point) => point.id)).toEqual(['a']);
+  });
+
+  it('carries the workspace id as identity, and the display title stays separate', () => {
+    const parsed = parseWorkspaceManifest(v1());
+    expect(parsed.manifest.id).toBe('test-workspace');
+    expect(parsed.manifest.document.title).toBe('Linear algebra');
+  });
+
+  it('reports a manifest with no id as a broken workspace, naming the missing field', () => {
+    const manifest = JSON.parse(v1()) as Record<string, unknown>;
+    delete manifest.id;
+    expect(validateWorkspaceManifest(manifest)).toEqual([
+      { path: 'id', message: expect.stringContaining('缺少工作区 id') },
+    ]);
+  });
+
+  it('refuses any id that is not one filesystem-safe path segment', () => {
+    for (const id of ['My-Workspace', 'a/b', 'a\\b', 'a b', '..', '.hidden', 'a-', '-a', '', '工作区', `a-${'b'.repeat(WORKSPACE_ID_MAX_LENGTH)}`]) {
+      expect(isValidWorkspaceId(id)).toBe(false);
+      expect(validateWorkspaceManifest(JSON.parse(v1({ id })))).toEqual([
+        { path: 'id', message: expect.stringContaining('路径名') },
+      ]);
+    }
+  });
+
+  it('accepts a filesystem-safe id at the length limit', () => {
+    const id = 'a'.repeat(WORKSPACE_ID_MAX_LENGTH);
+    expect(isValidWorkspaceId(id)).toBe(true);
+    expect(validateWorkspaceManifest(JSON.parse(v1({ id })))).toEqual([]);
+  });
+
+  it('derives an id from a chosen folder name by normalizing it, refusing names with nothing left', () => {
+    expect(workspaceIdFromName('My graph')).toBe('my-graph');
+    expect(workspaceIdFromName('  Linear Algebra 101 ')).toBe('linear-algebra-101');
+    expect(workspaceIdFromName('a'.repeat(WORKSPACE_ID_MAX_LENGTH + 1))).toHaveLength(WORKSPACE_ID_MAX_LENGTH);
+    expect(() => workspaceIdFromName('工作区')).toThrow(/工作区 id/);
+  });
+
+  it('reports an unknown top-level key, which nothing else on the manifest used to check', () => {
+    expect(validateWorkspaceManifest(JSON.parse(v1({ view: { replacements: [] } }))).map((issue) => issue.path))
+      .toContain('view');
+    expect(validateWorkspaceManifest(JSON.parse(v1({ id: 'x', extra: true }))))
+      .toEqual([{ path: 'extra', message: expect.stringContaining('顶层') }]);
   });
 
   it('refuses a schema string it does not know', () => {
@@ -69,6 +116,7 @@ describe('derivon.workspace/v1 manifest', () => {
     const parsed = parseWorkspaceManifest(v1());
     const text = serializeWorkspaceManifest(parsed.manifest);
     expect(text.endsWith('\n')).toBe(true);
+    expect(JSON.parse(text)).toMatchObject({ schema: WORKSPACE_SCHEMA, id: 'test-workspace' });
     expect(JSON.parse(text).graph.points[1].data).not.toHaveProperty('tags');
     expect(parseWorkspaceManifest(text).manifest).toEqual(parsed.manifest);
   });

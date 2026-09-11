@@ -14,7 +14,7 @@ export async function createOpeningWorkspace(concepts: number): Promise<string> 
     data: { document: `docs/h-${index}` },
   }));
   await writeFile(path.join(root, '.derivon/workspace.json'), JSON.stringify({
-    schema: 'derivon.workspace/v1', document: { title: 'Opening benchmark', description: '' },
+    schema: 'derivon.workspace/v1', id: 'opening-benchmark', document: { title: 'Opening benchmark', description: '' },
     graph: { points, hyperedges },
   }));
   for (const object of [...points, ...hyperedges]) {

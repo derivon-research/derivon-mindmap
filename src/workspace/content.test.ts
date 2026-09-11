@@ -13,7 +13,7 @@ const idOf = (content: WorkspaceContent, label: string) =>
 
 describe('complete workspace content operations', () => {
   it('creates a workspace and its first concept with owned documents in one operation', () => {
-    const initial = createWorkspace({ title: 'Linear algebra' });
+    const initial = createWorkspace({ id: 'test-workspace', title: 'Linear algebra' });
     const created = createConcept(initial.content, { label: 'Vector space' });
     const manifest = parseWorkspaceManifest(created.changes.graph!).manifest;
     const concept = manifest.graph.points[0];
@@ -36,9 +36,19 @@ describe('complete workspace content operations', () => {
     expect(initial.content.graph.points).toEqual([]);
   });
 
+  it('names the workspace with a user id, and refuses to create one the protocol rejects', () => {
+    const named = createWorkspace({ id: 'linear-algebra', title: 'Linear algebra' });
+    expect(parseWorkspaceManifest(named.content.graphText).manifest.id).toBe('linear-algebra');
+    expect(createConcept(named.content, { label: 'Vector space' }).content.graphText)
+      .toContain('"id": "linear-algebra"');
+    for (const id of ['Linear Algebra', 'a/b', '']) {
+      expect(() => createWorkspace({ id, title: 'T' })).toThrow(/id/);
+    }
+  });
+
   it('allows an unrelated concept without replacing damaged documents or losing opaque data', () => {
     const graph = JSON.stringify({
-      schema: WORKSPACE_SCHEMA, document: { title: 'Existing', description: 'Keep me' },
+      schema: WORKSPACE_SCHEMA, id: 'test-workspace', document: { title: 'Existing', description: 'Keep me' },
       tags: [{ id: 'algebra', label: '代数' }],
       graph: { points: [
         { id: 'kept', data: { label: 'Existing', document: 'docs/concept-kept', tags: ['algebra'] } },
@@ -64,7 +74,7 @@ describe('complete workspace content operations', () => {
   });
 
   it('rejects incomplete intents without modifying effective content', () => {
-    const initial = createWorkspace({ title: 'Original' }).content;
+    const initial = createWorkspace({ id: 'test-workspace', title: 'Original' }).content;
     expect(() => createConcept(initial, { label: '  ' })).toThrow();
     const created = createConcept(initial, { label: 'A' }).content;
     // Two concepts may share a name; they never share an id.
@@ -83,7 +93,7 @@ describe('complete workspace content operations', () => {
 
   it('atomically updates only Markdown source and owned image bytes', () => {
     const original = new Uint8Array([1, 2, 255]);
-    const created = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'Vector' });
+    const created = createConcept(createWorkspace({ id: 'test-workspace', title: 'Test' }).content, { label: 'Vector' });
     const id = created.objectId;
     const directory = created.content.graph.points[0].data.document;
     const name = '123e4567-e89b-42d3-a456-426614174000.png';
@@ -105,7 +115,7 @@ describe('complete workspace content operations', () => {
   });
 
   it('updates readable Markdown while retaining unrelated damage and opaque data', () => {
-    const graph = JSON.stringify({ schema: WORKSPACE_SCHEMA, document: { title: 'T', description: 'opaque' },
+    const graph = JSON.stringify({ schema: WORKSPACE_SCHEMA, id: 'test-workspace', document: { title: 'T', description: 'opaque' },
       graph: { points: [
         { id: 'a', data: { label: 'A', document: 'docs/a', tags: ['keep'] } },
         { id: 'b', data: { label: 'B', document: 'docs/b' } },
@@ -122,7 +132,7 @@ describe('complete workspace content operations', () => {
   });
 
   it('refuses to accept a dangling reference this change introduces', () => {
-    const made = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A' });
+    const made = createConcept(createWorkspace({ id: 'test-workspace', title: 'Test' }).content, { label: 'A' });
     const object = { kind: 'concept' as const, id: made.objectId };
     const accept = (source: string) => updateObjectDocument(made.content, { object, source });
 
@@ -134,7 +144,7 @@ describe('complete workspace content operations', () => {
   });
 
   it('lets an unrelated edit through without repairing damage the body already carries', () => {
-    const made = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A' });
+    const made = createConcept(createWorkspace({ id: 'test-workspace', title: 'Test' }).content, { label: 'A' });
     const object = { kind: 'concept' as const, id: made.objectId };
     const damaged = updateObjectDocument({ ...made.content, documents: {
       ...made.content.documents,
@@ -147,7 +157,7 @@ describe('complete workspace content operations', () => {
   });
 
   it('rejects unknown objects, unreadable source, invalid images and asset collisions', () => {
-    const made = createConcept(createWorkspace({ title: 'Test' }).content, { label: 'A' });
+    const made = createConcept(createWorkspace({ id: 'test-workspace', title: 'Test' }).content, { label: 'A' });
     const created = made.content;
     const id = made.objectId;
     const directory = created.graph.points[0].data.document;
@@ -169,7 +179,7 @@ describe('complete workspace content operations', () => {
 
 describe('creating derivations as workspace content', () => {
   const twoConcepts = () => {
-    const base = createWorkspace({ title: 'T' }).content;
+    const base = createWorkspace({ id: 'test-workspace', title: 'T' }).content;
     return createConcept(createConcept(base, { label: 'A' }).content, { label: 'B' }).content;
   };
 
@@ -224,7 +234,7 @@ describe('creating derivations as workspace content', () => {
 describe('modifying a derivation as workspace content', () => {
   /** A + B → C, so a premise can be dropped, added and swapped from one fixture. */
   const withDerivation = () => {
-    let content = createWorkspace({ title: 'T' }).content;
+    let content = createWorkspace({ id: 'test-workspace', title: 'T' }).content;
     for (const label of ['A', 'B', 'C']) content = createConcept(content, { label }).content;
     const created = createDerivation(content, {
       tails: [idOf(content, 'A'), idOf(content, 'B')], head: idOf(content, 'C'), weight: 2,
@@ -251,7 +261,7 @@ describe('modifying a derivation as workspace content', () => {
 
   it('accepts empty premises, self-loops, cycles and parallel derivations', () => {
     const { content, id } = withDerivation();
-    const [a, b, c] = ['A', 'B', 'C'].map((label) => idOf(content, label));
+    const [a, , c] = ['A', 'B', 'C'].map((label) => idOf(content, label));
 
     const emptied = updateDerivationStructure(content, { derivationId: id, tails: [], head: c, weight: 0 });
     expect(emptied.content.graph.hyperedges[0].tails).toEqual([]);
@@ -306,7 +316,7 @@ describe('modifying a derivation as workspace content', () => {
 
 describe('tags as workspace content', () => {
   const tagged = () => {
-    const base = createConcept(createWorkspace({ title: 'T' }).content, { label: 'A' }).content;
+    const base = createConcept(createWorkspace({ id: 'test-workspace', title: 'T' }).content, { label: 'A' }).content;
     return createConcept(base, { label: 'B' }).content;
   };
 
@@ -331,7 +341,7 @@ describe('tags as workspace content', () => {
 
 describe('the orientation configuration as workspace content', () => {
   const workspace = () => {
-    const base = createConcept(createWorkspace({ title: 'T' }).content, { label: 'A' }).content;
+    const base = createConcept(createWorkspace({ id: 'test-workspace', title: 'T' }).content, { label: 'A' }).content;
     return updateTagDeclarations(createConcept(base, { label: 'B' }).content,
       [{ id: 'basics', label: '基础' }]).content;
   };

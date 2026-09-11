@@ -26,7 +26,7 @@ const CONFIG: OrientationConfig = {
 
 function plan() {
   const content = parseWorkspaceContent({ graph: JSON.stringify({
-    schema: WORKSPACE_SCHEMA,
+    schema: WORKSPACE_SCHEMA, id: 'test-workspace',
     document: { title: 'T', description: '' },
     graph: { points: ['a', 'b', 'c', 'd'].map((id) => ({ id, data: { label: id.toUpperCase(), document: `docs/${id}` } })),
       hyperedges: [] },

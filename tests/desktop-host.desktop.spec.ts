@@ -25,7 +25,7 @@ let releaseWrites: (() => void) | undefined;
 let writesInFlight: Promise<unknown>[];
 const manifestPath = '.derivon/workspace.json';
 const emptyGraph = JSON.stringify({
-  schema: 'derivon.workspace/v1', document: { title: 'GUI fixture', description: '' },
+  schema: 'derivon.workspace/v1', id: 'test-workspace', document: { title: 'GUI fixture', description: '' },
   graph: { points: [], hyperedges: [] },
 });
 

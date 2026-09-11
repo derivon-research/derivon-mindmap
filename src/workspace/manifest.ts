@@ -7,6 +7,39 @@
 
 export const WORKSPACE_SCHEMA = 'derivon.workspace/v1' as const;
 
+/**
+ * The workspace identity. The user names it, it never changes, and it becomes a directory
+ * name under the application data directory, so it is exactly one filesystem-safe path
+ * segment: lowercase ASCII letters, digits and hyphens, at most 64 characters. Case never
+ * has to be folded because uppercase is not in the alphabet, so two ids differing only in
+ * case cannot both exist. `document.title` is the mutable display name; this is identity.
+ */
+export const WORKSPACE_ID_MAX_LENGTH = 64;
+const WORKSPACE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+
+export function isValidWorkspaceId(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length <= WORKSPACE_ID_MAX_LENGTH
+    && WORKSPACE_ID_PATTERN.test(value);
+}
+
+/**
+ * Bridge for hosts whose only naming step is a directory picker: derive the id from the
+ * user's chosen folder name. This is normalization, not allocation — an unusable name is
+ * refused rather than silently renamed to something else, and the naming flow itself still
+ * belongs to the workspace-identity work. Throws when nothing usable remains.
+ */
+export function workspaceIdFromName(name: string): string {
+  const id = name.toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, WORKSPACE_ID_MAX_LENGTH)
+    .replace(/^-+|-+$/g, '');
+  if (!isValidWorkspaceId(id)) {
+    throw new Error(`无法从「${name}」得到工作区 id：请用小写字母、数字与连字符命名`);
+  }
+  return id;
+}
+
 const WEIGHT_SCALE = 10;
 
 export function isValidWeight(value: unknown): value is number {
@@ -56,6 +89,7 @@ export type ManifestGraph = {
 
 export type WorkspaceManifest = {
   readonly schema: typeof WORKSPACE_SCHEMA;
+  readonly id: string;
   readonly document: { readonly title: string; readonly description: string };
   readonly tags: readonly TagDeclaration[];
   readonly graph: ManifestGraph;
@@ -66,6 +100,9 @@ export type ManifestIssue = { readonly path: string; readonly message: string };
 export type ParsedManifest = {
   readonly manifest: WorkspaceManifest;
 };
+
+/** The keys the protocol defines at the manifest root. `view` is known-but-forbidden below. */
+const ROOT_KEYS = new Set(['schema', 'id', 'document', 'tags', 'graph', 'view']);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -124,6 +161,13 @@ export function validateWorkspaceManifest(value: unknown): ManifestIssue[] {
   const issues: ManifestIssue[] = [];
   if (!isRecord(value)) return [{ path: '$', message: '文档必须是 JSON 对象' }];
   if (value.schema !== WORKSPACE_SCHEMA) issues.push({ path: 'schema', message: `必须为 ${WORKSPACE_SCHEMA}` });
+  for (const key of Object.keys(value)) {
+    if (!ROOT_KEYS.has(key)) issues.push({ path: key, message: '不允许出现在清单顶层' });
+  }
+  if (value.id === undefined) issues.push({ path: 'id', message: '缺少工作区 id：工作区身份由用户命名且不可改' });
+  else if (!isValidWorkspaceId(value.id)) {
+    issues.push({ path: 'id', message: `必须是文件系统安全的一段路径名：小写字母、数字与连字符，最长 ${WORKSPACE_ID_MAX_LENGTH} 字符` });
+  }
   if (value.view !== undefined) issues.push({ path: 'view', message: 'v1 没有替换视图，请移除 view' });
   if (!isRecord(value.document)) issues.push({ path: 'document', message: '缺少文档元数据' });
   else {
@@ -213,10 +257,16 @@ export function validateWorkspaceManifest(value: unknown): ManifestIssue[] {
 }
 
 export function parseWorkspaceManifest(text: string): ParsedManifest {
-  const value: unknown = JSON.parse(text);
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error('工作区清单不是合法 JSON');
+  }
   const issues = validateWorkspaceManifest(value);
   if (issues.length) throw new Error(issues.slice(0, 4).map((issue) => `${issue.path}: ${issue.message}`).join('\n'));
   const decoded = value as {
+    id: string;
     document: WorkspaceManifest['document'];
     tags?: readonly TagDeclaration[];
     graph: ManifestGraph;
@@ -224,6 +274,7 @@ export function parseWorkspaceManifest(text: string): ParsedManifest {
   return {
     manifest: {
       schema: WORKSPACE_SCHEMA,
+      id: decoded.id,
       document: decoded.document,
       tags: decoded.tags ?? [],
       graph: decoded.graph,
@@ -235,6 +286,7 @@ export function parseWorkspaceManifest(text: string): ParsedManifest {
 export function serializeWorkspaceManifest(manifest: WorkspaceManifest): string {
   return `${JSON.stringify({
     schema: WORKSPACE_SCHEMA,
+    id: manifest.id,
     document: manifest.document,
     ...(manifest.tags.length ? { tags: manifest.tags } : {}),
     graph: {

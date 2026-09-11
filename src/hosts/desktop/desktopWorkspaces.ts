@@ -1,6 +1,6 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type { WorkspaceHandle } from '../../app/host';
-import { createWorkspace, parseWorkspaceGraph } from '../../workspace/index';
+import { createWorkspace, parseWorkspaceGraph, workspaceIdFromName } from '../../workspace/index';
 import { createDesktopWorkspaceSource, type DesktopInvoke } from './desktopWorkspaceSource';
 import { rememberWorkspace, type RecentWorkspaceStorage } from './recentWorkspaces';
 
@@ -41,7 +41,7 @@ export function createDesktopWorkspaceActions(invoke: DesktopInvoke = tauriInvok
       const directory = await invoke<Directory | null>('choose_workspace_source_directory');
       if (!directory) return null;
       const source = createDesktopWorkspaceSource(directory.path, invoke);
-      const change = createWorkspace({ title: directory.name });
+      const change = createWorkspace({ id: workspaceIdFromName(directory.name), title: directory.name });
       await source.commit(change.changes);
       return handle(directory);
     },
