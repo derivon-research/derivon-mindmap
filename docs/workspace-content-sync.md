@@ -161,6 +161,26 @@ or arbitrary-file existence guarantee is claimed.
   reported as success. C3-05 and C3-06 are covered. Deletion still inherits the port's
   limits: no cross-process transaction, no CAS and no crash atomicity.
 
+## Delivered In #94
+
+- The desktop binding replaces a file's contents with a temporary sibling and a rename instead of
+  an in-place write, so a reader polling a workspace observes a whole manifest at every moment.
+  The previous in-place `fs::write` let a reader catch a truncated manifest, which fails opening
+  the workspace outright. Every replacement a commit performs — document, asset, companion
+  metadata and graph — goes through the same function, with the manifest last, so a reader that
+  finds the new graph already finds the documents it names.
+- The failure description is narrower because the mechanism is: a failure while preparing a
+  target leaves that target as it was, and the restoration the binding attempts covers only the
+  targets the attempt reached, through the same replacement. The temporary file is removed on
+  every failure path and is gone before the commit returns, and its name carries the process's
+  own token so a crash leftover cannot block a later replacement. Initialization (`createOnly`)
+  creates its targets rather than replacing one, and its direct creation is stated for what it
+  is. No crash atomicity and no CAS against an uncooperative writer are claimed, before or now.
+- Tests on real temporary files poll the manifest during replacement, observe the replacement
+  point directly, fail a replacement and check the previous manifest survives with no temporary
+  file left, check that documents are replaced before the manifest, and assert that a commit
+  leaves no temporary file behind whether it succeeds or fails.
+
 ## Markdown-Only, On-Demand Documents
 
 [ADR-0008](adr/0008-persist-markdown-not-rendered-pages.md) supersedes the dual-file
@@ -263,15 +283,17 @@ confirmation under #55; automatic saving does not bypass that consent.
 
 The current TypeScript port reads individual paths and submits path-based changes. PR #72 added
 revision observation and commit preconditions; #52 added the owned-file inventory. The desktop
-implementation prepares previous file contents and attempts rollback on a write failure;
-that is not a concurrency or crash-atomicity guarantee. See the current
+implementation replaces a file by writing a temporary sibling and renaming it over the target,
+so a reader observes whole versions, and prepares previous file contents to attempt rollback when
+a later target fails; a failure while preparing a target leaves that target untouched. That is
+still not a concurrency or crash-atomicity guarantee. See the current
 [WorkspaceSource contract](workspace-source.md) for observation limits and delivered tests.
 
 | Gap | Required investigation and verification | Delivery responsibility |
 | --- | --- | --- |
 | Consistent reads | Establish how graph, documents and configuration refer to one accepted content version, including externally changing files and lazy reads | #51 establishes the shared content model; #55 verifies external-update handling |
 | External-write protection | Define observation and commit-time validation, then test a change occurring between inspection and write; a UI preflight check alone is insufficient | #55, using the same synchronization interface introduced by #51 |
-| Failure guarantees | Test partial write failures and rollback failures without claiming success; state the limit for process crashes and uncooperative external writers | #55 with host-adapter tests; #52 exercises multi-file deletion |
+| Failure guarantees | Test partial write failures and rollback failures without claiming success; state the limit for process crashes and uncooperative external writers. #94 replaces in-place writes with temporary-file-and-rename, so a reader never observes a truncated file and a failure before the replacement leaves its target untouched | #55 with host-adapter tests; #52 exercises multi-file deletion; #94 delivers single-step replacement |
 
 Do not promise a compare-and-swap property for arbitrary filesystem writers merely by adding
 a revision parameter. The achievable guarantee, interaction with external tools, and remaining
