@@ -181,6 +181,27 @@ or arbitrary-file existence guarantee is claimed.
   file left, check that documents are replaced before the manifest, and assert that a commit
   leaves no temporary file behind whether it succeeds or fails.
 
+## Delivered In #95
+
+- Acquisition has one written policy separating its two callers, instead of each call site
+  wrapping the same throw in its own `try`/`catch`. Opening a workspace, and an explicit reload,
+  require a stable version: until one is acquired there is no accepted content for the read to
+  report on, so a workspace that keeps changing under it fails and says so. The poll path defers
+  instead: accepted content is already held and the next poll is a second away, so an unsettled
+  read publishes nothing, writes no `snapshot.error`, and is not an error — the round reaches no
+  verdict, and the next poll reaches the one it deferred once the writer stops. "Files are the
+  source of truth" ([ADR-0011](adr/0011-change-workspace-content-through-the-script-command-surface.md))
+  makes external writes ordinary, so sustained change is an expected condition on the poll path,
+  not a defect to announce.
+- Only "never settled" is deferred. A read that fails for any other reason — an unparseable
+  manifest, a refused file — still reaches the poll path's failure handling and is reported on
+  both paths, so deferral does not swallow a genuine breakage.
+- Tests drive a writer that lands inside every read window: polling over it produces no error
+  banner and keeps the accepted content, the external version is accepted on the first poll after
+  it settles, an explicit reload over the same workspace still fails, opening it still fails with
+  "工作区在读取期间持续变化，无法取得一致内容", and a genuinely unreadable workspace still
+  reports its error.
+
 ## Markdown-Only, On-Demand Documents
 
 [ADR-0008](adr/0008-persist-markdown-not-rendered-pages.md) supersedes the dual-file

@@ -114,13 +114,16 @@ its target and lives for milliseconds.
   manifest-writing command does not exist at all, which means the client cannot currently perform
   a graph change through the sanctioned path. The command surface, its capability declarations and
   its single result envelope are a contract change in `derivon-research/skills`.
-- The application needed two repairs of its own, neither of them caused by the agent. One has
-  landed: the manifest — and every other file a commit replaces — is written to a temporary
+- The application needed two repairs of its own, neither of them caused by the agent. Both have
+  landed. The manifest — and every other file a commit replaces — is written to a temporary
   sibling in the target's directory and renamed over it, with the manifest last, so a reader
   observes the whole previous file or the whole new one instead of a truncated manifest that
   fails the whole workspace open, and never a new manifest naming documents that are not there
-  yet. The other stands: the poll path reports "the workspace kept changing while I read it" as an
-  error banner rather than retrying something it will retry in a second anyway.
+  yet. And acquisition now has one written policy, not two callers' `try`/`catch`: an unsettled
+  read is fatal where there is no accepted content to report on (opening, explicit reload) and
+  deferred where there is (the poll path), so a workspace the agent is writing to no longer turns
+  a retry scheduled for one second later into an error banner. A read that fails for any other
+  reason — an unparseable manifest, a refused file — is still reported on both paths.
 - Change detection costs a recursive byte hash of the whole workspace on every poll, twice per
   acquisition attempt. Agent writes make that cost visible. It is a performance question, not a
   boundary one.
