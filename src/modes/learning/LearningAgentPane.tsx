@@ -1,4 +1,4 @@
-import { ConversationPane, type QuickQuestion } from '../shared/ConversationPane';
+import { ConversationPane, type QuickQuestion } from '../shared';
 import type { ConversationProvider } from '../../ports/ConversationProvider';
 import { answerNeedsWidth } from './panels';
 

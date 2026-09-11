@@ -1,6 +1,6 @@
 import { Bot, FileText, MessageSquarePlus, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import type { ConversationProvider } from '../../ports/ConversationProvider';
-import { ConversationPane } from '../shared/ConversationPane';
+import { ConversationPane } from '../shared';
 
 export function AuthoringAgentPane({ open, onToggle, contextLabel, conversation, drainPendingChanges }: {
   open: boolean;

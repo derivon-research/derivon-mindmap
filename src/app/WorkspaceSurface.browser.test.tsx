@@ -6,7 +6,7 @@ import type { ConversationProvider } from '../ports/ConversationProvider';
 import type { WorkspaceContent } from '../workspace/index';
 import { createConcept, createWorkspace } from '../workspace/index';
 import type { WorkspaceCommit, WritableWorkspaceSource } from '../ports/WorkspaceSource';
-import { ConversationPane } from '../modes/shared/ConversationPane';
+import { ConversationPane } from '../modes/shared';
 import type { AuthoringModeProps, LearningModeProps, WorkspaceHandle } from './host';
 import { initialAppState } from './appState';
 import { MarkdownPreview } from './DocumentPreview';
