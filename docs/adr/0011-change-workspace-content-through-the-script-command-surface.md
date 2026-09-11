@@ -105,7 +105,9 @@ included — comparing each file's cheap signal where the platform reports a cha
 reading the bytes where it does not. A long-lived staging directory inside the workspace therefore
 reads as a continuous external change, and a command that stages there is fighting the observer it
 is supposed to cooperate with. Candidates are built in memory; the only temporary file is adjacent
-to its target and lives for milliseconds.
+to its target, is removed on every path the commit takes, and is reported as a second failure when
+even that removal fails; a process that dies mid-commit can leave one behind, which blocks no later
+replacement and changes nothing by itself, though change detection reads it once as an added file.
 
 ## Consequences
 
@@ -120,11 +122,15 @@ to its target and lives for milliseconds.
   sibling in the target's directory and renamed over it, with the manifest last, so a reader
   observes the whole previous file or the whole new one instead of a truncated manifest that
   fails the whole workspace open, and never a new manifest naming documents that are not there
-  yet. And acquisition now has one written policy, not two callers' `try`/`catch`: an unsettled
-  read is fatal where there is no accepted content to report on (opening, explicit reload) and
-  deferred where there is (the poll path), so a workspace the agent is writing to no longer turns
-  a retry scheduled for one second later into an error banner. A read that fails for any other
-  reason — an unparseable manifest, a refused file — is still reported on both paths.
+  yet. And acquisition now has one written policy rather than the split being implied by whichever
+  call site caught the throw: an unsettled read is fatal where it answers a request for a fresh
+  read (opening a workspace, which has no accepted content yet, and an explicit reload, which the
+  user asked for) and deferred on the poll path, where accepted content is already held and the
+  next poll is a second away. That is where it once went wrong: the poll's one `catch` published
+  the retry as a failure banner, so a workspace the agent is writing to announced a retry
+  scheduled for one second later as an error. A read that fails for any other reason — an
+  unparseable manifest, a refused file — is a genuine failure, is not deferred on either path, and
+  is reported as it always was.
 - Change detection no longer reads the whole workspace on every poll, on a platform that reports
   an inode change time. A repeated acquisition compares a cheap signal — size, modification time
   and the change time — and reuses the digest it last read from bytes only for a file whose signal
