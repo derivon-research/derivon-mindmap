@@ -240,6 +240,54 @@ describe('application-scoped workspace synchronization', () => {
     session.dispose();
   });
 
+  it('defers an unsettled poll round without an error while still refusing to open that workspace', async () => {
+    vi.useFakeTimers();
+    const { source, files } = memorySource();
+    let writing = false;
+    let settled = 'steady';
+    let version = 0;
+    const externalGraph = (n: number) => createWorkspace({ id: 'test-workspace', title: `External ${n}` }).content.graphText;
+    const readGraph = source.readGraph;
+    // A writer lands inside every read window: the graph read belongs to one version and the
+    // observation after it to the next, so no attempt ever brackets a stable version.
+    source.readGraph = async () => {
+      if (!writing) return readGraph();
+      files.set('.derivon/workspace.json', externalGraph(version++));
+      return files.get('.derivon/workspace.json')!;
+    };
+    source.revision = async () => (writing ? `external-${version}` : settled);
+    const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50 });
+    writing = true;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(session.reader.getSnapshot()).toMatchObject({
+      content: { title: 'Test' }, externalChange: null, error: null, saveState: 'saved',
+    });
+    // An explicit reload has no accepted content to fall back on either, so it still fails.
+    await expect(session.reload()).rejects.toThrow('工作区在读取期间持续变化，无法取得一致内容');
+    // Once the writer stops, the very next poll reaches the verdict the deferred rounds did not.
+    writing = false;
+    settled = `external-${version}`;
+    await vi.advanceTimersByTimeAsync(50);
+    expect(session.reader.getSnapshot()).toMatchObject({ content: { title: expect.stringMatching(/^External \d+$/) }, externalChange: null, error: null });
+    session.dispose();
+
+    writing = true;
+    await expect(openWorkspaceSession(source)).rejects.toThrow('工作区在读取期间持续变化，无法取得一致内容');
+  });
+
+  it('still reports a workspace that polls into a genuinely unreadable state', async () => {
+    vi.useFakeTimers();
+    const { source, files } = memorySource();
+    let revision = 'initial';
+    source.revision = async () => revision;
+    const session = await openWorkspaceSession(source, { authoring: source, externalPollIntervalMs: 50 });
+    files.set('.derivon/workspace.json', 'invalid JSON');
+    revision = 'broken';
+    await vi.advanceTimersByTimeAsync(50);
+    expect(session.reader.getSnapshot().error).toBe('工作区清单不是合法 JSON');
+    session.dispose();
+  });
+
   it('retries an asset read overlapping its own save without invalidating unchanged effective content', async () => {
     const { source, assets } = memorySource();
     const path = 'docs/a/assets/image.png';

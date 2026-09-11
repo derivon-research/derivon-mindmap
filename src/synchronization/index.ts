@@ -97,7 +97,25 @@ async function readContent(source: WorkspaceSource): Promise<WorkspaceContent> {
   return parseWorkspaceContent({ graph, documents: {}, companionMetadata: { [ORIENTATION_PATH]: orientation } });
 }
 
-async function readStableContent(source: WorkspaceSource): Promise<AcquiredContent> {
+/**
+ * What an acquisition caller must do about a workspace that never holds still.
+ *
+ * `require` — opening a workspace, or reloading one on explicit demand. There is no accepted
+ * content an unsettled read could report on, so failing is the only honest answer.
+ * `defer` — the poll path over an open workspace. Accepted content is already held and the
+ * next poll is a second away, so an unsettled read is not an event: the round reaches no
+ * verdict, publishes nothing and is not reported as an error. Once the writer stops, the next
+ * poll reaches the verdict this one deferred.
+ *
+ * Stating the policy at acquisition is the point. Two call sites each wrapping the same throw
+ * in their own `try`/`catch` is how a retry became a failure banner, and reading "the workspace
+ * kept changing" as a defect would be the same mistake again.
+ */
+type AcquisitionPolicy = 'require' | 'defer';
+
+function acquireStableContent(source: WorkspaceSource, policy: 'require'): Promise<AcquiredContent>;
+function acquireStableContent(source: WorkspaceSource, policy: 'defer'): Promise<AcquiredContent | null>;
+async function acquireStableContent(source: WorkspaceSource, policy: AcquisitionPolicy): Promise<AcquiredContent | null> {
   if (!source.revision) return { content: await readContent(source), revision: null };
   for (let attempt = 0; attempt < 3; attempt++) {
     const before = await source.revision();
@@ -105,7 +123,8 @@ async function readStableContent(source: WorkspaceSource): Promise<AcquiredConte
     const after = await source.revision();
     if (before === after) return { content, revision: after };
   }
-  throw new Error('工作区在读取期间持续变化，无法取得一致内容');
+  if (policy === 'require') throw new Error('工作区在读取期间持续变化，无法取得一致内容');
+  return null;
 }
 
 /** One instance per open workspace, composed above both mutually exclusive modes. */
@@ -114,7 +133,7 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
   autosaveDelayMs?: number;
   externalPollIntervalMs?: number;
 } = {}): Promise<WorkspaceSession> {
-  const initial = await readStableContent(source);
+  const initial = await acquireStableContent(source, 'require');
   let acceptedRevision = initial.revision;
   let snapshot: WorkspaceSnapshot = {
     content: initial.content, persistedContent: initial.content, externalChange: null, authoringEpoch: 0,
@@ -175,7 +194,10 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
           return;
         }
         if (observedRevision === snapshot.externalChange?.revision) return;
-        const next = await readStableContent(source);
+        const next = await acquireStableContent(source, 'defer');
+        // Unsettled is not a failure here: accepted content stays, nothing is published and
+        // the next poll looks again. Only a real read failure reaches the catch below.
+        if (!next) return;
         // A local write may have started and finished while acquisition was in flight.
         if (disposed || saving || beforeWrite !== writeGeneration || next.revision === acceptedRevision) return;
         if (snapshot.hasProtectedChanges || snapshot.externalChange) {
@@ -225,13 +247,16 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
         const acquired = await readChecked('文档', async () => {
           const resources: Record<string, TextResource> = {};
           let cursor = 0;
-          await Promise.all(Array.from({ length: Math.min(8, missing.length) }, async () => {
+          async function readNext(): Promise<void> {
             while (cursor < missing.length) {
               const path = missing[cursor++];
               try { resources[path] = { status: 'ready', text: await source.readDocument(path) }; }
               catch (error) { resources[path] = { status: 'error', message: message(error) }; }
             }
-          }));
+          }
+          const readers: Promise<void>[] = [];
+          for (let index = 0; index < Math.min(8, missing.length); index++) readers.push(readNext());
+          await Promise.all(readers);
           return resources;
         });
         Object.assign(documents, acquired);
@@ -404,7 +429,7 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
     async reload() {
       if (disposed || snapshot.hasProtectedChanges) return 'protected';
       const before = generation;
-      const next = await readStableContent(source);
+      const next = await acquireStableContent(source, 'require');
       if (disposed || snapshot.hasProtectedChanges || before !== generation) return 'protected';
       installContent(next);
       return 'loaded';
