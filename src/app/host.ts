@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import type { LearnerRecordStore } from '../learner-records';
 import type { ConversationMode, ConversationProvider } from '../ports/ConversationProvider';
 import type { RouteSolver } from '../ports/RouteSolver';
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
@@ -21,8 +22,23 @@ export type LearningView = 'orientation' | 'preview' | 'route' | 'browse';
 
 export type HostId = 'web' | 'desktop';
 
+/**
+ * What the `id → last path it was seen at` index noticed when a workspace was opened. It is
+ * reported, never resolved on its own: a hand-edited workspace `id` strands a learner record
+ * under an id nothing reads again, and the same id at a new path means two folders share one
+ * identity. Either way the learner decides; nothing here loses a record silently (ADR-0009).
+ */
+export type LearnerRecordMigration =
+  | { readonly kind: 'id-changed'; readonly path: string; readonly previousId: string; readonly id: string }
+  | { readonly kind: 'id-moved'; readonly id: string; readonly previousPath: string; readonly path: string };
+
 /** An open workspace: its identity, a display name, and the port to read it through. */
 export type WorkspaceHandle = {
+  /**
+   * The host's own token for this open workspace — the folder path on desktop. It is not the
+   * workspace `id`: that lives in the manifest, keys the learner records, and is reached
+   * through `learnerRecords`. The two are deliberately separate values.
+   */
   readonly id: string;
   readonly name: string;
   readonly source: WorkspaceSource;
@@ -30,6 +46,10 @@ export type WorkspaceHandle = {
   readonly registerCloseGuard?: (hasProtectedChanges: () => boolean) => Promise<() => void>;
   /** Granted only by the desktop host, never inferred from the visible mode. */
   readonly authoringSource?: WritableWorkspaceSource;
+  /** The learner records for this workspace; absent on a host with no application data directory. */
+  readonly learnerRecords?: LearnerRecordStore;
+  /** Set only when the id index noticed a conflict worth the learner's attention. */
+  readonly learnerRecordMigration?: LearnerRecordMigration;
 };
 
 /** A workspace the desktop host has opened before, offered on the launch frame. */

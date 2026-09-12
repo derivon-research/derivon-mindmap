@@ -2,6 +2,7 @@ mod crash_report;
 mod conversation;
 #[cfg(all(debug_assertions, desktop))]
 mod desktop_debug;
+mod learner_records;
 mod route;
 mod workspace;
 
@@ -36,6 +37,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             crash_report::clear_crash_report,
             crash_report::read_crash_report,
+            learner_records::read_learner_record,
+            learner_records::write_learner_record,
             solve_route,
             workspace::choose_workspace,
             workspace::choose_workspace_source_directory,

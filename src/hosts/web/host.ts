@@ -6,6 +6,9 @@ import type { Host, WorkspaceHandle } from '../../app/host';
  * There is no `loadAuthoringMode` here, and that is the whole mechanism. A web build's
  * module graph has no path to `src/modes/authoring/`, so the authoring side cannot be
  * bundled, revealed by a flipped flag, or reached by editing a URL.
+ *
+ * There are no learner records here: they live in the application data directory, which only
+ * the desktop host has, so this handle carries no record store.
  */
 export const host: Host = {
   id: 'web',

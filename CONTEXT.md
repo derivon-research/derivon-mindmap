@@ -265,6 +265,7 @@ v1 是唯一的工作区协议。v1.0.0 之前没有发布过的版本，因此�
 | `src/modes/authoring/` | `src/modes/authoring/index.ts` | 桌面创作工作流、编辑界面，以及大图浏览中的作者操作 | 增加创作功能或 tag 编辑；同时检查工作区提交契约 |
 | `src/modes/shared/` | `src/modes/shared/index.ts` | 两侧共用的界面构件，只依赖端口，不认识任何一侧的状态机 | 改 Agent 面板一类两侧共享的界面 |
 | `src/workspace/` | `src/workspace/index.ts` | 工作区清单、对象文档、tag、伴随文档的解析、校验与完整内容变更，不做宿主 I/O | 改工作区内容模型、引用影响规则或开局配置 |
+| `src/learner-records/` | `src/learner-records/index.ts` | 学习者记录协议（`derivon.learning/v1`、`derivon.routes/v1`）的解析、校验与规范化文本，以及按工作区 id 读写的应用侧存储；不做宿主 I/O | 改记录字段、判定约束，或按工作区 id 读写记录 |
 | `src/ports/` | `src/ports/WorkspaceSource.ts`, `src/ports/ConversationProvider.ts`, `src/ports/RouteSolver.ts` | `WorkspaceSource`、`ConversationProvider`、`RouteSolver` 及其它小接口 | 改跨边界能力；随后检查每个实现和契约测试 |
 | `src/hosts/web/` | `src/hosts/web/index.ts` | web composition 与只读端口实现 | 改 web 能力、内置工作区加载或确定性 provider |
 | `src/hosts/desktop/` | `src/hosts/desktop/index.ts` | desktop composition、本地工作区和 Pi SDK bridge | 改本地文件、桌面 IPC 或桌面对话实现 |
