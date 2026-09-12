@@ -64,8 +64,12 @@ it('shows the view the application asked for, and only that one', async () => {
   expect(container.querySelector('[data-derivon-mode="learning"]')?.getAttribute('data-learning-view')).toBe('browse');
   expect(container.textContent).not.toContain('这是算出来的路线');
 
-  act(() => root?.render(<LearningMode {...props({ content: content(), targetIds: ['b'], view: 'preview' })} />));
+  // The route a create flow computed is a step inside it, not a view of its own.
+  act(() => root?.render(<LearningMode {...props({ content: content(), targetIds: ['b'], view: 'orientation' })} />));
+  await expect.element(page.getByRole('button', { name: '去看路线' })).toBeVisible();
+  act(() => (page.getByRole('button', { name: '去看路线' }).element() as HTMLButtonElement).click());
   await expect.element(page.getByText('还没有可以走的路线')).toBeVisible();
+  expect(container.querySelector('[data-derivon-mode="learning"]')?.getAttribute('data-learning-view')).toBe('orientation');
 });
 
 it('shows the confirmed routes rather than inventing one when none is active', async () => {

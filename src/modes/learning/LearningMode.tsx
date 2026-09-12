@@ -64,7 +64,8 @@ export function LearningMode({
 
   const [listed, setListed] = useState<RouteList>(NO_ROUTES);
   const [stale, setStale] = useState<ReadonlySet<string>>(NOTHING_STALE);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  /** The create flow's second step: the route the questions produced. Not a place of its own. */
+  const [reviewing, setReviewing] = useState(false);
   const [writing, setWriting] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
 
@@ -96,6 +97,9 @@ export function LearningMode({
   // Bringing another route on screen starts it from the top; judgements already handed in stay
   // keyed by the route they were made on.
   useEffect(() => { setWalk(startRoute); }, [activeRouteId]);
+
+  // Leaving the create flow drops its second step, so coming back starts from the questions.
+  useEffect(() => { if (view !== 'orientation') setReviewing(false); }, [view]);
 
   const writeRoutes = async (change: () => Promise<RouteList>) => {
     setWriteError(null);
@@ -140,11 +144,6 @@ export function LearningMode({
     });
   };
 
-  const openRoute = (routeId: string) => {
-    setPickerOpen(false);
-    onSelectRoute(routeId);
-  };
-
   const moveCursor = (index: number) => {
     setWalk((current) => moveLearningCursor(current, index));
   };
@@ -162,33 +161,36 @@ export function LearningMode({
     : { kind: 'add-targets', conceptIds: [conceptId] });
 
   const shelfRoutes = listed.routes.map((record) => ({ record, stale: stale.has(record.id) }));
-  const picker = view === 'route' && (pickerOpen || !activeRecord);
+  // The route stage is two screens, chosen by whether a route is active — never by the view
+  // alone, so a route being walked can never stay on screen under another view.
+  const picker = view === 'route' && activeRecord === null;
+  const walking = view === 'route' && activeRecord !== null;
 
   return <section className="learning-workbench" data-derivon-mode="learning" data-learning-view={view}
     data-learning-targets={targetIds.join(' ')} data-learning-known={knownIds.join(' ')}
     data-learning-active-route={activeRouteId ?? ''} aria-label="学习侧">
-    {view === 'orientation' && <OrientationView active={active} content={content} plan={plan} run={run}
-      preview={preview} onIntent={intent} onEnterPreview={() => onEnterView('preview')}
-      readAsset={readAsset} readDocuments={readDocuments} />}
-
-    {view === 'preview' && <RoutePreviewView active={active} graph={content.graph} tags={content.tags}
-      preview={preview} targetIds={targetIds} knownIds={knownIds} confirming={writing}
-      confirmError={writeError === null ? null : `路线没能存下来：${writeError}`}
-      confirmBlocked={learnerRecords ? null : '这个宿主没有应用数据目录，确认的路线无处可存，所以先不让确认。'}
-      onConfirm={() => { void confirmRoute(); }}
-      onBackToOrientation={() => onEnterView('orientation')} onBrowse={() => onEnterView('browse')} />}
+    {view === 'orientation' && (reviewing
+      ? <RoutePreviewView active={active} graph={content.graph} tags={content.tags}
+        preview={preview} targetIds={targetIds} knownIds={knownIds} confirming={writing}
+        confirmError={writeError === null ? null : `路线没能存下来：${writeError}`}
+        confirmBlocked={learnerRecords ? null : '这个宿主没有应用数据目录，确认的路线无处可存，所以先不让确认。'}
+        onConfirm={() => { void confirmRoute(); }}
+        onBackToOrientation={() => setReviewing(false)} onBrowse={() => onEnterView('browse')} />
+      : <OrientationView active={active} content={content} plan={plan} run={run}
+        preview={preview} onIntent={intent} onEnterPreview={() => setReviewing(true)}
+        readAsset={readAsset} readDocuments={readDocuments} />)}
 
     {picker && <RouteShelf active={active} graph={graph} routes={shelfRoutes} issue={listed.issue}
-      error={writeError} onStart={openRoute} onDelete={deleteRoute}
+      error={writeError} onStart={onSelectRoute} onDelete={deleteRoute}
       onNewRoute={() => onEnterView('orientation')} />}
 
-    {!picker && activeRecord && <RouteLearning active={active} content={content}
+    {walking && activeRecord && <RouteLearning active={active} content={content}
       solution={routeSolutionOf(activeRecord)} targetIds={[...activeRecord.targets]} knownIds={[...activeRecord.known]}
       stale={stale.has(activeRecord.id)} cursor={walk.cursor} onCursor={moveCursor}
       revealed={walk.revealed} onReveal={(id) => setWalk((current) => revealDefinition(current, id))}
       tasksDone={walk.taskCompletions} onTaskDone={completeTask}
       panels={panels} onPanels={setPanels} onKnow={know}
-      onSwitchRoute={() => setPickerOpen(true)} readAsset={readAsset} readDocuments={readDocuments}
+      onSwitchRoute={() => onSelectRoute(null)} readAsset={readAsset} readDocuments={readDocuments}
       conversation={conversation} drainPendingChanges={drainPendingChanges} />}
 
     {view === 'browse' && <GraphBrowse active={active} content={content} targetIds={targetIds} knownIds={knownIds}

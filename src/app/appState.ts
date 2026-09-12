@@ -97,9 +97,17 @@ export function setLearningKnown(state: AppState, conceptIds: readonly string[])
   return { ...state, learningKnownIds: [...conceptIds] };
 }
 
-/** Move to another learning stage or view. */
+/**
+ * Move to another learning stage or view.
+ *
+ * Entering the route stage means choosing a route, so it opens on the learner's confirmed
+ * routes rather than mid-walk in whichever one was open last. That is what makes the entry
+ * that opens it always open the same screen.
+ */
 export function enterLearningView(state: AppState, view: LearningView): AppState {
-  return { ...state, learningView: view };
+  return view === 'route'
+    ? { ...state, learningView: view, learningActiveRouteId: null }
+    : { ...state, learningView: view };
 }
 
 /**

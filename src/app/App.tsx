@@ -163,8 +163,7 @@ export default function App({ host }: { host: Host }) {
         mode={state.mode}
         onEnterMode={(mode) => setState((current) => (current ? enterMode(current, mode) : current))}
         onCloseWorkspace={workspace && host.id === 'desktop' ? handleCloseWorkspace : undefined}
-        learning={workspace ? { view: state.learningView, hasTargets: state.learningTargetIds.length > 0,
-          onEnterView: handleEnterLearningView } : undefined}
+        learning={workspace ? { view: state.learningView, onEnterView: handleEnterLearningView } : undefined}
       />
       {workspace ? (
         <Suspense fallback={<div role="status">正在载入工作区…</div>}>

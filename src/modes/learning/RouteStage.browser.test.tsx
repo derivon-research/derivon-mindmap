@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
 import type { RouteRecord } from '../../learner-records';
 import { routeBasis } from '../../learner-records/basis';
+import type { LearningView } from '../../app/host';
 import { createMemoryLearnerRecords, type MemoryLearnerRecords } from '../../testing/learnerRecordStore';
 import { fixtureRouteSolver } from '../../testing/routeSolver';
 import { WORKSPACE_SCHEMA, parseWorkspaceContent, type WorkspaceContent } from '../../workspace/index';
@@ -48,11 +49,11 @@ function Harness({
   records, view = 'route', activeRouteId = null, onConfirmRoute = vi.fn(), onSelectRoute = vi.fn(), onEnterView = vi.fn(),
 }: {
   records?: MemoryLearnerRecords;
-  view?: 'orientation' | 'preview' | 'route' | 'browse';
+  view?: LearningView;
   activeRouteId?: string | null;
   onConfirmRoute?: (routeId: string) => void;
   onSelectRoute?: (routeId: string | null) => void;
-  onEnterView?: (view: 'orientation' | 'preview' | 'route' | 'browse') => void;
+  onEnterView?: (view: LearningView) => void;
 }) {
   const [targets, setTargets] = useState<readonly string[]>(['c']);
   const [known, setKnown] = useState<readonly string[]>(['a']);
@@ -69,9 +70,10 @@ async function render(over: Parameters<typeof Harness>[0] = {}) {
   await act(async () => { await Promise.resolve(); });
 }
 
-it('leaves no record behind while the learner is only looking at the preview', async () => {
+it('leaves no record behind while the learner is only looking at the route it computed', async () => {
   const records = createMemoryLearnerRecords();
-  await render({ records, view: 'preview' });
+  await render({ records, view: 'orientation' });
+  await page.getByRole('button', { name: '去看路线' }).click();
   await expect.element(page.getByText('这是算出来的路线')).toBeVisible();
   expect(records.routes()).toEqual([]);
 
@@ -153,7 +155,8 @@ it('puts the way into the route above the steps, not at the bottom of them', asy
 });
 
 it('offers no confirmation on a host with nowhere to keep the route', async () => {
-  await render({ view: 'preview' });
+  await render({ view: 'orientation' });
+  await page.getByRole('button', { name: '去看路线' }).click();
   await expect.element(page.getByText('这是算出来的路线')).toBeVisible();
   expect((page.getByRole('button', { name: '开始学' }).element() as HTMLButtonElement).disabled).toBe(true);
   expect(container.textContent).toContain('这个宿主没有应用数据目录');
@@ -184,12 +187,33 @@ it('does not report an unreadable routes.json as “no routes yet”', async () 
   expect(container.textContent).not.toContain('还没有确认过路线');
 });
 
-it('has a way back to orientation from the route stage, and no way to edit a route', async () => {
+it('has one way back to creating a route, and no way to edit an existing one', async () => {
   const records = createMemoryLearnerRecords('test-workspace', { routes: [record('r-aaaaaa', '第一条')] });
   const onEnterView = vi.fn();
   await render({ records, onEnterView });
 
-  await page.getByRole('button', { name: '新建路线' }).click();
+  await page.getByRole('button', { name: '创建路线' }).click();
   expect(onEnterView).toHaveBeenCalledWith('orientation');
   expect(container.textContent).not.toContain('改目标后再算一条');
+});
+
+it('keeps the computed route inside creating one, instead of giving it a screen of its own', async () => {
+  await render({ view: 'orientation' });
+  await page.getByRole('button', { name: '去看路线' }).click();
+  await expect.element(page.getByText('这是算出来的路线')).toBeVisible();
+  // The screen is still the one the top bar calls 创建路线 — the route it computed is a step in it.
+  expect(container.querySelector('[data-derivon-mode="learning"]')?.getAttribute('data-learning-view')).toBe('orientation');
+
+  await page.getByRole('button', { name: '不对，回去改目标' }).click();
+  await expect.element(page.getByRole('button', { name: '去看路线' })).toBeVisible();
+});
+
+it('does not leave a route being walked on screen under another view', async () => {
+  const records = createMemoryLearnerRecords('test-workspace', { routes: [record('r-aaaaaa', '第一条')] });
+  await render({ records, activeRouteId: 'r-aaaaaa' });
+  await expect.element(page.getByText('第 1 / 2 步')).toBeVisible();
+
+  await act(async () => root?.render(<Harness records={records} activeRouteId="r-aaaaaa" view="browse" />));
+  expect(container.querySelector('.learning-route')).toBeNull();
+  expect(container.querySelector('.learning-rail')).toBeNull();
 });

@@ -146,6 +146,13 @@ describe('the learning side views', () => {
     expect(enterLearningView(webState(), 'orientation').learningView).toBe('orientation');
   });
 
+  it('opens the route stage on the chooser, not on whichever route was last walking', () => {
+    const confirmed = confirmLearningRoute(learning(), 'r-k7f3q2');
+    const entered = enterLearningView(confirmed, 'route');
+    expect(entered.learningView).toBe('route');
+    expect(entered.learningActiveRouteId).toBeNull();
+  });
+
   it('makes the route just confirmed the active one and opens the route stage on it', () => {
     const confirmed = confirmLearningRoute(learning(), 'r-k7f3q2');
     expect(confirmed.learningActiveRouteId).toBe('r-k7f3q2');

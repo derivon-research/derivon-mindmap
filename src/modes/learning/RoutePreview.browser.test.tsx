@@ -36,7 +36,7 @@ function workspace(): WorkspaceContent {
 function Harness({ routeSolver, onConfirmRoute = vi.fn(), onEnterView = vi.fn(), knownIds = ['a'] }: {
   routeSolver?: RouteSolver;
   onConfirmRoute?: () => void;
-  onEnterView?: (view: 'orientation' | 'preview' | 'route' | 'browse') => void;
+  onEnterView?: (view: 'orientation' | 'route' | 'browse') => void;
   knownIds?: readonly string[];
 }) {
   const [content] = useState(workspace);
@@ -45,7 +45,7 @@ function Harness({ routeSolver, onConfirmRoute = vi.fn(), onEnterView = vi.fn(),
   const [records] = useState(() => createMemoryLearnerRecords());
   return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
     learnerRecords={records.store} targetIds={targets} knownIds={known} routeSolver={routeSolver}
-    view="preview" onEnterView={onEnterView} onConfirmRoute={onConfirmRoute} activeRouteId={null}
+    view="orientation" onEnterView={onEnterView} onConfirmRoute={onConfirmRoute} activeRouteId={null}
     onSelectRoute={vi.fn()}
     onChangeTargets={setTargets} onChangeKnown={setKnown} />;
 }
@@ -54,6 +54,8 @@ async function render(over: Parameters<typeof Harness>[0] = {}) {
   root = createRoot(container);
   await act(async () => root?.render(<Harness {...over} />));
   await act(async () => { await Promise.resolve(); });
+  // The computed route is the create flow's second step: ask for it the way a learner does.
+  await page.getByRole('button', { name: '去看路线' }).click();
 }
 
 it('shows the computed route as a reading order, with the reason each step is there', async () => {
@@ -95,10 +97,14 @@ it('only enters the route when the learner accepts it', async () => {
   const onEnterView = vi.fn();
   await render({ routeSolver: fixtureRouteSolver(), onConfirmRoute, onEnterView });
 
+  // Backing out returns to the questions inside the create flow: nothing is confirmed, and
+  // the flow never leaves the screen the top bar calls 创建路线.
   await page.getByRole('button', { name: '不对，回去改目标' }).click();
-  expect(onEnterView).toHaveBeenLastCalledWith('orientation');
   expect(onConfirmRoute).not.toHaveBeenCalled();
+  expect(onEnterView).not.toHaveBeenCalled();
+  await expect.element(page.getByRole('button', { name: '去看路线' })).toBeVisible();
 
+  await page.getByRole('button', { name: '去看路线' }).click();
   await page.getByRole('button', { name: '开始学' }).click();
   expect(onConfirmRoute).toHaveBeenCalledTimes(1);
 });

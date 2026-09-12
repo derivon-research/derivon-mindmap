@@ -17,8 +17,11 @@ export type AppMode = 'authoring' | 'learning';
  * Where a learner stands inside the learning mode. These are stages and views, not modes:
  * they never join the mode segmented control, and their entry points live in the
  * application top bar rather than inside any panel.
+ *
+ * Creating a route is one of them, not two: the questions and the route they produce are
+ * one flow, and the route it computed is a step inside it rather than a place of its own.
  */
-export type LearningView = 'orientation' | 'preview' | 'route' | 'browse';
+export type LearningView = 'orientation' | 'route' | 'browse';
 
 export type HostId = 'web' | 'desktop';
 

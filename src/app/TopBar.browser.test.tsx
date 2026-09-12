@@ -14,15 +14,14 @@ function render(over: {
   modes?: readonly AppMode[];
   mode?: AppMode;
   view?: LearningView;
-  hasTargets?: boolean;
   onEnterMode?: (mode: AppMode) => void;
   onEnterView?: (view: LearningView) => void;
 } = {}) {
-  const { modes = ['learning', 'authoring'], mode = 'learning', view = 'orientation', hasTargets = true,
+  const { modes = ['learning', 'authoring'], mode = 'learning', view = 'orientation',
     onEnterMode = vi.fn(), onEnterView = vi.fn() } = over;
   root = createRoot(container);
   act(() => root?.render(<TopBar workspaceName="工作区" modes={modes} mode={mode} onEnterMode={onEnterMode}
-    learning={{ view, hasTargets, onEnterView }} />));
+    learning={{ view, onEnterView }} />));
   return { onEnterMode, onEnterView };
 }
 
@@ -34,7 +33,7 @@ it('keeps the learning views out of the mode control: they are places inside one
   const views = container.querySelector('[aria-label="学习流程"]')!;
   expect(views.closest('[aria-label="模式"]')).toBeNull();
   expect([...views.querySelectorAll('button')].map((button) => button.textContent))
-    .toEqual(['改目标 / 已知', '路线学习', '大图浏览']);
+    .toEqual(['创建路线', '选择路线', '大图浏览']);
 });
 
 it('shows no mode control at all on a host that offers one mode, but still offers the views', () => {
@@ -56,21 +55,24 @@ it('marks the view the learner is standing in, and only that one', async () => {
   expect(pressed).toEqual(['大图浏览']);
 });
 
-it('treats the confirmation screen as part of the route entry rather than a fourth place', () => {
-  render({ view: 'preview' });
-  const route = page.getByRole('button', { name: '路线学习' }).element();
-  expect(route.getAttribute('aria-pressed')).toBe('true');
-});
-
-it('offers to re-read the route from inside it, instead of restarting where the learner already is', async () => {
+it('names an entry after the screen it opens, and keeps that name whatever is showing', async () => {
   const { onEnterView } = render({ view: 'route' });
-  await page.getByRole('button', { name: '再看一遍路线' }).click();
-  expect(onEnterView).toHaveBeenLastCalledWith('preview');
+  const route = page.getByRole('button', { name: '选择路线' }).element();
+  expect(route.getAttribute('aria-pressed')).toBe('true');
+  await page.getByRole('button', { name: '选择路线' }).click();
+  expect(onEnterView).toHaveBeenLastCalledWith('route');
 });
 
-it('will not offer a route before there is a target to route towards', () => {
-  render({ hasTargets: false });
-  expect((page.getByRole('button', { name: '路线学习' }).element() as HTMLButtonElement).disabled).toBe(true);
-  // Browsing needs nothing settled, so it stays open.
+it('always opens creating a route from the entry that creates one', async () => {
+  const { onEnterView } = render({ view: 'orientation' });
+  const create = page.getByRole('button', { name: '创建路线' }).element();
+  expect(create.getAttribute('aria-pressed')).toBe('true');
+  await page.getByRole('button', { name: '创建路线' }).click();
+  expect(onEnterView).toHaveBeenLastCalledWith('orientation');
+});
+
+it('never gates the route stage on a live target, because a confirmed route carries its own', () => {
+  render({ view: 'orientation' });
+  expect((page.getByRole('button', { name: '选择路线' }).element() as HTMLButtonElement).disabled).toBe(false);
   expect((page.getByRole('button', { name: '大图浏览' }).element() as HTMLButtonElement).disabled).toBe(false);
 });

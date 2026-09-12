@@ -75,7 +75,7 @@ export function RouteShelf({ graph, routes, issue, error, active, onStart, onDel
           </button>
         </li>)}
       </ul>
-      <button type="button" className="route-shelf-new" onClick={onNewRoute}>新建路线</button>
+      <button type="button" className="route-shelf-new" onClick={onNewRoute}>创建路线</button>
     </aside>
 
     {selected
