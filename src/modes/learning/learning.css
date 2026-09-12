@@ -278,7 +278,7 @@
   font-size: 12px;
 }
 .route-shelf-graph { height: 260px; margin: 16px 0 18px; border: 1px solid var(--app-line); border-radius: 10px; background: #fafbfc; overflow: hidden; }
-.route-shelf-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.route-shelf-detail-actions { flex: none; display: flex; align-items: center; gap: 8px; }
 .route-shelf-delete {
   display: grid;
   place-items: center;

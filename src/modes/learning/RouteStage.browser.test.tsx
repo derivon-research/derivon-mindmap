@@ -138,6 +138,20 @@ it('shows the record’s own step count beside the steps the graph can still dra
   expect(container.querySelectorAll('.learning-preview-list li')).toHaveLength(2);
 });
 
+it('puts the way into the route above the steps, not at the bottom of them', async () => {
+  const records = createMemoryLearnerRecords('test-workspace', { routes: [record('r-aaaaaa', '第一条')] });
+  await render({ records });
+  await expect.element(page.getByRole('button', { name: '开始学' })).toBeVisible();
+
+  const start = page.getByRole('button', { name: '开始学' }).element();
+  const steps = container.querySelector('.route-shelf-detail .learning-preview-list');
+  expect(steps).not.toBeNull();
+  // DOCUMENT_POSITION_FOLLOWING: the step list comes after the button, so the button is on top
+  // and a long route never pushes the way in off the bottom of the screen.
+  expect(start.compareDocumentPosition(steps!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(container.querySelector('.route-shelf-actions')).toBeNull();
+});
+
 it('offers no confirmation on a host with nowhere to keep the route', async () => {
   await render({ view: 'preview' });
   await expect.element(page.getByText('这是算出来的路线')).toBeVisible();

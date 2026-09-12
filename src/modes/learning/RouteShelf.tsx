@@ -88,7 +88,12 @@ export function RouteShelf({ graph, routes, issue, error, active, onStart, onDel
               {' · '}{selected.record.order.length} 步 · 成本 {selected.record.cost}
             </p>
           </div>
-          <DeleteRouteButton route={selected.record} onDelete={onDelete} />
+          <div className="route-shelf-detail-actions">
+            <button type="button" className="learning-primary" onClick={() => onStart(selected.record.id)}>
+              开始学 <ArrowRight size={15} aria-hidden="true" />
+            </button>
+            <DeleteRouteButton route={selected.record} onDelete={onDelete} />
+          </div>
         </header>
         {selected.stale && <p className="route-shelf-stale-note" role="alert">
           这条路线是在另一版图上解出来的：它只是被报出来，没有被重新求解，也没有被删掉。
@@ -108,11 +113,6 @@ export function RouteShelf({ graph, routes, issue, error, active, onStart, onDel
             <span className="learning-step-weight">{step.weight}</span>
           </li>)}
         </ol>
-        <footer className="route-shelf-actions">
-          <button type="button" className="learning-primary" onClick={() => onStart(selected.record.id)}>
-            开始学 <ArrowRight size={15} aria-hidden="true" />
-          </button>
-        </footer>
       </section>
       : <section className="route-shelf-detail is-empty">
         <h2>{issue ? '路线记录读不出来' : '还没有确认过路线'}</h2>
