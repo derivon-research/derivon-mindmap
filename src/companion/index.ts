@@ -204,6 +204,21 @@ function serialize<T>(mode: Mode, operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
+/**
+ * Stop whatever the mode is doing, now.
+ *
+ * Deliberately not serialized: a `send` keeps its place in the mode's queue until the
+ * turn ends, so an abort queued behind it would arrive only once the turn it was meant
+ * to interrupt had already finished. Reaching the session directly is the whole point —
+ * the turn's own end still travels through its response, as a settled event and the
+ * send's reply.
+ */
+async function abort(mode: Mode) {
+  const session = sessions.get(mode);
+  // No session, or an idle one: nothing to interrupt, and nothing to change.
+  if (session) await session.abort();
+}
+
 async function handle(request: Request): Promise<Response> {
   try {
     if (request.type === 'listModels') {
@@ -229,10 +244,7 @@ async function handle(request: Request): Promise<Response> {
       return { id: request.id, type: 'ok' };
     }
     if (request.type === 'abort') {
-      await serialize(request.mode, async () => {
-        const session = sessions.get(request.mode);
-        if (session) await session.abort();
-      });
+      await abort(request.mode);
       return { id: request.id, type: 'ok' };
     }
     if (request.type === 'new') {
