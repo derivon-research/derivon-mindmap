@@ -5,9 +5,9 @@ import {
   enterLearningView,
   enterMode,
   initialAppState,
-  invalidateLearningRoute,
   openWorkspace,
   selectConcept,
+  selectLearningRoute,
   setLearningKnown,
   setLearningTargets,
   type AppState,
@@ -133,57 +133,56 @@ describe('returning to authoring', () => {
 describe('the learning side views', () => {
   const learning = () => setLearningTargets(enterMode(webState(), 'learning'), ['svd']);
 
-  it('opens a workspace in orientation, with no route confirmed yet', () => {
+  it('opens a workspace in orientation with no active route', () => {
     const state = webState();
     expect(state.learningView).toBe('orientation');
-    expect(state.learningRouteConfirmed).toBe(false);
+    expect(state.learningActiveRouteId).toBeNull();
   });
 
-  it('sends a learner heading for the route through the preview first', () => {
-    expect(enterLearningView(learning(), 'route').learningView).toBe('preview');
-  });
-
-  it('opens the route once the preview has been confirmed', () => {
-    const confirmed = confirmLearningRoute(learning());
-    expect(confirmed.learningView).toBe('route');
-    expect(enterLearningView(enterLearningView(confirmed, 'browse'), 'route').learningView).toBe('route');
-  });
-
-  it('makes a changed target or known set go back through the preview', () => {
-    const confirmed = confirmLearningRoute(learning());
-    expect(setLearningTargets(confirmed, ['svd', 'pseudoinverse']).learningRouteConfirmed).toBe(false);
-    expect(setLearningKnown(confirmed, ['basis']).learningRouteConfirmed).toBe(false);
-    expect(enterLearningView(setLearningKnown(confirmed, ['basis']), 'route').learningView).toBe('preview');
-  });
-
-  it('keeps an invalidated route visible but requires a new preview on return', () => {
-    const confirmed = confirmLearningRoute(learning());
-    const invalidated = invalidateLearningRoute(confirmed);
-    expect(invalidated.learningRouteConfirmed).toBe(false);
-    expect(invalidated.learningView).toBe('route');
-    expect(enterLearningView(invalidated, 'route').learningView).toBe('preview');
-  });
-
-  it('leaves the confirmation alone when the sets are republished unchanged', () => {
-    const confirmed = confirmLearningRoute(learning());
-    expect(setLearningTargets(confirmed, ['svd']).learningRouteConfirmed).toBe(true);
-  });
-
-  it('goes back to orientation when another workspace opens', () => {
-    const confirmed = confirmLearningRoute(learning());
-    const reopened = openWorkspace(confirmed, workspace);
-    expect(reopened.learningView).toBe('orientation');
-    expect(reopened.learningRouteConfirmed).toBe(false);
-  });
-
-  it('restages the preview when authoring hands learning a new target', () => {
-    const confirmed = confirmLearningRoute(enterMode(selectConcept(desktopState(), 'svd'), 'learning'));
-    const reselected = selectConcept(enterMode(confirmed, 'authoring'), 'kalman-filter');
-    expect(enterMode(reselected, 'learning').learningRouteConfirmed).toBe(false);
-  });
-
-  it('browsing and changing targets are reachable without a confirmed route', () => {
+  it('stages a route only from the route stage, which asks for a confirmation rather than bouncing', () => {
+    // The route stage is where confirmed routes are chosen; it is not gated behind a preview.
+    expect(enterLearningView(learning(), 'route').learningView).toBe('route');
     expect(enterLearningView(webState(), 'browse').learningView).toBe('browse');
     expect(enterLearningView(webState(), 'orientation').learningView).toBe('orientation');
+  });
+
+  it('opens the route stage on the chooser, not on whichever route was last walking', () => {
+    const confirmed = confirmLearningRoute(learning(), 'r-k7f3q2');
+    const entered = enterLearningView(confirmed, 'route');
+    expect(entered.learningView).toBe('route');
+    expect(entered.learningActiveRouteId).toBeNull();
+  });
+
+  it('makes the route just confirmed the active one and opens the route stage on it', () => {
+    const confirmed = confirmLearningRoute(learning(), 'r-k7f3q2');
+    expect(confirmed.learningActiveRouteId).toBe('r-k7f3q2');
+    expect(confirmed.learningView).toBe('route');
+  });
+
+  it('leaves the active route alone when targets or known concepts change, because a route carries its own', () => {
+    const confirmed = confirmLearningRoute(learning(), 'r-k7f3q2');
+    expect(setLearningTargets(confirmed, ['svd', 'pseudoinverse']).learningActiveRouteId).toBe('r-k7f3q2');
+    expect(setLearningKnown(confirmed, ['basis']).learningActiveRouteId).toBe('r-k7f3q2');
+  });
+
+  it('switches which confirmed route is showing, and can drop back to choosing one', () => {
+    const confirmed = confirmLearningRoute(learning(), 'r-k7f3q2');
+    expect(selectLearningRoute(confirmed, 'r-m2p9ax').learningActiveRouteId).toBe('r-m2p9ax');
+    expect(selectLearningRoute(confirmed, null).learningActiveRouteId).toBeNull();
+  });
+
+  it('starts a reopened workspace with no active route, so the learner picks one', () => {
+    const confirmed = confirmLearningRoute(learning(), 'r-k7f3q2');
+    const reopened = openWorkspace(confirmed, workspace);
+    expect(reopened.learningView).toBe('orientation');
+    expect(reopened.learningActiveRouteId).toBeNull();
+  });
+
+  it('keeps the active route when authoring hands learning a new target', () => {
+    const confirmed = confirmLearningRoute(enterMode(selectConcept(desktopState(), 'svd'), 'learning'), 'r-k7f3q2');
+    const reselected = selectConcept(enterMode(confirmed, 'authoring'), 'kalman-filter');
+    const back = enterMode(reselected, 'learning');
+    expect(back.learningTargetIds).toEqual(['kalman-filter']);
+    expect(back.learningActiveRouteId).toBe('r-k7f3q2');
   });
 });

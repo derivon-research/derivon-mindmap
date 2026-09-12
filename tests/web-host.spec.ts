@@ -81,8 +81,24 @@ test('carries the bundled example through every learning view the top bar offers
   // route entry is live from the first frame — no answer needed to reach the other views.
   await expect(page.locator('[data-derivon-mode="learning"]')).not.toHaveAttribute('data-learning-targets', '');
 
-  await page.getByRole('button', { name: '路线学习' }).click();
-  // No solver ships with the web build, and the preview says so rather than inventing an order.
+  await page.getByRole('button', { name: '选择路线' }).click();
+  // The route stage lists the learner's confirmed routes. This learner has confirmed none,
+  // and nothing is invented to fill the gap.
+  await expect(page.getByRole('heading', { name: '我的路线' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '还没有确认过路线' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('routes.png') });
+
+  // Computing one goes through the create flow's questions to the route they produce, which
+  // says the host cannot solve rather than inventing an order.
+  await page.getByLabel('已确认的路线').getByRole('button', { name: '创建路线' }).click();
+  // The bundled workspace ships the author's opening questions; skipping them all is the
+  // shortest path to the panel that goes on to the preview.
+  for (let question = 0; question < 6; question += 1) {
+    const skip = page.getByRole('button', { name: '跳过' });
+    if (await skip.count() === 0) break;
+    await skip.click();
+  }
+  await page.getByRole('button', { name: /看看路线|去看路线/ }).click();
   await expect(page.getByRole('heading', { name: '还没有可以走的路线' })).toBeVisible();
   await expect(page.getByText('这个宿主还不能求解路线')).toBeVisible();
   await expect(page.getByRole('button', { name: '开始学' })).toBeDisabled();

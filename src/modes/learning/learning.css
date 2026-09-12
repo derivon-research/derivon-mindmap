@@ -193,3 +193,123 @@
   .learning-tutor, .learning-rail { flex: 0 0 auto; max-height: 40%; order: 0; }
   .learning-text { order: 1; padding: 20px 18px 40px; }
 }
+
+/* ------------------------------------------------------------ confirmed routes */
+
+.route-shelf {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+}
+
+.route-shelf-list {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 14px 24px;
+  background: #fbfbfc;
+  border-right: 1px solid var(--app-line);
+}
+.route-shelf-list header h1 { margin: 0 0 4px; font-size: 20px; }
+.route-shelf-list header p { margin: 0; color: var(--app-muted); font-size: 12px; }
+.route-shelf-list ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.route-shelf-list li > button {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.route-shelf-list li > button:hover { background: #f1f3f6; }
+.route-shelf-list li.is-current > button { border-color: var(--app-accent); background: #fff; }
+.route-shelf-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13px; }
+.route-shelf-meta { color: var(--app-muted); font-size: 11px; }
+.route-shelf-stale {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid #d9b45e;
+  border-radius: 999px;
+  background: #fdf6e3;
+  color: #8a6412;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.route-shelf-issue { margin: 0; padding: 8px 10px; border: 1px solid #e3b4b4; border-radius: 8px; background: #fdf2f2; color: #9b2638; font-size: 12px; }
+.route-shelf-new {
+  margin-top: auto;
+  padding: 10px 12px;
+  border: 1px dashed var(--app-line);
+  border-radius: 9px;
+  background: none;
+  color: var(--app-muted);
+  font-size: 12px;
+}
+
+.route-shelf-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 30px 40px;
+  background: #fff;
+}
+.route-shelf-detail.is-empty { display: flex; flex-direction: column; gap: 6px; justify-content: center; padding: 40px; }
+.route-shelf-detail.is-empty h2 { margin: 0; font-size: 20px; }
+.route-shelf-detail.is-empty p { margin: 0; color: var(--app-muted); font-size: 13px; }
+.route-shelf-detail header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.route-shelf-detail header h2 { margin: 0 0 6px; font-size: 21px; }
+.route-shelf-detail header p { margin: 0; color: var(--app-muted); font-size: 13px; }
+.route-shelf-stale-note {
+  margin: 14px 0 0;
+  padding: 9px 12px;
+  border: 1px solid #d9b45e;
+  border-radius: 9px;
+  background: #fdf6e3;
+  color: #8a6412;
+  font-size: 12px;
+}
+.route-shelf-graph { height: 260px; margin: 16px 0 18px; border: 1px solid var(--app-line); border-radius: 10px; background: #fafbfc; overflow: hidden; }
+.route-shelf-detail-actions { flex: none; display: flex; align-items: center; gap: 8px; }
+.route-shelf-delete {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--app-muted);
+}
+.route-shelf-delete:hover { border-color: var(--app-line); color: #9b2638; }
+.route-shelf-confirm { display: flex; align-items: center; gap: 6px; color: var(--app-muted); font-size: 12px; }
+.route-shelf-confirm button { padding: 4px 9px; border: 1px solid var(--app-line); border-radius: 6px; background: #fff; font-size: 12px; }
+.route-shelf-confirm button.is-danger { border-color: #e3b4b4; color: #9b2638; }
+
+.learning-rail-switch {
+  padding: 2px 7px;
+  border: 1px solid var(--app-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--app-muted);
+  font-size: 11px;
+}
+.learning-route-stale {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px solid #d9b45e;
+  border-radius: 9px;
+  background: #fdf6e3;
+  color: #8a6412;
+  font-size: 12px;
+}
+.learning-preview-error { margin: 14px 0 0; color: #9b2638; font-size: 12px; }

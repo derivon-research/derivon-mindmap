@@ -28,8 +28,9 @@ export type WorkspaceSurfaceProps = {
   onChangeTargets(ids: readonly string[]): void;
   onChangeKnown(ids: readonly string[]): void;
   onEnterLearningView(view: LearningView): void;
-  onConfirmRoute(): void;
-  onRouteInvalidated(): void;
+  /** The mode has written the record; this makes it the active route. */
+  onConfirmRoute(routeId: string): void;
+  onSelectRoute(routeId: string | null): void;
   onProtectionChange(protectedChanges: boolean): void;
 };
 
@@ -49,7 +50,7 @@ export default function WorkspaceSurface(props: WorkspaceSurfaceProps) {
   return <SessionModes {...props} session={session} />;
 }
 
-function SessionModes({ session, state, workspace, modes, routeSolver, conversationProviders, onSelectConcept, onChangeTargets, onChangeKnown, onEnterLearningView, onConfirmRoute, onRouteInvalidated, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
+function SessionModes({ session, state, workspace, modes, routeSolver, conversationProviders, onSelectConcept, onChangeTargets, onChangeKnown, onEnterLearningView, onConfirmRoute, onSelectRoute, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
   const snapshot = useSyncExternalStore(session.reader.subscribe, session.reader.getSnapshot);
   /* Keyed by the migration itself, not a bare flag: the surface is not remounted when the same
    * folder is reopened, and a second, different conflict must still be shown after a first is
@@ -119,9 +120,11 @@ function SessionModes({ session, state, workspace, modes, routeSolver, conversat
     {state.visitedModes.map((mode) => <div className="app-mode" key={mode} hidden={mode !== state.mode}>
       <Suspense fallback={<div className="app-mode-loading" role="status">正在载入…</div>}>
         {mode === 'learning' ? <LearningMode active={mode === state.mode} workspace={identity} content={snapshot.content}
+          learnerRecords={workspace.learnerRecords}
           targetIds={state.learningTargetIds} knownIds={state.learningKnownIds} onChangeTargets={onChangeTargets}
           onChangeKnown={onChangeKnown} view={state.learningView} onEnterView={onEnterLearningView}
-          onConfirmRoute={onConfirmRoute} onRouteInvalidated={onRouteInvalidated} routeSolver={routeSolver}
+          onConfirmRoute={onConfirmRoute} activeRouteId={state.learningActiveRouteId} onSelectRoute={onSelectRoute}
+          routeSolver={routeSolver}
           readAsset={readAsset} readDocuments={readDocuments} conversation={conversationProviders?.learning}
           drainPendingChanges={session.flush} />
           : AuthoringMode && <AuthoringMode key={snapshot.authoringEpoch} active={mode === state.mode} workspace={identity} content={snapshot.content}

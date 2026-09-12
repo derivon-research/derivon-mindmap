@@ -57,26 +57,30 @@ export function TopBar({
 
 export type LearningNavProps = {
   readonly view: LearningView;
-  readonly hasTargets: boolean;
   readonly onEnterView: (view: LearningView) => void;
 };
 
 /**
- * The learning side's stage and view entries. They sit beside the mode segmented control
- * rather than inside it: these are places to stand within one mode, not a third mode.
+ * The learning side's entries. They sit beside the mode segmented control rather than inside
+ * it: these are places to stand within one mode, not a third mode.
+ *
+ * Each entry is named after the screen it opens and opens it whatever is showing. Creating a
+ * route is its own flow — the questions, then the route they produce — which is why its entry
+ * never turns into something else. And no entry is gated on a live target: a confirmed route
+ * carries the targets it was solved from, so choosing one needs nothing settled first.
  */
-function LearningNav({ view, hasTargets, onEnterView }: LearningNavProps) {
+function LearningNav({ view, onEnterView }: LearningNavProps) {
   return (
     <nav className="app-learning-views" aria-label="学习流程">
       <button type="button" aria-pressed={view === 'orientation'}
         className={view === 'orientation' ? 'is-active' : ''}
         onClick={() => onEnterView('orientation')}>
-        <Compass size={15} aria-hidden="true" /><span>改目标 / 已知</span>
+        <Compass size={15} aria-hidden="true" /><span>创建路线</span>
       </button>
-      <button type="button" aria-pressed={view === 'route' || view === 'preview'} disabled={!hasTargets}
-        className={view === 'route' || view === 'preview' ? 'is-active' : ''}
-        onClick={() => onEnterView(view === 'route' ? 'preview' : 'route')}>
-        <Route size={15} aria-hidden="true" /><span>{view === 'route' ? '再看一遍路线' : '路线学习'}</span>
+      <button type="button" aria-pressed={view === 'route'}
+        className={view === 'route' ? 'is-active' : ''}
+        onClick={() => onEnterView('route')}>
+        <Route size={15} aria-hidden="true" /><span>选择路线</span>
       </button>
       <button type="button" aria-pressed={view === 'browse'}
         className={view === 'browse' ? 'is-active' : ''}

@@ -33,7 +33,13 @@ export type RouteLearningProps = {
   readonly panels: PanelLayout;
   readonly onPanels: (layout: PanelLayout) => void;
   readonly onKnow: (conceptId: string) => void;
-  readonly onBackToPreview: () => void;
+  /**
+   * The route was solved against a graph this one no longer is. It is walked anyway, with the
+   * notice shown: a stale record is evidence of what was once computed, not an error.
+   */
+  readonly stale?: boolean;
+  /** Back to the confirmed routes, to walk a different one. */
+  readonly onSwitchRoute: () => void;
   readonly readAsset?: LearningModeProps['readAsset'];
   readonly readDocuments?: LearningModeProps['readDocuments'];
   readonly conversation?: LearningModeProps['conversation'];
@@ -50,7 +56,7 @@ export type RouteLearningProps = {
  */
 export function RouteLearning({
   active, content, solution, targetIds, knownIds, cursor, onCursor, revealed, onReveal,
-  tasksDone, onTaskDone, panels, onPanels, onKnow, onBackToPreview, readAsset, readDocuments, conversation,
+  tasksDone, onTaskDone, panels, onPanels, onKnow, stale = false, onSwitchRoute, readAsset, readDocuments, conversation,
   drainPendingChanges,
 }: RouteLearningProps) {
   const graph = content.graph;
@@ -119,6 +125,9 @@ export function RouteLearning({
 
     <article className="learning-text">
       <div className="learning-text-column">
+        {stale && <p className="learning-route-stale" role="alert">
+          这条路线是在另一版图上解出来的。它没有被重新求解，也没有被删掉 —— 能走完，只是不再对应当前的图。
+        </p>}
         {current
           ? <Step active={active} content={content} step={current} total={steps.length} label={label}
             definitionOpen={definitionOpen} taskDone={taskDone} taskStale={taskStale}
@@ -136,10 +145,10 @@ export function RouteLearning({
           : <div className="learning-route-done">
             <h2>这条路线走完了</h2>
             <p>{steps.length} 步{solution.cost === null ? '' : `，总学习成本 ${solution.cost}`}。
-              这一次的进度只活在这个会话里，还没有存下来。</p>
+              路线本身存在学习者记录里；走到哪一步还没存下来。</p>
             <div className="learning-text-actions">
               <button type="button" className="learning-primary" onClick={() => onCursor(0)}>从头再走一遍</button>
-              <button type="button" onClick={onBackToPreview}>回去看路线</button>
+              <button type="button" onClick={onSwitchRoute}>换一条路线</button>
             </div>
           </div>}
       </div>
@@ -149,6 +158,7 @@ export function RouteLearning({
       <div className="learning-rail-head">
         <span>{targetIds.map(label).join('、') || '路线'}</span>
         <em>{Math.min(cursor + 1, steps.length)} / {steps.length}</em>
+        <button type="button" className="learning-rail-switch" onClick={onSwitchRoute}>换一条路线</button>
         <PanelControls state={panels.rail} expandLabel="展开子图"
           onChange={(state) => movePanel('rail', state)} />
       </div>

@@ -323,12 +323,15 @@ export function conceptsWithTag(graph: ManifestGraph, tag: string): readonly Con
  * each implement it. Digits and letters that survive being read aloud or copied by hand:
  * no `0 1 i l o u`. The protocol itself accepts any ASCII id, so a hand-written graph keeps
  * names like `svd`.
+ *
+ * `r` is a route record's id: the same alphabet and the same six characters, minted here so
+ * the application has one generator rather than a second one per writer.
  */
 const ID_ALPHABET = '23456789abcdefghjkmnpqrstvwxyz';
 const ID_LENGTH = 6;
 
 /** Random rather than counted: a counter's high-water mark cannot survive a deletion. */
-export function generateObjectId(prefix: 'c' | 'h', existing: Iterable<string>): string {
+export function generateObjectId(prefix: 'c' | 'h' | 'r', existing: Iterable<string>): string {
   const used = new Set(existing);
   for (;;) {
     const bytes = crypto.getRandomValues(new Uint8Array(ID_LENGTH));

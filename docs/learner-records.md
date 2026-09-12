@@ -1,8 +1,11 @@
 # Learner records
 
-Status: specified by [#92](https://github.com/derivon-research/derivon-mindmap/issues/92);
-the storage, the command surface and the routes UI land in #98–#103. Domain terms are defined
-in [CONTEXT.md](../CONTEXT.md); the decisions are
+Status: specified by [#92](https://github.com/derivon-research/derivon-mindmap/issues/92).
+The application-side storage landed in [#99](https://github.com/derivon-research/derivon-mindmap/issues/99);
+confirming a route, showing the confirmed ones and deleting one landed in
+[#100](https://github.com/derivon-research/derivon-mindmap/issues/100). Self-report and mastery-derived
+routes are #101 and #102, and the script command surface is `derivon-research/skills#6`.
+Domain terms are defined in [CONTEXT.md](../CONTEXT.md); the decisions are
 [ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) (where they live) and
 [ADR-0012](adr/0012-learning-state-is-mastery.md) (what they are).
 

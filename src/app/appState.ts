@@ -18,8 +18,12 @@ export type AppState = {
   readonly learningKnownIds: readonly string[];
   /** The learning stage or view showing; the top bar switches it, so the application owns it. */
   readonly learningView: LearningView;
-  /** The learner has seen and accepted the route these targets and known concepts produce. */
-  readonly learningRouteConfirmed: boolean;
+  /**
+   * Which confirmed route the route stage is showing. Session state, like the view above:
+   * reopening a workspace starts with none, and the learner picks one from `routes.json`.
+   * The record itself is the persisted fact; this is only which one is on screen.
+   */
+  readonly learningActiveRouteId: string | null;
   /** The selection already handed to learning, so a return trip does not re-carry it. */
   readonly carriedConceptId: string | null;
 };
@@ -44,7 +48,7 @@ export function initialAppState({ hostId, modes, workspace = null }: InitialAppS
     learningTargetIds: [],
     learningKnownIds: [],
     learningView: 'orientation',
-    learningRouteConfirmed: false,
+    learningActiveRouteId: null,
     carriedConceptId: null,
   };
 }
@@ -64,7 +68,7 @@ export function openWorkspace(state: AppState, workspace: WorkspaceHandle): AppS
     learningTargetIds: [],
     learningKnownIds: [],
     learningView: 'orientation',
-    learningRouteConfirmed: false,
+    learningActiveRouteId: null,
     carriedConceptId: null,
   };
 }
@@ -79,48 +83,44 @@ const same = (left: readonly string[], right: readonly string[]) =>
 /**
  * Learning owns its targets once it has them; orientation calls this.
  *
- * A route the learner already accepted was accepted for these targets. Changing them
- * un-confirms it, so the preview screen is passed again before the route reopens.
+ * Changing them does not disturb the active route: a route record carries its own `targets`
+ * and `known` snapshot, so it is not a statement about what is chosen now.
  */
 export function setLearningTargets(state: AppState, conceptIds: readonly string[]): AppState {
   if (same(state.learningTargetIds, conceptIds)) return state;
-  return { ...state, learningTargetIds: [...conceptIds], learningRouteConfirmed: false };
+  return { ...state, learningTargetIds: [...conceptIds] };
 }
 
 /** The known set orientation produced; session state alongside the targets. */
 export function setLearningKnown(state: AppState, conceptIds: readonly string[]): AppState {
   if (same(state.learningKnownIds, conceptIds)) return state;
-  return { ...state, learningKnownIds: [...conceptIds], learningRouteConfirmed: false };
+  return { ...state, learningKnownIds: [...conceptIds] };
 }
 
 /**
  * Move to another learning stage or view.
  *
- * Route learning is the one view with a gate in front of it: a learner who has not seen
- * the route these targets produce lands on the preview instead. That is the whole
- * mechanism behind "the preview is always passed before targets are committed to".
+ * Entering the route stage means choosing a route, so it opens on the learner's confirmed
+ * routes rather than mid-walk in whichever one was open last. That is what makes the entry
+ * that opens it always open the same screen.
  */
 export function enterLearningView(state: AppState, view: LearningView): AppState {
-  const reached = view === 'route' && !state.learningRouteConfirmed ? 'preview' : view;
-  return { ...state, learningView: reached };
-}
-
-/** The learner accepted the previewed route. Learning mode retains its content basis. */
-export function confirmLearningRoute(state: AppState): AppState {
-  return {
-    ...state,
-    learningRouteConfirmed: true,
-    learningView: 'route',
-  };
+  return view === 'route'
+    ? { ...state, learningView: view, learningActiveRouteId: null }
+    : { ...state, learningView: view };
 }
 
 /**
- * Learning mode determined that the accepted route no longer applies. The current view stays
- * where it is so the mode can explain the change; later route entry requires a new preview.
+ * The learner accepted the route the preview showed. It is now the active one — the record
+ * itself was written by the mode, which owns the store — and the route stage shows it.
  */
-export function invalidateLearningRoute(state: AppState): AppState {
-  if (!state.learningRouteConfirmed) return state;
-  return { ...state, learningRouteConfirmed: false };
+export function confirmLearningRoute(state: AppState, routeId: string): AppState {
+  return { ...state, learningActiveRouteId: routeId, learningView: 'route' };
+}
+
+/** Which confirmed route is on screen, or none so the learner chooses from the records. */
+export function selectLearningRoute(state: AppState, routeId: string | null): AppState {
+  return state.learningActiveRouteId === routeId ? state : { ...state, learningActiveRouteId: routeId };
 }
 
 /**
@@ -149,7 +149,6 @@ export function enterMode(state: AppState, mode: AppMode): AppState {
       ? state.visitedModes
       : [...state.visitedModes, mode],
     learningTargetIds: carries ? [state.selectedConceptId!] : state.learningTargetIds,
-    learningRouteConfirmed: carries ? false : state.learningRouteConfirmed,
     carriedConceptId: carries ? state.selectedConceptId : state.carriedConceptId,
   };
 }

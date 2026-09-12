@@ -8,9 +8,9 @@ import {
   initialAppState,
   openWorkspace,
   selectConcept,
+  selectLearningRoute,
   setLearningKnown,
   setLearningTargets,
-  invalidateLearningRoute,
   type AppState,
 } from './appState';
 import type { Host, LearningView, RecentWorkspace, WorkspaceHandle } from './host';
@@ -138,12 +138,12 @@ export default function App({ host }: { host: Host }) {
     setState((current) => (current ? enterLearningView(current, view) : current));
   }, []);
 
-  const handleConfirmRoute = useCallback(() => {
-    setState((current) => (current ? confirmLearningRoute(current) : current));
+  const handleConfirmRoute = useCallback((routeId: string) => {
+    setState((current) => (current ? confirmLearningRoute(current, routeId) : current));
   }, []);
 
-  const handleRouteInvalidated = useCallback(() => {
-    setState((current) => (current ? invalidateLearningRoute(current) : current));
+  const handleSelectRoute = useCallback((routeId: string | null) => {
+    setState((current) => (current ? selectLearningRoute(current, routeId) : current));
   }, []);
 
   if (failure) {
@@ -163,8 +163,7 @@ export default function App({ host }: { host: Host }) {
         mode={state.mode}
         onEnterMode={(mode) => setState((current) => (current ? enterMode(current, mode) : current))}
         onCloseWorkspace={workspace && host.id === 'desktop' ? handleCloseWorkspace : undefined}
-        learning={workspace ? { view: state.learningView, hasTargets: state.learningTargetIds.length > 0,
-          onEnterView: handleEnterLearningView } : undefined}
+        learning={workspace ? { view: state.learningView, onEnterView: handleEnterLearningView } : undefined}
       />
       {workspace ? (
         <Suspense fallback={<div role="status">正在载入工作区…</div>}>
@@ -172,7 +171,7 @@ export default function App({ host }: { host: Host }) {
             routeSolver={routeSolver} conversationProviders={conversationProviders}
             onSelectConcept={handleSelectConcept} onChangeTargets={handleChangeTargets}
             onChangeKnown={handleChangeKnown} onEnterLearningView={handleEnterLearningView}
-            onConfirmRoute={handleConfirmRoute} onRouteInvalidated={handleRouteInvalidated}
+            onConfirmRoute={handleConfirmRoute} onSelectRoute={handleSelectRoute}
             onProtectionChange={handleProtectionChange} />
         </Suspense>
       ) : (
