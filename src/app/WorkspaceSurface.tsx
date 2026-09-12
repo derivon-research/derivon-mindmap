@@ -3,7 +3,14 @@ import type { RouteSolver } from '../ports/RouteSolver';
 import type { ConversationProvider } from '../ports/ConversationProvider';
 import { openWorkspaceSession, type WorkspaceSession } from '../synchronization';
 import type { AppState } from './appState';
-import type { AuthoringModeProps, LearningModeProps, LearningView, WorkspaceHandle } from './host';
+import type { AuthoringModeProps, LearnerRecordMigration, LearningModeProps, LearningView, WorkspaceHandle } from './host';
+
+/** What the id index noticed, said the way the learner needs to hear it. */
+function migrationNotice(migration: LearnerRecordMigration): string {
+  return migration.kind === 'id-changed'
+    ? `工作区 id 从「${migration.previousId}」改成了「${migration.id}」。学习者记录仍完整保存在 learner-records/${migration.previousId}/ 下，没有迁移也没有删除，应用从现在起只读写新的 id；确认要沿用旧记录时，请手动把它搬到 learner-records/${migration.id}/。`
+    : `工作区 id「${migration.id}」此前出现在 ${migration.previousPath}。同 id 即同身份，两者共用同一份学习者记录，改动会互相可见，这不是损坏。`;
+}
 
 export type WorkspaceSurfaceProps = {
   workspace: WorkspaceHandle;
@@ -44,6 +51,12 @@ export default function WorkspaceSurface(props: WorkspaceSurfaceProps) {
 
 function SessionModes({ session, state, workspace, modes, routeSolver, conversationProviders, onSelectConcept, onChangeTargets, onChangeKnown, onEnterLearningView, onConfirmRoute, onRouteInvalidated, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
   const snapshot = useSyncExternalStore(session.reader.subscribe, session.reader.getSnapshot);
+  /* Keyed by the migration itself, not a bare flag: the surface is not remounted when the same
+   * folder is reopened, and a second, different conflict must still be shown after a first is
+   * dismissed. */
+  const [dismissedMigration, setDismissedMigration] = useState<string | null>(null);
+  const migration = workspace.learnerRecordMigration;
+  const migrationKey = migration ? JSON.stringify(migration) : null;
   // The agent is about this workspace, so it is rooted there rather than wherever the
   // application was started from. Both modes talk about the same one.
   useEffect(() => {
@@ -94,6 +107,10 @@ function SessionModes({ session, state, workspace, modes, routeSolver, conversat
   const labels = { saved: '已保存', pending: '待保存', saving: '正在保存', error: '保存失败' };
   const saveLabel = `${labels[snapshot.saveState]}${snapshot.hasDrafts ? ' · 有未提交草稿' : ''}${snapshot.error ? ` · ${snapshot.error}` : ''}`;
   return <>
+    {migration && dismissedMigration !== migrationKey && <div className="app-sync-bar" role="alert">
+      <output>{migrationNotice(migration)}</output>
+      <button type="button" onClick={() => setDismissedMigration(migrationKey)}>知道了</button>
+    </div>}
     {workspace.authoringSource && state.mode === 'learning' && <div className="app-sync-bar"><output aria-label="保存状态" aria-live="polite">{saveLabel}</output>{snapshot.saveState === 'error' && <button type="button" onClick={() => { void session.flush(); }}>重试保存</button>}</div>}
     {closeGuardError && <div className="app-sync-bar" role="alert">原生关闭保护未能启用：{closeGuardError}</div>}
     {snapshot.externalChange && <div className="app-sync-bar" role="alert"><output>外部工作区内容已更新；本地内容已保留，自动保存已暂停。</output><button type="button" disabled={snapshot.saveState === 'saving'} onClick={() => {

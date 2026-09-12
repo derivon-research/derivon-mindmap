@@ -249,3 +249,29 @@ it('starts the turn even when the drain cannot save', async () => {
   // The failed save is the banner's story; the turn was never refused because of it.
   expect(readAtSend[0]).toBe(fixed.initialGraphText);
 });
+
+it('reports a hand-edited workspace id without moving or deleting the stranded record', async () => {
+  const fixed = fixture();
+  documentPath = fixed.documentPath;
+  await render({
+    ...fixed.workspace,
+    learnerRecordMigration: { kind: 'id-changed', path: '/w', previousId: 'old-id', id: 'new-id' },
+  }, 'learning');
+
+  await expect.poll(() => container.textContent).toContain('learner-records/old-id/');
+  await page.getByRole('button', { name: '知道了' }).click();
+  await expect.poll(() => container.textContent).not.toContain('learner-records/old-id/');
+  expect(fixed.commit).not.toHaveBeenCalled();
+});
+
+it('reports the same id at a new path as one shared record', async () => {
+  const fixed = fixture();
+  documentPath = fixed.documentPath;
+  await render({
+    ...fixed.workspace,
+    learnerRecordMigration: { kind: 'id-moved', id: 'shared', previousPath: '/original', path: '/copy' },
+  }, 'learning');
+
+  await expect.poll(() => container.textContent).toContain('/original');
+  expect(fixed.commit).not.toHaveBeenCalled();
+});

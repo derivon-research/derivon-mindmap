@@ -1,19 +1,34 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type { WorkspaceHandle } from '../../app/host';
-import { WORKSPACE_ID_RULE, createWorkspace, isValidWorkspaceId, parseWorkspaceGraph } from '../../workspace/index';
+import { WORKSPACE_ID_RULE, createWorkspace, isValidWorkspaceId, parseWorkspaceManifest } from '../../workspace/index';
+import { createDesktopLearnerRecordStore } from './desktopLearnerRecords';
 import { createDesktopWorkspaceSource, type DesktopInvoke } from './desktopWorkspaceSource';
-import { rememberWorkspace, type RecentWorkspaceStorage } from './recentWorkspaces';
+import { detectLearnerRecordMigration, rememberWorkspace, type RecentWorkspaceStorage } from './recentWorkspaces';
 
 type Directory = { path: string; name: string };
 
 /** Native selection carries identity only; every content read/write uses WorkspaceSource. */
 export function createDesktopWorkspaceActions(invoke: DesktopInvoke = tauriInvoke, storage: RecentWorkspaceStorage | null = null) {
-  function handle(directory: Directory): WorkspaceHandle {
+  function handle(directory: Directory, workspaceId: string): WorkspaceHandle {
     const source = createDesktopWorkspaceSource(directory.path, invoke);
-    try { if (storage) rememberWorkspace(storage, directory); }
+    // The id index is read before the list is written, so this open is compared against the
+    // last sighting rather than against itself. Detection never renames or deletes anything.
+    let learnerRecordMigration;
+    try {
+      if (storage) learnerRecordMigration = detectLearnerRecordMigration(
+        storage,
+        { path: directory.path, name: directory.name, workspaceId },
+      ) ?? undefined;
+    } catch { /* A stale index must not block opening the workspace it describes. */ }
+    try { if (storage) rememberWorkspace(storage, { ...directory, workspaceId }); }
     catch { /* A recent-list cache failure must not invalidate a successful workspace open. */ }
     return {
-      id: directory.path, name: directory.name, source, authoringSource: source,
+      id: directory.path,
+      name: directory.name,
+      source,
+      authoringSource: source,
+      learnerRecords: createDesktopLearnerRecordStore(workspaceId, invoke),
+      ...(learnerRecordMigration ? { learnerRecordMigration } : {}),
       async registerCloseGuard(hasProtectedChanges) {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         return getCurrentWindow().onCloseRequested((event) => {
@@ -25,8 +40,10 @@ export function createDesktopWorkspaceActions(invoke: DesktopInvoke = tauriInvok
 
   async function open(directory: Directory): Promise<WorkspaceHandle> {
     const source = createDesktopWorkspaceSource(directory.path, invoke);
-    parseWorkspaceGraph(await source.readGraph());
-    return handle(directory);
+    // Opening validates the whole manifest, `id` included: a manifest without one is a broken
+    // workspace and never reaches learner-record addressing, so there is no fallback branch.
+    const manifest = parseWorkspaceManifest(await source.readGraph());
+    return handle(directory, manifest.manifest.id);
   }
 
   return {
@@ -51,7 +68,7 @@ export function createDesktopWorkspaceActions(invoke: DesktopInvoke = tauriInvok
       }
       const change = createWorkspace({ id: directory.name, title: directory.name });
       await source.commit(change.changes);
-      return handle(directory);
+      return handle(directory, directory.name);
     },
   };
 }

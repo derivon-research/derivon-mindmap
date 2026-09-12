@@ -3,6 +3,29 @@ import { parseWorkspaceManifest } from '../../workspace/manifest';
 import type { DesktopInvoke } from './desktopWorkspaceSource';
 import { createDesktopWorkspaceActions } from './desktopWorkspaces';
 
+/** A minimal valid manifest, so each test only states the id it cares about. */
+function manifest(id: string, title: string): string {
+  return JSON.stringify({
+    schema: 'derivon.workspace/v1',
+    id,
+    document: { title, description: '' },
+    graph: { points: [], hyperedges: [] },
+  });
+}
+
+function storageWithValue(): { getItem(key: string): string | null; setItem(key: string, value: string): void } {
+  let value: string | null = null;
+  return { getItem: () => value, setItem: (_key, next) => { value = next; } };
+}
+
+/** Reads the manifest at a path, which is the only read opening a workspace needs. */
+function graphReader(graphs: ReadonlyMap<string, string>): DesktopInvoke {
+  return (async (command: string, args?: Record<string, unknown>) => {
+    if (command === 'read_workspace_source_graph') return graphs.get((args as { rootPath: string }).rootPath);
+    throw new Error(`Unexpected I/O: ${command}`);
+  }) as DesktopInvoke;
+}
+
 describe('desktop workspace entry workflow', () => {
   it('creates through the source commit and reopens from the selected directory', async () => {
     let graph: string | undefined;
@@ -77,5 +100,42 @@ describe('desktop workspace entry workflow', () => {
     const actions = createDesktopWorkspaceActions(invoke, null);
     expect(await actions.createWorkspace()).toBeNull();
     expect(await actions.chooseWorkspace()).toBeNull();
+  });
+
+  it('roots a learner record store at the manifest id, with no data directory required to open', async () => {
+    const graphs = new Map([['/tmp/graph', manifest('math-reforged', 'Graph')]]);
+    const opened = await createDesktopWorkspaceActions(graphReader(graphs), null).openRecentWorkspace('/tmp/graph');
+    expect(opened.learnerRecordMigration).toBeUndefined();
+    expect(typeof opened.learnerRecords!.readLearningState).toBe('function');
+    expect(typeof opened.learnerRecords!.writeRoutes).toBe('function');
+  });
+});
+
+describe('the id index at the open seam', () => {
+  it('notices the same id at a new path and a manifest id edited by hand', async () => {
+    const graphs = new Map([
+      ['/a', manifest('shared-id', 'A')],
+      ['/b', manifest('shared-id', 'B')],
+    ]);
+    const actions = createDesktopWorkspaceActions(graphReader(graphs), storageWithValue());
+
+    expect((await actions.openRecentWorkspace('/a')).learnerRecordMigration).toBeUndefined();
+    expect((await actions.openRecentWorkspace('/b')).learnerRecordMigration)
+      .toEqual({ kind: 'id-moved', id: 'shared-id', previousPath: '/a', path: '/b' });
+
+    // The manifest at a path the list knows is hand-edited to a different id.
+    graphs.set('/a', manifest('edited-id', 'A'));
+    expect((await actions.openRecentWorkspace('/a')).learnerRecordMigration)
+      .toEqual({ kind: 'id-changed', path: '/a', previousId: 'shared-id', id: 'edited-id' });
+  });
+
+  it('still opens a copied workspace when the optional index is unavailable', async () => {
+    const graphs = new Map([['/copy', manifest('shared', 'Copy')]]);
+    const opened = await createDesktopWorkspaceActions(graphReader(graphs), {
+      getItem: () => { throw new Error('Storage unavailable'); },
+      setItem: () => { throw new Error('Storage unavailable'); },
+    }).openRecentWorkspace('/copy');
+    expect(opened.id).toBe('/copy');
+    expect(opened.learnerRecordMigration).toBeUndefined();
   });
 });

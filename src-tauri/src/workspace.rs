@@ -284,14 +284,15 @@ fn temporary_sibling_path(target: &Path) -> PathBuf {
 // the target. A reader therefore observes either the whole previous file or the whole new one,
 // never a prefix: an in-place write lets a reader catch the truncation, and a truncated manifest
 // is a workspace that cannot be opened at all. Both versions live in one directory, so the
-// rename stays on one filesystem.
-fn replace_workspace_source_file(target: &Path, content: &[u8]) -> Result<(), String> {
-    replace_workspace_source_file_with(target, content, || Ok(()))
+// rename stays on one filesystem. Learner records under the application data directory are
+// replaced by this same function: one artifact discipline, two artifacts.
+pub(crate) fn replace_file_atomically(target: &Path, content: &[u8]) -> Result<(), String> {
+    replace_file_atomically_with(target, content, || Ok(()))
 }
 
 // `before_replace` is the replacement point, made injectable so a test can observe what a reader
 // sees while the temporary file is complete and the target is still the previous one.
-fn replace_workspace_source_file_with<F>(
+fn replace_file_atomically_with<F>(
     target: &Path,
     content: &[u8],
     before_replace: F,
@@ -338,7 +339,7 @@ where
 
 fn write_workspace_source_content(target: &Path, content: Option<&[u8]>) -> Result<(), String> {
     match content {
-        Some(bytes) => replace_workspace_source_file(target, bytes),
+        Some(bytes) => replace_file_atomically(target, bytes),
         None => match fs::remove_file(target) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -1555,10 +1556,10 @@ fn write_workspace_files(
             .ok_or_else(|| format!("workspace file `{relative}` has no parent"))?;
         fs::create_dir_all(parent)
             .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
-        replace_workspace_source_file(&path, content.as_bytes())?;
+        replace_file_atomically(&path, content.as_bytes())?;
     }
     // Same order as a commit: the manifest that names the documents is replaced after them.
-    replace_workspace_source_file(&manifest_path, manifest_text.as_bytes())
+    replace_file_atomically(&manifest_path, manifest_text.as_bytes())
 }
 
 #[cfg(test)]
@@ -2321,7 +2322,7 @@ mod tests {
         // A reader arriving while the temporary file is complete and the replacement has not
         // happened yet still gets the previous manifest in full, never a prefix of the new one.
         let mut observed = None;
-        replace_workspace_source_file_with(&manifest_path, next.as_bytes(), || {
+        replace_file_atomically_with(&manifest_path, next.as_bytes(), || {
             observed = Some(fs::read(&manifest_path).map_err(|error| error.to_string())?);
             Ok(())
         })
@@ -2366,7 +2367,7 @@ mod tests {
         };
 
         for round in 0..64 {
-            replace_workspace_source_file(&manifest_path, versions[round % 2].as_bytes()).unwrap();
+            replace_file_atomically(&manifest_path, versions[round % 2].as_bytes()).unwrap();
         }
         reading.store(false, Ordering::Relaxed);
 
@@ -2382,7 +2383,7 @@ mod tests {
         let previous = large_manifest('a');
         fs::write(&manifest_path, &previous).unwrap();
 
-        let error = replace_workspace_source_file_with(
+        let error = replace_file_atomically_with(
             &manifest_path,
             large_manifest('b').as_bytes(),
             || Err("injected replacement failure".to_owned()),
