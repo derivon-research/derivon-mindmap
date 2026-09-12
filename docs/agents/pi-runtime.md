@@ -51,6 +51,16 @@ terms of the port's own types. Both ends import it; Rust does not know it.
   in Rust. A field renamed in `protocol.ts` must not be able to desynchronise a copy
   kept somewhere else — that is the whole reason this file exists.
 
+## One turn at a time, except to stop one
+
+`send`, `setModel` and `new` are serialized per mode: a mode's session is asked one thing
+at a time, and a `send` holds its place until its turn ends. `abort` is deliberately not
+on that queue. Queued behind the send it was meant to stop, it could only ever arrive once
+that turn had already ended on its own, which is what “停止生成” did before. It reaches
+`session.abort()` directly instead. The interrupted turn still reports itself through its
+own response — a `settled` event, then the send's reply — and aborting neither replaces
+nor suppresses those.
+
 ## The companion owns the model selection
 
 Which model a mode is on is the companion's, remembered in
@@ -148,11 +158,14 @@ adapter. Until then, do not add remote providers or web-hosted model access.
 
 - `npm run build:companion` produces the single-file Node companion.
 - `npm run test:node` runs the companion integration test against a local OpenAI-compatible
-  test provider; it does not call a real model service. It deliberately spawns the
-  companion with a machine-wide `ANTHROPIC_API_KEY` set and asserts the catalog is
-  unchanged. A test whose result depends on the developer's shell is a defect in the
-  isolation it exists to prove — `src/companion/modelConfiguration.test.ts` covers the
-  same ground without spawning a process.
+  test provider; it does not call a real model service. The provider fixture reads a
+  request's last user message rather than its whole body: the conversation history
+  travels with each request, so a marker matched against the body would answer every
+  later turn. The test deliberately spawns the companion with a machine-wide
+  `ANTHROPIC_API_KEY` set and asserts the catalog is unchanged. A test whose result
+  depends on the developer's shell is a defect in the isolation it exists to prove —
+  `src/companion/modelConfiguration.test.ts` covers the same ground without spawning a
+  process.
 - `npm run test` also runs that integration test, the browser tests, typechecking, and the
   initial JavaScript budget.
 - `npm run build:desktop` builds the companion, copies the current Node runtime into
