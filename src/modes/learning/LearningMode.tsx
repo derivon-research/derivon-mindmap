@@ -97,31 +97,31 @@ export function LearningMode({
   // keyed by the route they were made on.
   useEffect(() => { setWalk(startRoute); }, [activeRouteId]);
 
-  const writeRoutes = async (change: (records: readonly typeof listed.routes[number][]) => Promise<RouteList>) => {
+  const writeRoutes = async (change: () => Promise<RouteList>) => {
     setWriteError(null);
     try {
-      setListed(await change(listed.routes));
+      setListed(await change());
     } catch (error) {
       setWriteError(error instanceof Error ? error.message : String(error));
     }
   };
 
   const confirmRoute = async () => {
-    if (!solved) return;
+    if (!solved || !learnerRecords) return;
     setWriting(true);
     setWriteError(null);
     try {
       const record = await routeRecord({
         id: generateObjectId('r', listed.routes.map((route) => route.id)),
-        description: `走到 ${targetIds.map((id) => labelOf(graph, id)).join('、')}`,
+        // The name is derived, not asked for: a route is not edited, so there is nowhere a
+        // learner could change it, and the starting point is what tells two routes apart.
+        description: `从 ${knownIds.length ? knownIds.map((id) => labelOf(graph, id)).join('、') : '零'} 走到 ${targetIds.map((id) => labelOf(graph, id)).join('、')}`,
         graph,
         solution: solved,
         targets: targetIds,
         known: knownIds,
       });
-      setListed(learnerRecords
-        ? await addRoute(learnerRecords, record)
-        : { ...listed, routes: [...listed.routes, record] });
+      setListed(await addRoute(learnerRecords, record));
       setWalk(startRoute);
       onConfirmRoute(record.id);
     } catch (error) {
@@ -132,10 +132,9 @@ export function LearningMode({
   };
 
   const deleteRoute = (routeId: string) => {
+    if (!learnerRecords) return;
     void writeRoutes(async () => {
-      const next = learnerRecords
-        ? await removeRoute(learnerRecords, routeId)
-        : { ...listed, routes: listed.routes.filter((route) => route.id !== routeId) };
+      const next = await removeRoute(learnerRecords, routeId);
       if (activeRouteId === routeId) onSelectRoute(null);
       return next;
     });
@@ -173,13 +172,15 @@ export function LearningMode({
       readAsset={readAsset} readDocuments={readDocuments} />}
 
     {view === 'preview' && <RoutePreviewView active={active} graph={content.graph} tags={content.tags}
-      preview={preview} targetIds={targetIds} knownIds={knownIds} confirming={writing} confirmError={writeError}
+      preview={preview} targetIds={targetIds} knownIds={knownIds} confirming={writing}
+      confirmError={writeError === null ? null : `路线没能存下来：${writeError}`}
+      confirmBlocked={learnerRecords ? null : '这个宿主没有应用数据目录，确认的路线无处可存，所以先不让确认。'}
       onConfirm={() => { void confirmRoute(); }}
       onBackToOrientation={() => onEnterView('orientation')} onBrowse={() => onEnterView('browse')} />}
 
     {picker && <RouteShelf active={active} graph={graph} routes={shelfRoutes} issue={listed.issue}
-      howFarItGoes={learnerRecords ? 'stored' : 'session'}
-      onStart={openRoute} onDelete={deleteRoute} onNewRoute={() => onEnterView('orientation')} />}
+      error={writeError} onStart={openRoute} onDelete={deleteRoute}
+      onNewRoute={() => onEnterView('orientation')} />}
 
     {!picker && activeRecord && <RouteLearning active={active} content={content}
       solution={routeSolutionOf(activeRecord)} targetIds={[...activeRecord.targets]} knownIds={[...activeRecord.known]}

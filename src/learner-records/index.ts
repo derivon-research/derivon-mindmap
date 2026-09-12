@@ -19,5 +19,5 @@ export {
 } from './store';
 
 export { routeBasis } from './basis';
-export { routeIsStale, routeRecord, type ConfirmRouteInput } from './routes';
-export { addRoute, readRoutes, removeRoute, type RouteList } from './routeRecords';
+export { routeIsStale, routeRecord, type ConfirmRouteInput } from './routeRecord';
+export { addRoute, readRoutes, removeRoute, type RouteList } from './routesFile';

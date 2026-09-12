@@ -3,7 +3,7 @@
  * than how the file got to disk. The shape mirrors the desktop port: an absent file is an
  * absent record, and a write carries the version the caller read.
  */
-import { createLearnerRecordStore, type LearnerRecordStore, type LearningState, type RouteRecord } from '../learner-records';
+import { createLearnerRecordStore, serializeRoutesState, type LearnerRecordStore, type LearningState, type RouteRecord } from '../learner-records';
 import type { LearnerRecordFiles } from '../ports/LearnerRecordFiles';
 
 export type MemoryLearnerRecords = {
@@ -18,11 +18,20 @@ export type MemoryLearnerRecords = {
 
 export function createMemoryLearnerRecords(
   workspaceId = 'test-workspace',
-  initial: { readonly routes?: readonly RouteRecord[]; readonly state?: LearningState } = {},
+  initial: {
+    readonly routes?: readonly RouteRecord[];
+    readonly state?: LearningState;
+    /** Raw `routes.json` text, for a test that needs a file the reader refuses. */
+    readonly routesText?: string;
+    /** Every write loses, for a test about a refusal staying visible. */
+    readonly failWrites?: boolean;
+  } = {},
 ): MemoryLearnerRecords {
   const files = new Map<string, { readonly text: string; readonly version: number }>();
   let versions = 0;
-  if (initial.routes) {
+  if (initial.routesText !== undefined) {
+    files.set('routes', { text: initial.routesText, version: ++versions });
+  } else if (initial.routes) {
     files.set('routes', { text: routesText(initial.routes), version: ++versions });
   }
   if (initial.state) {
@@ -36,6 +45,7 @@ export function createMemoryLearnerRecords(
         : { presence: 'present', text: entry.text, version: String(entry.version) };
     },
     async write(_workspaceId, file, text, precondition) {
+      if (initial.failWrites) throw new Error('学习者记录已被其他写入方更新（routes.json）');
       const entry = files.get(file);
       const current = entry === undefined ? null : String(entry.version);
       const expected = precondition.presence === 'present' ? precondition.version : null;
@@ -61,5 +71,4 @@ export function createMemoryLearnerRecords(
   };
 }
 
-const routesText = (routes: readonly RouteRecord[]) =>
-  `${JSON.stringify({ schema: 'derivon.routes/v1', routes }, null, 2)}\n`;
+const routesText = (routes: readonly RouteRecord[]) => serializeRoutesState({ routes });

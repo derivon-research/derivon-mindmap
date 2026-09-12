@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RouteSolution } from '../ports/RouteSolver';
 import { parseWorkspaceManifest, type ManifestGraph } from '../workspace/index';
-import { routeIsStale, routeRecord } from './routes';
+import { routeIsStale, routeRecord } from './routeRecord';
 
 const conceptA = { id: 'c-a', data: { label: 'A', document: 'docs/a' } };
 const conceptB = { id: 'c-b', data: { label: 'B', document: 'docs/b' } };

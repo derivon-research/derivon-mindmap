@@ -44,8 +44,9 @@ export function useRoutePreview(
  * A confirmed route as the solved-route view model the views already take.
  *
  * The record carries no `provenOptimal` and no `blocked`, because both are facts about one
- * solve rather than about the route: walking a confirmed route asks neither question, and
- * inventing an answer here would be claiming something nobody proved.
+ * solve rather than about the route: walking a confirmed route asks neither question. It was
+ * reachable when it was confirmed — that is what confirming it meant — so `reachable` is a
+ * restatement of the record existing, not a claim about it now.
  */
 export function routeSolutionOf(record: RouteRecord): RouteSolution {
   return {

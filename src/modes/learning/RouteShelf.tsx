@@ -17,8 +17,8 @@ export type RouteShelfProps = {
   readonly routes: readonly ShelfRoute[];
   /** An unreadable `routes.json`. Shown rather than swallowed. */
   readonly issue: string | null;
-  /** Where a confirmed route lands: the learner records, or — with no data directory — this session. */
-  readonly howFarItGoes: 'stored' | 'session';
+  /** A write that refused. Reported here, because the list on screen is then not the file. */
+  readonly error: string | null;
   readonly active: boolean;
   readonly onStart: (routeId: string) => void;
   readonly onDelete: (routeId: string) => void;
@@ -34,7 +34,7 @@ export type RouteShelfProps = {
  * composed with the route, and that composition does not exist yet; a number invented here
  * would be a second source of truth for it.
  */
-export function RouteShelf({ graph, routes, issue, howFarItGoes, active, onStart, onDelete, onNewRoute }: RouteShelfProps) {
+export function RouteShelf({ graph, routes, issue, error, active, onStart, onDelete, onNewRoute }: RouteShelfProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = routes.find((candidate) => candidate.record.id === selectedId) ?? routes[0];
   const steps = useMemo(
@@ -42,16 +42,23 @@ export function RouteShelf({ graph, routes, issue, howFarItGoes, active, onStart
     [graph, selected],
   );
   const staleCount = routes.filter((route) => route.stale).length;
+  // The record's own order is the route; the steps that can still be drawn are fewer when the
+  // graph lost an object the route names. Both are shown, because the difference is the point.
+  const undrawable = selected ? selected.record.order.length - steps.length : 0;
 
   return <div className="route-shelf">
     <aside className="route-shelf-list" aria-label="已确认的路线">
       <header>
         <h1>我的路线</h1>
-        <p>{routes.length ? `${routes.length} 条已确认的路线` : '还没有确认过路线'}
-          {staleCount > 0 ? `，其中 ${staleCount} 条与当前图不一致` : ''}
-          {howFarItGoes === 'session' ? '。这个宿主没有应用数据目录，确认的路线只活在这次会话里' : ''}</p>
+        <p>{issue
+          ? '路线记录读不出来，这里暂时什么都列不出来。'
+          : routes.length
+            ? `${routes.length} 条已确认的路线${staleCount > 0 ? `，其中 ${staleCount} 条与当前图不一致` : ''}`
+            : '还没有确认过路线'}</p>
       </header>
-      {issue && <p className="route-shelf-issue" role="alert">路线记录读不出来：{issue}。没有把空列表当成结果，也没有覆盖它。</p>}
+      {issue && <p className="route-shelf-issue" role="alert">路线记录读不出来：{issue}
+        —— 没有把空列表当成结果，也没有覆盖它。</p>}
+      {error && <p className="route-shelf-issue" role="alert">这次修改没能落盘：{error}</p>}
       <ul>
         {routes.map((route) => <li key={route.record.id}
           className={route.record.id === selected?.record.id ? 'is-current' : ''}>
@@ -78,13 +85,14 @@ export function RouteShelf({ graph, routes, issue, howFarItGoes, active, onStart
             <h2>{selected.record.description}</h2>
             <p>
               走到 {selected.record.targets.map((id) => labelOf(graph, id)).join('、')}
-              {' · '}{steps.length} 步 · 成本 {selected.record.cost}
+              {' · '}{selected.record.order.length} 步 · 成本 {selected.record.cost}
             </p>
           </div>
           <DeleteRouteButton route={selected.record} onDelete={onDelete} />
         </header>
         {selected.stale && <p className="route-shelf-stale-note" role="alert">
           这条路线是在另一版图上解出来的：它只是被报出来，没有被重新求解，也没有被删掉。
+          {undrawable > 0 && ` 记录里的 ${undrawable} 步已经不在当前图里，画不出来 —— 路线本身还是原来那一条。`}
         </p>}
         <div className="route-shelf-graph">
           <RetainedGraph active={active} view={routeGraphView(graph, routeSolutionOf(selected.record),
@@ -107,8 +115,10 @@ export function RouteShelf({ graph, routes, issue, howFarItGoes, active, onStart
         </footer>
       </section>
       : <section className="route-shelf-detail is-empty">
-        <h2>还没有确认过路线</h2>
-        <p>目标定好、预览过、按下「开始学」的那一次，才会留下一条路线。</p>
+        <h2>{issue ? '路线记录读不出来' : '还没有确认过路线'}</h2>
+        <p>{issue
+          ? '这份 routes.json 没被读懂，所以不把它当成「一条都没有」。'
+          : '目标定好、预览过、按下「开始学」的那一次，才会留下一条路线。'}</p>
       </section>}
   </div>;
 }

@@ -77,7 +77,7 @@ it('leaves no record behind while the learner is only looking at the preview', a
 
   await page.getByRole('button', { name: '开始学' }).click();
   await act(async () => { await Promise.resolve(); });
-  expect(records.routes().map((route) => route.description)).toEqual(['走到 C']);
+  expect(records.routes().map((route) => route.description)).toEqual(['从 A 走到 C']);
   expect(records.routes()[0]).toMatchObject({ targets: ['c'], known: ['a'], order: ['d1', 'd2'], cost: 5 });
 });
 
@@ -111,12 +111,63 @@ it('deletes a route on an explicit action, leaving mastery alone', async () => {
 });
 
 it('reports a route solved against a different graph without re-solving or deleting it', async () => {
-  const records = createMemoryLearnerRecords('test-workspace', { routes: [record('r-aaaaaa', '旧图上的路线', { basis: 'f'.repeat(64) })] });
+  const records = createMemoryLearnerRecords('test-workspace', {
+    routes: [record('r-aaaaaa', '旧图上的路线', { basis: 'f'.repeat(64) })],
+  });
   await render({ records });
 
   await expect.element(page.getByText('与当前图不一致', { exact: true })).toBeVisible();
   expect(records.routes().map((route) => route.id)).toEqual(['r-aaaaaa']);
   expect(container.textContent).toContain('旧图上的路线');
+});
+
+it('shows the record’s own step count beside the steps the graph can still draw', async () => {
+  const records = createMemoryLearnerRecords('test-workspace', {
+    routes: [record('r-aaaaaa', '丢了一步的路线', {
+      basis: 'f'.repeat(64),
+      derivationIds: ['d1', 'd2', 'd-gone'],
+      order: ['d1', 'd2', 'd-gone'],
+    })],
+  });
+  await render({ records });
+
+  await expect.element(page.getByRole('heading', { name: '丢了一步的路线' })).toBeVisible();
+  // The route is three steps as recorded; the graph can only draw two of them, and it says so.
+  expect(container.textContent).toContain('3 步');
+  expect(container.textContent).toContain('记录里的 1 步已经不在当前图里');
+  expect(container.querySelectorAll('.learning-preview-list li')).toHaveLength(2);
+});
+
+it('offers no confirmation on a host with nowhere to keep the route', async () => {
+  await render({ view: 'preview' });
+  await expect.element(page.getByText('这是算出来的路线')).toBeVisible();
+  expect((page.getByRole('button', { name: '开始学' }).element() as HTMLButtonElement).disabled).toBe(true);
+  expect(container.textContent).toContain('这个宿主没有应用数据目录');
+});
+
+it('says a delete that never reached the file instead of quietly keeping the route', async () => {
+  const records = createMemoryLearnerRecords('test-workspace', {
+    routes: [record('r-aaaaaa', '第一条')],
+    failWrites: true,
+  });
+  await render({ records });
+
+  await page.getByRole('button', { name: '删除这条路线' }).click();
+  await page.getByRole('button', { name: '删除', exact: true }).click();
+  await act(async () => { await Promise.resolve(); });
+  await expect.element(page.getByText(/这次修改没能落盘/)).toBeVisible();
+  expect(records.routes().map((route) => route.id)).toEqual(['r-aaaaaa']);
+});
+
+it('does not report an unreadable routes.json as “no routes yet”', async () => {
+  const records = createMemoryLearnerRecords('test-workspace', {
+    routesText: '{"schema":"derivon.routes/v2","routes":[]}',
+  });
+  await render({ records });
+
+  await expect.element(page.getByRole('alert')).toBeVisible();
+  expect(container.textContent).toContain('路线记录读不出来');
+  expect(container.textContent).not.toContain('还没有确认过路线');
 });
 
 it('has a way back to orientation from the route stage, and no way to edit a route', async () => {

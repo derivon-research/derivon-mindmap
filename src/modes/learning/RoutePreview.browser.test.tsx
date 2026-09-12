@@ -4,6 +4,7 @@ import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
 import type { RouteSolver } from '../../ports/RouteSolver';
+import { createMemoryLearnerRecords } from '../../testing/learnerRecordStore';
 import { fixtureRouteSolver } from '../../testing/routeSolver';
 import { WORKSPACE_SCHEMA, parseWorkspaceContent, type WorkspaceContent } from '../../workspace/index';
 
@@ -41,8 +42,9 @@ function Harness({ routeSolver, onConfirmRoute = vi.fn(), onEnterView = vi.fn(),
   const [content] = useState(workspace);
   const [targets, setTargets] = useState<readonly string[]>(['c']);
   const [known, setKnown] = useState<readonly string[]>(knownIds);
+  const [records] = useState(() => createMemoryLearnerRecords());
   return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
-    targetIds={targets} knownIds={known} routeSolver={routeSolver}
+    learnerRecords={records.store} targetIds={targets} knownIds={known} routeSolver={routeSolver}
     view="preview" onEnterView={onEnterView} onConfirmRoute={onConfirmRoute} activeRouteId={null}
     onSelectRoute={vi.fn()}
     onChangeTargets={setTargets} onChangeKnown={setKnown} />;

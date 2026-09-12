@@ -18,6 +18,8 @@ export type RoutePreviewViewProps = {
   readonly confirming?: boolean;
   /** A write that refused. Reported here rather than swallowed, because nothing was stored. */
   readonly confirmError?: string | null;
+  /** Why confirming is not offered at all — a host that cannot store a route cannot confirm one. */
+  readonly confirmBlocked?: string | null;
   /** Accepting the route is the only way into route learning. */
   readonly onConfirm: () => void;
   readonly onBackToOrientation: () => void;
@@ -32,7 +34,7 @@ export type RoutePreviewViewProps = {
  * route: an invented order would be worse than none, because the learner would trust it.
  */
 export function RoutePreviewView({
-  active, graph, tags, preview, targetIds, knownIds, confirming = false, confirmError = null,
+  active, graph, tags, preview, targetIds, knownIds, confirming = false, confirmError = null, confirmBlocked = null,
   onConfirm, onBackToOrientation, onBrowse,
 }: RoutePreviewViewProps) {
   const solution = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
@@ -42,9 +44,10 @@ export function RoutePreviewView({
       {solution
         ? <RouteBody graph={graph} tags={tags} solution={solution} knownIds={knownIds} targetIds={targetIds} />
         : <RouteSummary route={preview} graph={graph} />}
-      {confirmError && <p className="learning-preview-error" role="alert">路线没能存下来：{confirmError}</p>}
+      {confirmBlocked && <p className="learning-preview-error" role="status">{confirmBlocked}</p>}
+      {confirmError && <p className="learning-preview-error" role="alert">{confirmError}</p>}
       <footer className="learning-preview-actions">
-        <button type="button" className="learning-primary" disabled={!solution || confirming}
+        <button type="button" className="learning-primary" disabled={!solution || confirming || Boolean(confirmBlocked)}
           onClick={onConfirm}>
           <ArrowRight size={15} aria-hidden="true" />{confirming ? '正在存路线' : '开始学'}
         </button>

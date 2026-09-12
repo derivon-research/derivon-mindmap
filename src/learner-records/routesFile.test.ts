@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { LearnerRecordFiles } from '../ports/LearnerRecordFiles';
 import { createTempLearnerRecordFiles, tempLearnerRecordPath } from '../testing/learnerRecordFiles';
 import type { RouteRecord } from './protocol';
-import { addRoute, readRoutes, removeRoute } from './routeRecords';
+import { serializeRoutesState } from './protocol';
+import { addRoute, readRoutes, removeRoute } from './routesFile';
 import { createLearnerRecordStore, type LearnerRecordStore } from './store';
 
 const basis = 'a'.repeat(64);
@@ -19,8 +20,7 @@ const mastery = {
   derivations: {},
 };
 
-const routesText = (routes: readonly RouteRecord[]) =>
-  `${JSON.stringify({ schema: 'derivon.routes/v1', routes }, null, 2)}\n`;
+const routesText = (routes: readonly RouteRecord[]) => serializeRoutesState({ routes });
 
 let root: string;
 let store: LearnerRecordStore;
