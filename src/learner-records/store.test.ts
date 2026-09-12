@@ -1,49 +1,11 @@
-import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type {
-  LearnerRecordFileRead, LearnerRecordFileName, LearnerRecordFiles,
-} from '../ports/LearnerRecordFiles';import { LEARNING_SCHEMA, ROUTES_SCHEMA, parseLearningState, parseRoutesState } from './protocol';
+import { createTempLearnerRecordFiles } from '../testing/learnerRecordFiles';
+import type { LearnerRecordFiles } from '../ports/LearnerRecordFiles';
+import { LEARNING_SCHEMA, ROUTES_SCHEMA, parseLearningState, parseRoutesState } from './protocol';
 import { createLearnerRecordStore } from './store';
-
-/**
- * A port over a real directory, so the store is exercised against the same filesystem shape
- * the desktop host uses: `learner-records/<id>/<file>.json`, a temporary sibling renamed over
- * the target, and a version that is the SHA-256 of what was read.
- */
-function tempFiles(root: string): LearnerRecordFiles {
-  const filePath = (workspaceId: string, file: LearnerRecordFileName) =>
-    path.join(root, 'learner-records', workspaceId, `${file}.json`);
-  const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
-  const read = async (workspaceId: string, file: LearnerRecordFileName): Promise<LearnerRecordFileRead> => {
-    let bytes: Buffer;
-    try {
-      bytes = await readFile(filePath(workspaceId, file));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { presence: 'missing' };
-      throw error;
-    }
-    return { presence: 'present', text: bytes.toString('utf8'), version: digest(bytes) };
-  };
-  return {
-    read,
-    async write(workspaceId, file, text, precondition) {
-      const target = filePath(workspaceId, file);
-      const current = await read(workspaceId, file);
-      if (current.presence !== precondition.presence
-        || (current.presence === 'present' && precondition.presence === 'present' && current.version !== precondition.version)) {
-        throw new Error(`学习者记录已被其他写入方更新（${file}.json）`);
-      }
-      await mkdir(path.dirname(target), { recursive: true });
-      const temporary = `${target}.part`;
-      await writeFile(temporary, text);
-      await rename(temporary, target);
-      return digest(Buffer.from(text, 'utf8'));
-    },
-  };
-}
 
 const basis = 'a'.repeat(64);
 const state = {
@@ -61,7 +23,7 @@ let root: string;
 let files: LearnerRecordFiles;
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'derivon-learner-records-'));
-  files = tempFiles(root);
+  files = createTempLearnerRecordFiles(root);
 });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 

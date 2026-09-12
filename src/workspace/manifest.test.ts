@@ -5,6 +5,7 @@ import {
   conceptTags,
   conceptsWithTag,
   isValidWorkspaceId,
+  generateObjectId,
   parseWorkspaceManifest,
   serializeWorkspaceManifest,
   validateWorkspaceManifest,
@@ -175,5 +176,19 @@ describe('derivon.workspace/v1 manifest', () => {
   it('reports structural failures with their location', () => {
     expect(() => parseWorkspaceManifest('{')).toThrow();
     expect(() => parseWorkspaceManifest(JSON.stringify({ schema: 'derivon.workspace/v2' }))).toThrow(/schema/);
+  });
+});
+
+describe('generateObjectId', () => {
+  it('mints a route id from the same alphabet and the same six characters as an object id', () => {
+    const id = generateObjectId('r', []);
+    expect(id).toMatch(/^r-[23456789abcdefghjkmnpqrstvwxyz]{6}$/);
+  });
+
+  it('never reuses an id that is already taken', () => {
+    const taken = new Set(Array.from({ length: 200 }, () => generateObjectId('r', [])));
+    expect(generateObjectId('r', taken)).not.toBe('');
+    for (const id of taken) expect(id).toHaveLength(8);
+    expect(new Set([...taken, generateObjectId('r', taken)]).size).toBe(201);
   });
 });
