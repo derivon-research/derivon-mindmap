@@ -66,7 +66,7 @@ function Harness({ content, targetIds = [], knownIds = [], onChangeTargets, onCh
   return <LearningMode workspace={{ id: 'w', name: '开局工作区' }} content={content} active
     targetIds={targets} knownIds={known} routeSolver={fixtureRouteSolver()}
     view="orientation" onEnterView={vi.fn()} onConfirmRoute={vi.fn()}
-    onRouteInvalidated={vi.fn()}
+    onSelectRoute={vi.fn()} activeRouteId={null}
     onChangeTargets={(ids) => { onChangeTargets?.(ids); setTargets(ids); }}
     onChangeKnown={(ids) => { onChangeKnown?.(ids); setKnown(ids); }}
     {...over} />;

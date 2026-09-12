@@ -14,6 +14,10 @@ export type RoutePreviewViewProps = {
   readonly preview: RoutePreview;
   readonly targetIds: readonly string[];
   readonly knownIds: readonly string[];
+  /** The confirmed route is being written; the button waits instead of accepting twice. */
+  readonly confirming?: boolean;
+  /** A write that refused. Reported here rather than swallowed, because nothing was stored. */
+  readonly confirmError?: string | null;
   /** Accepting the route is the only way into route learning. */
   readonly onConfirm: () => void;
   readonly onBackToOrientation: () => void;
@@ -28,7 +32,8 @@ export type RoutePreviewViewProps = {
  * route: an invented order would be worse than none, because the learner would trust it.
  */
 export function RoutePreviewView({
-  active, graph, tags, preview, targetIds, knownIds, onConfirm, onBackToOrientation, onBrowse,
+  active, graph, tags, preview, targetIds, knownIds, confirming = false, confirmError = null,
+  onConfirm, onBackToOrientation, onBrowse,
 }: RoutePreviewViewProps) {
   const solution = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
   return <div className="learning-preview">
@@ -37,9 +42,11 @@ export function RoutePreviewView({
       {solution
         ? <RouteBody graph={graph} tags={tags} solution={solution} knownIds={knownIds} targetIds={targetIds} />
         : <RouteSummary route={preview} graph={graph} />}
+      {confirmError && <p className="learning-preview-error" role="alert">路线没能存下来：{confirmError}</p>}
       <footer className="learning-preview-actions">
-        <button type="button" className="learning-primary" disabled={!solution} onClick={onConfirm}>
-          <ArrowRight size={15} aria-hidden="true" />开始学
+        <button type="button" className="learning-primary" disabled={!solution || confirming}
+          onClick={onConfirm}>
+          <ArrowRight size={15} aria-hidden="true" />{confirming ? '正在存路线' : '开始学'}
         </button>
         <button type="button" onClick={onBackToOrientation}>
           <Compass size={15} aria-hidden="true" />不对，回去改目标

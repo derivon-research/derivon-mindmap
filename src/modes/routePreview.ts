@@ -3,6 +3,7 @@
  * confirmation screen and in the author's preview of an orientation configuration.
  */
 import { useEffect, useState } from 'react';
+import type { RouteRecord } from '../learner-records';
 import type { RouteSolution, RouteSolver } from '../ports/RouteSolver';
 import type { GraphView } from '../rendering';
 import { conceptTags, type WorkspaceGraph } from '../workspace/index';
@@ -37,6 +38,25 @@ export function useRoutePreview(
     return () => { cancelled = true; };
   }, [graph, known, solver, targets]);
   return preview;
+}
+
+/**
+ * A confirmed route as the solved-route view model the views already take.
+ *
+ * The record carries no `provenOptimal` and no `blocked`, because both are facts about one
+ * solve rather than about the route: walking a confirmed route asks neither question, and
+ * inventing an answer here would be claiming something nobody proved.
+ */
+export function routeSolutionOf(record: RouteRecord): RouteSolution {
+  return {
+    reachable: true,
+    conceptIds: [...record.conceptIds],
+    derivationIds: [...record.derivationIds],
+    order: [...record.order],
+    cost: record.cost,
+    provenOptimal: false,
+    blocked: [],
+  };
 }
 
 /** One derivation along a solved route, in the terms a reader of the route sees it. */

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
+import { addRoute, readRoutes, removeRoute, routeIsStale, routeRecord, type RouteList } from '../../learner-records';
+import { generateObjectId } from '../../workspace/index';
+import { labelOf } from '../ConceptPicker';
 import { GraphBrowse } from './GraphBrowse';
 import './learning.css';
 import { applyOrientationIntent, beginOrientation, planOrientation, type OrientationIntent, type OrientationRun } from './orientation';
@@ -7,26 +10,31 @@ import { OrientationView } from './OrientationView';
 import { DEFAULT_PANELS, type PanelLayout } from './panels';
 import { RouteLearning } from './RouteLearning';
 import { RoutePreviewView } from './RoutePreviewView';
-import { useRoutePreview } from '../routePreview';
+import { RouteShelf } from './RouteShelf';
+import { routeSolutionOf, useRoutePreview } from '../routePreview';
 import type { TaskCompletion } from './progress';
-import {
-  clearRouteInvalidation, holdRoute, initialLearningWalkState, invalidateRoute, leaveRoute,
-  missingTargetIds, moveLearningCursor, recordTaskCompletion, restartRoute, revealDefinition,
-  routeSignature,
-} from './state';
+import { initialLearningWalkState, moveLearningCursor, recordTaskCompletion, revealDefinition, startRoute } from './state';
+
+const NO_ROUTES: RouteList = { routes: [], issue: null };
+const NOTHING_STALE: ReadonlySet<string> = new Set();
 
 /**
- * The learning side. One mode, four views: orientation, the route preview, walking the
- * route, and free browsing. Which one shows is the application's business — the top bar
- * switches between them — so this component dispatches rather than deciding.
+ * The learning side. One mode, five screens: orientation, the route preview, the confirmed
+ * routes, walking one of them, and free browsing. Which one shows is the application's
+ * business — the top bar switches between them — so this component dispatches rather than
+ * deciding.
  *
- * Everything a view would lose by being unmounted lives here: the orientation flow, how
- * far along the route the learner is, and the panel layout. Going back to look at the
- * route and returning is meant to cost nothing.
+ * The route stage is two screens rather than one: with no active route it lists the learner's
+ * confirmed routes and lets them choose, and with one it walks it. Which route that is lives
+ * in the application, because a confirmed route is a record and this component does not own
+ * the store it lives in.
+ *
+ * Everything a screen would lose by being unmounted lives here: the orientation flow, how far
+ * along the route the learner is, and the panel layout.
  */
 export function LearningMode({
-  active = true, content, targetIds, knownIds, onChangeTargets, onChangeKnown,
-  routeSolver, view, onEnterView, onConfirmRoute, onRouteInvalidated, readAsset, readDocuments,
+  active = true, content, learnerRecords, targetIds, knownIds, onChangeTargets, onChangeKnown,
+  routeSolver, view, onEnterView, onConfirmRoute, activeRouteId, onSelectRoute, readAsset, readDocuments,
   conversation, drainPendingChanges,
 }: LearningModeProps) {
   const plan = useMemo(() => planOrientation(content), [content]);
@@ -53,41 +61,90 @@ export function LearningMode({
   const preview = useRoutePreview(routeSolver, graph, targetIds, knownIds);
   const [panels, setPanels] = useState<PanelLayout>(DEFAULT_PANELS);
   const [walk, setWalk] = useState(initialLearningWalkState);
-  const { acceptedRoute, cursor, revealed, taskCompletions, routeInvalidReason } = walk;
+
+  const [listed, setListed] = useState<RouteList>(NO_ROUTES);
+  const [stale, setStale] = useState<ReadonlySet<string>>(NOTHING_STALE);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const [writeError, setWriteError] = useState<string | null>(null);
+
+  // A host with no application data directory has no records at all: confirming then leaves a
+  // route that lives only in this session, and the screen says so rather than pretending.
+  useEffect(() => {
+    if (!learnerRecords) { setListed(NO_ROUTES); return; }
+    let cancelled = false;
+    void readRoutes(learnerRecords).then((value) => { if (!cancelled) setListed(value); });
+    return () => { cancelled = true; };
+  }, [learnerRecords]);
+
+  // Staleness is derived on read, never written: a route whose basis no longer matches the
+  // graph is reported and kept, not re-solved and not deleted.
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(listed.routes.map(async (record) => ({
+      id: record.id,
+      stale: await routeIsStale(graph, record),
+    }))).then((entries) => {
+      if (!cancelled) setStale(new Set(entries.filter((entry) => entry.stale).map((entry) => entry.id)));
+    });
+    return () => { cancelled = true; };
+  }, [graph, listed]);
+
   const solved = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
+  const activeRecord = listed.routes.find((route) => route.id === activeRouteId) ?? null;
 
-  useEffect(() => {
-    if (view !== 'route') setWalk(leaveRoute);
-    else if (solved) setWalk((current) => holdRoute(current, content.graph, solved, content.graphText));
-  }, [content.graph, content.graphText, solved, view]);
+  // Bringing another route on screen starts it from the top; judgements already handed in stay
+  // keyed by the route they were made on.
+  useEffect(() => { setWalk(startRoute); }, [activeRouteId]);
 
-  const solution = view === 'route' ? acceptedRoute?.solution ?? solved : solved;
-  const missingTargets = useMemo(
-    () => missingTargetIds(content.graph, targetIds),
-    [content.graph, targetIds],
-  );
+  const writeRoutes = async (change: (records: readonly typeof listed.routes[number][]) => Promise<RouteList>) => {
+    setWriteError(null);
+    try {
+      setListed(await change(listed.routes));
+    } catch (error) {
+      setWriteError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
-  useEffect(() => {
-    if (!acceptedRoute || view !== 'route') return;
-    if (missingTargets.length > 0) {
-      if (routeInvalidReason !== 'target') onRouteInvalidated();
-      setWalk((current) => invalidateRoute(current, 'target'));
-      return;
+  const confirmRoute = async () => {
+    if (!solved) return;
+    setWriting(true);
+    setWriteError(null);
+    try {
+      const record = await routeRecord({
+        id: generateObjectId('r', listed.routes.map((route) => route.id)),
+        description: `走到 ${targetIds.map((id) => labelOf(graph, id)).join('、')}`,
+        graph,
+        solution: solved,
+        targets: targetIds,
+        known: knownIds,
+      });
+      setListed(learnerRecords
+        ? await addRoute(learnerRecords, record)
+        : { ...listed, routes: [...listed.routes, record] });
+      setWalk(startRoute);
+      onConfirmRoute(record.id);
+    } catch (error) {
+      setWriteError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWriting(false);
     }
-    if (acceptedRoute.graphText === content.graphText) {
-      setWalk(clearRouteInvalidation);
-      return;
-    }
-    if (preview.status === 'solving') return;
-    if (preview.status !== 'ready'
-      || !preview.solution.reachable
-      || routeSignature(content.graph, preview.solution) !== acceptedRoute.signature) {
-      if (routeInvalidReason !== 'changed') onRouteInvalidated();
-      setWalk((current) => invalidateRoute(current, 'changed'));
-    } else {
-      setWalk(clearRouteInvalidation);
-    }
-  }, [acceptedRoute, content.graph, content.graphText, missingTargets, preview, routeInvalidReason, onRouteInvalidated, view]);
+  };
+
+  const deleteRoute = (routeId: string) => {
+    void writeRoutes(async () => {
+      const next = learnerRecords
+        ? await removeRoute(learnerRecords, routeId)
+        : { ...listed, routes: listed.routes.filter((route) => route.id !== routeId) };
+      if (activeRouteId === routeId) onSelectRoute(null);
+      return next;
+    });
+  };
+
+  const openRoute = (routeId: string) => {
+    setPickerOpen(false);
+    onSelectRoute(routeId);
+  };
 
   const moveCursor = (index: number) => {
     setWalk((current) => moveLearningCursor(current, index));
@@ -95,11 +152,6 @@ export function LearningMode({
 
   const completeTask = (completion: TaskCompletion) => {
     setWalk((current) => recordTaskCompletion(current, completion));
-  };
-
-  const confirmRoute = () => {
-    setWalk(restartRoute);
-    onConfirmRoute();
   };
 
   const know = (conceptId: string) => intent({ kind: 'know', conceptIds: [conceptId] });
@@ -110,38 +162,33 @@ export function LearningMode({
     ? { kind: 'set-targets', conceptIds: targetIds.filter((id) => id !== conceptId) }
     : { kind: 'add-targets', conceptIds: [conceptId] });
 
+  const shelfRoutes = listed.routes.map((record) => ({ record, stale: stale.has(record.id) }));
+  const picker = view === 'route' && (pickerOpen || !activeRecord);
+
   return <section className="learning-workbench" data-derivon-mode="learning" data-learning-view={view}
-    data-learning-targets={targetIds.join(' ')} data-learning-known={knownIds.join(' ')} aria-label="学习侧">
+    data-learning-targets={targetIds.join(' ')} data-learning-known={knownIds.join(' ')}
+    data-learning-active-route={activeRouteId ?? ''} aria-label="学习侧">
     {view === 'orientation' && <OrientationView active={active} content={content} plan={plan} run={run}
       preview={preview} onIntent={intent} onEnterPreview={() => onEnterView('preview')}
       readAsset={readAsset} readDocuments={readDocuments} />}
 
     {view === 'preview' && <RoutePreviewView active={active} graph={content.graph} tags={content.tags}
-      preview={preview} targetIds={targetIds} knownIds={knownIds} onConfirm={confirmRoute}
+      preview={preview} targetIds={targetIds} knownIds={knownIds} confirming={writing} confirmError={writeError}
+      onConfirm={() => { void confirmRoute(); }}
       onBackToOrientation={() => onEnterView('orientation')} onBrowse={() => onEnterView('browse')} />}
 
-    {view === 'route' && routeInvalidReason === 'target' && <div className="learning-route-empty" role="alert">
-      <p>目标 {missingTargets.join('、')} 已被删除，不会自动替换。</p>
-      <button type="button" className="learning-primary" onClick={() => onEnterView('orientation')}>重新选择目标</button>
-    </div>}
+    {picker && <RouteShelf active={active} graph={graph} routes={shelfRoutes} issue={listed.issue}
+      howFarItGoes={learnerRecords ? 'stored' : 'session'}
+      onStart={openRoute} onDelete={deleteRoute} onNewRoute={() => onEnterView('orientation')} />}
 
-    {view === 'route' && routeInvalidReason === 'changed' && <div className="learning-route-empty" role="alert">
-      <p>这条路线的内容变了，需要重新预览后再继续。</p>
-      <button type="button" className="learning-primary" onClick={() => onEnterView('preview')}>重新预览</button>
-    </div>}
-
-    {view === 'route' && !routeInvalidReason && (solution
-      ? <RouteLearning active={active} content={content} solution={solution} targetIds={targetIds}
-        knownIds={knownIds} cursor={cursor} onCursor={moveCursor}
-        revealed={revealed} onReveal={(id) => setWalk((current) => revealDefinition(current, id))}
-        tasksDone={taskCompletions} onTaskDone={completeTask}
-        panels={panels} onPanels={setPanels} onKnow={know}
-        onBackToPreview={() => onEnterView('preview')} readAsset={readAsset} readDocuments={readDocuments}
-        conversation={conversation} drainPendingChanges={drainPendingChanges} />
-      : <div className="learning-route-empty" role="status">
-        <p>路线不见了 —— 目标或者已知变过，得重新算一次。</p>
-        <button type="button" className="learning-primary" onClick={() => onEnterView('preview')}>回去看路线</button>
-      </div>)}
+    {!picker && activeRecord && <RouteLearning active={active} content={content}
+      solution={routeSolutionOf(activeRecord)} targetIds={[...activeRecord.targets]} knownIds={[...activeRecord.known]}
+      stale={stale.has(activeRecord.id)} cursor={walk.cursor} onCursor={moveCursor}
+      revealed={walk.revealed} onReveal={(id) => setWalk((current) => revealDefinition(current, id))}
+      tasksDone={walk.taskCompletions} onTaskDone={completeTask}
+      panels={panels} onPanels={setPanels} onKnow={know}
+      onSwitchRoute={() => setPickerOpen(true)} readAsset={readAsset} readDocuments={readDocuments}
+      conversation={conversation} drainPendingChanges={drainPendingChanges} />}
 
     {view === 'browse' && <GraphBrowse active={active} content={content} targetIds={targetIds} knownIds={knownIds}
       onToggleTarget={toggleTarget} onToggleKnown={toggleKnown}

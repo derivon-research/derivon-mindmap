@@ -43,8 +43,8 @@ function Harness({ onEnterView = vi.fn() }: { onEnterView?: LearningModeProps['o
   const [known, setKnown] = useState<readonly string[]>([]);
   return <LearningMode workspace={{ id: 'w', name: '浏览工作区' }} content={content} active
     targetIds={targets} knownIds={known}
-    view="browse" onEnterView={onEnterView} onConfirmRoute={vi.fn()}
-    onRouteInvalidated={vi.fn()}
+    view="browse" onEnterView={onEnterView} onConfirmRoute={vi.fn()} activeRouteId={null}
+    onSelectRoute={vi.fn()}
     onChangeTargets={setTargets} onChangeKnown={setKnown} />;
 }
 

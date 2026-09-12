@@ -80,7 +80,7 @@ async function render(workspace: WorkspaceHandle, mode: 'authoring' | 'learning'
   await act(async () => root!.render(<WorkspaceSurface workspace={workspace} state={state} modes={options.modes ?? modes}
     conversationProviders={options.conversationProviders}
     onSelectConcept={vi.fn()} onChangeTargets={vi.fn()} onChangeKnown={vi.fn()}
-    onEnterLearningView={vi.fn()} onConfirmRoute={vi.fn()} onRouteInvalidated={vi.fn()}
+    onEnterLearningView={vi.fn()} onConfirmRoute={vi.fn()} onSelectRoute={vi.fn()}
     onProtectionChange={vi.fn()} />));
 }
 

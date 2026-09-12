@@ -22,7 +22,7 @@ function props(over: Partial<LearningModeProps> & Pick<LearningModeProps, 'conte
     workspace: { id: 'fixture', name: 'Fixture' }, targetIds: [], knownIds: [],
     onChangeTargets: vi.fn(), onChangeKnown: vi.fn(),
     view: 'orientation', onEnterView: vi.fn(), onConfirmRoute: vi.fn(),
-    onRouteInvalidated: vi.fn(), active: true,
+    onSelectRoute: vi.fn(), activeRouteId: null, active: true,
     ...over,
   };
 }
@@ -68,11 +68,11 @@ it('shows the view the application asked for, and only that one', async () => {
   await expect.element(page.getByText('还没有可以走的路线')).toBeVisible();
 });
 
-it('refuses to walk a route the host never produced, rather than inventing an order', async () => {
+it('shows the confirmed routes rather than inventing one when none is active', async () => {
   root = createRoot(container);
   act(() => root?.render(<LearningMode {...props({ content: content(), targetIds: ['b'], view: 'route' })} />));
-  await expect.element(page.getByRole('status')).toBeVisible();
-  expect(container.textContent).toContain('得重新算一次');
+  await expect.element(page.getByText('我的路线')).toBeVisible();
+  expect(container.textContent).toContain('还没有确认过路线');
 });
 
 it('leaves the application state that came from a mode switch alone', async () => {

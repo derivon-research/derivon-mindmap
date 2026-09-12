@@ -17,3 +17,7 @@ export {
   createLearnerRecordStore,
   type LearnerRecordStore, type StoredLearningState, type StoredRoutes,
 } from './store';
+
+export { routeBasis } from './basis';
+export { routeIsStale, routeRecord, type ConfirmRouteInput } from './routes';
+export { addRoute, readRoutes, removeRoute, type RouteList } from './routeRecords';

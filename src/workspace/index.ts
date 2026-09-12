@@ -25,7 +25,7 @@ export {
 } from './integrity';
 
 export {
-  WORKSPACE_SCHEMA, conceptTags, conceptsWithTag, WORKSPACE_ID_RULE, isValidWorkspaceId, isValidWeight,
+  WORKSPACE_SCHEMA, conceptTags, conceptsWithTag, WORKSPACE_ID_RULE, generateObjectId, isValidWorkspaceId, isValidWeight,
   parseWorkspaceManifest,
   type ConceptPoint, type DerivationHyperedge, type DocumentReference,
   type ManifestGraph, type TagDeclaration, type WorkspaceManifest,

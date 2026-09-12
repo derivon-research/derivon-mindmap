@@ -89,6 +89,11 @@ export type LearningModeProps = {
   readonly active?: boolean;
   readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
   readonly content: WorkspaceContent;
+  /**
+   * Where a confirmed route is written. A host with no application data directory has none,
+   * and then a confirmed route lives only in this session — the route stage says so.
+   */
+  readonly learnerRecords?: LearnerRecordStore;
   readonly readDocuments?: WorkspaceReader['readDocuments'];
   readonly readAsset?: (path: string) => Promise<Uint8Array>;
   readonly routeSolver?: RouteSolver;
@@ -99,10 +104,17 @@ export type LearningModeProps = {
   /** The stage or view showing, owned by the application because the top bar switches it. */
   readonly view: LearningView;
   readonly onEnterView: (view: LearningView) => void;
-  /** The learner accepted the previewed route; only this opens the route view. */
-  readonly onConfirmRoute: () => void;
-  /** The accepted route became unusable; the application gate must require a new preview. */
-  readonly onRouteInvalidated: () => void;
+  /**
+   * The learner accepted the route the preview showed. The mode has already written the
+   * record; this only makes it the active one and opens the route stage on it.
+   */
+  readonly onConfirmRoute: (routeId: string) => void;
+  /**
+   * Which confirmed route is on screen, or none so the learner chooses from the records.
+   * Session state, not a record: reopening a workspace starts with none.
+   */
+  readonly activeRouteId: string | null;
+  readonly onSelectRoute: (routeId: string | null) => void;
   /** See `AuthoringModeProps.drainPendingChanges`; the learning side reads the same disk. */
   readonly drainPendingChanges?: () => Promise<void>;
   readonly conversation?: ConversationProvider;
