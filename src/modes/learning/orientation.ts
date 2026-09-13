@@ -5,7 +5,11 @@
  * Every interaction style drives it through `applyOrientationIntent`: the deterministic
  * screen and a `ConversationProvider` translate their own input into the same intents.
  *
- * What comes out is application state — this session's targets, known and trail.
+ * What comes out is application state — this session's targets and trail — plus the known
+ * set the step leaves behind. Known is **not** session state: it is the set of concepts with
+ * a `complete` record in the learner records, so the caller persists the step's known set
+ * and re-derives it; the transition never stores it
+ * ([ADR-0012](../../docs/adr/0012-learning-state-is-mastery.md)).
  */
 import {
   ORIENTATION_FINISH, resolveOrientationAction,
@@ -32,7 +36,6 @@ export type OrientationAnswer = {
 
 export type OrientationRun = {
   readonly targets: readonly string[];
-  readonly known: readonly string[];
   /** Index of the question being asked, or -1 when orientation is finished. */
   readonly at: number;
   readonly trail: readonly OrientationAnswer[];
@@ -55,6 +58,20 @@ export type OrientationIntent =
   | { readonly kind: 'know'; readonly conceptIds: readonly string[] }
   | { readonly kind: 'restart' };
 
+/**
+ * The two things one transition reads and writes: how far the flow has got, and the known set
+ * it assumes. Known travels beside the run rather than inside it because it is not stored in
+ * the flow — the caller persists it and re-derives it.
+ */
+export type OrientationState = {
+  readonly run: OrientationRun;
+  /** The known set after this step. Unchanged from the input when the intent did not touch it. */
+  readonly known: readonly string[];
+};
+
+/** What one transition leaves behind. */
+export type OrientationStep = OrientationState;
+
 /** Read the effective content and decide which entry the learner gets. */
 export function planOrientation(content: WorkspaceContent): OrientationPlan {
   const orientation = content.orientation;
@@ -73,11 +90,15 @@ const inGraph = (plan: OrientationPlan, ids: readonly string[]): string[] => {
   return [...new Set(ids)].filter((id) => present.has(id));
 };
 
+/** The `known` set the configuration starts a learner from; a default, not an assessment. */
+export function orientationSeedKnown(plan: OrientationPlan): readonly string[] {
+  return plan.config ? inGraph(plan, plan.config.seed.known) : [];
+}
+
 export function beginOrientation(plan: OrientationPlan): OrientationRun {
   const config = plan.config;
   return {
     targets: config ? inGraph(plan, config.seed.targets) : [],
-    known: config ? inGraph(plan, config.seed.known) : [],
     at: config && config.questions.length ? 0 : -1,
     trail: [],
     asked: [],
@@ -94,13 +115,16 @@ export function isOrientationComplete(plan: OrientationPlan, run: OrientationRun
   return currentQuestion(plan, run) === null;
 }
 
-function applyAction(plan: OrientationPlan, run: OrientationRun, action: OrientationAction): OrientationRun {
+/** The run and the known set together, because one action can change either or both. */
+type Orienting = OrientationState;
+
+function applyAction(plan: OrientationPlan, state: Orienting, action: OrientationAction): Orienting {
   const resolved = resolveOrientationAction(action, plan.graph);
   switch (action.op) {
-    case 'set-targets': return { ...run, targets: resolved };
-    case 'add-targets': return { ...run, targets: [...new Set([...run.targets, ...resolved])] };
-    case 'set-known': return { ...run, known: resolved };
-    case 'add-known': return { ...run, known: [...new Set([...run.known, ...resolved])] };
+    case 'set-targets': return { ...state, run: { ...state.run, targets: resolved } };
+    case 'add-targets': return { ...state, run: { ...state.run, targets: [...new Set([...state.run.targets, ...resolved])] } };
+    case 'set-known': return { ...state, known: resolved };
+    case 'add-known': return { ...state, known: [...new Set([...state.known, ...resolved])] };
   }
 }
 
@@ -112,9 +136,9 @@ function nextIndex(config: OrientationConfig, at: number, jump: string | undefin
   return target >= 0 ? target : -1;
 }
 
-function answer(plan: OrientationPlan, run: OrientationRun, optionIds: readonly string[]): OrientationRun {
+function answer(plan: OrientationPlan, state: Orienting, optionIds: readonly string[]): Orienting {
   const config = plan.config;
-  const question = currentQuestion(plan, run);
+  const question = currentQuestion(plan, state.run);
   if (!config || !question) throw new Error('当前没有待回答的开局问题');
   if (question.select === 'one' && optionIds.length > 1) throw new Error('单选题只能选择一个选项');
   const chosen = optionIds.map((id) => {
@@ -123,43 +147,53 @@ function answer(plan: OrientationPlan, run: OrientationRun, optionIds: readonly 
     return option;
   });
   const applied = chosen.reduce(
-    (current, option) => option.actions.reduce((next, action) => applyAction(plan, next, action), current), run);
+    (current, option) => option.actions.reduce((next, action) => applyAction(plan, next, action), current), state);
   return {
     ...applied,
-    at: nextIndex(config, run.at, question.select === 'many' ? question.next : chosen[0]?.next),
-    trail: [...run.trail, { questionId: question.id, optionIds: chosen.map((option) => option.id),
-      optionLabels: chosen.map((option) => option.label) }],
+    run: {
+      ...applied.run,
+      at: nextIndex(config, state.run.at, question.select === 'many' ? question.next : chosen[0]?.next),
+      trail: [...state.run.trail, { questionId: question.id, optionIds: chosen.map((option) => option.id),
+        optionLabels: chosen.map((option) => option.label) }],
+    },
   };
 }
 
 /**
  * The single transition function. Concept ids are checked against the graph on the way in,
- * so what lands in the run is always reachable from it.
+ * so what lands in the run or in the known set is always reachable from it.
  */
-export function applyOrientationIntent(plan: OrientationPlan, run: OrientationRun, intent: OrientationIntent): OrientationRun {
+export function applyOrientationIntent(
+  plan: OrientationPlan,
+  run: OrientationRun,
+  known: readonly string[],
+  intent: OrientationIntent,
+): OrientationStep {
+  const step = (next: Orienting): OrientationStep => ({ run: next.run, known: next.known });
+  const state: Orienting = { run, known };
   switch (intent.kind) {
     case 'answer':
-      return answer(plan, run, intent.optionIds);
+      return step(answer(plan, state, intent.optionIds));
     case 'skip': {
       const question = currentQuestion(plan, run);
       if (!plan.config || !question) throw new Error('当前没有待回答的开局问题');
-      return { ...run, at: nextIndex(plan.config, run.at, question.select === 'many' ? question.next : undefined) };
+      return step({ run: { ...run, at: nextIndex(plan.config, run.at, question.select === 'many' ? question.next : undefined) }, known });
     }
     case 'set-targets':
-      return { ...run, targets: inGraph(plan, intent.conceptIds) };
+      return step({ run: { ...run, targets: inGraph(plan, intent.conceptIds) }, known });
     case 'add-targets':
-      return { ...run, targets: inGraph(plan, [...run.targets, ...intent.conceptIds]) };
+      return step({ run: { ...run, targets: inGraph(plan, [...run.targets, ...intent.conceptIds]) }, known });
     case 'set-known':
-      return { ...run, known: inGraph(plan, intent.conceptIds) };
+      return step({ run, known: inGraph(plan, intent.conceptIds) });
     case 'ask-known':
-      return {
+      return step({ run: {
         ...run,
         asked: inGraph(plan, [...run.asked, ...intent.conceptIds]),
         round: run.round + 1,
-      };
+      }, known });
     case 'know':
-      return { ...run, known: inGraph(plan, [...run.known, ...intent.conceptIds]) };
+      return step({ run, known: inGraph(plan, [...known, ...intent.conceptIds]) });
     case 'restart':
-      return beginOrientation(plan);
+      return step({ run: beginOrientation(plan), known: orientationSeedKnown(plan) });
   }
 }

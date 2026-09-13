@@ -1,6 +1,7 @@
 import { Map as MapIcon, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
+import type { MasterySource } from '../../learner-records';
 import type { GraphEvent } from '../../rendering';
 import { currentInputStartedAtMs, emitInteractionCompleteTestHook } from '../../testHooks';
 import type { WorkspaceContent } from '../../workspace/index';
@@ -15,6 +16,8 @@ export type GraphBrowseProps = {
   readonly content: WorkspaceContent;
   readonly targetIds: readonly string[];
   readonly knownIds: readonly string[];
+  /** Where each known concept's knowledge came from, told apart in the interface. */
+  readonly knownSources: ReadonlyMap<string, MasterySource>;
   readonly onToggleTarget: (conceptId: string) => void;
   readonly onToggleKnown: (conceptId: string) => void;
   /** Setting a target from here sends the learner back to settle the rest of the run. */
@@ -33,7 +36,7 @@ export type GraphBrowseProps = {
  * more onto the overview.
  */
 export function GraphBrowse({
-  active, content, targetIds, knownIds, onToggleTarget, onToggleKnown, onBackToOrientation,
+  active, content, targetIds, knownIds, knownSources, onToggleTarget, onToggleKnown, onBackToOrientation,
   readAsset, readDocuments,
 }: GraphBrowseProps) {
   const graph = content.graph;
@@ -109,6 +112,7 @@ export function GraphBrowse({
       {reading.current && <ConceptReader active={active} content={content} conceptId={reading.current}
         pages={reading.pages} at={reading.at} onGo={reading.go} onClose={reading.close} closeLabel="关闭"
         isTarget={targetIds.includes(reading.current)} isKnown={knownIds.includes(reading.current)}
+        knownSource={knownSources.get(reading.current)}
         onToggleTarget={setTarget} onToggleKnown={onToggleKnown} onFocus={setFocusId}
         readAsset={readAsset} readDocuments={readDocuments} />}
     </div>

@@ -3,8 +3,11 @@
 Status: specified by [#92](https://github.com/derivon-research/derivon-mindmap/issues/92).
 The application-side storage landed in [#99](https://github.com/derivon-research/derivon-mindmap/issues/99);
 confirming a route, showing the confirmed ones and deleting one landed in
-[#100](https://github.com/derivon-research/derivon-mindmap/issues/100). Self-report and mastery-derived
-routes are #101 and #102, and the script command surface is `derivon-research/skills#6`.
+[#100](https://github.com/derivon-research/derivon-mindmap/issues/100). Self-report landed in
+[#101](https://github.com/derivon-research/derivon-mindmap/issues/101): both entrances write a
+`complete` record with `data.selfReported: true`, and the known set is derived from mastery rather
+than stored. Judgement records and mastery-derived route progress are #102, and the script command
+surface is `derivon-research/skills#6`.
 Domain terms are defined in [CONTEXT.md](../CONTEXT.md); the decisions are
 [ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) (where they live) and
 [ADR-0012](adr/0012-learning-state-is-mastery.md) (what they are).
@@ -119,10 +122,19 @@ one route is mastered everywhere it appears.
      responses are not persisted here.
   2. It never contains anything recomputable from the graph or from object documents. A reader
      that wants a label, a dependency or a document reads the workspace, not this file.
-- **`data` keys are namespaced by writer.** The first tenant is `selfReported: true`, the
-  marker that separates "the learner said they know it" from "the application judged it". Both
-  write `status: "complete"`; the source is distinguished by `data`, never by a second status
-  axis.
+- **`data` keys are namespaced by writer.** Two tenants exist, both writing a `complete`
+  record, and the source is distinguished by `data`, never by a second status axis:
+  - `selfReported: true` — the learner said they know it, as opposed to the application
+    judging it. Written by both self-report entrances and by the orientation flow's `know` /
+    `set-known` intents.
+  - `orientationSeed: true` — the workspace's declared default, written once from
+    `.derivon/orientation.json`'s `seed.known` when the learner has no record file at all.
+    It is a **provenance marker, not copied content**: the default stays a claim rather than
+    a judgement, and the interface shows it as a default, not as the learner's own word. A
+    learner's own claim over the same concept replaces the marker rather than adding to it.
+
+  A `complete` record with neither marker is a judgement. A record that is `incomplete` is a
+  judgement too, whatever its `data` holds; a claim never overwrites one.
 - **Incomplete does not block anything.** It records that this object is not mastered; the
   next step on a route is derived from mastery, so an `incomplete` record simply leaves that
   step current.
@@ -241,7 +253,8 @@ These two are computed, never stored, and the distinction is the point of this d
 
 - **Known = the set of concepts with a `complete` record.** There is no independent
   `knownConceptIds` state and no independent known list anywhere. "Mark this as known" writes
-  a `complete` record with `data.selfReported: true`.
+  a `complete` record with `data.selfReported: true`, and the application derives the set on
+  read ([#101](https://github.com/derivon-research/derivon-mindmap/issues/101)).
 - **The current step of a route = the head concept of the first derivation in that route's
   `order` whose mastery is not `complete`.** There is no cursor. "Next" means "this step's
   judgement passed", not "add one to a number".

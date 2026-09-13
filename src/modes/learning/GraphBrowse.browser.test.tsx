@@ -1,9 +1,11 @@
-import { act, useState } from 'react';
+import { act, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
 import type { LearningModeProps } from '../../app/host';
+import { createMemoryLearnerRecords, type MemoryLearnerRecords } from '../../testing/learnerRecordStore';
+import { createMemoryObjectFiles } from '../../testing/memoryObjectFiles';
 import { WORKSPACE_SCHEMA, parseWorkspaceContent, type WorkspaceContent } from '../../workspace/index';
 
 vi.mock('../../rendering', () => ({ GraphRenderer: ({ view, onEvent }: GraphRendererProps) => <div>
@@ -37,20 +39,26 @@ function workspace(): WorkspaceContent {
   }), documents: { 'docs/b/document.md': { status: 'ready', text: '<main>B 的正文</main>' } } });
 }
 
-function Harness({ onEnterView = vi.fn() }: { onEnterView?: LearningModeProps['onEnterView'] }) {
+function Harness({ onEnterView = vi.fn(), records }: {
+  onEnterView?: LearningModeProps['onEnterView']; records: MemoryLearnerRecords;
+}) {
   const [content] = useState(workspace);
   const [targets, setTargets] = useState<readonly string[]>([]);
-  const [known, setKnown] = useState<readonly string[]>([]);
+  const files = useMemo(() => createMemoryObjectFiles({
+    'docs/a/document.md': 'A 的正文', 'docs/b/document.md': '<main>B 的正文</main>',
+    'docs/c/document.md': 'C 的正文', 'docs/far/document.md': '远处 的正文',
+  }), []);
   return <LearningMode workspace={{ id: 'w', name: '浏览工作区' }} content={content} active
-    targetIds={targets} knownIds={known}
+    learnerRecords={records.store} targetIds={targets}
+    readOwnedFiles={files.listOwnedFiles} readDocuments={files.readDocuments} readAsset={files.readAsset}
     view="browse" onEnterView={onEnterView} onConfirmRoute={vi.fn()} activeRouteId={null}
     onSelectRoute={vi.fn()}
-    onChangeTargets={setTargets} onChangeKnown={setKnown} />;
+    onChangeTargets={setTargets} />;
 }
 
-async function render(over: Parameters<typeof Harness>[0] = {}) {
+async function render(over: Partial<Parameters<typeof Harness>[0]> = {}) {
   root = createRoot(container);
-  await act(async () => root?.render(<Harness {...over} />));
+  await act(async () => root?.render(<Harness records={createMemoryLearnerRecords('test-workspace')} {...over} />));
 }
 
 it('draws the whole graph and reads a concept beside the map rather than on it', async () => {
@@ -126,13 +134,32 @@ it('sends the learner back to settle the run when a target is set from here', as
 });
 
 it('marks what the learner knows on the map, and lets them take it back', async () => {
-  await render();
+  const records = createMemoryLearnerRecords('test-workspace');
+  await render({ records });
   await page.getByRole('button', { name: '图：A' }).click();
   await page.getByRole('button', { name: '这个我会' }).click();
 
   await expect.element(page.getByRole('button', { name: '图：A（known,selected）' })).toBeVisible();
+  // The record on disk says where it came from, and the reader says so too.
+  expect(records.stateText()).toContain('"selfReported": true');
+  await expect.element(page.getByText('自述：我会了')).toBeVisible();
 
   await page.getByRole('button', { name: '其实我不会' }).click();
   await expect.element(page.getByRole('button', { name: '图：A（selected）' })).toBeVisible();
   expect(container.querySelector('[data-derivon-mode="learning"]')?.getAttribute('data-learning-known')).toBe('');
+});
+
+it('finds a self-report again after the workspace is reopened', async () => {
+  const records = createMemoryLearnerRecords('test-workspace');
+  await render({ records });
+  await page.getByRole('button', { name: '图：A' }).click();
+  await page.getByRole('button', { name: '这个我会' }).click();
+  await expect.element(page.getByRole('button', { name: '图：A（known,selected）' })).toBeVisible();
+
+  // Reopening reads `state.json` rather than the session: the claim was not application state.
+  await act(async () => root?.unmount());
+  root = undefined;
+  container.replaceChildren();
+  await render({ records });
+  await expect.element(page.getByRole('button', { name: '图：A（known）' })).toBeVisible();
 });

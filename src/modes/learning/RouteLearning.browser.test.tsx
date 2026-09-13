@@ -1,4 +1,4 @@
-import { act, useState } from 'react';
+import { act, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ import { routeBasis } from '../../learner-records/basis';
 import type { ConversationProvider } from '../../ports/ConversationProvider';
 import type { RouteSolver } from '../../ports/RouteSolver';
 import { createMemoryLearnerRecords } from '../../testing/learnerRecordStore';
+import { createMemoryObjectFiles } from '../../testing/memoryObjectFiles';
 import { fixtureRouteSolver } from '../../testing/routeSolver';
 import { WORKSPACE_SCHEMA, parseWorkspaceContent, type WorkspaceContent } from '../../workspace/index';
 
@@ -57,18 +58,23 @@ function Harness({ content = workspace(), view = 'route' as const, onEnterView =
   drainPendingChanges?: LearningModeProps['drainPendingChanges'];
 }) {
   const [targets, setTargets] = useState<readonly string[]>(['c']);
-  const [known, setKnown] = useState<readonly string[]>(['a']);
+  const files = useMemo(() => createMemoryObjectFiles(readyDocuments(content)), [content]);
   return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
     learnerRecords={walker.store} activeRouteId={walker.record.id}
-    targetIds={targets} knownIds={known} routeSolver={fixtureRouteSolver()}
+    targetIds={targets} routeSolver={fixtureRouteSolver()}
+    readOwnedFiles={files.listOwnedFiles} readDocuments={files.readDocuments} readAsset={files.readAsset}
     view={view} onEnterView={onEnterView} onConfirmRoute={onConfirmRoute} onSelectRoute={onSelectRoute}
-    onChangeTargets={setTargets} onChangeKnown={setKnown}
+    onChangeTargets={setTargets}
     conversation={conversation} drainPendingChanges={drainPendingChanges} />;
+}
+function readyDocuments(content: WorkspaceContent): Record<string, string> {
+  return Object.fromEntries(Object.entries(content.documents).flatMap(([path, resource]) =>
+    resource.status === 'ready' ? [[path, resource.text]] : []));
 }
 
 /**
- * The confirmed route the walker is showing: the fixture graph, confirmed once. The walker
- * takes its targets and `known` from the record, not from the live application state.
+ * The confirmed route the walker is showing, plus the mastery that makes `a` known. The walker
+ * takes its targets and `known` from the record, never from the live application state.
  */
 const walker: { readonly store: ReturnType<typeof createMemoryLearnerRecords>['store']; readonly record: RouteRecord } = await (async () => {
   const record: RouteRecord = {
@@ -76,7 +82,11 @@ const walker: { readonly store: ReturnType<typeof createMemoryLearnerRecords>['s
     basis: await routeBasis(workspace().graph, ['a', 'b', 'c', 'd1', 'd2']),
     conceptIds: ['a', 'b', 'c'], derivationIds: ['d1', 'd2'], order: ['d1', 'd2'], cost: 5,
   };
-  return { store: createMemoryLearnerRecords('test-workspace', { routes: [record] }).store, record };
+  const store = createMemoryLearnerRecords('test-workspace', {
+    routes: [record],
+    state: { concepts: { a: { status: 'complete', basis: 'a'.repeat(64), data: { selfReported: true } } }, derivations: {} },
+  }).store;
+  return { store, record };
 })();
 
 async function render(over: Parameters<typeof Harness>[0] = {}) {
@@ -209,7 +219,14 @@ it('holds the route being walked, so a later solve cannot renumber the steps', a
   await click('.learning-text-actions button:nth-child(3)');
   await act(async () => { await Promise.resolve(); });
   expect(container.textContent).toContain('第 2 / 2 步');
-  expect(container.querySelector('[data-learning-known]')?.getAttribute('data-learning-known')).toBe('a b');
+  await expect.poll(() => container.querySelector('[data-learning-known]')?.getAttribute('data-learning-known')).toBe('a b');
+  // The claim went into the learner record as a self-report, marked as one, and the rail
+  // says so instead of showing it as a judgement the application made.
+  await expect.poll(() => walker.store.readLearningState().then((reading) =>
+    reading.presence === 'present' ? reading.state.concepts.b : undefined)).toMatchObject({
+    status: 'complete', data: { selfReported: true },
+  });
+  await expect.element(page.getByText('自述')).toBeVisible();
 });
 
 it('reports a route whose graph moved on instead of blocking the walk', async () => {
@@ -284,12 +301,13 @@ it('does not ask the host to solve again for content that parsed to the same gra
   };
   function Counted({ content }: { content: WorkspaceContent }) {
     const [targets, setTargets] = useState<readonly string[]>(['c']);
-    const [known, setKnown] = useState<readonly string[]>(['a']);
+    const files = useMemo(() => createMemoryObjectFiles(readyDocuments(content)), [content]);
     return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
       learnerRecords={walker.store} activeRouteId={walker.record.id}
-      targetIds={targets} knownIds={known} routeSolver={counting}
+      targetIds={targets} routeSolver={counting}
+      readOwnedFiles={files.listOwnedFiles} readDocuments={files.readDocuments} readAsset={files.readAsset}
       view="route" onEnterView={vi.fn()} onConfirmRoute={vi.fn()} onSelectRoute={vi.fn()}
-      onChangeTargets={setTargets} onChangeKnown={setKnown} />;
+      onChangeTargets={setTargets} />;
   }
   root = createRoot(container);
   await act(async () => root?.render(<Counted content={workspace()} />));
@@ -326,7 +344,7 @@ it('draws the route subgraph with the learner\'s position on it, once the rail i
 it('offers an Agent window that answers from the graph and says plainly that no model is connected', async () => {
   await render();
   await page.getByRole('button', { name: '「A」是什么来着？' }).click();
-  expect(container.textContent).toContain('它要么是你说会的，要么是图里的起点');
+  expect(container.textContent).toContain('它要么是已知的，要么是图里的起点');
 
   await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
   await page.getByRole('button', { name: '发送消息' }).click();

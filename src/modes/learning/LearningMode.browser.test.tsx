@@ -19,8 +19,8 @@ afterEach(async () => { if (root) await act(async () => root?.unmount()); root =
 
 function props(over: Partial<LearningModeProps> & Pick<LearningModeProps, 'content'>): LearningModeProps {
   return {
-    workspace: { id: 'fixture', name: 'Fixture' }, targetIds: [], knownIds: [],
-    onChangeTargets: vi.fn(), onChangeKnown: vi.fn(),
+    workspace: { id: 'fixture', name: 'Fixture' }, targetIds: [],
+    onChangeTargets: vi.fn(),
     view: 'orientation', onEnterView: vi.fn(), onConfirmRoute: vi.fn(),
     onSelectRoute: vi.fn(), activeRouteId: null, active: true,
     ...over,

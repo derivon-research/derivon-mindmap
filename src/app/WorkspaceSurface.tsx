@@ -26,7 +26,6 @@ export type WorkspaceSurfaceProps = {
   };
   onSelectConcept(id: string | null): void;
   onChangeTargets(ids: readonly string[]): void;
-  onChangeKnown(ids: readonly string[]): void;
   onEnterLearningView(view: LearningView): void;
   /** The mode has written the record; this makes it the active route. */
   onConfirmRoute(routeId: string): void;
@@ -50,7 +49,7 @@ export default function WorkspaceSurface(props: WorkspaceSurfaceProps) {
   return <SessionModes {...props} session={session} />;
 }
 
-function SessionModes({ session, state, workspace, modes, routeSolver, conversationProviders, onSelectConcept, onChangeTargets, onChangeKnown, onEnterLearningView, onConfirmRoute, onSelectRoute, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
+function SessionModes({ session, state, workspace, modes, routeSolver, conversationProviders, onSelectConcept, onChangeTargets, onEnterLearningView, onConfirmRoute, onSelectRoute, onProtectionChange }: WorkspaceSurfaceProps & { session: WorkspaceSession }) {
   const snapshot = useSyncExternalStore(session.reader.subscribe, session.reader.getSnapshot);
   /* Keyed by the migration itself, not a bare flag: the surface is not remounted when the same
    * folder is reopened, and a second, different conflict must still be shown after a first is
@@ -105,6 +104,11 @@ function SessionModes({ session, state, workspace, modes, routeSolver, conversat
   const AuthoringMode = modes.authoring;
   const LearningMode = modes.learning;
   const identity = { id: workspace.id, name: workspace.name };
+  // The learning side gets the read-only inventory and nothing else of the authoring source:
+  // a mastery basis needs to list an object's files, and that is a read.
+  const readOwnedFiles = useMemo(() => workspace.authoringSource
+    ? (directory: string) => workspace.authoringSource!.listOwnedFiles(directory)
+    : undefined, [workspace.authoringSource]);
   const labels = { saved: '已保存', pending: '待保存', saving: '正在保存', error: '保存失败' };
   const saveLabel = `${labels[snapshot.saveState]}${snapshot.hasDrafts ? ' · 有未提交草稿' : ''}${snapshot.error ? ` · ${snapshot.error}` : ''}`;
   return <>
@@ -121,8 +125,9 @@ function SessionModes({ session, state, workspace, modes, routeSolver, conversat
       <Suspense fallback={<div className="app-mode-loading" role="status">正在载入…</div>}>
         {mode === 'learning' ? <LearningMode active={mode === state.mode} workspace={identity} content={snapshot.content}
           learnerRecords={workspace.learnerRecords}
-          targetIds={state.learningTargetIds} knownIds={state.learningKnownIds} onChangeTargets={onChangeTargets}
-          onChangeKnown={onChangeKnown} view={state.learningView} onEnterView={onEnterLearningView}
+          targetIds={state.learningTargetIds} onChangeTargets={onChangeTargets}
+          readOwnedFiles={readOwnedFiles}
+          view={state.learningView} onEnterView={onEnterLearningView}
           onConfirmRoute={onConfirmRoute} activeRouteId={state.learningActiveRouteId} onSelectRoute={onSelectRoute}
           routeSolver={routeSolver}
           readAsset={readAsset} readDocuments={readDocuments} conversation={conversationProviders?.learning}

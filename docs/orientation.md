@@ -87,8 +87,14 @@ provider cannot change its behaviour — which is what "不维护两套流程" m
 the configuration is effective content, the generic concept picker otherwise, carrying the
 reason and the diagnosis with it.
 
-What comes out is application state — this session's targets, known and trail. None of it
-is written back to workspace content.
+Targets come out as application state — this session's targets and trail. **Known does not**:
+the transition takes the live known set as an input and returns the set the step leaves
+behind, and the caller writes the difference into the learner record as self-reports
+(`complete` + `data.selfReported: true`) before re-deriving it. The configuration's seed known
+is written once, when no record file exists at all, and marked as the workspace's default
+(`data.orientationSeed: true`) rather than as the learner's own claim
+([ADR-0012](adr/0012-learning-state-is-mastery.md),
+[learner records](learner-records.md)). Nothing here is written back to workspace content.
 
 ## The editor — `src/modes/authoring/orientation/`
 

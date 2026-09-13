@@ -27,9 +27,10 @@ export function routeProbeCandidates(
   graph: WorkspaceGraph,
   solution: RouteSolution,
   run: OrientationRun,
+  known: readonly string[],
   size: number = PROBE_ROUND_SIZE,
 ): readonly string[] {
-  const settled = new Set([...run.known, ...run.asked]);
+  const settled = new Set([...known, ...run.asked]);
   const derivations = new Map(graph.hyperedges.map((edge) => [edge.id, edge]));
   const leverage = new Map<string, Leverage>();
   const count = (conceptId: string, position: number) => {
@@ -87,9 +88,10 @@ function derivationsFeeding(graph: WorkspaceGraph, targets: readonly string[]): 
 export function graphProbeCandidates(
   graph: WorkspaceGraph,
   run: OrientationRun,
+  known: readonly string[],
   size: number = PROBE_ROUND_SIZE,
 ): readonly string[] {
-  const settled = new Set([...run.known, ...run.asked]);
+  const settled = new Set([...known, ...run.asked]);
   const feeding = run.targets.length ? derivationsFeeding(graph, run.targets) : null;
   const leverage = new Map<string, number>();
   for (const derivation of graph.hyperedges) {

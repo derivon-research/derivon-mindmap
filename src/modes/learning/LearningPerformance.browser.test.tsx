@@ -20,6 +20,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createGeneratedWorkspaceGraph } from '../../../benchmarks/fixtures/generated-workspace';
 import type { WorkspaceSource } from '../../ports/WorkspaceSource';
 import { openWorkspaceSession, type WorkspaceSession } from '../../synchronization';
+import { createMemoryLearnerRecords } from '../../testing/learnerRecordStore';
 import { fixtureRouteSolver } from '../../testing/routeSolver';
 import { labelOf } from '../ConceptPicker';
 import type { LearningView } from '../../app/host';
@@ -87,6 +88,13 @@ benchmark('measures switching a target and moving a route panel within 200ms at 
   // near the seed on purpose — a route is tens of steps long, and aiming at the far side of
   // the cycle would measure a subgraph no learner is ever handed.
   const seedKnown = ['c-0', 'c-1'];
+  const records = createMemoryLearnerRecords('bench', {
+    state: {
+      concepts: Object.fromEntries(seedKnown.map((id) =>
+        [id, { status: 'complete' as const, basis: 'a'.repeat(64), data: { selfReported: true } }])),
+      derivations: {},
+    },
+  });
   const routeTargetId = 'c-40';
   let enterRoute: () => void = () => {};
 
@@ -94,10 +102,10 @@ benchmark('measures switching a target and moving a route panel within 200ms at 
     const snapshot = useSyncExternalStore(current.reader.subscribe, current.reader.getSnapshot);
     const [view, setView] = useState<LearningView>('orientation');
     const [targetIds, setTargetIds] = useState<readonly string[]>([]);
-    const [knownIds, setKnownIds] = useState<readonly string[]>([]);
-    enterRoute = () => { setTargetIds([routeTargetId]); setKnownIds(seedKnown); setView('route'); };
+    enterRoute = () => { setTargetIds([routeTargetId]); setView('route'); };
     return <LearningMode workspace={{ id: 'bench', name: 'Benchmark' }} content={snapshot.content}
-      targetIds={targetIds} knownIds={knownIds} onChangeTargets={setTargetIds} onChangeKnown={setKnownIds}
+      learnerRecords={records.store}
+      targetIds={targetIds} onChangeTargets={setTargetIds}
       view={view} onEnterView={setView} onConfirmRoute={() => setView('route')} routeSolver={solver}
       onSelectRoute={() => {}} activeRouteId={null}
       readAsset={current.reader.readAsset} readDocuments={current.reader.readDocuments} />;

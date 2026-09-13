@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, FileText, MessageSquarePlus, Search, Send, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
+import type { MasterySource } from '../../learner-records';
 import type { GraphEvent } from '../../rendering';
 import { currentInputStartedAtMs, emitInteractionCompleteTestHook } from '../../testHooks';
 import type { WorkspaceContent } from '../../workspace/index';
@@ -10,6 +11,7 @@ import { overviewGraphView } from '../graphViews';
 import { RetainedGraph } from '../RetainedGraph';
 import type { RoutePreview } from '../routePreview';
 import { ConceptReader, useConceptPages } from './ConceptReader';
+import { KNOWN_SOURCE_TAG } from './knownSource';
 import { currentQuestion, type OrientationIntent, type OrientationPlan, type OrientationRun } from './orientation';
 import { OrientationQuestionBlock } from './OrientationQuestion';
 import { graphProbeCandidates, routeProbeCandidates } from './probe';
@@ -35,6 +37,10 @@ export type OrientationViewProps = {
   readonly content: WorkspaceContent;
   readonly plan: OrientationPlan;
   readonly run: OrientationRun;
+  /** The live known set, derived from the learner records rather than held by the flow. */
+  readonly knownIds: readonly string[];
+  /** Where each known concept's knowledge came from, so a self-report is not shown as a judgement. */
+  readonly knownSources: ReadonlyMap<string, MasterySource>;
   readonly preview: RoutePreview;
   readonly onIntent: (intent: OrientationIntent) => void;
   readonly onEnterPreview: () => void;
@@ -51,7 +57,7 @@ export type OrientationViewProps = {
  * the flow is complete on a host that offers none.
  */
 export function OrientationView({
-  active, content, plan, run, preview, onIntent, onEnterPreview, readAsset, readDocuments,
+  active, content, plan, run, knownIds, knownSources, preview, onIntent, onEnterPreview, readAsset, readDocuments,
 }: OrientationViewProps) {
   const graph = content.graph;
   // Named for the thread, not the stage: `opening` already means "opening a workspace" here.
@@ -75,8 +81,8 @@ export function OrientationView({
    * removes from it; without one, the graph's own shape is the best available guess.
    */
   const candidates = (): readonly string[] => (preview.status === 'ready' && preview.solution.reachable
-    ? routeProbeCandidates(graph, preview.solution, run)
-    : graphProbeCandidates(graph, run));
+    ? routeProbeCandidates(graph, preview.solution, run, knownIds)
+    : graphProbeCandidates(graph, run, knownIds));
 
   const addTargets = (conceptIds: readonly string[]) => {
     if (!conceptIds.length) return;
@@ -111,8 +117,8 @@ export function OrientationView({
     else addTargets([conceptId]);
   };
 
-  const toggleKnown = (conceptId: string) => onIntent(run.known.includes(conceptId)
-    ? { kind: 'set-known', conceptIds: run.known.filter((id) => id !== conceptId) }
+  const toggleKnown = (conceptId: string) => onIntent(knownIds.includes(conceptId)
+    ? { kind: 'set-known', conceptIds: knownIds.filter((id) => id !== conceptId) }
     : { kind: 'know', conceptIds: [conceptId] });
 
   /** Reading turns a page on the surface beside the thread; nothing is embedded in it. */
@@ -167,8 +173,8 @@ export function OrientationView({
 
   const askAgain = (round: number) => openRound('再来一轮，这次问的是现在最吃重的几个。', round + 1);
 
-  const view = useMemo(() => overviewGraphView(graph, { targetIds: run.targets, knownIds: run.known }),
-    [graph, run.known, run.targets]);
+  const view = useMemo(() => overviewGraphView(graph, { targetIds: run.targets, knownIds }),
+    [graph, knownIds, run.targets]);
   const handleEvent = (event: GraphEvent) => {
     if (event.object?.kind === 'concept') openDoc(event.object.id);
   };
@@ -194,7 +200,8 @@ export function OrientationView({
         return <div key={index} className="learning-choice-block">
           <span className="learning-choice-note">第 {turn.round} 轮 · 会的点一下</span>
           <span className="learning-choice-hint">点错了再点一下就取消</span>
-          <ChoiceGrid conceptIds={turn.conceptIds} chosenIds={run.known} label={label} onPick={toggleKnown} />
+          <ChoiceGrid conceptIds={turn.conceptIds} chosenIds={knownIds} label={label} onPick={toggleKnown}
+            knownSources={knownSources} />
           {index === turns.length - 1 && <div className="learning-choice-actions">
             <button type="button" onClick={() => askAgain(turn.round)}>再问我一轮，路线会更准</button>
             <button type="button" className="learning-primary" onClick={onEnterPreview}>够了，先看看路线</button>
@@ -204,6 +211,8 @@ export function OrientationView({
   };
 
   const starters = useMemo(() => terminalConcepts(graph), [graph]);
+  const selfReportedCount = useMemo(() => [...knownSources.values()]
+    .filter((source) => source === 'selfReported').length, [knownSources]);
 
   return <div className={`learning-orientation${reading.current ? ' is-reading' : ''}`}
     data-orientation-round={run.round}>
@@ -239,12 +248,15 @@ export function OrientationView({
               <ChoiceGrid conceptIds={starters} chosenIds={run.targets} label={label} onPick={toggleTarget} />
             </div>}
             <div className="learning-known">
-              <p className="learning-confirm-known">已经会的：{run.known.length} 个概念{
+              <p className="learning-confirm-known">已经会的：{knownIds.length} 个概念{
+                selfReportedCount ? ` · 其中 ${selfReportedCount} 个是你自己说会的` : ''}{
                 run.round ? ` · 问过 ${run.round} 轮` : ''}</p>
               <div className="learning-chips">
-                {run.known.map((conceptId) => <button key={conceptId} type="button" className="learning-chip is-known"
+                {knownIds.map((conceptId) => <button key={conceptId} type="button" className="learning-chip is-known"
                   aria-label={`取消已会 ${label(conceptId)}`} onClick={() => toggleKnown(conceptId)}>
-                  {label(conceptId)}<X size={12} aria-hidden="true" />
+                  {label(conceptId)}{knownSources.get(conceptId) &&
+                    <span className="learning-chip-source">{KNOWN_SOURCE_TAG[knownSources.get(conceptId)!]}</span>}
+                  <X size={12} aria-hidden="true" />
                 </button>)}
               </div>
             </div>
@@ -278,14 +290,15 @@ export function OrientationView({
       <div className="learning-graph-canvas"><RetainedGraph active={active} view={view} onEvent={handleEvent} /></div>
       <div className="learning-graph-legend">
         <span><i className="is-target" aria-hidden="true" />目标 {run.targets.length}</span>
-        <span><i className="is-known" aria-hidden="true" />已会 {run.known.length}</span>
+        <span><i className="is-known" aria-hidden="true" />已会 {knownIds.length}</span>
         <span><i aria-hidden="true" />其余 · 共 {graph.points.length} 个概念 · 点一个看它的文档</span>
       </div>
       {/* Reading covers the map instead of replacing it: the graph keeps its layout and
           viewport underneath, so closing the document costs nothing (ADR-0006). */}
       {reading.current && <ConceptReader active={active} content={content} conceptId={reading.current}
         pages={reading.pages} at={reading.at} onGo={reading.go} onClose={reading.close} closeLabel="回到图"
-        isTarget={run.targets.includes(reading.current)} isKnown={run.known.includes(reading.current)}
+        isTarget={run.targets.includes(reading.current)} isKnown={knownIds.includes(reading.current)}
+        knownSource={knownSources.get(reading.current)}
         onToggleTarget={toggleTarget} onToggleKnown={toggleKnown}
         readAsset={readAsset} readDocuments={readDocuments} />}
     </section>
@@ -297,18 +310,22 @@ export function OrientationView({
  * down one column, and a full-width hit area holds a concept name that does not fit on a
  * chip. Pressing a chosen option again takes the choice back.
  */
-function ChoiceGrid({ conceptIds, chosenIds, label, onPick }: {
+function ChoiceGrid({ conceptIds, chosenIds, label, onPick, knownSources }: {
   readonly conceptIds: readonly string[];
   readonly chosenIds: readonly string[];
   readonly label: (conceptId: string) => string;
   readonly onPick: (conceptId: string) => void;
+  /** Where a chosen concept's knowledge came from; omitted for choices that are not mastery. */
+  readonly knownSources?: ReadonlyMap<string, MasterySource>;
 }) {
   return <div className="learning-choice-grid">
     {conceptIds.map((conceptId) => {
       const chosen = chosenIds.includes(conceptId);
+      const source = knownSources?.get(conceptId);
       return <button key={conceptId} type="button" aria-pressed={chosen}
         className={chosen ? 'is-chosen' : ''} onClick={() => onPick(conceptId)}>
         <span>{label(conceptId)}</span>
+        {chosen && source && <span className="learning-chip-source" aria-hidden="true">{KNOWN_SOURCE_TAG[source]}</span>}
         {chosen && <Check size={14} aria-hidden="true" />}
       </button>;
     })}

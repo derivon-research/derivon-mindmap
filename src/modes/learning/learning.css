@@ -66,6 +66,8 @@
 .learning-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .learning-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid #b91c1c; border-radius: 999px; background: #fef2f2; color: #991b1b; font-size: 13px; }
 .learning-chip.is-known { border-color: #16a34a; background: #f0fdf4; color: #15803d; }
+/* A self-report is not a judgement: the chip says which, so the two are never one thing. */
+.learning-chip-source { padding: 1px 5px; border-radius: 999px; background: #dcfce7; color: #166534; font-size: 10px; }
 .learning-chips-empty { color: var(--app-muted); font-size: 13px; }
 .learning-known { display: flex; flex-direction: column; gap: 8px; }
 .learning-confirm-known { margin: 0; color: var(--app-muted); font-size: 12px; }
@@ -164,6 +166,8 @@
 .learning-rail-list li.is-done button { color: var(--app-muted); }
 .learning-rail-index { width: 20px; font-size: 12px; font-variant-numeric: tabular-nums; opacity: 0.7; }
 .learning-rail-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.learning-rail-source { flex: 0 0 auto; padding: 1px 5px; border: 1px solid #86efac; border-radius: 999px; color: #15803d; font-size: 10px; }
+.learning-record-issue { flex: 0 0 auto; margin: 0; padding: 7px 12px; border-bottom: 1px solid #fecaca; background: #fef2f2; color: #b91c1c; font-size: 12px; }
 .learning-rail-note { margin: 8px 2px; color: var(--app-muted); font-size: 11px; }
 .learning-rail .learning-graph-canvas { border: 1px solid var(--app-line); border-radius: 10px; background: #fff; overflow: hidden; }
 

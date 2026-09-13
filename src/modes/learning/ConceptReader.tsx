@@ -1,8 +1,10 @@
 import { Check, ChevronLeft, ChevronRight, Network, Target, X } from 'lucide-react';
 import { useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
+import type { MasterySource } from '../../learner-records';
 import type { WorkspaceContent } from '../../workspace/index';
 import { labelOf } from '../ConceptPicker';
+import { KNOWN_SOURCE_NOTE } from './knownSource';
 import { ObjectDocument } from './ObjectDocument';
 
 /**
@@ -42,6 +44,8 @@ export type ConceptReaderProps = {
   readonly closeLabel: string;
   readonly isTarget: boolean;
   readonly isKnown: boolean;
+  /** Why this concept reads as known, so a self-report is never shown as a judgement. */
+  readonly knownSource?: MasterySource;
   readonly onToggleTarget: (conceptId: string) => void;
   readonly onToggleKnown: (conceptId: string) => void;
   /** Offered where there is a graph to narrow down; orientation has none. */
@@ -58,7 +62,7 @@ export type ConceptReaderProps = {
  * documents opened in this view is in the header, so the page itself ends with the reading.
  */
 export function ConceptReader({
-  active, content, conceptId, pages, at, onGo, onClose, closeLabel, isTarget, isKnown,
+  active, content, conceptId, pages, at, onGo, onClose, closeLabel, isTarget, isKnown, knownSource,
   onToggleTarget, onToggleKnown, onFocus, readAsset, readDocuments,
 }: ConceptReaderProps) {
   const label = labelOf(content.graph, conceptId);
@@ -75,7 +79,9 @@ export function ConceptReader({
       </nav>
       <strong>{label}</strong>
       {isTarget && <span className="learning-reader-mark is-target">目标</span>}
-      {isKnown && <span className="learning-reader-mark is-known">已会</span>}
+      {isKnown && <span className="learning-reader-mark is-known">
+        {knownSource ? KNOWN_SOURCE_NOTE[knownSource] : '已会'}
+      </span>}
       <button type="button" className="learning-icon-button" title={closeLabel} aria-label={closeLabel}
         onClick={onClose}><X size={15} aria-hidden="true" /></button>
     </header>

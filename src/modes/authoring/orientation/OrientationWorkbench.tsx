@@ -12,7 +12,8 @@ import { TagChips } from '../../TagChips';
 import { OrientationPanel } from '../../learning/OrientationPanel';
 import { RouteSummary } from '../../learning/RouteSummary';
 import {
-  applyOrientationIntent, beginOrientation, planOrientation, type OrientationRun,
+  applyOrientationIntent, beginOrientation, orientationSeedKnown, planOrientation,
+  type OrientationIntent, type OrientationRun,
 } from '../../learning/orientation';
 import { routeGraphView, useRoutePreview } from '../../routePreview';
 import { entriesReaching, optionContext } from './context';
@@ -197,10 +198,10 @@ function RouteTab({ active, content, state, routeSolver }: {
     [content, draft]);
   const selection = state.selection;
   const context = selection.kind === 'option'
-    ? optionContext(plan, selection.questionId, selection.optionId, state.entryOptionId) : null;
-  const targets = context ? context.after.targets : draft.seed.targets;
+    ? optionContext(plan, selection.questionId, selection.optionId, state.entryOptionId, draft.seed.known) : null;
+  const targets = context ? context.after.run.targets : draft.seed.targets;
   const known = context ? context.after.known : draft.seed.known;
-  const entries = selection.kind === 'option' ? entriesReaching(plan, selection.questionId) : [];
+  const entries = selection.kind === 'option' ? entriesReaching(plan, selection.questionId, draft.seed.known) : [];
   const route = useRoutePreview(routeSolver, content.graph, targets, known);
   const isEntryQuestion = selection.kind === 'option' && plan.config?.questions[0]?.id === selection.questionId;
 
@@ -240,10 +241,17 @@ function LearnerTab({ content, state, routeSolver }: { content: WorkspaceContent
   const plan = useMemo(() => planOrientation({ ...content, orientation: { status: 'ready', config: draft, diagnostics: [] } }),
     [content, draft]);
   // Mounting this tab starts a fresh run; editing the draft leaves the current one alone.
+  // The known set is a preview input here, not a learner record — the author is not a learner.
   const [run, setRun] = useState<OrientationRun>(() => beginOrientation(plan));
+  const [known, setKnown] = useState<readonly string[]>(() => orientationSeedKnown(plan));
+  const apply = (intent: OrientationIntent) => {
+    const step = applyOrientationIntent(plan, run, known, intent);
+    setRun(step.run);
+    setKnown(step.known);
+  };
   return <div className="orientation-learner">
-    <OrientationPanel graph={content.graph} tags={content.tags} plan={plan} run={run} routeSolver={routeSolver}
-      onIntent={(intent) => setRun(applyOrientationIntent(plan, run, intent))}
-      onEnter={() => setRun(beginOrientation(plan))} />
+    <OrientationPanel graph={content.graph} tags={content.tags} plan={plan} run={run} known={known}
+      routeSolver={routeSolver} onIntent={apply}
+      onEnter={() => { setRun(beginOrientation(plan)); setKnown(orientationSeedKnown(plan)); }} />
   </div>;
 }

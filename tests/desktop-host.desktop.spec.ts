@@ -1,5 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
@@ -19,6 +19,8 @@ const CONVERSATION_MODELS = [
 ];
 
 let directory: string;
+/** Where the desktop host keeps learner records, away from the workspace: same split as the app. */
+let recordsDirectory: string;
 let conversationCommands: { type: string; [key: string]: unknown }[];
 let commits: number;
 let holdWrites: Promise<void> | undefined;
@@ -36,6 +38,7 @@ test.beforeEach(async ({ page }) => {
   /* The chosen folder's own name becomes the workspace id the create flow writes, and an id
    * may not carry uppercase, so the fixture directory is named the way the protocol requires. */
   directory = path.join(tmpdir(), `derivon-gui-${randomUUID().slice(0, 8)}`);
+  recordsDirectory = path.join(tmpdir(), 'derivon-gui-records', path.basename(directory));
   await mkdir(directory);
   conversationCommands = [];
   commits = 0;
@@ -46,9 +49,29 @@ test.beforeEach(async ({ page }) => {
   // synchronization and both modes run unchanged; persistence survives a browser reload.
   await page.exposeFunction('__nativeWorkspaceInvoke', async (command: string, args?: {
     rootPath: string; relativePath?: string;
+    workspaceId?: string; file?: string; text?: string; directory?: string;
     changes?: { graph?: string; createOnly?: boolean; documents: Array<{ path: string; content: string | null }>; assets?: Array<{ path: string; content: number[] | null }> };
   }) => {
     if (command.startsWith('plugin:event|')) return 0;
+    // The learner records live under the application data directory, keyed by workspace id;
+    // the workspace `id` is the folder's own name, exactly as the create flow writes it.
+    if (command === 'read_learner_record') {
+      const target = path.join(recordsDirectory, args!.workspaceId!, `${args!.file}.json`);
+      try {
+        const text = await readFile(target, 'utf8');
+        return { text, version: createHash('sha256').update(text).digest('hex') };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { text: null, version: null };
+        throw error;
+      }
+    }
+    if (command === 'write_learner_record') {
+      const text = args!.text!;
+      const target = path.join(recordsDirectory, args!.workspaceId!, `${args!.file}.json`);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, text);
+      return createHash('sha256').update(text).digest('hex');
+    }
     // The Pi companion is a separate process behind the same IPC boundary; only its
     // catalog is substituted, so the shared conversation pane runs unchanged.
     if (command === 'conversation_request') {
@@ -63,6 +86,22 @@ test.beforeEach(async ({ page }) => {
     if (command === 'choose_workspace_source_directory') return { path: directory, name: path.basename(directory) };
     if (args?.rootPath !== directory) throw new Error('Unexpected fixture root');
     if (command === 'workspace_source_revision') return String(commits);
+    if (command === 'list_workspace_source_owned_files') {
+      const root = path.join(directory, args!.directory!);
+      const found: string[] = [];
+      const walk = async (current: string): Promise<void> => {
+        for (const entry of await readdir(current, { withFileTypes: true })) {
+          const absolute = path.join(current, entry.name);
+          if (entry.isDirectory()) await walk(absolute);
+          else found.push(path.relative(directory, absolute));
+        }
+      };
+      try { await walk(root); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+        throw error;
+      }
+      return found;
+    }
     if (command === 'read_workspace_source_graph') return readFile(path.join(directory, manifestPath), 'utf8');
     if (command === 'read_workspace_source_document') return readFile(path.join(directory, args.relativePath!), 'utf8');
     if (command === 'read_workspace_source_asset') return [...await readFile(path.join(directory, args.relativePath!))];
@@ -112,6 +151,7 @@ test.afterEach(async ({ page }) => {
   releaseWrites?.();
   await Promise.allSettled(writesInFlight);
   await rm(directory, { recursive: true, force: true });
+  await rm(recordsDirectory, { recursive: true, force: true });
 });
 
 async function seedRecentWorkspace(page: Page): Promise<void> {
@@ -264,6 +304,8 @@ for (const width of [1440, 390, 320]) {
     await page.getByRole('button', { name: '打开文件夹…', exact: true }).click();
     await expect(page.getByRole('button', { name: '图浏览', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
+    // Reopening lands on the authoring side, where mastery marks are not drawn: the concept is
+    // the undecided grey here even though the learner record remembers it.
     const overviewPoint = await page.evaluate(findCanvasPixel, { clientCoordinates: true });
     expect(overviewPoint).toBeDefined();
     await page.mouse.click(overviewPoint!.x, overviewPoint!.y);

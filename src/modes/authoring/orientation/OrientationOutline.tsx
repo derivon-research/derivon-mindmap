@@ -65,7 +65,7 @@ export function OrientationOutline({ content, state, routeSolver, editable }: Or
             </div>}
           </div>
           <OptionRoute content={content} routeSolver={routeSolver} plan={plan} questionId={question.id}
-            optionId={option.id} entryOptionId={index === 0 ? null : state.entryOptionId} />
+            optionId={option.id} entryOptionId={index === 0 ? null : state.entryOptionId} known={draft.seed.known} />
         </li>)}
         {editable && <li><button type="button" className="orientation-add" onClick={() => state.edit((config) => addOption(config, question.id))}>
           <Plus size={13} />添加选项
@@ -86,14 +86,15 @@ function severity(diagnostics: readonly OrientationDiagnostic[], questionId: str
   return here.length ? 'warning' : 'clean';
 }
 
-function OptionRoute({ content, routeSolver, plan, questionId, optionId, entryOptionId }: {
+function OptionRoute({ content, routeSolver, plan, questionId, optionId, entryOptionId, known }: {
   content: WorkspaceContent; routeSolver?: RouteSolver;
-  plan: ReturnType<typeof planOrientation>; questionId: string; optionId: string; entryOptionId: string | null;
+  plan: ReturnType<typeof planOrientation>; questionId: string; optionId: string;
+  entryOptionId: string | null; known: readonly string[];
 }) {
-  const context = optionContext(plan, questionId, optionId, entryOptionId);
+  const context = optionContext(plan, questionId, optionId, entryOptionId, known);
   const isEntry = plan.config?.questions[0]?.id === questionId;
-  const after = useRoutePreview(routeSolver, content.graph, context?.after.targets ?? [], context?.after.known ?? []);
-  const before = useRoutePreview(routeSolver, content.graph, context?.before.targets ?? [], context?.before.known ?? []);
+  const after = useRoutePreview(routeSolver, content.graph, context?.after.run.targets ?? [], context?.after.known ?? []);
+  const before = useRoutePreview(routeSolver, content.graph, context?.before.run.targets ?? [], context?.before.known ?? []);
   if (!context) return <p className="orientation-steps is-muted">当前假设的入口走不到这道题</p>;
   if (after.status !== 'ready') return <p className="orientation-steps is-muted">{describe(after.status)}</p>;
   const steps = after.solution.derivationIds.length;

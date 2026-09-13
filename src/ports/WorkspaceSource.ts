@@ -35,8 +35,14 @@ export interface WritableWorkspaceSource extends WorkspaceSource {
   commit(changes: WorkspaceCommit): Promise<string | void>;
   /**
    * Every file stored under one object's owned directory, as workspace-relative paths,
-   * including assets no document mentions. Deleting an object needs what the host can see
-   * and a document scan cannot.
+   * including assets no document mentions. Two callers need what a document scan cannot see:
+   * deleting an object needs the files it would take with it, and a mastery judgement's
+   * content basis covers every file under the object's directory
+   * (`docs/learner-records.md`).
+   *
+   * It is a read and nothing more, but it sits on the writable source because a source that
+   * cannot commit cannot delete, so it is never asked what an object owns; a learning-only
+   * host grants just this function through `LearningModeProps.readOwnedFiles`.
    *
    * The contract, which the caller checks again rather than trusts: the directory must be
    * one the manifest claims as an object's own, so this is never a recursive listing of an
