@@ -18,6 +18,10 @@ export {
   type LearnerRecordStore, type StoredLearningState, type StoredRoutes,
 } from './store';
 
-export { routeBasis } from './basis';
+export { masteryBasis, routeBasis, type BasisFile } from './basis';
+export {
+  EMPTY_MASTERY, conceptSources, isWithdrawable, knownConceptIds, masterySourceOf, readMastery, writeMastery,
+  type MasteryClaim, type MasteryReading, type MasterySource, type MasteryWrite,
+} from './mastery';
 export { routeIsStale, routeRecord, type ConfirmRouteInput } from './routeRecord';
 export { addRoute, readRoutes, removeRoute, type RouteList } from './routesFile';

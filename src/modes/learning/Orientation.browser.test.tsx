@@ -1,9 +1,11 @@
-import { act, useState } from 'react';
+import { act, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
 import type { LearningModeProps } from '../../app/host';
+import { createMemoryLearnerRecords, type MemoryLearnerRecords } from '../../testing/learnerRecordStore';
+import { createMemoryObjectFiles } from '../../testing/memoryObjectFiles';
 import { fixtureRouteSolver } from '../../testing/routeSolver';
 import {
   ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, parseWorkspaceContent, updateOrientation,
@@ -54,42 +56,69 @@ function workspace(): WorkspaceContent {
   }), documents: { 'docs/d/document.md': { status: 'ready', text: '<main>D body</main>' } } });
 }
 
-type HarnessProps = Partial<LearningModeProps> & Pick<LearningModeProps, 'content'>;
+type HarnessProps = Omit<Partial<LearningModeProps>, 'learnerRecords'> & {
+  readonly content: WorkspaceContent;
+  readonly records: MemoryLearnerRecords;
+};
 
 /**
- * Targets and known concepts are application state, so the harness holds them the way
- * `App` does. A spy that swallowed the change would make the mode look broken.
+ * Targets are application state, so the harness holds them the way `App` does. Known is not:
+ * it comes from the learner record store, which the harness also holds.
  */
-function Harness({ content, targetIds = [], knownIds = [], onChangeTargets, onChangeKnown, ...over }: HarnessProps) {
+function Harness({ content, records, targetIds = [], onChangeTargets, ...over }: HarnessProps) {
   const [targets, setTargets] = useState<readonly string[]>(targetIds);
-  const [known, setKnown] = useState<readonly string[]>(knownIds);
+  const files = useMemo(() => createMemoryObjectFiles({
+    'docs/a/document.md': 'A body', 'docs/b/document.md': 'B body',
+    'docs/c/document.md': 'C body', 'docs/d/document.md': '<main>D body</main>',
+  }), []);
   return <LearningMode workspace={{ id: 'w', name: '开局工作区' }} content={content} active
-    targetIds={targets} knownIds={known} routeSolver={fixtureRouteSolver()}
+    learnerRecords={records.store}
+    targetIds={targets} routeSolver={fixtureRouteSolver()}
+    readOwnedFiles={files.listOwnedFiles} readDocuments={files.readDocuments} readAsset={files.readAsset}
     view="orientation" onEnterView={vi.fn()} onConfirmRoute={vi.fn()}
     onSelectRoute={vi.fn()} activeRouteId={null}
     onChangeTargets={(ids) => { onChangeTargets?.(ids); setTargets(ids); }}
-    onChangeKnown={(ids) => { onChangeKnown?.(ids); setKnown(ids); }}
     {...over} />;
 }
 
+function memoryRecords(knownIds: readonly string[] = []): MemoryLearnerRecords {
+  return createMemoryLearnerRecords('test-workspace', knownIds.length ? {
+    state: {
+      concepts: Object.fromEntries(knownIds.map((id) =>
+        [id, { status: 'complete' as const, basis: 'a'.repeat(64), data: { selfReported: true } }])),
+      derivations: {},
+    },
+  } : {});
+}
+
+async function render(over: Omit<HarnessProps, 'content' | 'records'> & { content?: WorkspaceContent; records?: MemoryLearnerRecords }) {
+  root = createRoot(container);
+  await act(async () => root?.render(<Harness content={over.content ?? workspace()} records={over.records ?? memoryRecords()} {...over} />));
+  await act(async () => { await Promise.resolve(); });
+}
+
+/** What `state.json` holds right now: the concepts the learner's own claim put there. */
+const reported = (records: MemoryLearnerRecords) =>
+  Object.keys((JSON.parse(records.stateText() ?? '{"concepts":{}}') as { concepts: Record<string, unknown> }).concepts).sort();
+
 it('seeds the run, walks the author\'s questions and reaches the route without a conversation provider', async () => {
   const onChangeTargets = vi.fn();
-  const onChangeKnown = vi.fn();
-  const onEnterView = vi.fn();
-  const content = updateOrientation(workspace(), CONFIG).content;
-  root = createRoot(container);
-  await act(async () => root?.render(<Harness content={content} onChangeTargets={onChangeTargets} onChangeKnown={onChangeKnown} onEnterView={onEnterView} />));
+  const records = memoryRecords();
+  await render({ content: updateOrientation(workspace(), CONFIG).content, records, onChangeTargets });
 
-  // The seed reaches application state before a question is answered.
+  // The seed's default known is a workspace default, written before a question is answered —
+  // and marked as a default, because the learner never said it.
   expect(onChangeTargets).toHaveBeenCalledWith(['c']);
-  expect(onChangeKnown).toHaveBeenCalledWith(['a']);
+  await expect.poll(() => reported(records)).toEqual(['a']);
+  expect(records.stateText()).toContain('"orientationSeed": true');
+  expect(records.stateText()).not.toContain('"selfReported": true');
 
   await page.getByRole('button', { name: '要看懂一篇论文' }).click();
   await page.getByRole('button', { name: '基础' }).click();
   await page.getByRole('button', { name: '继续' }).click();
 
   expect(onChangeTargets).toHaveBeenLastCalledWith(['d']);
-  expect(onChangeKnown).toHaveBeenLastCalledWith(['a', 'b']);
+  await expect.poll(() => reported(records)).toEqual(['a', 'b']);
 });
 
 it('falls back to the generic entry with a diagnosis when the configuration is broken', async () => {
@@ -97,8 +126,7 @@ it('falls back to the generic entry with a diagnosis when the configuration is b
   const broken = parseWorkspaceContent({ graph: base.graphText, documents: base.documents,
     companionMetadata: { '.derivon/orientation.json': { status: 'ready', text: JSON.stringify({
       ...CONFIG, seed: { targets: ['gone'], known: [] } }) } } });
-  root = createRoot(container);
-  await act(async () => root?.render(<Harness content={broken} />));
+  await render({ content: broken });
 
   await expect.element(page.getByRole('alert')).toBeVisible();
   expect(container.textContent).toContain('已回到通用入口');
@@ -107,8 +135,7 @@ it('falls back to the generic entry with a diagnosis when the configuration is b
 
 it('offers what the graph builds towards, and records the target the learner picks', async () => {
   const onChangeTargets = vi.fn();
-  root = createRoot(container);
-  await act(async () => root?.render(<Harness content={workspace()} onChangeTargets={onChangeTargets} />));
+  await render({ onChangeTargets });
 
   // `d` is the only concept no derivation consumes, so it is the offered destination.
   await page.getByRole('button', { name: 'D', exact: true }).click();
@@ -116,8 +143,7 @@ it('offers what the graph builds towards, and records the target the learner pic
 });
 
 it('opens a concept document from the search box without leaving the thread', async () => {
-  root = createRoot(container);
-  await act(async () => root?.render(<Harness content={workspace()} />));
+  await render({});
 
   await page.getByRole('textbox', { name: '说出你想学会什么，或搜索一个概念' }).fill('D');
   await page.getByRole('button', { name: '发送' }).click();
@@ -136,38 +162,37 @@ it('opens a concept document from the search box without leaving the thread', as
 });
 
 it('probes with the concepts the route leans on, and marks what the learner says they know', async () => {
-  const onChangeKnown = vi.fn();
-  root = createRoot(container);
-  await act(async () => root?.render(<Harness content={workspace()} targetIds={['d']} onChangeKnown={onChangeKnown} />));
+  const records = memoryRecords();
+  await render({ records, targetIds: ['d'] });
 
   await page.getByRole('button', { name: '就这一个，问我会什么吧' }).click();
   await expect.element(page.getByText('第 1 轮 · 会的点一下')).toBeVisible();
   // `b` is the premise the only route to `d` leans on, so it is worth asking about.
   await page.getByRole('button', { name: 'B', exact: true }).click();
-  expect(onChangeKnown).toHaveBeenLastCalledWith(['b']);
+  await expect.poll(() => reported(records)).toEqual(['b']);
+  expect(records.stateText()).toContain('"selfReported": true');
 });
 
 it('takes a choice back, from the option that made it and from the list of what is known', async () => {
-  root = createRoot(container);
-  await act(async () => root?.render(<Harness content={workspace()} targetIds={['d']} />));
+  const records = memoryRecords();
+  await render({ records, targetIds: ['d'] });
   const known = () => container.querySelector('[data-learning-known]')?.getAttribute('data-learning-known');
 
   await page.getByRole('button', { name: '就这一个，问我会什么吧' }).click();
   await page.getByRole('button', { name: 'B', exact: true }).click();
-  expect(known()).toBe('b');
+  await expect.poll(known).toBe('b');
 
   // The same option, pressed again, is the cancel: nothing else has to be found first.
   await page.getByRole('button', { name: 'B', exact: true }).click();
-  expect(known()).toBe('');
+  await expect.poll(known).toBe('');
 
   await page.getByRole('button', { name: 'B', exact: true }).click();
   await page.getByRole('button', { name: '取消已会 B' }).click();
-  expect(known()).toBe('');
+  await expect.poll(known).toBe('');
 });
 
 it('spends a round when it is asked, so nobody is asked the same thing twice', async () => {
-  root = createRoot(container);
-  await act(async () => root?.render(<Harness content={workspace()} targetIds={['d']} />));
+  await render({ targetIds: ['d'] });
 
   await page.getByRole('button', { name: '就这一个，问我会什么吧' }).click();
   await expect.element(page.getByText('第 1 轮 · 会的点一下')).toBeVisible();
@@ -181,10 +206,41 @@ it('spends a round when it is asked, so nobody is asked the same thing twice', a
 });
 
 it('marks the learner\'s own choices on the overview, and nothing else', async () => {
-  root = createRoot(container);
-  await act(async () => root?.render(<Harness content={workspace()} targetIds={['d']} knownIds={['a']} />));
+  await render({ targetIds: ['d'], records: memoryRecords(['a']) });
   await expect.element(page.getByRole('button', { name: '图：D（target）' })).toBeVisible();
   await expect.element(page.getByRole('button', { name: '图：A（known）' })).toBeVisible();
   // The route is not painted onto the overview (ADR-0003): B is on the route but unmarked.
   await expect.element(page.getByRole('button', { name: '图：B' })).toBeVisible();
+});
+
+it('says where a known concept came from, so a self-report is not read as a judgement', async () => {
+  await render({ targetIds: ['d'], records: memoryRecords(['a']) });
+
+  await page.getByRole('button', { name: '图：A（known）' }).click();
+  await expect.element(page.getByText('自述：我会了')).toBeVisible();
+  await expect.element(page.getByText('其实我不会')).toBeVisible();
+});
+
+it('says the workspace default is a default, not the learner\'s own claim', async () => {
+  await render({ content: updateOrientation(workspace(), CONFIG).content, records: memoryRecords() });
+
+  await page.getByRole('button', { name: '图：A（known）' }).click();
+  await expect.element(page.getByText('默认已知：工作区给的起点')).toBeVisible();
+  expect(container.textContent).not.toContain('自述：我会了');
+});
+
+it('reports a mastery record whose concept is gone instead of feeding it to the solve', async () => {
+  const records = createMemoryLearnerRecords('test-workspace', { state: {
+    concepts: {
+      a: { status: 'complete', basis: 'a'.repeat(64), data: { selfReported: true } },
+      'c-gone': { status: 'complete', basis: 'a'.repeat(64), data: { selfReported: true } },
+    },
+    derivations: {},
+  } });
+  await render({ targetIds: ['d'], records });
+
+  // The orphan is reported and retained, and the run's known set — what a solve is given — is
+  // only what the graph still has.
+  await expect.element(page.getByText(/指向已经不在图里的概念/)).toBeVisible();
+  expect(container.querySelector('[data-derivon-mode="learning"]')?.getAttribute('data-learning-known')).toBe('a');
 });

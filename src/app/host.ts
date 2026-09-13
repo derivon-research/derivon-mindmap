@@ -93,17 +93,22 @@ export type LearningModeProps = {
   readonly workspace: Pick<WorkspaceHandle, 'id' | 'name'>;
   readonly content: WorkspaceContent;
   /**
-   * Where a confirmed route is written. A host with no application data directory has none,
-   * and then a confirmed route lives only in this session — the route stage says so.
+   * Where mastery and confirmed routes are read and written. A host with no application data
+   * directory has none, and then there is nowhere to keep either: a claim is refused with a
+   * reason and a confirmed route is refused too, so the screen says so rather than pretending.
    */
   readonly learnerRecords?: LearnerRecordStore;
   readonly readDocuments?: WorkspaceReader['readDocuments'];
   readonly readAsset?: (path: string) => Promise<Uint8Array>;
+  /**
+   * The host's read-only inventory of one object's owned directory, used to acquire a
+   * judgement's content basis. Absent on a host that cannot list files; then a self-report
+   * says so instead of writing a record against a basis it cannot compute.
+   */
+  readonly readOwnedFiles?: (directory: string) => Promise<readonly string[] >;
   readonly routeSolver?: RouteSolver;
   readonly targetIds: readonly string[];
-  readonly knownIds: readonly string[];
   readonly onChangeTargets: (conceptIds: readonly string[]) => void;
-  readonly onChangeKnown: (conceptIds: readonly string[]) => void;
   /** The stage or view showing, owned by the application because the top bar switches it. */
   readonly view: LearningView;
   readonly onEnterView: (view: LearningView) => void;

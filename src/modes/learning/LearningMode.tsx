@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
-import { addRoute, readRoutes, removeRoute, routeIsStale, routeRecord, type RouteList } from '../../learner-records';
+import {
+  addRoute, conceptSources, EMPTY_MASTERY, readMastery, readRoutes, removeRoute, routeIsStale,
+  routeRecord, writeMastery,
+  type MasteryReading, type MasterySource, type MasteryWrite, type RouteList,
+} from '../../learner-records';
 import { generateObjectId } from '../../workspace/index';
 import { labelOf } from '../ConceptPicker';
 import { GraphBrowse } from './GraphBrowse';
 import './learning.css';
-import { applyOrientationIntent, beginOrientation, planOrientation, type OrientationIntent, type OrientationRun } from './orientation';
+import { objectMasteryBasis } from './objectBasis';
+import {
+  applyOrientationIntent, beginOrientation, orientationSeedKnown, planOrientation,
+  type OrientationIntent, type OrientationRun,
+} from './orientation';
 import { OrientationView } from './OrientationView';
 import { DEFAULT_PANELS, type PanelLayout } from './panels';
 import { RouteLearning } from './RouteLearning';
@@ -29,36 +37,139 @@ const NOTHING_STALE: ReadonlySet<string> = new Set();
  * in the application, because a confirmed route is a record and this component does not own
  * the store it lives in.
  *
+ * Targets stay application state, because they are one solve's input. **Known does not**: it
+ * is the set of concepts with a `complete` record, read from and written back to the learner
+ * records here, so reopening a workspace finds it again
+ * ([ADR-0012](../../docs/adr/0012-learning-state-is-mastery.md)).
+ *
  * Everything a screen would lose by being unmounted lives here: the orientation flow, how far
  * along the route the learner is, and the panel layout.
  */
 export function LearningMode({
-  active = true, content, learnerRecords, targetIds, knownIds, onChangeTargets, onChangeKnown,
+  active = true, content, learnerRecords, targetIds, onChangeTargets,
   routeSolver, view, onEnterView, onConfirmRoute, activeRouteId, onSelectRoute, readAsset, readDocuments,
-  conversation, drainPendingChanges,
+  readOwnedFiles, conversation, drainPendingChanges,
 }: LearningModeProps) {
   const plan = useMemo(() => planOrientation(content), [content]);
   const [flow, setFlow] = useState(() => beginOrientation(plan));
-  const run: OrientationRun = useMemo(
-    () => ({ ...flow, targets: [...targetIds], known: [...knownIds] }),
-    [flow, knownIds, targetIds],
-  );
+  const run: OrientationRun = useMemo(() => ({ ...flow, targets: [...targetIds] }), [flow, targetIds]);
+
+  // The learner records are the source of the known set. `null` means "not read yet", which
+  // is deliberately not the same as "missing file": the orientation seed waits for the read.
+  const [mastery, setMastery] = useState<MasteryReading | null>(null);
+  /** The write landing right now, so the screen answers — with its sources — before the file does. */
+  const [pending, setPending] = useState<MasteryWrite | null>(null);
+  const [knownError, setKnownError] = useState<string | null>(null);
+  const knownSources = useMemo(() => {
+    const sources = new Map<string, MasterySource>(conceptSources(mastery?.state ?? EMPTY_MASTERY));
+    if (!pending) return sources;
+    for (const conceptId of pending.withdrawn) sources.delete(conceptId);
+    for (const claim of pending.claimed) sources.set(claim.conceptId, claim.source);
+    return sources;
+  }, [mastery, pending]);
+  const knownIds = useMemo(() => [...knownSources.keys()].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
+    [knownSources]);
+  const graphConceptIds = useMemo(() => new Set(content.graph.points.map((point) => point.id)), [content.graph]);
+  // A solve is given concepts the graph has. An orphaned record — the object was deleted — is
+  // retained and reported, but it is not a start point, and the solver would refuse it.
+  const liveKnownIds = useMemo(() => knownIds.filter((conceptId) => graphConceptIds.has(conceptId)),
+    [graphConceptIds, knownIds]);
+  const orphanIds = useMemo(() => knownIds.filter((conceptId) => !graphConceptIds.has(conceptId)),
+    [graphConceptIds, knownIds]);
+
+  useEffect(() => {
+    if (!learnerRecords) { setMastery(null); return; }
+    let cancelled = false;
+    void readMastery(learnerRecords).then((value) => { if (!cancelled) setMastery(value); });
+    return () => { cancelled = true; };
+  }, [learnerRecords]);
+
   const seeded = useRef(false);
   useEffect(() => {
     seeded.current = true;
     if (!targetIds.length && flow.targets.length) onChangeTargets(flow.targets);
-    if (!knownIds.length && flow.known.length) onChangeKnown(flow.known);
-  }, [flow.known, flow.targets, knownIds.length, targetIds.length, onChangeKnown, onChangeTargets]);
+  }, [flow.targets, targetIds.length, onChangeTargets]);
+
+  /**
+   * The basis a self-report is written against: the object's manifest entry plus every file
+   * under its document directory. Without a store or a file inventory there is nowhere to
+   * write and nothing to write against, so the claim is refused rather than faked.
+   */
+  const basisFor = useCallback(async (conceptId: string): Promise<string> => {
+    const concept = content.graph.points.find((point) => point.id === conceptId);
+    if (!concept) throw new Error(`图里没有「${conceptId}」，不能把它写成已知`);
+    if (!readOwnedFiles || !readDocuments || !readAsset) {
+      throw new Error('这个宿主列不出对象所属的文件，自述所依据的内容版本算不出来');
+    }
+    return objectMasteryBasis(content.graph, concept.data.document, conceptId, {
+      listOwnedFiles: readOwnedFiles, readDocuments, readAsset,
+    });
+  }, [content.graph, readAsset, readDocuments, readOwnedFiles]);
+
+  /**
+   * Persist the known set a step asks for. Only the difference is written: new concepts become
+   * claims, and concepts dropped from the set lose the learner's own claim — a judgement the
+   * application made is never withdrawn by a learner turning a chip off.
+   */
+  const persistKnown = useCallback(async (
+    next: readonly string[], source: 'selfReported' | 'orientationSeed',
+  ) => {
+    const nextSet = new Set(next);
+    // A concept the learner claims upgrades the workspace's default to their own claim; a
+    // default never downgrades a claim, and nothing overwrites a judgement.
+    const claims = next.filter((conceptId) => {
+      const current = knownSources.get(conceptId);
+      return current === undefined || (current === 'orientationSeed' && source === 'selfReported');
+    });
+    const withdrawn = [...knownSources]
+      .filter(([conceptId, current]) => !nextSet.has(conceptId) && current !== 'judged'
+        && graphConceptIds.has(conceptId))
+      .map(([conceptId]) => conceptId);
+    if (!claims.length && !withdrawn.length) return;
+    setKnownError(null);
+    if (!learnerRecords) {
+      setKnownError('这个宿主没有应用数据目录，自述无处可存，所以没有记下来。');
+      return;
+    }
+    // The screen answers before the write lands, sources included; a refusal takes it back off.
+    setPending({ claimed: claims.map((conceptId) => ({ conceptId, basis: '', source })), withdrawn });
+    try {
+      const basis = await Promise.all(claims.map(async (conceptId) => ({ conceptId, basis: await basisFor(conceptId), source })));
+      setMastery(await writeMastery(learnerRecords, { claimed: basis, withdrawn }));
+    } catch (error) {
+      setKnownError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(null);
+    }
+  }, [basisFor, graphConceptIds, knownSources, learnerRecords]);
+
+  /**
+   * The configuration's default known is a starting baseline, not an assessment: it is
+   * written once, when this learner has no record file at all. Reopening after the learner
+   * took one back must not put it there again.
+   */
+  const seededKnown = useRef(false);
+  useEffect(() => {
+    if (seededKnown.current || mastery === null || mastery.presence !== 'missing' || mastery.issue !== null) return;
+    seededKnown.current = true;
+    const seed = orientationSeedKnown(plan);
+    if (seed.length) void persistKnown([...new Set([...liveKnownIds, ...seed])], 'orientationSeed');
+  }, [liveKnownIds, mastery, persistKnown, plan]);
 
   const intent = (value: OrientationIntent) => {
-    const next = applyOrientationIntent(plan, run, value);
-    setFlow(next);
-    onChangeTargets(next.targets);
-    onChangeKnown(next.known);
+    const step = applyOrientationIntent(plan, run, liveKnownIds, value);
+    setFlow(step.run);
+    onChangeTargets(step.run.targets);
+    // A restart puts the configuration's defaults back as defaults; every other intent is the
+    // learner's own action, and their claim is what it writes.
+    void persistKnown(step.known, value.kind === 'restart' ? 'orientationSeed' : 'selfReported');
   };
 
   const graph = useMemo(() => content.graph, [content.graphText]);
-  const preview = useRoutePreview(routeSolver, graph, targetIds, knownIds);
+  // A host with no record store has no known set to wait for, and neither has one that read
+  // and found nothing: only the read in flight is worth waiting for.
+  const preview = useRoutePreview(routeSolver, graph, targetIds,
+    mastery === null && learnerRecords ? null : liveKnownIds);
   const [panels, setPanels] = useState<PanelLayout>(DEFAULT_PANELS);
   const [walk, setWalk] = useState(initialLearningWalkState);
 
@@ -119,11 +230,11 @@ export function LearningMode({
         id: generateObjectId('r', listed.routes.map((route) => route.id)),
         // The name is derived, not asked for: a route is not edited, so there is nowhere a
         // learner could change it, and the starting point is what tells two routes apart.
-        description: `从 ${knownIds.length ? knownIds.map((id) => labelOf(graph, id)).join('、') : '零'} 走到 ${targetIds.map((id) => labelOf(graph, id)).join('、')}`,
+        description: `从 ${liveKnownIds.length ? liveKnownIds.map((id) => labelOf(graph, id)).join('、') : '零'} 走到 ${targetIds.map((id) => labelOf(graph, id)).join('、')}`,
         graph,
         solution: solved,
         targets: targetIds,
-        known: knownIds,
+        known: liveKnownIds,
       });
       setListed(await addRoute(learnerRecords, record));
       setWalk(startRoute);
@@ -167,8 +278,17 @@ export function LearningMode({
   const walking = view === 'route' && activeRecord !== null;
 
   return <section className="learning-workbench" data-derivon-mode="learning" data-learning-view={view}
-    data-learning-targets={targetIds.join(' ')} data-learning-known={knownIds.join(' ')}
+    data-learning-targets={targetIds.join(' ')} data-learning-known={liveKnownIds.join(' ')}
+    data-learning-self-reported={[...knownSources].filter(([, source]) => source === 'selfReported').map(([id]) => id).join(' ')}
     data-learning-active-route={activeRouteId ?? ''} aria-label="学习侧">
+    {mastery?.issue && <p className="learning-record-issue" role="alert">
+      掌握记录读不出来：{mastery.issue}。在你修好它之前，已经会的概念都按没有算。
+    </p>}
+    {orphanIds.length > 0 && <p className="learning-record-issue" role="status">
+      有 {orphanIds.length} 条掌握记录指向已经不在图里的概念（{orphanIds.join('、')}）。它们被保留着、不参与求解，也不会被自动删掉。
+    </p>}
+    {knownError && <p className="learning-record-issue" role="alert">{knownError}</p>}
+
     {view === 'orientation' && (reviewing
       ? <RoutePreviewView active={active} graph={content.graph} tags={content.tags}
         preview={preview} targetIds={targetIds} knownIds={knownIds} confirming={writing}
@@ -177,6 +297,7 @@ export function LearningMode({
         onConfirm={() => { void confirmRoute(); }}
         onBackToOrientation={() => setReviewing(false)} onBrowse={() => onEnterView('browse')} />
       : <OrientationView active={active} content={content} plan={plan} run={run}
+        knownIds={liveKnownIds} knownSources={knownSources}
         preview={preview} onIntent={intent} onEnterPreview={() => setReviewing(true)}
         readAsset={readAsset} readDocuments={readDocuments} />)}
 
@@ -186,6 +307,7 @@ export function LearningMode({
 
     {walking && activeRecord && <RouteLearning active={active} content={content}
       solution={routeSolutionOf(activeRecord)} targetIds={[...activeRecord.targets]} knownIds={[...activeRecord.known]}
+      knownSources={knownSources}
       stale={stale.has(activeRecord.id)} cursor={walk.cursor} onCursor={moveCursor}
       revealed={walk.revealed} onReveal={(id) => setWalk((current) => revealDefinition(current, id))}
       tasksDone={walk.taskCompletions} onTaskDone={completeTask}
@@ -193,7 +315,8 @@ export function LearningMode({
       onSwitchRoute={() => onSelectRoute(null)} readAsset={readAsset} readDocuments={readDocuments}
       conversation={conversation} drainPendingChanges={drainPendingChanges} />}
 
-    {view === 'browse' && <GraphBrowse active={active} content={content} targetIds={targetIds} knownIds={knownIds}
+    {view === 'browse' && <GraphBrowse active={active} content={content} targetIds={targetIds} knownIds={liveKnownIds}
+      knownSources={knownSources}
       onToggleTarget={toggleTarget} onToggleKnown={toggleKnown}
       onBackToOrientation={() => onEnterView('orientation')}
       readAsset={readAsset} readDocuments={readDocuments} />}

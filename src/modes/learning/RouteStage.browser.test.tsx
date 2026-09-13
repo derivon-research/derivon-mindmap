@@ -1,4 +1,4 @@
-import { act, useState } from 'react';
+import { act, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -7,6 +7,7 @@ import type { RouteRecord } from '../../learner-records';
 import { routeBasis } from '../../learner-records/basis';
 import type { LearningView } from '../../app/host';
 import { createMemoryLearnerRecords, type MemoryLearnerRecords } from '../../testing/learnerRecordStore';
+import { createMemoryObjectFiles } from '../../testing/memoryObjectFiles';
 import { fixtureRouteSolver } from '../../testing/routeSolver';
 import { WORKSPACE_SCHEMA, parseWorkspaceContent, type WorkspaceContent } from '../../workspace/index';
 
@@ -56,12 +57,16 @@ function Harness({
   onEnterView?: (view: LearningView) => void;
 }) {
   const [targets, setTargets] = useState<readonly string[]>(['c']);
-  const [known, setKnown] = useState<readonly string[]>(['a']);
+  const files = useMemo(() => createMemoryObjectFiles({
+    'docs/a/document.md': 'A', 'docs/b/document.md': 'B', 'docs/c/document.md': 'C',
+    'docs/d1/document.md': '第一步', 'docs/d2/document.md': '第二步',
+  }), []);
   return <LearningMode workspace={{ id: 'test-workspace', name: '路线工作区' }} content={content} active
-    learnerRecords={records?.store} targetIds={targets} knownIds={known} routeSolver={fixtureRouteSolver()}
+    learnerRecords={records?.store} targetIds={targets} routeSolver={fixtureRouteSolver()}
+    readOwnedFiles={files.listOwnedFiles} readDocuments={files.readDocuments} readAsset={files.readAsset}
     view={view} onEnterView={onEnterView} activeRouteId={activeRouteId}
     onConfirmRoute={onConfirmRoute} onSelectRoute={onSelectRoute}
-    onChangeTargets={setTargets} onChangeKnown={setKnown} />;
+    onChangeTargets={setTargets} />;
 }
 
 async function render(over: Parameters<typeof Harness>[0] = {}) {
@@ -71,7 +76,9 @@ async function render(over: Parameters<typeof Harness>[0] = {}) {
 }
 
 it('leaves no record behind while the learner is only looking at the route it computed', async () => {
-  const records = createMemoryLearnerRecords();
+  const records = createMemoryLearnerRecords('test-workspace', {
+    state: { concepts: { a: { status: 'complete', basis: 'a'.repeat(64), data: { selfReported: true } } }, derivations: {} },
+  });
   await render({ records, view: 'orientation' });
   await page.getByRole('button', { name: '去看路线' }).click();
   await expect.element(page.getByText('这是算出来的路线')).toBeVisible();
@@ -157,7 +164,9 @@ it('puts the way into the route above the steps, not at the bottom of them', asy
 it('offers no confirmation on a host with nowhere to keep the route', async () => {
   await render({ view: 'orientation' });
   await page.getByRole('button', { name: '去看路线' }).click();
-  await expect.element(page.getByText('这是算出来的路线')).toBeVisible();
+  // No record store means no known concepts either, so this graph yields no route at all;
+  // what matters here is that confirming is blocked with a reason rather than silently lost.
+  await expect.element(page.getByText('还没有可以走的路线')).toBeVisible();
   expect((page.getByRole('button', { name: '开始学' }).element() as HTMLButtonElement).disabled).toBe(true);
   expect(container.textContent).toContain('这个宿主没有应用数据目录');
 });
@@ -198,7 +207,10 @@ it('has one way back to creating a route, and no way to edit an existing one', a
 });
 
 it('keeps the computed route inside creating one, instead of giving it a screen of its own', async () => {
-  await render({ view: 'orientation' });
+  const records = createMemoryLearnerRecords('test-workspace', {
+    state: { concepts: { a: { status: 'complete', basis: 'a'.repeat(64), data: { selfReported: true } } }, derivations: {} },
+  });
+  await render({ records, view: 'orientation' });
   await page.getByRole('button', { name: '去看路线' }).click();
   await expect.element(page.getByText('这是算出来的路线')).toBeVisible();
   // The screen is still the one the top bar calls 创建路线 — the route it computed is a step in it.

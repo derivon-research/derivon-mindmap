@@ -41,33 +41,33 @@ describe('the assumption behind a follow-up route', () => {
 
   it('reaches the opening question with no assumption at all', () => {
     // Only the seed is settled: no answer, no trail, and no probe round spent.
-    expect(arrivalState(plan(), 'why', null))
-      .toEqual({ targets: ['a'], known: [], at: 0, trail: [], asked: [], round: 0 });
+    expect(arrivalState(plan(), 'why', null, []))
+      .toEqual({ run: { targets: ['a'], at: 0, trail: [], asked: [], round: 0 }, known: [] });
   });
 
   it('offers only the entries that can actually reach a follow-up', () => {
     const p = plan();
-    expect(entriesReaching(p, 'svd-background').map((option) => option.id)).toEqual(['paper']);
-    expect(entriesReaching(p, 'general').map((option) => option.id)).toEqual(['class']);
-    expect(arrivalState(p, 'general', 'paper')).toBeNull();
+    expect(entriesReaching(p, 'svd-background', []).map((option) => option.id)).toEqual(['paper']);
+    expect(entriesReaching(p, 'general', []).map((option) => option.id)).toEqual(['class']);
+    expect(arrivalState(p, 'general', 'paper', [])).toBeNull();
   });
 
   it('carries the entry answer into the arrival state and stops guessing there', () => {
-    const arrived = arrivalState(plan(), 'svd-background', 'paper');
-    expect(arrived).toEqual(expect.objectContaining({ targets: ['d'], known: [] }));
+    const arrived = arrivalState(plan(), 'svd-background', 'paper', []);
+    expect(arrived).toEqual(expect.objectContaining({ run: expect.objectContaining({ targets: ['d'] }), known: [] }));
   });
 
   it('shows what one follow-up option adds on top of that arrival', () => {
-    const context = optionContext(plan(), 'svd-background', 'has-basics', 'paper');
+    const context = optionContext(plan(), 'svd-background', 'has-basics', 'paper', []);
     expect(context!.before.known).toEqual([]);
     expect(context!.after.known).toEqual(['a', 'b']);
-    expect(context!.after.targets).toEqual(['d']);
+    expect(context!.after.run.targets).toEqual(['d']);
     // The author is inspecting a row, so the flow stays where it is.
-    expect(context!.after.at).toBe(context!.before.at);
+    expect(context!.after.run.at).toBe(context!.before.run.at);
   });
 
   it('reports an option that changes nothing, which is the point of showing this at all', () => {
-    const context = optionContext(plan(), 'svd-background', 'none', 'paper');
+    const context = optionContext(plan(), 'svd-background', 'none', 'paper', []);
     expect(context!.after).toEqual(context!.before);
   });
 });

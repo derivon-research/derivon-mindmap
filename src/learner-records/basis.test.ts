@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseWorkspaceManifest, type ManifestGraph } from '../workspace/index';
-import { routeBasis } from './basis';
+import { masteryBasis, routeBasis } from './basis';
 
 /**
  * The route basis follows `docs/learner-records.md`: one SHA-256 stream over the manifest
@@ -77,5 +77,40 @@ describe('routeBasis', () => {
 
   it('is a lowercase SHA-256 rendered as hexadecimal', async () => {
     await expect(routeBasis(graph(), ['c-a'])).resolves.toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+/**
+ * The mastery basis follows the same stream as the route basis but a different coverage: the
+ * object's manifest entry plus every file under its document directory. The expected digest
+ * below was computed independently with `node:crypto`, encoding those records by hand.
+ */
+const MASTERY_ANSWER = '947b928fa62a028d84d66cbb772069c304d6d4e6a702aba8189df5f333293841';
+const document = { path: 'docs/a/document.md', bytes: new TextEncoder().encode('hello') };
+
+describe('masteryBasis', () => {
+  it('hashes the object entry together with the files under its document directory', async () => {
+    await expect(masteryBasis(graph(), 'c-a', [document])).resolves.toBe(MASTERY_ANSWER);
+  });
+
+  it('does not care what order the files are given in', async () => {
+    const second = { path: 'docs/a/assets/x.png', bytes: new Uint8Array([1, 2, 3]) };
+    await expect(masteryBasis(graph(), 'c-a', [second, document]))
+      .resolves.toBe(await masteryBasis(graph(), 'c-a', [document, second]));
+  });
+
+  it('changes when a document or an asset under the object changes', async () => {
+    const renamed = { ...document, path: 'docs/a/document.md', bytes: new TextEncoder().encode('hello!') };
+    await expect(masteryBasis(graph(), 'c-a', [renamed])).resolves.not.toBe(MASTERY_ANSWER);
+  });
+
+  it('changes when the object entry changes, and when the object is gone', async () => {
+    const edited = graph({ points: [{ ...conceptA, data: { ...conceptA.data, label: 'A′' } }, conceptB] });
+    await expect(masteryBasis(edited, 'c-a', [document])).resolves.not.toBe(MASTERY_ANSWER);
+    await expect(masteryBasis(graph({ points: [conceptB], hyperedges: [] }), 'c-a', [document])).resolves.not.toBe(MASTERY_ANSWER);
+  });
+
+  it('is not the same value as a route basis over the same object', async () => {
+    await expect(masteryBasis(graph(), 'c-a', [document])).resolves.not.toBe(await routeBasis(graph(), ['c-a']));
   });
 });

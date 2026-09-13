@@ -20,14 +20,16 @@ export function useRoutePreview(
   solver: RouteSolver | undefined,
   graph: WorkspaceGraph,
   targetIds: readonly string[],
-  knownIds: readonly string[],
+  /** `null` means the live known set has not been read yet; solving now would waste a solve. */
+  knownIds: readonly string[] | null,
 ): RoutePreview {
   const [preview, setPreview] = useState<RoutePreview>({ status: 'empty' });
   const targets = targetIds.join(' ');
-  const known = knownIds.join(' ');
+  const known = knownIds === null ? null : knownIds.join(' ');
   useEffect(() => {
     if (!solver) { setPreview({ status: 'unavailable' }); return; }
     if (!targets) { setPreview({ status: 'empty' }); return; }
+    if (known === null) { setPreview({ status: 'solving' }); return; }
     let cancelled = false;
     setPreview({ status: 'solving' });
     void solver.solve(graph, { targetConceptIds: targets.split(' '), knownConceptIds: known ? known.split(' ') : [] })

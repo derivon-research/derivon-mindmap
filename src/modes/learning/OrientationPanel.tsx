@@ -12,6 +12,8 @@ export type OrientationPanelProps = {
   readonly tags: readonly TagDeclaration[];
   readonly plan: OrientationPlan;
   readonly run: OrientationRun;
+  /** The known set the run assumes; on the authoring side a preview input, not a learner record. */
+  readonly known: readonly string[];
   readonly routeSolver?: RouteSolver;
   readonly onIntent: (intent: OrientationIntent) => void;
   readonly onEnter: () => void;
@@ -22,7 +24,7 @@ export type OrientationPanelProps = {
  * transitions every other surface drives. The authoring side previews a configuration
  * through it; the learner's own entry is `OrientationView`.
  */
-export function OrientationPanel({ graph, tags, plan, run, routeSolver, onIntent, onEnter }: OrientationPanelProps) {
+export function OrientationPanel({ graph, tags, plan, run, known, routeSolver, onIntent, onEnter }: OrientationPanelProps) {
   const question = currentQuestion(plan, run);
 
   return <section className="orientation" aria-label="开局">
@@ -33,13 +35,13 @@ export function OrientationPanel({ graph, tags, plan, run, routeSolver, onIntent
     {question ? <OrientationQuestionBlock key={question.id} question={question}
       onAnswer={(optionIds) => onIntent({ kind: 'answer', optionIds })}
       onSkip={() => onIntent({ kind: 'skip' })} />
-      : <OrientationSummary graph={graph} tags={tags} plan={plan} run={run} routeSolver={routeSolver}
+      : <OrientationSummary graph={graph} tags={tags} plan={plan} run={run} known={known} routeSolver={routeSolver}
         onIntent={onIntent} onEnter={onEnter} />}
   </section>;
 }
 
-function OrientationSummary({ graph, tags, plan, run, routeSolver, onIntent, onEnter }: OrientationPanelProps) {
-  const route = useRoutePreview(routeSolver, graph, run.targets, run.known);
+function OrientationSummary({ graph, tags, plan, run, known, routeSolver, onIntent, onEnter }: OrientationPanelProps) {
+  const route = useRoutePreview(routeSolver, graph, run.targets, known);
   const generic = plan.kind === 'generic';
   return <div className="orientation-summary">
     <h2>{generic ? '想学什么？' : '这是你的起点'}</h2>
@@ -47,14 +49,14 @@ function OrientationSummary({ graph, tags, plan, run, routeSolver, onIntent, onE
       ? <>
         <ConceptPicker label="目标概念" graph={graph} tags={tags} selected={run.targets}
           emptyNote="还没有选择目标概念" onChange={(ids) => onIntent({ kind: 'set-targets', conceptIds: ids })} />
-        <ConceptPicker label="已经会的概念" graph={graph} tags={tags} selected={run.known}
+        <ConceptPicker label="已经会的概念" graph={graph} tags={tags} selected={known}
           emptyNote="还没有标记已经会的概念" onChange={(ids) => onIntent({ kind: 'set-known', conceptIds: ids })} />
       </>
       : <dl className="orientation-result">
         <dt>目标</dt>
         <dd>{run.targets.length ? run.targets.map((id) => labelOf(graph, id)).join('、') : '尚未确定'}</dd>
         <dt>已知</dt>
-        <dd>{run.known.length ? run.known.map((id) => labelOf(graph, id)).join('、') : '从零开始'}</dd>
+        <dd>{known.length ? known.map((id) => labelOf(graph, id)).join('、') : '从零开始'}</dd>
       </dl>}
     <RouteSummary route={route} graph={graph} />
     <footer className="orientation-actions">

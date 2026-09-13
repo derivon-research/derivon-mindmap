@@ -1,12 +1,14 @@
 import { ArrowRight, Check, ChevronRight, Maximize2, Minimize2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
+import type { MasterySource } from '../../learner-records';
 import type { RouteSolution } from '../../ports/RouteSolver';
 import { currentInputStartedAtMs, emitInteractionCompleteTestHook } from '../../testHooks';
 import type { WorkspaceContent } from '../../workspace/index';
 import { labelOf } from '../ConceptPicker';
 import { RetainedGraph } from '../RetainedGraph';
 import { routeGraphView, routeSteps, type RouteStep } from '../routePreview';
+import { KNOWN_SOURCE_TAG } from './knownSource';
 import { LearningAgentPane } from './LearningAgentPane';
 import { ObjectDocument } from './ObjectDocument';
 import { setPanel, type PanelLayout, type PanelSide, type PanelState } from './panels';
@@ -22,6 +24,8 @@ export type RouteLearningProps = {
   readonly solution: RouteSolution;
   readonly targetIds: readonly string[];
   readonly knownIds: readonly string[];
+  /** Where each known concept's knowledge came from, so a self-report is not read as a judgement. */
+  readonly knownSources?: ReadonlyMap<string, MasterySource>;
   /** Where along the route the learner is; owned above so switching views does not reset it. */
   readonly cursor: number;
   readonly onCursor: (index: number) => void;
@@ -55,7 +59,7 @@ export type RouteLearningProps = {
  * learner has used the concept for something.
  */
 export function RouteLearning({
-  active, content, solution, targetIds, knownIds, cursor, onCursor, revealed, onReveal,
+  active, content, solution, targetIds, knownIds, knownSources = new Map(), cursor, onCursor, revealed, onReveal,
   tasksDone, onTaskDone, panels, onPanels, onKnow, stale = false, onSwitchRoute, readAsset, readDocuments, conversation,
   drainPendingChanges,
 }: RouteLearningProps) {
@@ -170,6 +174,9 @@ export function RouteLearning({
               onClick={() => onCursor(index)}>
               <span className="learning-rail-index">{step.index}</span>
               <span className="learning-rail-label">{step.label}</span>
+              {knownSources.get(step.conceptId) && <span className="learning-rail-source">
+                {KNOWN_SOURCE_TAG[knownSources.get(step.conceptId)!]}
+              </span>}
               {stepCompleted(step) && <Check size={13} aria-hidden="true" />}
             </button>
           </li>)}

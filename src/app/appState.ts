@@ -14,8 +14,6 @@ export type AppState = {
   readonly visitedModes: readonly AppMode[];
   readonly selectedConceptId: string | null;
   readonly learningTargetIds: readonly string[];
-  /** This session's known concepts, produced by orientation. */
-  readonly learningKnownIds: readonly string[];
   /** The learning stage or view showing; the top bar switches it, so the application owns it. */
   readonly learningView: LearningView;
   /**
@@ -46,7 +44,6 @@ export function initialAppState({ hostId, modes, workspace = null }: InitialAppS
     visitedModes: workspace ? [modes[0]] : [],
     selectedConceptId: null,
     learningTargetIds: [],
-    learningKnownIds: [],
     learningView: 'orientation',
     learningActiveRouteId: null,
     carriedConceptId: null,
@@ -66,7 +63,6 @@ export function openWorkspace(state: AppState, workspace: WorkspaceHandle): AppS
     visitedModes: [mode],
     selectedConceptId: null,
     learningTargetIds: [],
-    learningKnownIds: [],
     learningView: 'orientation',
     learningActiveRouteId: null,
     carriedConceptId: null,
@@ -89,12 +85,6 @@ const same = (left: readonly string[], right: readonly string[]) =>
 export function setLearningTargets(state: AppState, conceptIds: readonly string[]): AppState {
   if (same(state.learningTargetIds, conceptIds)) return state;
   return { ...state, learningTargetIds: [...conceptIds] };
-}
-
-/** The known set orientation produced; session state alongside the targets. */
-export function setLearningKnown(state: AppState, conceptIds: readonly string[]): AppState {
-  if (same(state.learningKnownIds, conceptIds)) return state;
-  return { ...state, learningKnownIds: [...conceptIds] };
 }
 
 /**

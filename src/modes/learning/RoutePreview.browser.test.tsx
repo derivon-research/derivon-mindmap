@@ -37,17 +37,23 @@ function Harness({ routeSolver, onConfirmRoute = vi.fn(), onEnterView = vi.fn(),
   routeSolver?: RouteSolver;
   onConfirmRoute?: () => void;
   onEnterView?: (view: 'orientation' | 'route' | 'browse') => void;
+  /** Concept ids this learner already knows, written as self-reported mastery records. */
   knownIds?: readonly string[];
 }) {
   const [content] = useState(workspace);
   const [targets, setTargets] = useState<readonly string[]>(['c']);
-  const [known, setKnown] = useState<readonly string[]>(knownIds);
-  const [records] = useState(() => createMemoryLearnerRecords());
+  const [records] = useState(() => createMemoryLearnerRecords('test-workspace', {
+    state: {
+      concepts: Object.fromEntries(knownIds.map((id) =>
+        [id, { status: 'complete' as const, basis: 'a'.repeat(64), data: { selfReported: true } }])),
+      derivations: {},
+    },
+  }));
   return <LearningMode workspace={{ id: 'w', name: '路线工作区' }} content={content} active
-    learnerRecords={records.store} targetIds={targets} knownIds={known} routeSolver={routeSolver}
+    learnerRecords={records.store} targetIds={targets} routeSolver={routeSolver}
     view="orientation" onEnterView={onEnterView} onConfirmRoute={onConfirmRoute} activeRouteId={null}
     onSelectRoute={vi.fn()}
-    onChangeTargets={setTargets} onChangeKnown={setKnown} />;
+    onChangeTargets={setTargets} />;
 }
 
 async function render(over: Parameters<typeof Harness>[0] = {}) {

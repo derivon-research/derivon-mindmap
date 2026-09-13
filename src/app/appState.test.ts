@@ -8,7 +8,6 @@ import {
   openWorkspace,
   selectConcept,
   selectLearningRoute,
-  setLearningKnown,
   setLearningTargets,
   type AppState,
 } from './appState';
@@ -159,10 +158,9 @@ describe('the learning side views', () => {
     expect(confirmed.learningView).toBe('route');
   });
 
-  it('leaves the active route alone when targets or known concepts change, because a route carries its own', () => {
+  it('leaves the active route alone when targets change, because a route carries its own', () => {
     const confirmed = confirmLearningRoute(learning(), 'r-k7f3q2');
     expect(setLearningTargets(confirmed, ['svd', 'pseudoinverse']).learningActiveRouteId).toBe('r-k7f3q2');
-    expect(setLearningKnown(confirmed, ['basis']).learningActiveRouteId).toBe('r-k7f3q2');
   });
 
   it('switches which confirmed route is showing, and can drop back to choosing one', () => {

@@ -37,63 +37,64 @@ const solution: RouteSolution = {
 
 const plan: OrientationPlan = { kind: 'generic', graph, config: null };
 const run = (over: Partial<OrientationRun> = {}): OrientationRun => ({ ...beginOrientation(plan), ...over });
+const known = (...ids: readonly string[]) => ids;
 
 describe('routeProbeCandidates', () => {
   it('ranks by how much of the route a concept carries, not by name', () => {
-    const candidates = routeProbeCandidates(graph, solution, run());
+    const candidates = routeProbeCandidates(graph, solution, run(), []);
     // zeta is a premise of three steps; alphabetical order would have put it last.
     expect(candidates[0]).toBe('zeta');
     expect(candidates).not.toEqual([...candidates].sort());
   });
 
   it('leaves out what the learner already knows and what an earlier round asked', () => {
-    const candidates = routeProbeCandidates(graph, solution, run({ known: ['zeta'], asked: ['beta'] }));
+    const candidates = routeProbeCandidates(graph, solution, run({ asked: ['beta'] }), known('zeta'));
     expect(candidates).not.toContain('zeta');
     expect(candidates).not.toContain('beta');
   });
 
   it('breaks a tie by route position, so an earlier step is offered first', () => {
     // delta carries two steps; alpha and omega carry one each, alpha at d2 and omega at d4.
-    const candidates = routeProbeCandidates(graph, solution, run({ known: ['zeta'], asked: ['beta', 'gamma'] }));
+    const candidates = routeProbeCandidates(graph, solution, run({ asked: ['beta', 'gamma'] }), known('zeta'));
     expect(candidates).toEqual(['delta', 'alpha', 'omega']);
   });
 
   it('offers at most the asked-for round size', () => {
-    expect(routeProbeCandidates(graph, solution, run(), 2)).toHaveLength(2);
+    expect(routeProbeCandidates(graph, solution, run(), [], 2)).toHaveLength(2);
   });
 
   it('has nothing left to ask once every concept on the route is settled', () => {
-    expect(routeProbeCandidates(graph, solution, run({ known: solution.conceptIds }))).toEqual([]);
+    expect(routeProbeCandidates(graph, solution, run(), solution.conceptIds)).toEqual([]);
   });
 });
 
 describe('graphProbeCandidates', () => {
   it('ranks by how many derivations lean on the concept, so a host without a solver still probes', () => {
     // zeta is a premise of d1, d2 and d3; everything else is a premise of one.
-    expect(graphProbeCandidates(graph, run())[0]).toBe('zeta');
+    expect(graphProbeCandidates(graph, run(), [])[0]).toBe('zeta');
   });
 
   it('counts only the derivations that could reach the target, not popularity across the graph', () => {
     // Only d1 can reach beta, so zeta's other two appearances are irrelevant here and beta's
     // one premise is the only thing worth asking — popularity would still have led with zeta,
     // but it would also have offered alpha and gamma, whose answers cannot shorten this route.
-    expect(graphProbeCandidates(graph, run({ targets: ['beta'] }))).toEqual(['zeta']);
+    expect(graphProbeCandidates(graph, run({ targets: ['beta'] }), [])).toEqual(['zeta']);
     // gamma is reached through d2, which leans on zeta and alpha; delta's chain is not involved.
-    expect(graphProbeCandidates(graph, run({ targets: ['gamma'] }))).toEqual(['alpha', 'zeta']);
+    expect(graphProbeCandidates(graph, run({ targets: ['gamma'] }), [])).toEqual(['alpha', 'zeta']);
   });
 
   it('never offers a concept no derivation builds on, because knowing it prunes nothing', () => {
     // Nothing is derived from omega, so its answer cannot shorten anything.
-    expect(graphProbeCandidates(graph, run())).not.toContain('omega');
+    expect(graphProbeCandidates(graph, run(), [])).not.toContain('omega');
   });
 
   it('leaves out what the learner already knows and what an earlier round asked', () => {
-    const candidates = graphProbeCandidates(graph, run({ known: ['zeta'], asked: ['beta'] }));
+    const candidates = graphProbeCandidates(graph, run({ asked: ['beta'] }), known('zeta'));
     expect(candidates).not.toContain('zeta');
     expect(candidates).not.toContain('beta');
   });
 
   it('offers at most the asked-for round size', () => {
-    expect(graphProbeCandidates(graph, run(), 2)).toHaveLength(2);
+    expect(graphProbeCandidates(graph, run(), [], 2)).toHaveLength(2);
   });
 });

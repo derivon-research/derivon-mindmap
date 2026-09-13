@@ -9,7 +9,6 @@ import {
   openWorkspace,
   selectConcept,
   selectLearningRoute,
-  setLearningKnown,
   setLearningTargets,
   type AppState,
 } from './appState';
@@ -130,10 +129,6 @@ export default function App({ host }: { host: Host }) {
     setState((current) => (current ? setLearningTargets(current, conceptIds) : current));
   }, []);
 
-  const handleChangeKnown = useCallback((conceptIds: readonly string[]) => {
-    setState((current) => (current ? setLearningKnown(current, conceptIds) : current));
-  }, []);
-
   const handleEnterLearningView = useCallback((view: LearningView) => {
     setState((current) => (current ? enterLearningView(current, view) : current));
   }, []);
@@ -170,7 +165,7 @@ export default function App({ host }: { host: Host }) {
           <WorkspaceSurface key={workspace.id} workspace={workspace} state={state} modes={modes}
             routeSolver={routeSolver} conversationProviders={conversationProviders}
             onSelectConcept={handleSelectConcept} onChangeTargets={handleChangeTargets}
-            onChangeKnown={handleChangeKnown} onEnterLearningView={handleEnterLearningView}
+            onEnterLearningView={handleEnterLearningView}
             onConfirmRoute={handleConfirmRoute} onSelectRoute={handleSelectRoute}
             onProtectionChange={handleProtectionChange} />
         </Suspense>
