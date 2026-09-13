@@ -93,7 +93,7 @@ function RouteBody({ graph, tags, solution, targetIds, knownIds }: {
       目标 {targetIds.map((id) => labelOf(graph, id)).join('、')} · 共 <strong>{steps.length}</strong> 步
       {solution.cost === null ? '' : <> · 总学习成本 <strong>{solution.cost}</strong></>}
       {' · '}{solution.provenOptimal ? '已证明最优' : '预算内的上界，未证明最优'}
-      {knownIds.length ? ` · 已按你说会的 ${knownIds.length} 个概念削过` : ' · 你还没说会什么，这是从零算的'}
+      {knownIds.length ? ` · 已按已知的 ${knownIds.length} 个概念削过` : ' · 还没有已知的概念，这是从零算的'}
     </p>
     {spread.length > 0 && <div className="learning-preview-tags">
       {spread.map(([tag, count]) => <span key={tag}>{tagLabel(tag)} · {count}</span>)}

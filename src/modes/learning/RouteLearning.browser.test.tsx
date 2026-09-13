@@ -344,7 +344,7 @@ it('draws the route subgraph with the learner\'s position on it, once the rail i
 it('offers an Agent window that answers from the graph and says plainly that no model is connected', async () => {
   await render();
   await page.getByRole('button', { name: '「A」是什么来着？' }).click();
-  expect(container.textContent).toContain('它要么是你说会的，要么是图里的起点');
+  expect(container.textContent).toContain('它要么是已知的，要么是图里的起点');
 
   await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
   await page.getByRole('button', { name: '发送消息' }).click();

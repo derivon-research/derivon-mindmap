@@ -284,7 +284,7 @@ function premiseQuestions(
       label: `「${label(conceptId)}」是什么来着？`,
       answer: source
         ? `第 ${source.index} 步做出来的，靠的是 ${source.requires.map(label).join(' + ') || '不需要前提'}。要重看就点右边路线里的第 ${source.index} 步。`
-        : `这条路线没有做出「${label(conceptId)}」—— 它要么是你说会的，要么是图里的起点。可以去大图浏览里翻它的文档。`,
+        : `这条路线没有做出「${label(conceptId)}」—— 它要么是已知的，要么是图里的起点。可以去大图浏览里翻它的文档。`,
     };
   });
 }

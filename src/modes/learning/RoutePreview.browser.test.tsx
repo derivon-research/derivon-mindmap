@@ -72,7 +72,7 @@ it('shows the computed route as a reading order, with the reason each step is th
   expect(steps).toHaveLength(2);
   expect(steps[0]).toContain('需要 A');
   expect(steps[1]).toContain('需要 B');
-  expect(container.textContent).toContain('已按你说会的 1 个概念削过');
+  expect(container.textContent).toContain('已按已知的 1 个概念削过');
 });
 
 it('says an unproven route is unproven rather than calling it the best one', async () => {
