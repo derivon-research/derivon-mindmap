@@ -6,8 +6,10 @@ confirming a route, showing the confirmed ones and deleting one landed in
 [#100](https://github.com/derivon-research/derivon-mindmap/issues/100). Self-report landed in
 [#101](https://github.com/derivon-research/derivon-mindmap/issues/101): both entrances write a
 `complete` record with `data.selfReported: true`, and the known set is derived from mastery rather
-than stored. Judgement records and mastery-derived route progress are #102, and the script command
-surface is `derivon-research/skills#6`.
+than stored. Judgement records and mastery-derived route progress landed in
+[#102](https://github.com/derivon-research/derivon-mindmap/issues/102): handing in a step's
+verification writes a `complete` judgement about that step's conclusion concept, and the walk is
+placed by reading the records back. The script command surface is `derivon-research/skills#6`.
 Domain terms are defined in [CONTEXT.md](../CONTEXT.md); the decisions are
 [ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) (where they live) and
 [ADR-0012](adr/0012-learning-state-is-mastery.md) (what they are).
@@ -189,6 +191,10 @@ there is no `invalid` status. The rule is:
 
 - **mark it stale, keep it, and do not re-solve and do not delete it.** The record stays as
   evidence of what was once judged and against what.
+- A basis this host cannot recompute at all — no inventory of the object's files, an unreadable
+  document — leaves the record **unconfirmed**, which is not the same as fresh: like a stale one
+  it does not count as complete, and the inability is reported rather than hidden. A reader never
+  treats a basis it could not check as a match.
 - Staleness on one object never touches another object's record, and never deletes a route.
 - A stale record does not silently count as complete. Where it mattered — a route step, a
   known concept — it is reported and the learner decides what to do next.
@@ -257,7 +263,11 @@ These two are computed, never stored, and the distinction is the point of this d
   read ([#101](https://github.com/derivon-research/derivon-mindmap/issues/101)).
 - **The current step of a route = the head concept of the first derivation in that route's
   `order` whose mastery is not `complete`.** There is no cursor. "Next" means "this step's
-  judgement passed", not "add one to a number".
+  judgement passed", not "add one to a number". A step is identified by the concept its
+  derivation concludes, so a concept appearing twice along one route is one position reached
+  once, and a concept reached on another route is reached here too. A `complete` record that no
+  longer matches the content it was made against is not `complete` for this purpose either: the
+  learner returns to it, with the record kept as evidence.
 
 Because of that: **there is no learning-progress store in this repository.** What looks like
 progress is `state.json` composed with `routes.json` at display time. Adding a progress field

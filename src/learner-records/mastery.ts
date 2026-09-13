@@ -120,19 +120,74 @@ function applyWrite(state: LearningState, write: MasteryWrite): LearningState {
 }
 
 /**
- * Apply mastery claims, twice at most. The second attempt starts from a fresh read, so a
- * judgement another writer landed in between is preserved rather than overwritten. An
- * unreadable file throws on the read, which is the point: replacing it would destroy records
- * nobody can read.
+ * Judgements to land, by the map they belong to. A judgement is exactly a `MasteryRecord` —
+ * the protocol's own name for it — and concept mastery and derivation mastery are isomorphic,
+ * so one write handles both. Unlike a claim, a judgement replaces whatever was there: a claim
+ * is the learner's word and an earlier judgement is superseded by a later one, and both answer
+ * the same question from different evidence. The protocol's shape constraints are the
+ * serializer's job; this never reaches a file with a record the reader would refuse.
  */
-export async function writeMastery(
+export type JudgementWrite = {
+  readonly concepts?: Readonly<Record<string, MasteryRecord>>;
+  readonly derivations?: Readonly<Record<string, MasteryRecord>>;
+};
+
+const sameData = (left: Readonly<Record<string, unknown>> | undefined, right: Readonly<Record<string, unknown>> | undefined) =>
+  JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+
+function applyJudgements(
+  current: Readonly<Record<string, MasteryRecord>>,
+  judgements: Readonly<Record<string, MasteryRecord>> | undefined,
+): { readonly records: Readonly<Record<string, MasteryRecord>>; readonly changed: boolean } {
+  if (judgements === undefined) return { records: current, changed: false };
+  const records = { ...current };
+  let changed = false;
+  for (const [objectId, judgement] of Object.entries(judgements)) {
+    const existing = records[objectId];
+    if (existing !== undefined && existing.status === judgement.status
+      && existing.basis === judgement.basis && sameData(existing.data, judgement.data)) continue;
+    records[objectId] = judgement;
+    changed = true;
+  }
+  return { records, changed };
+}
+
+function applyJudgementWrite(state: LearningState, write: JudgementWrite): LearningState {
+  const concepts = applyJudgements(state.concepts, write.concepts);
+  const derivations = applyJudgements(state.derivations, write.derivations);
+  return concepts.changed || derivations.changed
+    ? { concepts: concepts.records, derivations: derivations.records }
+    : state;
+}
+
+/**
+ * Land judgements, twice at most. The second attempt starts from a fresh read, so a record
+ * another writer landed in between is preserved rather than overwritten. An unreadable file
+ * throws on the read: replacing it would destroy records nobody can read.
+ */
+export async function writeJudgements(
   store: LearnerRecordStore,
-  write: MasteryWrite,
+  write: JudgementWrite,
+): Promise<MasteryReading> {
+  return rewrite(store, (current) => applyJudgementWrite(current, write));
+}
+
+/**
+ * Read–modify–replace under the version that was read, twice at most.
+ *
+ * The second attempt starts from a fresh read, so a record another writer landed in between is
+ * preserved rather than overwritten; a writer that keeps losing loses cleanly instead of
+ * looping. An unreadable file throws on the read, which is the point: replacing it would
+ * destroy records nobody can read.
+ */
+async function rewrite(
+  store: LearnerRecordStore,
+  change: (state: LearningState) => LearningState,
 ): Promise<MasteryReading> {
   for (let attempt = 0; ; attempt += 1) {
     const stored = await store.readLearningState();
     const current = stored.presence === 'present' ? stored.state : EMPTY_MASTERY;
-    const next = applyWrite(current, write);
+    const next = change(current);
     if (next === current) return { state: current, presence: stored.presence, issue: null };
     const precondition = stored.presence === 'present'
       ? { presence: 'present' as const, version: stored.version }
@@ -144,4 +199,15 @@ export async function writeMastery(
       if (attempt >= 1) throw error;
     }
   }
+}
+
+/**
+ * Apply mastery claims: only the learner's own word and the workspace's default move, and a
+ * judgement — `complete` or `incomplete` — is never overwritten by either.
+ */
+export async function writeMastery(
+  store: LearnerRecordStore,
+  write: MasteryWrite,
+): Promise<MasteryReading> {
+  return rewrite(store, (current) => applyWrite(current, write));
 }
