@@ -304,9 +304,9 @@ for (const width of [1440, 390, 320]) {
     await page.getByRole('button', { name: '打开文件夹…', exact: true }).click();
     await expect(page.getByRole('button', { name: '图浏览', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('img', { name: 'Knowledge graph' })).toHaveAttribute('aria-busy', 'false');
-    // The self-report was written to the learner record before the reload, so the record brings
-    // the mark back: this concept is painted as known, not as the undecided grey.
-    const overviewPoint = await page.evaluate(findCanvasPixel, { clientCoordinates: true, color: [22, 163, 74] });
+    // Reopening lands on the authoring side, where mastery marks are not drawn: the concept is
+    // the undecided grey here even though the learner record remembers it.
+    const overviewPoint = await page.evaluate(findCanvasPixel, { clientCoordinates: true });
     expect(overviewPoint).toBeDefined();
     await page.mouse.click(overviewPoint!.x, overviewPoint!.y);
     await expect(page.getByRole('button', { name: '关联布局', exact: true })).toHaveAttribute('aria-pressed', 'true');
