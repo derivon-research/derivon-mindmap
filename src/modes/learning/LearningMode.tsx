@@ -289,6 +289,12 @@ export function LearningMode({
    * definition are separate objects with their own records, and nothing about the answer itself
    * is stored ([learner records](../../docs/learner-records.md)). The step moved on is derived
    * from that record, not from here.
+   *
+   * It writes `complete`: nothing in the application grades the answer, so there is no honest way
+   * to write `incomplete` yet. That status — *asked, and not reached* — is already specified,
+   * already writable through `writeJudgements` and already displayed as leaving the step current;
+   * which action establishes it is part of exploring how mastery is evidenced, and belongs to that
+   * work rather than to a guessed-at button here.
    */
   const submitTask = async (step: RouteStep) => {
     setSubmitError(null);

@@ -9,7 +9,10 @@ confirming a route, showing the confirmed ones and deleting one landed in
 than stored. Judgement records and mastery-derived route progress landed in
 [#102](https://github.com/derivon-research/derivon-mindmap/issues/102): handing in a step's
 verification writes a `complete` judgement about that step's conclusion concept, and the walk is
-placed by reading the records back. The script command surface is `derivon-research/skills#6`.
+placed by reading the records back. **`incomplete` is specified, writable and displayed, and the
+application has no action that writes it yet** — how mastery is evidenced is still being
+explored, and inventing a button for it now would decide that exploration by accident. The script
+command surface is `derivon-research/skills#6`.
 Domain terms are defined in [CONTEXT.md](../CONTEXT.md); the decisions are
 [ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) (where they live) and
 [ADR-0012](adr/0012-learning-state-is-mastery.md) (what they are).

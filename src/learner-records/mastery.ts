@@ -164,6 +164,12 @@ function applyJudgementWrite(state: LearningState, write: JudgementWrite): Learn
  * Land judgements, twice at most. The second attempt starts from a fresh read, so a record
  * another writer landed in between is preserved rather than overwritten. An unreadable file
  * throws on the read: replacing it would destroy records nobody can read.
+ *
+ * Both statuses are writable here, and `incomplete` deliberately stays writable: *asked, and not
+ * reached* is a fact about a learner the model needs, even though the route walk's only action
+ * today — handing in a verification — writes `complete`. How mastery is evidenced is still being
+ * explored, and this is the seam that exploration writes through, rather than a second status
+ * axis added later.
  */
 export async function writeJudgements(
   store: LearnerRecordStore,
