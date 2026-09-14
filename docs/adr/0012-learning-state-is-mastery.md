@@ -64,24 +64,22 @@ they never enter `WorkspaceSource`, the manifest, workspace synchronization or t
 [ADR-0009](0009-persist-learner-records-outside-the-workspace.md)'s decision, and the field-level
 protocol is [learner records](../learner-records.md).
 
-**These are decisions about what will exist, not a description of the code as it stands.** Two
-records already exist: the two files and their application-side store landed in
-[#99](https://github.com/derivon-research/derivon-mindmap/issues/99), and **the independent known
-set is gone** — the known set is derived from mastery rather than stored, self-report writes a
-`complete` record marked `data.selfReported: true`, and the workspace default writes one marked
-`data.orientationSeed: true`
-([#101](https://github.com/derivon-research/derivon-mindmap/issues/101)). The session cursor and
-route-attached task completions are still in the code and are removed in
-[#102](https://github.com/derivon-research/derivon-mindmap/issues/102).
+**This is now a description of the code, not only a decision about what should exist.** Every
+piece landed: the two files and their application-side store in
+[#99](https://github.com/derivon-research/derivon-mindmap/issues/99), the independent known set
+going away in [#101](https://github.com/derivon-research/derivon-mindmap/issues/101), and the
+session cursor and route-attached task completions going away in
+[#102](https://github.com/derivon-research/derivon-mindmap/issues/102) — handing in a step's
+verification writes a judgement about that step's conclusion concept, and the walk's position is
+read back from the records rather than kept anywhere.
 
 ## Consequences
 
 - `learningKnownIds` is gone ([#101](https://github.com/derivon-research/derivon-mindmap/issues/101)):
   the known set is derived from mastery on demand, and a self-report is written to the learner
-  record. `cursor` and route-attached task completions are still in the code and are removed in
-  [#102](https://github.com/derivon-research/derivon-mindmap/issues/102); this ADR is what makes
-  their removal a decision rather than a preference. Afterwards, "next step" means "this step's
-  judgement passed".
+  record. `cursor` and route-attached task completions are gone too
+  ([#102](https://github.com/derivon-research/derivon-mindmap/issues/102)), so "next step" means
+  "this step's judgement passed" and nothing has to be reset when the application is closed.
 - Mastery is shared across routes: a concept demonstrated on one route is mastered everywhere
   it appears, so two routes through the same concept see the same status.
 - Self-report and judgement are distinguishable in the interface because they are

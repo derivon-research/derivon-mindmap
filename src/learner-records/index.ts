@@ -20,7 +20,9 @@ export {
 
 export { masteryBasis, routeBasis, type BasisFile } from './basis';
 export {
-  EMPTY_MASTERY, conceptSources, isWithdrawable, knownConceptIds, masterySourceOf, readMastery, writeMastery,
+  EMPTY_MASTERY, conceptSources, isWithdrawable, knownConceptIds, masterySourceOf, readMastery,
+  writeJudgements, writeMastery,
+  type JudgementWrite,
   type MasteryClaim, type MasteryReading, type MasterySource, type MasteryWrite,
 } from './mastery';
 export { routeIsStale, routeRecord, type ConfirmRouteInput } from './routeRecord';

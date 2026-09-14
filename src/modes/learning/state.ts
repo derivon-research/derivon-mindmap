@@ -1,56 +1,26 @@
-import type { TaskCompletion } from './progress';
-
 /**
- * What a walk through the route stage keeps between views. Which route is being walked is not
- * here: that is the active confirmed route, held by the application. This is only where along
- * it the learner is and what they have handed in.
+ * What one walk through the route stage keeps between views: which definitions the learner
+ * asked for, and nothing else.
+ *
+ * **Progress is deliberately not here.** Where the learner is on the route is derived at
+ * display time from the learner records — the first step whose conclusion concept has no
+ * fresh `complete` record — so reopening a workspace lands there rather than wherever a
+ * session happened to be ([ADR-0012](../../docs/adr/0012-learning-state-is-mastery.md)).
+ * A revealed definition is a reading convenience with no meaning after the application is
+ * closed, which is exactly what makes it session state.
  */
-export type LearningWalkState = {
-  readonly cursor: number;
+export type RouteWalkState = {
   readonly revealed: readonly string[];
-  readonly taskCompletions: readonly TaskCompletion[];
 };
 
-export function initialLearningWalkState(): LearningWalkState {
-  return { cursor: 0, revealed: [], taskCompletions: [] };
-}
-
-/**
- * A different route is on screen. It starts from the top, but judgements already handed in
- * stay: they are keyed by the route they were made on, so another route's are untouched.
- */
-export function startRoute(state: LearningWalkState): LearningWalkState {
-  return state.cursor === 0 && state.revealed.length === 0
-    ? state
-    : { ...state, cursor: 0, revealed: [] };
+export function initialRouteWalk(): RouteWalkState {
+  return { revealed: [] };
 }
 
 export function revealDefinition(
-  state: LearningWalkState,
+  state: RouteWalkState,
   conceptId: string,
-): LearningWalkState {
+): RouteWalkState {
   return state.revealed.includes(conceptId) ? state
     : { ...state, revealed: [...state.revealed, conceptId] };
-}
-
-export function moveLearningCursor(state: LearningWalkState, index: number): LearningWalkState {
-  return state.cursor === index ? state : { ...state, cursor: index };
-}
-
-export function recordTaskCompletion(
-  state: LearningWalkState,
-  completion: TaskCompletion,
-): LearningWalkState {
-  return {
-    ...state,
-    taskCompletions: [
-      ...state.taskCompletions.filter((item) => !(
-      item.routeKey === completion.routeKey
-      && item.graphText === completion.graphText
-      && item.conceptId === completion.conceptId
-      && item.derivationId === completion.derivationId
-      )),
-      completion,
-    ],
-  };
 }

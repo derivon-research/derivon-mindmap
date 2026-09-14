@@ -6,7 +6,7 @@ import type { LearnerRecordFiles } from '../ports/LearnerRecordFiles';
 import { createTempLearnerRecordFiles, tempLearnerRecordPath } from '../testing/learnerRecordFiles';
 import { createLearnerRecordStore, type LearnerRecordStore } from './store';
 import {
-  EMPTY_MASTERY, conceptSources, knownConceptIds, masterySourceOf, readMastery, writeMastery,
+  EMPTY_MASTERY, conceptSources, knownConceptIds, masterySourceOf, readMastery, writeJudgements, writeMastery,
 } from './mastery';
 
 const basis = 'a'.repeat(64);
@@ -175,6 +175,71 @@ describe('where a claim came from', () => {
     ], withdrawn: [] });
     const reading = await writeMastery(store, { claimed: [], withdrawn: ['c-a'] });
     expect(Object.keys(reading.state.concepts)).toEqual(['c-b']);
+  });
+});
+
+describe('writing a judgement', () => {
+  it('writes a complete record with no source marker, so it reads as the application’s own', async () => {
+    const reading = await writeJudgements(store, { concepts: { 'c-a': { status: 'complete', basis } } });
+    expect(reading.state.concepts['c-a']).toEqual({ status: 'complete', basis });
+    expect(masterySourceOf(reading.state.concepts['c-a'])).toBe('judged');
+    expect(knownConceptIds(reading.state)).toEqual(['c-a']);
+  });
+
+  it('supersedes a claim and an earlier judgement, because a later judgement is better evidence', async () => {
+    await store.writeLearningState({
+      concepts: {
+        'c-a': { status: 'complete', basis, data: { selfReported: true } },
+        'c-b': { status: 'incomplete', basis, data: { notes: '问过，没到' } },
+      },
+      derivations: {},
+    }, { presence: 'missing' });
+    const reading = await writeJudgements(store, { concepts: {
+      'c-a': { status: 'complete', basis: otherBasis },
+      'c-b': { status: 'complete', basis: otherBasis },
+    } });
+    expect(reading.state.concepts['c-a']).toEqual({ status: 'complete', basis: otherBasis });
+    expect(reading.state.concepts['c-b']).toEqual({ status: 'complete', basis: otherBasis });
+  });
+
+  it('refuses an incomplete judgement with nothing in it, before the file is touched', async () => {
+    await expect(writeJudgements(store, { concepts: { 'c-a': { status: 'incomplete', basis } } }))
+      .rejects.toThrow(/incomplete/);
+    await expect(writeJudgements(store, { concepts: { 'c-a': { status: 'incomplete', basis, data: {} } } }))
+      .rejects.toThrow(/incomplete/);
+    await expect(readFile(path.join(root, 'learner-records'), 'utf8')).rejects.toThrow();
+  });
+
+  it('writes an incomplete judgement that says how it was reached, and keeps a derivation record', async () => {
+    await store.writeLearningState({
+      concepts: {},
+      derivations: { 'h-x': { status: 'complete', basis, data: { selfReported: true } } },
+    }, { presence: 'missing' });
+    const reading = await writeJudgements(store, {
+      concepts: { 'c-a': { status: 'incomplete', basis, data: { notes: '把方向弄反了' } } },
+    });
+    expect(reading.state.concepts['c-a']).toEqual({ status: 'incomplete', basis, data: { notes: '把方向弄反了' } });
+    expect(reading.state.derivations['h-x']).toEqual({ status: 'complete', basis, data: { selfReported: true } });
+  });
+
+  it('does not touch the file when the judgement changes nothing', async () => {
+    await writeJudgements(store, { concepts: { 'c-a': { status: 'complete', basis } } });
+    const before = await readFile(tempLearnerRecordPath(root, 'math-reforged', 'state'), 'utf8');
+    await writeJudgements(store, { concepts: { 'c-a': { status: 'complete', basis } } });
+    expect(await readFile(tempLearnerRecordPath(root, 'math-reforged', 'state'), 'utf8')).toBe(before);
+  });
+
+  it('re-reads and retries when another writer moved the file under it', async () => {
+    const files = createTempLearnerRecordFiles(root);
+    await createLearnerRecordStore(files, 'math-reforged')
+      .writeLearningState({ concepts: {}, derivations: {} }, { presence: 'missing' });
+    const interleaved = createLearnerRecordStore(
+      interleaveOnce(files, createTempLearnerRecordFiles(root),
+        JSON.stringify({ schema: 'derivon.learning/v1', concepts: { 'c-z': { status: 'complete', basis } }, derivations: {} })),
+      'math-reforged',
+    );
+    const reading = await writeJudgements(interleaved, { concepts: { 'c-a': { status: 'complete', basis } } });
+    expect(Object.keys(reading.state.concepts).sort()).toEqual(['c-a', 'c-z']);
   });
 });
 

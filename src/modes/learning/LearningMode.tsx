@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
 import {
   addRoute, conceptSources, EMPTY_MASTERY, readMastery, readRoutes, removeRoute, routeIsStale,
-  routeRecord, writeMastery,
+  routeRecord, writeJudgements, writeMastery,
   type MasteryReading, type MasterySource, type MasteryWrite, type RouteList,
 } from '../../learner-records';
 import { generateObjectId } from '../../workspace/index';
 import { labelOf } from '../ConceptPicker';
 import { GraphBrowse } from './GraphBrowse';
 import './learning.css';
-import { objectMasteryBasis } from './objectBasis';
+import { objectMasteryBasis, type ObjectBasisReader } from './objectBasis';
 import {
   applyOrientationIntent, beginOrientation, orientationSeedKnown, planOrientation,
   type OrientationIntent, type OrientationRun,
@@ -19,12 +19,13 @@ import { DEFAULT_PANELS, type PanelLayout } from './panels';
 import { RouteLearning } from './RouteLearning';
 import { RoutePreviewView } from './RoutePreviewView';
 import { RouteShelf } from './RouteShelf';
-import { routeSolutionOf, useRoutePreview } from '../routePreview';
-import type { TaskCompletion } from './progress';
-import { initialLearningWalkState, moveLearningCursor, recordTaskCompletion, revealDefinition, startRoute } from './state';
+import { routeProgress, stepBasis, stepStanding, useStepBases, type FreshJudgement, type RouteProgress } from './routeProgress';
+import { routeSolutionOf, routeSteps, type RouteStep, useRoutePreview } from '../routePreview';
+import { initialRouteWalk, revealDefinition } from './state';
 
 const NO_ROUTES: RouteList = { routes: [], issue: null };
 const NOTHING_STALE: ReadonlySet<string> = new Set();
+const NO_STEPS: readonly RouteStep[] = [];
 
 /**
  * The learning side. One mode, five screens: orientation, the route preview, the confirmed
@@ -42,8 +43,10 @@ const NOTHING_STALE: ReadonlySet<string> = new Set();
  * records here, so reopening a workspace finds it again
  * ([ADR-0012](../../docs/adr/0012-learning-state-is-mastery.md)).
  *
- * Everything a screen would lose by being unmounted lives here: the orientation flow, how far
- * along the route the learner is, and the panel layout.
+ * Everything a screen would lose by being unmounted lives here: the orientation flow, the
+ * definitions the learner revealed, and the panel layout. **Not how far along the route they
+ * are**: that is derived from the learner records at display time, so there is nothing to
+ * keep and nothing to lose ([ADR-0012](../../docs/adr/0012-learning-state-is-mastery.md)).
  */
 export function LearningMode({
   active = true, content, learnerRecords, targetIds, onChangeTargets,
@@ -91,20 +94,26 @@ export function LearningMode({
   }, [flow.targets, targetIds.length, onChangeTargets]);
 
   /**
-   * The basis a self-report is written against: the object's manifest entry plus every file
-   * under its document directory. Without a store or a file inventory there is nowhere to
-   * write and nothing to write against, so the claim is refused rather than faked.
+   * The three read capabilities a mastery basis needs, or none when this host cannot list an
+   * object's files. Without them there is nothing to write a judgement against, and nothing to
+   * check a stored one against, so the screen says so rather than faking a basis.
    */
-  const basisFor = useCallback(async (conceptId: string): Promise<string> => {
+  const ownerReader = useMemo<ObjectBasisReader | undefined>(() => (readOwnedFiles && readDocuments && readAsset
+    ? { listOwnedFiles: readOwnedFiles, readDocuments, readAsset }
+    : undefined), [readAsset, readDocuments, readOwnedFiles]);
+
+  /**
+   * The basis a record is written against: the object's manifest entry plus every file under its
+   * document directory. Without a store or a file inventory there is nowhere to write and
+   * nothing to write against, so the write is refused rather than faked — a self-report says so
+   * as a claim, a judgement as a judgement.
+   */
+  const conceptBasis = useCallback(async (conceptId: string, what: string): Promise<string> => {
     const concept = content.graph.points.find((point) => point.id === conceptId);
-    if (!concept) throw new Error(`图里没有「${conceptId}」，不能把它写成已知`);
-    if (!readOwnedFiles || !readDocuments || !readAsset) {
-      throw new Error('这个宿主列不出对象所属的文件，自述所依据的内容版本算不出来');
-    }
-    return objectMasteryBasis(content.graph, concept.data.document, conceptId, {
-      listOwnedFiles: readOwnedFiles, readDocuments, readAsset,
-    });
-  }, [content.graph, readAsset, readDocuments, readOwnedFiles]);
+    if (!concept) throw new Error(`图里没有「${conceptId}」，${what}无处可写。`);
+    if (!ownerReader) throw new Error(`这个宿主列不出对象所属的文件，${what}所依据的内容版本算不出来。`);
+    return objectMasteryBasis(content.graph, concept.data.document, conceptId, ownerReader);
+  }, [content.graph, ownerReader]);
 
   /**
    * Persist the known set a step asks for. Only the difference is written: new concepts become
@@ -134,14 +143,14 @@ export function LearningMode({
     // The screen answers before the write lands, sources included; a refusal takes it back off.
     setPending({ claimed: claims.map((conceptId) => ({ conceptId, basis: '', source })), withdrawn });
     try {
-      const basis = await Promise.all(claims.map(async (conceptId) => ({ conceptId, basis: await basisFor(conceptId), source })));
+      const basis = await Promise.all(claims.map(async (conceptId) => ({ conceptId, basis: await conceptBasis(conceptId, '自述'), source })));
       setMastery(await writeMastery(learnerRecords, { claimed: basis, withdrawn }));
     } catch (error) {
       setKnownError(error instanceof Error ? error.message : String(error));
     } finally {
       setPending(null);
     }
-  }, [basisFor, graphConceptIds, knownSources, learnerRecords]);
+  }, [conceptBasis, graphConceptIds, knownSources, learnerRecords]);
 
   /**
    * The configuration's default known is a starting baseline, not an assessment: it is
@@ -171,7 +180,7 @@ export function LearningMode({
   const preview = useRoutePreview(routeSolver, graph, targetIds,
     mastery === null && learnerRecords ? null : liveKnownIds);
   const [panels, setPanels] = useState<PanelLayout>(DEFAULT_PANELS);
-  const [walk, setWalk] = useState(initialLearningWalkState);
+  const [walk, setWalk] = useState(initialRouteWalk);
 
   const [listed, setListed] = useState<RouteList>(NO_ROUTES);
   const [stale, setStale] = useState<ReadonlySet<string>>(NOTHING_STALE);
@@ -179,6 +188,10 @@ export function LearningMode({
   const [reviewing, setReviewing] = useState(false);
   const [writing, setWriting] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  /** The judgement just written, with its basis, until the route's bases are checked again. */
+  const [fresh, setFresh] = useState<FreshJudgement | null>(null);
 
   // A host with no application data directory has no records at all: confirming then leaves a
   // route that lives only in this session, and the screen says so rather than pretending.
@@ -205,9 +218,25 @@ export function LearningMode({
   const solved = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
   const activeRecord = listed.routes.find((route) => route.id === activeRouteId) ?? null;
 
-  // Bringing another route on screen starts it from the top; judgements already handed in stay
-  // keyed by the route they were made on.
-  useEffect(() => { setWalk(startRoute); }, [activeRouteId]);
+  // The route being walked, one step per derivation in the record's order, and where the
+  // learner has got to on it. Neither is state: the steps come from the record and the graph,
+  // and progress comes from the mastery records, so both survive a reopening.
+  const steps = useMemo(() => activeRecord
+    ? routeSteps(graph, routeSolutionOf(activeRecord))
+    : NO_STEPS, [activeRecord, graph]);
+  const concepts = mastery?.state.concepts ?? EMPTY_MASTERY.concepts;
+  const stepBases = useStepBases(content, steps, concepts, ownerReader);
+  const progress: RouteProgress = useMemo(() => routeProgress(steps,
+    (step) => stepStanding(concepts[step.conceptId],
+      stepBasis(step.conceptId, stepBases, fresh, content))),
+  [concepts, content, fresh, stepBases, steps]);
+
+  // A refusal belongs to the step it was about; leaving that step takes it off the screen.
+  useEffect(() => { setSubmitError(null); }, [activeRouteId, progress.currentIndex]);
+
+  // A different route on screen has its own definitions to reveal; a judgement already handed
+  // in stays where it belongs, in the records.
+  useEffect(() => { setWalk(initialRouteWalk); }, [activeRouteId]);
 
   // Leaving the create flow drops its second step, so coming back starts from the questions.
   useEffect(() => { if (view !== 'orientation') setReviewing(false); }, [view]);
@@ -237,7 +266,6 @@ export function LearningMode({
         known: liveKnownIds,
       });
       setListed(await addRoute(learnerRecords, record));
-      setWalk(startRoute);
       onConfirmRoute(record.id);
     } catch (error) {
       setWriteError(error instanceof Error ? error.message : String(error));
@@ -255,14 +283,41 @@ export function LearningMode({
     });
   };
 
-  const moveCursor = (index: number) => {
-    setWalk((current) => moveLearningCursor(current, index));
+  /**
+   * The learner handed in this step's verification. What that records is a judgement about the
+   * step's conclusion concept, against the content it was answered from — the derivation and the
+   * definition are separate objects with their own records, and nothing about the answer itself
+   * is stored ([learner records](../../docs/learner-records.md)). The step moved on is derived
+   * from that record, not from here.
+   *
+   * It writes `complete`: nothing in the application grades the answer, so there is no honest way
+   * to write `incomplete` yet. That status — *asked, and not reached* — is already specified,
+   * already writable through `writeJudgements` and already displayed as leaving the step current;
+   * which action establishes it is part of exploring how mastery is evidenced, and belongs to that
+   * work rather than to a guessed-at button here.
+   */
+  const submitTask = async (step: RouteStep) => {
+    setSubmitError(null);
+    if (!learnerRecords) {
+      setSubmitError('这个宿主没有应用数据目录，判定无处可存，所以这一步没有记下来。');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const basis = await conceptBasis(step.conceptId, '判定');
+      const reading = await writeJudgements(learnerRecords, {
+        concepts: { [step.conceptId]: { status: 'complete', basis } },
+      });
+      // The basis is held for this content, so the walk moves on this render rather than waiting
+      // for the route's bases to be recomputed from the workspace it was just computed from.
+      setFresh({ content, conceptId: step.conceptId, basis });
+      setMastery(reading);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSubmitting(false);
+    }
   };
-
-  const completeTask = (completion: TaskCompletion) => {
-    setWalk((current) => recordTaskCompletion(current, completion));
-  };
-
   const know = (conceptId: string) => intent({ kind: 'know', conceptIds: [conceptId] });
   const toggleKnown = (conceptId: string) => intent(knownIds.includes(conceptId)
     ? { kind: 'set-known', conceptIds: knownIds.filter((id) => id !== conceptId) }
@@ -306,11 +361,11 @@ export function LearningMode({
       onNewRoute={() => onEnterView('orientation')} />}
 
     {walking && activeRecord && <RouteLearning active={active} content={content}
-      solution={routeSolutionOf(activeRecord)} targetIds={[...activeRecord.targets]} knownIds={[...activeRecord.known]}
-      knownSources={knownSources}
-      stale={stale.has(activeRecord.id)} cursor={walk.cursor} onCursor={moveCursor}
+      solution={routeSolutionOf(activeRecord)} steps={steps} progress={progress}
+      targetIds={[...activeRecord.targets]} knownIds={[...activeRecord.known]}
+      knownSources={knownSources} stale={stale.has(activeRecord.id)}
       revealed={walk.revealed} onReveal={(id) => setWalk((current) => revealDefinition(current, id))}
-      tasksDone={walk.taskCompletions} onTaskDone={completeTask}
+      onSubmit={(step) => { void submitTask(step); }} submitting={submitting} submitError={submitError}
       panels={panels} onPanels={setPanels} onKnow={know}
       onSwitchRoute={() => onSelectRoute(null)} readAsset={readAsset} readDocuments={readDocuments}
       conversation={conversation} drainPendingChanges={drainPendingChanges} />}
