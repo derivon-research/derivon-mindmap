@@ -142,6 +142,15 @@ one route is mastered everywhere it appears.
 
   A `complete` record with neither marker is a judgement. A record that is `incomplete` is a
   judgement too, whatever its `data` holds; a claim never overwrites one.
+
+  **A judgement records its own provenance the same way**, under the namespace of whoever made
+  it: the assessment path outside the client writes `data.teaching` with its verdict, the task
+  type it used and the gap it named. That is provenance, never a second status axis: a reader
+  takes the judgement's `status` and does not care which writer produced it, and because a claim
+  never overwrites a judgement, the record of who judged survives the learner's own word. A
+  later judgement replaces the record whole — provenance included, since that judgement is now
+  the one that counts. A judgement written by a script-command session is a judgement exactly as
+  the application's own verification is.
 - **Incomplete does not block anything.** It records that this object is not mastered; the
   next step on a route is derived from mastery, so an `incomplete` record simply leaves that
   step current.
