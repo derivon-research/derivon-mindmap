@@ -77,11 +77,21 @@ moment. Crash atomicity across files is not provided by this: a crash can leave 
 documents behind, and those are inert rather than dangerous. A journal is the answer if that ever
 stops being enough, and it is not built now.
 
-Capabilities are declared by the command surface and granted by mode: `read`, `write-structure`
-(graph, orientation configuration, tag declarations), `write-document`, `delete`, `import`. The
+Capabilities are declared by the command surface and granted by mode. The surface governs two
+**artifact categories**, and every command declares the one it belongs to: `workspace` for
+workspace content, whose capabilities are `read`, `write-structure` (graph, orientation
+configuration, tag declarations), `write-document`, `delete` and `import`, and `learner-records`
+for learner records, whose capabilities are `read-learner-record` and `write-learner-record`. The
 command surface holds command → capability, the client holds mode → capability, and the tool set a
 session receives is their intersection. Neither side alone can answer "what may this session do",
 which is the point: a second hand-maintained list is a second thing to keep in step.
+
+Learner records are a category of their own rather than a corner of workspace content, which is
+why their capabilities are separate: reading a learner record is not reading the workspace, and
+the learning session holds `read-learner-record` with no write capability of either category —
+that is what "learning mode cannot edit" means now that a learning session can read a record
+([ADR-0009](0009-persist-learner-records-outside-the-workspace.md),
+[learner records](../learner-records.md)).
 
 ## Rejected alternatives
 
