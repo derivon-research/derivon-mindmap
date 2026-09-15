@@ -236,11 +236,14 @@ sandbox" means in practice (ADR-0011).
 PowerShell has its own rule rather than a shared one, because its write forms are cmdlets: a target
 is a positional argument or a named path parameter, and each form declares which of those it writes
 to — `Copy-Item`'s source is a read while `Move-Item`'s source is a removal, and `Set-Content -Path
-x y` writes `x`, not `y`. Anything the rule does not recognise — an alias, a parameter spelled some
-third way, a form that is not listed — reads as a relative path and is refused, which is the safe
-side. It is the same fence, and no more: a script run by an interpreter, another provider, or an
-encoding this does not know is outside it, and real isolation is the OS or container boundary
-ADR-0011 defers to ([#123](https://github.com/derivon-research/derivon-mindmap/issues/123)).
+x y` writes `x`, not `y`. The rule knows the names PowerShell itself ships for those cmdlets (`rm`,
+`cp`, `ren` and the rest) as well as the long ones, because a rule that only knew the long name
+would let the short one through. A parameter it does not know how to read becomes a positional and
+is refused, which is the safe side. Its edge is the vocabulary: a cmdlet outside that table is not
+seen at all — the same edge the POSIX rule has, where `/bin/rm` is not the word `rm`. It is the same
+fence and no more: a script run by an interpreter, another provider, or an encoding this does not
+know is outside it, and real isolation is the OS or container boundary ADR-0011 defers to
+([#123](https://github.com/derivon-research/derivon-mindmap/issues/123)).
 
 So is the command surface itself: a granted command is an arbitrary script the operator installed
 (or the workspace carries), run with the companion's full permissions, and the guard never sees it.
@@ -258,9 +261,13 @@ shape, and the session works anyway.
 from `getAgentDir()/bin`, and `getAgentDir()` reads the environment variable `PI_CODING_AGENT_DIR`
 (`ENV_AGENT_DIR` for this package; the SDK exports neither it nor `getShellEnv`). So the companion
 sets it to `--config-dir` and then checks it landed: if it did not, a diagnostic says so instead
-of the session quietly getting `~/.pi/agent/bin`. This is the one part of the agent directory Pi
-resolves from the environment; `createAgentSession({ agentDir })` moves the loader, settings and
-session directories, which this companion supplies itself, and none of them touch the PATH.
+of the session quietly getting `~/.pi/agent/bin`. The other things `createAgentSession({ agentDir })`
+moves were checked one by one and are inert here: the default resource loader — and with it Pi's
+package manager and the trust-requiring project resources — is never constructed (the companion
+supplies `resourceLoaderFor`), the settings manager and the session directory are `inMemory`, the
+trust store (`ProjectTrustStore`) is built only by Pi's own CLI entry points, and `ModelRuntime`
+gets explicit `modelsPath`/`authPath` with an in-memory catalog store. The one thing the agent
+directory still decides is the session's PATH prefix, which is the point.
 - **`<root>/bin/node` is how `node …` works in a skill's prose.** On Unix it is a symlink to
 `process.execPath` — the sidecar runtime Rust started the companion with, never one from the
 operator's PATH; on Windows, where a symlink needs a privilege an installer does not have, it is a

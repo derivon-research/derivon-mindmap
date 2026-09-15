@@ -18,7 +18,7 @@ export const AGENT_DIR_ENVIRONMENT_VARIABLE = 'PI_CODING_AGENT_DIR';
 
 /** The shell the platform offers a session, or what was searched for one. */
 export type ShellLookup =
-  | { readonly found: true; readonly path: string }
+  | { readonly found: true }
   | { readonly found: false; readonly searched: string };
 
 /** Injected by tests, so the answer is a fixture rather than whatever this machine has. */
@@ -65,8 +65,9 @@ export function nodeShim(options: {
  * Put the shim in place, unless it is already there and already right.
  *
  * Never throws and never fails a session: a session without a `node` still works, and the one
- * thing that fixes this is the operator's action. A file the operator put there is left alone
- * and named — `<root>` is their directory, and this is only a convenience in it.
+ * thing that fixes this is the operator's action. A regular file or directory in the shim's
+ * place is left as it is and named — `<root>` is the operator's directory, and this is only a
+ * convenience in it. A symlink is the shim's own slot, so a wrong or dangling one is repointed.
  */
 export function installNodeShim(shim: NodeShim): string | null {
   try {
@@ -121,8 +122,9 @@ function readIfPresent(file: string): string | null {
  *
  * Runs once, before any session exists, and never fails. Both of its effects are
  * process-wide — Pi's agent directory, which is what puts `<root>/bin` first on the session's
- * PATH, and the `node` shim in it — and each one that could not be arranged becomes a note on
- * stderr rather than a refusal, because a session without either is still a usable session.
+ * PATH, and the `node` shim in it — and each one that could not be arranged becomes a note for
+ * the caller to put on stderr rather than a refusal, because a session without either is still a
+ * usable session.
  */
 export function prepareSessionEnvironment(options: {
   readonly configDirectory: string;
@@ -133,7 +135,7 @@ export function prepareSessionEnvironment(options: {
   const platform = options.platform ?? process.platform;
   const notes: string[] = [];
   process.env[AGENT_DIR_ENVIRONMENT_VARIABLE] = options.configDirectory;
-  if (path.resolve(getAgentDir()) !== path.resolve(options.configDirectory)) {
+  if (!pointsAtOurRoot(options.configDirectory)) {
     notes.push(`Pi 的 agent 目录没有指向 ${options.configDirectory}（现在是 ${getAgentDir()}），会话的 PATH 可能仍以 ~/.pi/agent/bin 开头。`);
   }
   const diagnostic = installNodeShim(nodeShim({
@@ -150,6 +152,16 @@ export function prepareSessionEnvironment(options: {
 }
 
 /**
+ * Whether Pi now resolves its agent directory — and so the session's PATH prefix — to our root.
+ *
+ * This is the check that makes the hard-coded variable name safe: if Pi renames it, the session
+ * gets a diagnostic instead of silently borrowing `~/.pi/agent/bin`.
+ */
+function pointsAtOurRoot(configDirectory: string): boolean {
+  return path.resolve(getAgentDir()) === path.resolve(configDirectory);
+}
+
+/**
  * The shell this platform offers.
  *
  * Windows has no `bash` to rely on — Pi's `bash` tool looks for Git Bash, which this
@@ -159,14 +171,15 @@ export function prepareSessionEnvironment(options: {
 function findShell(platform: NodeJS.Platform): ShellLookup {
   if (platform === 'win32') {
     try {
-      return { found: true, path: getPowerShellConfig().shell };
+      getPowerShellConfig();
+      return { found: true };
     } catch {
       return { found: false, searched: 'PATH 上的 pwsh.exe 或 powershell.exe' };
     }
   }
   const config = getShellConfig();
   return onPath(config.shell, platform)
-    ? { found: true, path: config.shell }
+    ? { found: true }
     : { found: false, searched: 'PATH 上的 bash 或 sh，以及 /bin/bash' };
 }
 

@@ -141,6 +141,23 @@ describe('PowerShell commands', () => {
     }
   });
 
+  it('knows the short names PowerShell itself ships for those cmdlets', () => {
+    for (const command of [
+      'sc notes.md hello',
+      'ac notes.md hello',
+      'ni -ItemType Directory notes',
+      'ri objects/c-1',
+      'del notes.md',
+      'rm -Recurse notes',
+      'rd notes',
+      'mi document.md renamed.md',
+      'cp /tmp/source.md document.md',
+      'ren document.md renamed.md',
+    ]) {
+      expect(powershellWritesWorkspace(command, workspace), command).toBe(true);
+    }
+  });
+
   it('does not mistake a value operand for a path', () => {
     expect(powershellWriteTargets('Set-Content /tmp/out.txt -Value hello')).toEqual(['/tmp/out.txt']);
     expect(powershellWriteTargets('Set-Content -Path /tmp/out.txt hello')).toEqual(['/tmp/out.txt']);

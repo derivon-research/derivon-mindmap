@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { shellToolName } from './commandSurface';
 import {
   AGENT_DIR_ENVIRONMENT_VARIABLE, installNodeShim, nodeShim, prepareSessionEnvironment,
 } from './sessionEnvironment';
@@ -98,7 +99,7 @@ describe('preparing the session environment', () => {
       configDirectory: directory,
       platform: 'darwin',
       execPath: '/apps/node',
-      findShell: () => ({ found: true, path: '/bin/bash' }),
+      findShell: () => ({ found: true }),
     });
     // This is the whole point: `getShellEnv` builds the session's PATH from
     // `getAgentDir()/bin`, so the agent directory *is* the PATH prefix.
@@ -114,7 +115,7 @@ describe('preparing the session environment', () => {
       configDirectory: directory,
       platform: 'win32',
       execPath: 'C:\\apps\\node.exe',
-      findShell: () => ({ found: true, path: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' }),
+      findShell: () => ({ found: true }),
     });
     expect(environment.shellTool).toBe('powershell');
     expect(existsSync(path.join(directory, 'bin', 'node.cmd'))).toBe(true);
@@ -130,5 +131,25 @@ describe('preparing the session environment', () => {
     });
     expect(environment.notes.join('\n')).toContain('powershell.exe');
     expect(environment.shellTool).toBe('powershell');
+  });
+
+  it('folds a shim it could not write into the same notes', async () => {
+    const file = path.join(directory, 'not-a-directory');
+    await writeFile(file, 'x');
+    const environment = prepareSessionEnvironment({
+      configDirectory: path.join(file, 'root'),
+      platform: 'darwin',
+      execPath: '/apps/node',
+      findShell: () => ({ found: true }),
+    });
+    expect(environment.notes.join('\n')).toContain('无法提供');
+  });
+
+  it('finds the real shell on this machine when nothing is injected', () => {
+    // The default finder, not a fixture: on a machine with no shell at all this is the branch
+    // that produces the diagnostic, and everywhere else it must stay quiet.
+    const environment = prepareSessionEnvironment({ configDirectory: directory });
+    if (environment.notes.length) expect(environment.notes.join('\n')).toContain('没有找到 shell');
+    expect(environment.shellTool).toBe(shellToolName(process.platform));
   });
 });

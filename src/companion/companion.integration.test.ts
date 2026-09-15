@@ -543,6 +543,9 @@ it('gives the session a shell rooted at the application, with a node that works'
     await companion.await((line) => line.type === 'ok' && line.id === 4);
     // The shim is a link to the sidecar runtime, so the version is this process's own.
     expect(lastToolContent(requestBodies.at(-1) ?? '').trim()).toBe(process.version);
+
+    // A healthy environment is silent: the notes are for a machine that could not provide one.
+    expect(companion.diagnostics()).not.toContain('[session environment]');
   } finally {
     companion.stop();
   }

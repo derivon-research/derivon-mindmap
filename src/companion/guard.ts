@@ -1,6 +1,7 @@
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { Extension, ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
+import type { ShellTool } from './commandSurface';
 
 /** How the guard shows up in diagnostics: an application-provided inline extension. */
 const GUARD_PATH = '<inline:derivon-workspace-write-guard>';
@@ -19,7 +20,7 @@ const GUARD_PATH = '<inline:derivon-workspace-write-guard>';
  * The authoring session gets no guard: it is the session allowed to change the workspace.
  *
  * What it judges is the built-in tools and the shell — whichever shell the platform's session
- * holds, `bash` on POSIX and `powershell` on Windows, each read by its own grammar. A granted
+ * holds, `bash` on POSIX and `powershell` on Windows, each with its own write forms. A granted
  * command's own arguments are the
  * command surface's contract instead: the surface declares what each command requires, and a
  * command that must not change something does not declare it. That is why this reads `path` and
@@ -63,19 +64,27 @@ export function guardDecision(toolName: string, input: unknown, root: string): T
     if (!isInside(root, canonicalizeNearest(path.resolve(root, target)))) return undefined;
     return refusal(`writing ${target} would change the workspace`);
   }
-  if (toolName === 'bash') {
-    const command = fields.command;
-    if (typeof command !== 'string' || !command) return undefined;
-    if (!bashWritesWorkspace(command, root)) return undefined;
-    return refusal('that shell command would write inside the workspace');
-  }
-  if (toolName === 'powershell') {
-    const command = fields.command;
-    if (typeof command !== 'string' || !command) return undefined;
-    if (!powershellWritesWorkspace(command, root)) return undefined;
-    return refusal('that PowerShell command would write inside the workspace');
-  }
-  return undefined;
+  const writesWorkspace = shellRule(toolName);
+  if (!writesWorkspace) return undefined;
+  const command = fields.command;
+  if (typeof command !== 'string' || !command) return undefined;
+  if (!writesWorkspace(command, root)) return undefined;
+  return refusal(`that ${toolName} command would write inside the workspace`);
+}
+
+/**
+ * The rule for each shell a session can hold, one per tool name Pi ships.
+ *
+ * Keyed by the grant's own type, so a shell added to `ShellTool` cannot be left without a rule
+ * here — the type says which shells exist, this says what each one writes.
+ */
+const SHELL_RULES: Record<ShellTool, (command: string, root: string) => boolean> = {
+  bash: bashWritesWorkspace,
+  powershell: powershellWritesWorkspace,
+};
+
+function shellRule(toolName: string): ((command: string, root: string) => boolean) | undefined {
+  return toolName === 'bash' || toolName === 'powershell' ? SHELL_RULES[toolName] : undefined;
 }
 
 function refusal(what: string): ToolCallEventResult {
@@ -172,7 +181,11 @@ function writeForm(words: readonly string[]): { readonly targets: 'all' | 'last'
 }
 
 /**
- * A PowerShell write cmdlet, and which of its arguments the write lands on.
+ * A PowerShell write form, and which of its arguments the write lands on.
+ *
+ * `names` is the cmdlet and the aliases PowerShell itself ships for it — `rm` writes a file in a
+ * PowerShell session just as `Remove-Item` does, and a rule that only knew the long name would
+ * let the short one through, which is the wrong side to be wrong on.
  *
  * `positionals` names the plain arguments that are targets, and acts as a *fallback*:
  * `Set-Content -Path x y` writes `x`, and tells the cmdlet's `y` is the value it writes
@@ -181,23 +194,23 @@ function writeForm(words: readonly string[]): { readonly targets: 'all' | 'last'
  * whether `-Destination` is.
  */
 type PowershellWriteForm = {
-  readonly name: string;
+  readonly names: readonly string[];
   readonly positionals: 'all' | 'first' | 'last';
   readonly pathParameters: boolean;
   readonly destination: boolean;
 };
 
 const POWERSHELL_WRITE_FORMS: readonly PowershellWriteForm[] = [
-  { name: 'set-content', positionals: 'first', pathParameters: true, destination: false },
-  { name: 'add-content', positionals: 'first', pathParameters: true, destination: false },
-  { name: 'out-file', positionals: 'first', pathParameters: true, destination: false },
-  { name: 'new-item', positionals: 'first', pathParameters: true, destination: false },
-  { name: 'remove-item', positionals: 'all', pathParameters: true, destination: false },
+  { names: ['set-content', 'sc'], positionals: 'first', pathParameters: true, destination: false },
+  { names: ['add-content', 'ac'], positionals: 'first', pathParameters: true, destination: false },
+  { names: ['out-file'], positionals: 'first', pathParameters: true, destination: false },
+  { names: ['new-item', 'ni'], positionals: 'first', pathParameters: true, destination: false },
+  { names: ['remove-item', 'del', 'erase', 'rd', 'ri', 'rm', 'rmdir'], positionals: 'all', pathParameters: true, destination: false },
   // A move removes its source as well, so both ends are writes on the workspace.
-  { name: 'move-item', positionals: 'all', pathParameters: true, destination: true },
+  { names: ['move-item', 'mi', 'move', 'mv'], positionals: 'all', pathParameters: true, destination: true },
   // A copy reads its source; only the destination lands.
-  { name: 'copy-item', positionals: 'last', pathParameters: false, destination: true },
-  { name: 'rename-item', positionals: 'first', pathParameters: true, destination: false },
+  { names: ['copy-item', 'ci', 'copy', 'cp', 'cpi'], positionals: 'last', pathParameters: false, destination: true },
+  { names: ['rename-item', 'ren', 'rni'], positionals: 'first', pathParameters: true, destination: false },
 ];
 
 const POWERSHELL_PATH_PARAMETERS = new Set(['path', 'literalpath', 'filepath']);
@@ -219,21 +232,23 @@ const POWERSHELL_VALUE_PARAMETERS = new Set([
 /**
  * Whether a PowerShell command writes inside the workspace.
  *
- * The POSIX rule's counterpart and the same shape: only the arguments a write form actually
- * lands on are inspected, judged on the resolved real path. Everything this does not know — an
- * alias, a parameter spelled some third way, a form that is not listed — reads as a relative
- * path and is refused, which is the safe side of a fence. It is a fence all the same: a script
- * run by an interpreter, a provider that is not the filesystem, or an encoding this does not
- * know is outside it (ADR-0011).
+ * The POSIX rule's counterpart: only the arguments a write form actually lands on are inspected,
+ * judged on the resolved real path. A parameter it does not know how to read — a third spelling
+ * of a path parameter, an unrecognised word after a switch — becomes a positional and is refused,
+ * which is the safe side of a fence.
+ *
+ * Its edge is the vocabulary: a cmdlet outside `POWERSHELL_WRITE_FORMS`, whatever its spelling, is
+ * not seen at all. The POSIX rule has the same edge (`/bin/rm` is not the word `rm`), and it is
+ * what "a guard is a fence, not a sandbox" means in practice — an interpreter, another provider,
+ * or an encoding this does not know is outside it (ADR-0011).
  */
 export function powershellWritesWorkspace(command: string, root: string): boolean {
-  const targets = [...redirectionTargets(command), ...powershellWriteTargets(command)];
-  return targets.some((target) => writeLandsInsideWorkspace(target, root));
+  return powershellWriteTargets(command).some((target) => writeLandsInsideWorkspace(target, root));
 }
 
-/** Every path a write form in this command would land on. */
+/** Every path a write form in this command would land on, redirections included. */
 export function powershellWriteTargets(command: string): string[] {
-  const targets: string[] = [];
+  const targets: string[] = [...redirectionTargets(command)];
   for (const words of powershellSegments(command)) targets.push(...segmentWriteTargets(words));
   return targets;
 }
@@ -272,9 +287,10 @@ function powershellSegments(command: string): string[][] {
 
 /** The targets one statement writes, or none when it holds no write form. */
 function segmentWriteTargets(words: readonly string[]): string[] {
+  const lowered = words.map((word) => word.toLowerCase());
   const form = POWERSHELL_WRITE_FORMS.find((candidate) =>
-    words.some((word) => word.toLowerCase() === candidate.name));
-  const at = form ? words.findIndex((word) => word.toLowerCase() === form.name) : -1;
+    candidate.names.some((name) => lowered.includes(name)));
+  const at = form ? lowered.findIndex((word) => form.names.includes(word)) : -1;
   if (!form || at < 0) return [];
   const targets: string[] = [];
   const positionals: string[] = [];
