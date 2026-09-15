@@ -9,6 +9,16 @@ built-in tools start disabled, a mode **grants** the tools it needs, and the wri
 perform is refused by a `tool_call` guard rather than by taking the tool away
 ([#123](https://github.com/derivon-research/derivon-mindmap/issues/123)).
 
+The last supersession is the largest: a mode's tool set is **not a capability limit**. The
+application registers no built-in tool definition of its own — a mode's grant table enables the
+built-ins it asks for, and the built-ins no mode asks for are simply not there — but an operator
+may load their own Pi extensions into their own session, and an extension may register `read`,
+`write`, `edit` or `bash`
+([#121](https://github.com/derivon-research/derivon-mindmap/issues/121)). What holds inside the
+client is the property this decision already rested on — an unmediated write is *unvalidated*, and
+the reader enforces the artifact — so the boundary is **artifact enforcement**, and a mode's guard
+is its promise kept cheaply rather than the thing that makes the promise true.
+
 ## Context
 
 The application is moving to "files are the source of truth": the agent is a coding agent rooted
@@ -58,6 +68,14 @@ grant**: built-in tools start disabled, and a mode gets the ones it needs — wh
 learning session may hold `bash` at all. Taking a tool away is not how a mode is stopped from
 writing: a mode that needs a shell for something legitimate (a user's `tavily-cli`, say) would
 lose the legitimate use with it.
+
+A grant is not a limit, and the tool set is not even entirely the application's to decide. No mode
+grants `write` or `edit` — Pi disables its built-ins and a mode asks for the ones it needs — and an
+operator's own extensions may put them back, or add tools no built-in ever had
+([#121](https://github.com/derivon-research/derivon-mindmap/issues/121)). "The client has no
+write tool" was never a property of the client, only of the session it happened to build, and a
+user who loads an extension is entitled to change that session. What survives is the boundary
+below, which never depended on which tools were there.
 
 What a mode must not do is refused as an **operation class**, in the `tool_call` guard: in the
 learning session a call that would write inside the workspace is blocked, and every other call is
@@ -128,6 +146,13 @@ session-level permission callback that a client can rely on; its interception po
 extension layer's `tool_call` hook, a custom bash tool's spawn hook — are client-side
 registrations, absent entirely without a client. A design whose central claim is "the agent may
 not write there" would therefore be false in the mode where the agent holds `bash`.
+
+It would also be a claim about a tool set the application does not own outright. No mode grants
+`write` or `edit`, and an operator's own extension may register either of them back to their own
+session ([#121](https://github.com/derivon-research/derivon-mindmap/issues/121)), so a limit drawn
+by *not granting* a tool would be a limit the user can lift by writing a file — the clearest
+possible statement that it was never a boundary. The guard still refuses the operation class a mode
+must not perform, whichever extension put the tool there.
 
 What is rejected is the **claim**, not the hook. A `tool_call` guard that refuses the operation
 class a mode must not perform is worth having: it makes the mode's promise true in practice and
@@ -203,6 +228,19 @@ save-state banner is the whole explanation — a send is not a second refusal pa
   what the no-client author uses as well.
 - ADR-0010's "built-in tools are disabled in the first slice" is superseded in one part: the first
   slice disables built-in tools *and* registers script commands as the only tools.
+- An operator may extend their own session with their own Pi extensions, which is what removes the
+  last of the capability-limit framing above ([#121](https://github.com/derivon-research/derivon-mindmap/issues/121)).
+  Extensions load per session from this application's own two roots — the user-level root always,
+  a project's own only once the operator has trusted that project — and what they can reach is
+  this companion process, which holds the resolved model credentials. That is the operator's own
+  code with the operator's own credentials, inside the local trust boundary, which is what
+  ADR-0010 records about it; the application does not limit what an extension may offer, and does
+  not pretend to. A broken extension is a diagnostic rather than a failure, and a project's
+  extensions load only behind a trust decision the workspace itself cannot make.
+- The guard reads tool *names* and arguments, not their origin, so an extension that registers
+  `write` is fenced exactly as Pi's own would have been. The rest of an extension is outside it and
+  is not judged at all — its own `tool_call` handlers, its `pi.exec`, and the code it runs are the
+  operator's, and the fence is drawn around the operation class, not around whoever performs it.
 - Without a client the boundary is agreement and the skill's instructions, and nothing more. An
   object document may quote third-party text, so document content is data and never instruction;
   the skill has to say so, and today it does not.

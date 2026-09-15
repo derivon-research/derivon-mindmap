@@ -9,7 +9,10 @@ type Mode = ConversationMode;
  *
  * Both lists in it — the commands at the end and the notes on the mode-level tools — are generated
  * from the same grants the session's tools are built from, so the prompt cannot name a tool the
- * session does not hold, and a tool cannot appear that the prompt never mentions.
+ * session does not hold, and no tool the application grants goes unmentioned. The tools an operator's
+ * own extensions registered are the one thing outside that pairing: they are the operator's, their
+ * descriptions travel in the tool definitions themselves, and this application has nothing to say
+ * about what they do (`extensions.ts`).
  */
 export function systemPrompt(mode: Mode, commands: readonly Command[], tools: readonly string[]): string {
   const header = mode === 'authoring' ? AUTHORING_HEADER : LEARNING_HEADER;

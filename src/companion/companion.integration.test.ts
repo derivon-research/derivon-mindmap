@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import { installCommandSurface, installSkill } from '../testing/commandSurface';
 import { installDerivonCli } from '../testing/derivonCli';
+import { brokenExtension, echoExtension, installExtension, writeExtension } from '../testing/extensions';
+import { trustFile } from './extensions';
 import { shellToolName } from './commandSurface';
 
 type Output =
@@ -33,6 +35,10 @@ const TOOL_CALLS: Record<string, { name: string; arguments: Record<string, unkno
   'bash-path': { name: 'bash', arguments: { command: 'printf %s "$PATH"' } },
   'bash-node': { name: 'bash', arguments: { command: 'node --version' } },
   'graph-query': { name: 'derivon', arguments: { argv: ['query', 'route', '--start', 'A', '--target', 'Z', '--pretty'] } },
+  'extension-echo': { name: 'fixture-echo', arguments: { text: 'hi' } },
+  // A name the application itself never registers: whatever `write` the session holds came from
+  // the extension the fixture installed.
+  'extension-write': { name: 'write', arguments: { path: 'poc.txt', content: 'written by the extension\n' } },
 };
 
 /**
@@ -119,10 +125,14 @@ function lastUserText(body: string): string {
  * for a line out. Each test that needs its own process gets one, because the first test
  * deliberately shuts its companion down to prove it exits cleanly.
  */
-function startCompanion(configDir: string, environment: NodeJS.ProcessEnv = process.env) {
+function startCompanion(
+  configDir: string,
+  environment: NodeJS.ProcessEnv = process.env,
+  scriptPath: string = companionPath,
+) {
   // The runtime this test was started with, by absolute path: a controlled PATH is part of what
   // is under test, and resolving `node` through it would make the harness depend on it too.
-  const process_ = spawn(process.execPath, [companionPath, '--config-dir', configDir], {
+  const process_ = spawn(process.execPath, [scriptPath, '--config-dir', configDir], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: environment,
   });
@@ -823,6 +833,155 @@ it('lists a skill installed under the user-level root, without a workspace of it
     companion.send({ id: 4, type: 'send', mode: 'learning', prompt: 'tool-call:read-skill' });
     await companion.await((line) => line.type === 'ok' && line.id === 4);
     expect(lastToolContent(requestBodies.at(-1) ?? '')).toContain('The passphrase is tungsten.');
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #121: the operator's own extension reaches the session, and the tool it registered is one the
+ * model can call. The application registers nothing of its own, so a tool that is there is there
+ * because an extension put it there.
+ */
+it('loads a user-level extension and puts its tool in the session', { timeout: 30_000 }, async () => {
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-121-user-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  await installExtension(path.join(configDirectory, 'extensions'), 'echo', echoExtension);
+  const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-121-user-ws-'));
+  const companion = startCompanion(configDirectory);
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+
+    companion.send({ id: 3, type: 'send', mode: 'learning', prompt: 'tool-call:extension-echo' });
+    await companion.await((line) => line.type === 'ok' && line.id === 3);
+
+    const offered = offeredToolNames(requestBodies[0]);
+    expect(offered).toContain('fixture-echo');
+    // Still no built-in that the application granted: only what the extension registered.
+    for (const builtin of ['write', 'edit']) expect(offered).not.toContain(builtin);
+    // The tool really ran, and answered.
+    expect(lastToolContent(requestBodies.at(-1) ?? '')).toContain('fixture:hi');
+    // A working extension is silent: the notes are for what failed or was skipped.
+    expect(companion.diagnostics()).not.toContain('[extensions]');
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #121: a project's extensions are the project's own code, so they wait for the operator to trust
+ * the project — and the skip is reported, in the reply the panel renders and on stderr.
+ */
+it('does not load a project-level extension until the project is trusted', { timeout: 30_000 }, async () => {
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-121-trust-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-121-trust-ws-'));
+  await installExtension(path.join(workspace, '.derivon', 'extensions'), 'echo', echoExtension);
+
+  const untrusted = startCompanion(configDirectory);
+  try {
+    untrusted.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await untrusted.await((line) => line.type === 'ok' && line.id === 1);
+    // The panel's own configuration read is where the diagnosis has to land.
+    untrusted.send({ id: 2, type: 'listModels', mode: 'learning' });
+    const catalog = await untrusted.await((line) => line.type === 'models' && line.id === 2);
+    expect(catalog).toMatchObject({ diagnosis: expect.stringContaining('项目级扩展未加载') });
+
+    untrusted.send({ id: 3, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
+    await untrusted.await((line) => line.type === 'ok' && line.id === 3);
+    untrusted.send({ id: 4, type: 'send', mode: 'learning', prompt: 'hello' });
+    await untrusted.await((line) => line.type === 'ok' && line.id === 4);
+    expect(offeredToolNames(requestBodies[0])).not.toContain('fixture-echo');
+    expect(untrusted.diagnostics()).toContain(`[extensions] 项目级扩展未加载：${workspace}`);
+    expect(untrusted.diagnostics()).toContain(trustFile(configDirectory));
+  } finally {
+    untrusted.stop();
+  }
+
+  // The operator trusts the project by writing it down, and the same project now loads.
+  await writeFile(trustFile(configDirectory), JSON.stringify({ [workspace]: true }));
+  const trusted = startCompanion(configDirectory);
+  try {
+    trusted.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await trusted.await((line) => line.type === 'ok' && line.id === 1);
+    trusted.send({ id: 2, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
+    await trusted.await((line) => line.type === 'ok' && line.id === 2);
+    // The first request of this companion's own turn, not the untrusted one's.
+    const firstRequest = requestBodies.length;
+    trusted.send({ id: 3, type: 'send', mode: 'learning', prompt: 'tool-call:extension-echo' });
+    await trusted.await((line) => line.type === 'ok' && line.id === 3);
+
+    expect(offeredToolNames(requestBodies[firstRequest] ?? '')).toContain('fixture-echo');
+    expect(lastToolContent(requestBodies.at(-1) ?? '')).toContain('fixture:hi');
+    expect(trusted.diagnostics()).not.toContain('项目级扩展未加载');
+  } finally {
+    trusted.stop();
+  }
+});
+
+/**
+ * #121: an extension may register a built-in, and when it does the session holds it — the
+ * application grants no built-in beyond the mode's own table, and what a mode must not do is refused as an
+ * operation class rather than by the tool being absent. The learning session's guard sees an
+ * extension's `write` exactly as it sees any other.
+ */
+it('lets an extension register a built-in, and the learning guard still refuses its write', { timeout: 30_000 }, async () => {
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-121-builtin-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  await installExtension(path.join(configDirectory, 'extensions'), 'write', writeExtension);
+  const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-121-builtin-ws-'));
+  const companion = startCompanion(configDirectory);
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+
+    companion.send({ id: 3, type: 'send', mode: 'learning', prompt: 'tool-call:extension-write' });
+    await companion.await((line) => line.type === 'ok' && line.id === 3);
+
+    // The tool is the extension's, and it is offered; the application registered nothing.
+    expect(offeredToolNames(requestBodies[0])).toContain('write');
+    // The write inside the workspace never happened, and the model was told why.
+    expect(existsSync(path.join(workspace, 'poc.txt'))).toBe(false);
+    expect(lastToolContent(requestBodies.at(-1) ?? '')).toContain('learning session');
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #121: the desktop bundle ships as one file beside the Node runtime and no `node_modules`, so an
+ * extension that imports the SDK has to resolve it out of the bundle. This runs the shipped
+ * artifact from a directory with no `node_modules` above it — the installed layout, not the build
+ * machine's — which is the only place the difference shows.
+ */
+it('loads an extension in the shipped bundle, with no node_modules beside it', { timeout: 30_000 }, async () => {
+  const shipped = await mkdtemp(path.join(tmpdir(), 'derivon-issue-121-shipped-'));
+  const bundle = path.join(shipped, 'companion.mjs');
+  await writeFile(bundle, await readFile(companionPath));
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-121-shipped-config-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  await installExtension(path.join(configDirectory, 'extensions'), 'echo', echoExtension);
+  await installExtension(path.join(configDirectory, 'extensions'), 'broken', brokenExtension);
+  const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-121-shipped-ws-'));
+  const companion = startCompanion(configDirectory, process.env, bundle);
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+    companion.send({ id: 3, type: 'send', mode: 'learning', prompt: 'tool-call:extension-echo' });
+    await companion.await((line) => line.type === 'ok' && line.id === 3);
+
+    expect(offeredToolNames(requestBodies[0])).toContain('fixture-echo');
+    expect(lastToolContent(requestBodies.at(-1) ?? '')).toContain('fixture:hi');
+    // The broken extension beside it is diagnosed rather than taking the good one down with it.
+    expect(companion.diagnostics()).toContain('broken.ts');
+    expect(companion.diagnostics()).toContain('this extension refuses to load');
   } finally {
     companion.stop();
   }

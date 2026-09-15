@@ -11,4 +11,12 @@ await build({
   },
   target: 'node22',
   legalComments: 'none',
+  define: {
+    // The Pi SDK configures its extension loader from this flag: with it, extension modules are
+    // resolved against the packages embedded in this bundle; without it, the loader goes looking
+    // for `typebox`, the Pi packages and their dependencies on disk. The bundle ships as one file
+    // beside the Node runtime and no `node_modules`, so without the flag an extension that imports
+    // anything from the SDK would load on the build machine and fail in the installed application.
+    PI_BUNDLED_NODE: 'true',
+  },
 });

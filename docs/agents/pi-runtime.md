@@ -45,12 +45,13 @@ why it is one root on every platform rather than each platform's own convention.
   `app_config_dir()`; nothing reads that directory now, and there is no migration — a
   configuration left there produces the ordinary “no `models.json`” diagnosis, which names
   the root that is read.
-- **`skills/` is read; `extensions/` is fixed here but still unread**: the companion
-  discovers one command surface per workspace under `<root>/skills` and
-  `<workspace>/.derivon/skills` ([the command surface, as the companion wires
-  it](#the-command-surface-as-the-companion-wires-it)); user extensions load from
-  `extensions/` in #121. Neither is `~/.pi/`, which this application never consults, and
-  neither is where Pi's own skills live.
+- **Both `skills/` and `extensions/` are read**: the companion discovers one command surface per
+  workspace under `<root>/skills` and `<workspace>/.derivon/skills` ([the command surface, as the
+  companion wires it](#the-command-surface-as-the-companion-wires-it)), and loads the operator's own
+  Pi extensions from `<root>/extensions` and — for a trusted project — from
+  `<workspace>/.derivon/extensions` ([the extensions a session may
+  hold](#the-extensions-a-session-may-hold)). Neither root is `~/.pi/`, which this application never
+  consults, and neither is where Pi's own skills or extensions live.
 
 ## Provider/model configuration
 
@@ -129,9 +130,10 @@ only place a desktop `WorkspaceHandle.id` is made).
   `Current working directory: <cwd>` to the system prompt either way, and `cwd` also keys
   project settings, project resource discovery and session metadata. The companion
   supplies its own `ResourceLoader` and in-memory `SessionManager`, and reads no
-  document through Pi; the one thing it reads out of the workspace is the manifest's
-  `graph`, for the `derivon` tool, and the one thing it is rooted at is the session's own
-  workspace, not a path a call can name.
+  document through Pi; what it reads out of the workspace is the manifest's
+  `graph`, for the `derivon` tool, and the roots a session is built from — the workspace's
+  skills, and its extensions when the project is trusted — and the one thing it is rooted at is
+  the session's own workspace, not a path a call can name.
 - Pi does not check that `cwd` exists; a missing directory fails much later and
   obscurely. The companion checks before creating a session and refuses by name.
 
@@ -157,7 +159,11 @@ evidence on the way to the panel is a regression:
   run something like `tavily-cli` while learning and the model can read the documents it works on.
   The apparatus is `settings.defaultTools` (an empty array
   disables the built-ins while keeping extension and custom tools) plus the session’s `tools`
-  allowlist, not `noTools: 'all'`, which also filters custom tools out.
+  allowlist, not `noTools: 'all'`, which also filters custom tools out. Pi's built-ins are all
+disabled to begin with; a mode's grant table names the ones it wants, and the operator's own
+extensions add their tools to the same allowlist
+([the extensions a session may hold](#the-extensions-a-session-may-hold)) — so a grant is what a
+mode asks for, not the limit of what a session can hold.
 - **What a mode must not do is refused as an operation class, not by removing the tool.** The
   companion registers an inline extension whose `tool_call` hook blocks the call — in the
   learning session, one that would write inside the workspace — and leaves every other call
@@ -230,6 +236,63 @@ on stderr names both roots that were searched, and the session still works — t
 empty model catalog, whose own rendering in the panel is a separate change rather than something
 this ticket reaches. The surface is read when a session is built, not kept from the last one, so
 a skill the operator installs while the application runs reaches the next session.
+
+- Extension loading is the other configuration state that travels on the same reply. A load that
+  failed, a root that could not be read, and a project root that was skipped because the project is
+  not trusted each become an `[extensions]` line on stderr and a note in the `models` reply's
+  `diagnosis`, beside the catalog's own reason. A broken extension must not be able to fail a
+  session, a model list or the process — and must not be dropped either: the operator wrote that
+  code, and is owed the reason it did nothing.
+
+## The extensions a session may hold
+
+`src/companion/extensions.ts` owns this. An extension is the operator's own code: it can register
+tools, handlers and providers into a session, and the application does not decide what it may do
+with it. There are two roots — the user-level `<root>/extensions`, and the project-level
+`<workspace>/.derivon/extensions`.
+
+- **Discovery and loading are Pi's**, through the SDK's `discoverAndLoadExtensions`: the same
+  one-level rules (a `*.ts`/`*.js` file, a directory with `index.ts`/`index.js`, a `package.json`
+  declaring `pi.extensions`), the same TypeScript transform, and the same load errors. What this
+  application supplies is the two roots and the working directory the load happens in.
+- **The loading working directory is the application's own root, never the workspace.** Pi's
+  discovery adds `<cwd>/.pi/extensions` as a root of its own and offers no argument that turns it
+  off, so a loading cwd inside a workspace would let that workspace's `.pi` tree be loaded with no
+  trust decision at all; `<root>` is a directory a workspace cannot write. An extension's `pi.exec`
+  without an explicit working directory therefore starts there rather than in the workspace, while
+  `ctx.cwd`, which is what a registered tool's own handler reads, is the session's.
+- **A project's extensions wait for trust.** The project root is loaded only when the operator has
+  written its path, or an ancestor's, into `<root>/trust.json` with `true` — `{ "/work/graph": true }`,
+  the same shape and the same nearest-ancestor rule as Pi's own trust file, read from this
+  application's root. This application has no prompt that writes it and takes trust from nothing
+  else, so it is a file the operator edits, like `models.json`; a store that cannot be parsed trusts
+  nothing and says so. Nothing written *below* the project can trust it: a workspace cannot vouch
+  for itself.
+- **The tools an extension registers are part of the session's tool set.** A session's allowlist is
+  the mode's grant table plus the names the loaded extensions registered, so a tool the operator
+  installed is usable and not merely present — and an extension that registers `write` or `bash`
+  puts it in the session. That is the point rather than a leak: the client's tool set is not a
+  capability limit, and the boundary that holds is the artifact
+  ([ADR-0011](../adr/0011-change-workspace-content-through-the-script-command-surface.md),
+  [ADR-0010](../adr/0010-pi-sdk-companion-process.md)). The learning session's guard reads tool
+  names and arguments and not their origin, so it fences an extension's `write` exactly as it would
+  fence Pi's.
+- **One load serves one session.** Pi binds a runtime's actions when the session is built, so two
+  sessions sharing one runtime would have one session's own `pi.sendMessage()` arrive in the other.
+  The load is per (mode, workspace), and the panel's configuration read shares it: what the panel
+  reports and what the session holds come from one execution of the operator's code, not two. That
+  also makes the panel's read a place where that code first runs — Pi's own CLI does the same when
+  it starts — and the project root is behind the trust decision either way. The load is read again
+  for the next session, so an extension installed while the application runs reaches the session
+  after it.
+- **The shipped bundle carries the modules an extension imports.** The companion is one file beside
+  the Node runtime and ships no `node_modules`, so `scripts/build-companion.mjs` defines
+  `PI_BUNDLED_NODE`: with it Pi's loader resolves `@earendil-works/pi-coding-agent`, `typebox` and
+  the rest out of the bundle, and without it an extension that imports any of them would load on the
+  build machine and fail in the installed application.
+- **Nothing installed is not a diagnostic**, the same rule the skills follow. What is reported is a
+  load that failed and a project root that was skipped, and both are reported twice on purpose: on
+  stderr for the operator reading the process, and in the reply the panel renders.
 
 ## The graph reads and queries, as the companion wires it
 
@@ -346,6 +409,12 @@ Rust starts the companion with `env_clear()` and a five-name allowlist (`PATH`, 
 credential fallback reads `process.env` live, downstream of any injected
 `CredentialStore`, and also consults Google ADC and AWS profile files that no
 environment allowlist covers. The attribution filter above is what actually holds.
+
+It is not a sandbox for the operator's own extensions either. An extension runs in this
+process, which holds the resolved credentials of the model the session is on; the
+allowlist stops it from reading the environment and nothing stops it from reading what
+`ModelRuntime` resolved. That is the operator's own code with the operator's own
+credentials, inside the local trust boundary ([ADR-0010](../adr/0010-pi-sdk-companion-process.md)).
 
 ## Security follow-up
 
