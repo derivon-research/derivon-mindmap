@@ -33,22 +33,20 @@ slice. The architecture is fixed by
 └── extensions/             # user Pi extensions (#121)
 ```
 
-The root is `<home>/.derivon` on all three platforms, and deliberately not the Tauri
-application configuration directory or `$XDG_CONFIG_HOME` / `%APPDATA%`: these files are
-the operator's — they are edited by hand, backed up, and documented — and one findable
-place is worth more than each platform's own convention. `derivon_root` in
-`src-tauri/src/conversation.rs` is the only place that spells it; the companion receives
-it, and does not know where it came from.
+`derivon_root` in `src-tauri/src/conversation.rs` is the only place that spells the
+user-level root (`workspace.rs` spells the different, workspace-local `.derivon`); the
+companion receives the directory and does not know where it came from. ADR-0010 records
+why it is one root on every platform rather than each platform's own convention.
 
 - **Learner records are not here.** They are application data, keyed by workspace, and
   stay in the app-data directory ([learner records](../learner-records.md), ADR-0009).
 - **The old location is not read.** Before this root existed the two files were read from
   `app_config_dir()`; nothing reads that directory now, and there is no migration — a
-  configuration left there produces the ordinary “no `models.json`” diagnosis, which
-  names the root that is read.
-- **`skills/` and `extensions/` are the established layout**, though the tickets that read
-  them are still open. A reader of either finds it here and nowhere else — in particular
-  not in `~/.pi/`, which this application never consults.
+  configuration left there produces the ordinary “no `models.json`” diagnosis, which names
+  the root that is read.
+- **`skills/` and `extensions/` are fixed here, though nothing reads them yet**: the
+  command surface starts looking in `skills/` (#104) and user extensions load from
+  `extensions/` (#121). Neither is `~/.pi/`, which this application never consults.
 
 ## Provider/model configuration
 

@@ -41,10 +41,12 @@ copy to keep in step, and the one no compiler checks.
 ### The application owns its model configuration
 
 The application reads its own `models.json` and `auth.json` from the user-level Derivon
-root, `~/.derivon/` — the same directory on all three platforms, because these are files
-the operator edits, backs up and is told about by hand. Both files use Pi's file syntax, so
-a provider block can be
-copied from Pi's documentation or from an existing `~/.pi/agent/models.json` unchanged.
+root, `~/.derivon/` — the same directory on all three platforms, and deliberately neither
+the Tauri application configuration directory nor `$XDG_CONFIG_HOME` / `%APPDATA%`. These
+are files the operator edits, backs up and is told about by hand, and one place they can
+find is worth more than each platform's own convention. Both files use Pi's file syntax, so
+a provider block can be copied from Pi's documentation or from an existing
+`~/.pi/agent/models.json` unchanged.
 They are the application's files: it does not read, write, or fall back to `~/.pi/`, and
 it does not require Pi CLI to be installed.
 
