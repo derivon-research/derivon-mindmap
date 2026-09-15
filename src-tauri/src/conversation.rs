@@ -147,10 +147,8 @@ fn node_path() -> Result<PathBuf, String> {
 /// The user-level Derivon root, `<home>/.derivon`.
 ///
 /// One directory on all three platforms — `~/.derivon` on macOS and Linux,
-/// `%USERPROFILE%\.derivon` on Windows — and deliberately not the Tauri application
-/// configuration directory or `$XDG_CONFIG_HOME`. It holds files a person edits by hand,
-/// backs up and is told about; one place they can find is worth more than each platform's
-/// own convention. See ADR-0010.
+/// `%USERPROFILE%\.derivon` on Windows — holding files a person edits by hand; ADR-0010
+/// records why that beats each platform's own convention.
 fn derivon_root(home: &Path) -> PathBuf {
     home.join(".derivon")
 }
@@ -168,7 +166,7 @@ fn create_derivon_root(home: &Path) -> Result<PathBuf, String> {
 ///
 /// The companion reads `models.json` and `auth.json` from here and nowhere else; it does
 /// not consult `~/.pi/`. The directory is handed to it as `--config-dir`.
-fn config_directory(app: &AppHandle) -> Result<PathBuf, String> {
+fn configuration_root(app: &AppHandle) -> Result<PathBuf, String> {
     let home = app
         .path()
         .home_dir()
@@ -187,7 +185,7 @@ const INHERITED_ENVIRONMENT: [&str; 5] = ["PATH", "HOME", "TMPDIR", "LANG", "LC_
 async fn start(app: &AppHandle) -> Result<ConversationProcess, String> {
     let script = script_path(app)?;
     let node = node_path()?;
-    let config = config_directory(app)?;
+    let config = configuration_root(app)?;
     let inherited: Vec<(String, String)> = INHERITED_ENVIRONMENT
         .iter()
         .filter_map(|name| std::env::var(name).ok().map(|value| ((*name).to_owned(), value)))
