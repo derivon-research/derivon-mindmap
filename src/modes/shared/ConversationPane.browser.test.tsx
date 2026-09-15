@@ -128,6 +128,17 @@ it('shows why the catalog is the way it is instead of only an empty list', async
   await expect.element(page.getByText('未找到 models.json：/tmp/derivon/models.json')).toBeVisible();
 });
 
+/** #121: the session's own configuration state travels in the same field, and shows up here. */
+it('shows a session configuration reason beside the catalog\'s own', async () => {
+  const provider = new FakeProvider();
+  // Two reasons, the way the companion joins them: the catalog's, and what an extension did.
+  provider.diagnosis = '未找到 models.json：/tmp/derivon/models.json\n项目级扩展未加载：/work/graph 未受信任。';
+  await render(provider);
+
+  await page.getByRole('button', { name: /Claude Sonnet 4\.5/ }).click();
+  await expect.element(page.getByText(/项目级扩展未加载：\/work\/graph/)).toBeVisible();
+});
+
 it('reports a provider that rejects rather than silently emptying the picker', async () => {
   const provider = new FakeProvider();
   provider.listModels.mockRejectedValueOnce(new Error('Pi companion exited unexpectedly'));

@@ -84,7 +84,8 @@ the guarantee is where it always was: an unmediated write is *unvalidated*, and 
 enforces the artifact. Making the refusal a **guarantee** is the job of isolation outside this
 process, not of this surface.
 
-The tool set is constructed per mode, so a session holds only what its mode grants; the learning
+The tool set is constructed per mode, so a session holds only what its mode grants and what the
+operator's own extensions added to it; the learning
 session has no write *command* registered in it at all. "Learning mode cannot edit" is structural,
 not a switch that some other code path could turn back on. Reading follows where the truth lives:
 workspace content is on disk and is read on demand through read-capability commands, while learner

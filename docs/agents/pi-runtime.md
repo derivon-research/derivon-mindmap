@@ -254,20 +254,25 @@ with it. There are two roots — the user-level `<root>/extensions`, and the pro
 - **Discovery and loading are Pi's**, through the SDK's `discoverAndLoadExtensions`: the same
   one-level rules (a `*.ts`/`*.js` file, a directory with `index.ts`/`index.js`, a `package.json`
   declaring `pi.extensions`), the same TypeScript transform, and the same load errors. What this
-  application supplies is the two roots and the working directory the load happens in.
+  application supplies is which roots are reachable — the agent directory is its own root, and the
+  project root is passed explicitly, only for a trusted project and only when it is there — and the
+  working directory the load happens in.
 - **The loading working directory is the application's own root, never the workspace.** Pi's
   discovery adds `<cwd>/.pi/extensions` as a root of its own and offers no argument that turns it
-  off, so a loading cwd inside a workspace would let that workspace's `.pi` tree be loaded with no
-  trust decision at all; `<root>` is a directory a workspace cannot write. An extension's `pi.exec`
-  without an explicit working directory therefore starts there rather than in the workspace, while
-  `ctx.cwd`, which is what a registered tool's own handler reads, is the session's.
+  off, so the loading cwd decides which project's `.pi` tree is even reachable; a cwd inside a
+  workspace would let that workspace's tree be loaded with no trust decision at all, and `<root>` is
+  a directory a workspace cannot write. The loader's own project root is therefore
+  `<root>/.pi/extensions` — inside the operator's own root, not a root this application declares,
+  and something nothing here writes. An extension's `pi.exec` without an explicit working directory
+  also starts in `<root>` rather than in the workspace, while `ctx.cwd`, which is what a registered
+  tool's own handler reads, is the session's.
 - **A project's extensions wait for trust.** The project root is loaded only when the operator has
   written its path, or an ancestor's, into `<root>/trust.json` with `true` — `{ "/work/graph": true }`,
   the same shape and the same nearest-ancestor rule as Pi's own trust file, read from this
   application's root. This application has no prompt that writes it and takes trust from nothing
-  else, so it is a file the operator edits, like `models.json`; a store that cannot be parsed trusts
-  nothing and says so. Nothing written *below* the project can trust it: a workspace cannot vouch
-  for itself.
+  else, so it is a file the operator edits, like `models.json`; a store that cannot be parsed, or
+  whose entries say something other than `true`/`false`, trusts nothing and says so. Nothing written
+  *below* the project can trust it: a workspace cannot vouch for itself.
 - **The tools an extension registers are part of the session's tool set.** A session's allowlist is
   the mode's grant table plus the names the loaded extensions registered, so a tool the operator
   installed is usable and not merely present — and an extension that registers `write` or `bash`

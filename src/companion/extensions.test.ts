@@ -4,7 +4,6 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { brokenExtension, echoExtension, installExtension, writeExtension } from '../testing/extensions';
 import {
-  extensionRoots,
   extensionToolNames,
   openExtensions,
   readTrustStore,
@@ -22,18 +21,6 @@ async function emptyRoot(): Promise<string> {
   return directory('derivon-extensions-empty-');
 }
 
-describe('the two roots', () => {
-  it('is the application root, and the workspace\'s own only once there is a workspace', () => {
-    expect(extensionRoots('/home/operator/.derivon', null)).toEqual([
-      { path: path.join('/home/operator/.derivon', 'extensions'), project: false },
-    ]);
-    expect(extensionRoots('/home/operator/.derivon', '/work/graph')).toEqual([
-      { path: path.join('/home/operator/.derivon', 'extensions'), project: false },
-      { path: path.join('/work/graph', '.derivon', 'extensions'), project: true },
-    ]);
-  });
-});
-
 describe('the trust store', () => {
   it('is nothing at all when the operator has never written one', async () => {
     const config = await directory('derivon-trust-missing-');
@@ -43,11 +30,13 @@ describe('the trust store', () => {
   it('reads each path with its decision', async () => {
     const config = await directory('derivon-trust-read-');
     const file = trustFile(config);
-    await writeFile(file, JSON.stringify({ '/work/graph': true, '/work/other': false }));
+    await writeFile(file, JSON.stringify({ '/work/graph': true, '/work/other': false, '/work/gone': null }));
     const { trust, note } = readTrustStore(file);
     expect(note).toBeUndefined();
     expect(trust.get(path.resolve('/work/graph'))).toBe(true);
     expect(trust.get(path.resolve('/work/other'))).toBe(false);
+    // Pi writes `null` to mean "no entry here", which is not a decision to act on.
+    expect(trust.has(path.resolve('/work/gone'))).toBe(false);
   });
 
   it('trusts nothing when it cannot be parsed, and says so rather than throwing', async () => {
@@ -62,6 +51,16 @@ describe('the trust store', () => {
     const notAnObject = readTrustStore(file);
     expect(notAnObject.trust.size).toBe(0);
     expect(notAnObject.note).toContain(file);
+  });
+
+  it('trusts nothing when an entry says something other than yes or no', async () => {
+    const config = await directory('derivon-trust-values-');
+    const file = trustFile(config);
+    await writeFile(file, JSON.stringify({ '/work/graph': true, '/work/other': 'yes' }));
+    const { trust, note } = readTrustStore(file);
+    // One unreadable entry is not read as permission for the others.
+    expect(trust.size).toBe(0);
+    expect(note).toContain('/work/other');
   });
 
   it('lets the nearest entry decide, and lets a closer no take a farther yes back', () => {

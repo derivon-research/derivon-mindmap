@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   createExtensionRuntime,
@@ -7,6 +7,9 @@ import {
   type ExtensionRuntime,
   type LoadExtensionsResult,
 } from '@earendil-works/pi-coding-agent';
+// The guard's canonicalisation, which is the process's one answer to "what path is this really" —
+// a trust entry and a workspace have to resolve the same way for them to be compared at all.
+import { canonicalizeNearest } from './guard';
 
 /** One extension that could not be loaded, in Pi's own shape. */
 export type ExtensionFailure = LoadExtensionsResult['errors'][number];
@@ -28,32 +31,7 @@ export type ExtensionState = {
   readonly notes: readonly string[];
 };
 
-/** Where an extension root sits relative to the thing that owns it. */
-export type ExtensionRoot = {
-  readonly path: string;
-  /**
-   * A project-level root is the project's own code, so it is loaded only once the operator has
-   * said the project is trusted. The user-level root is the operator's own, and is not gated.
-   */
-  readonly project: boolean;
-};
-
-/**
- * The two roots an extension is installed under.
- *
- * The user-level one is the directory `#120` gave the application — `<config-dir>/extensions`,
- * which the host resolves to `~/.derivon/extensions` — and the project-level one sits beside the
- * workspace's skills. Neither is `~/.pi/agent/extensions` or `<workspace>/.pi/extensions`: this
- * application's roots are its own, the same rule the skills and the model configuration follow.
- */
-export function extensionRoots(configDirectory: string, workspacePath: string | null): readonly ExtensionRoot[] {
-  const project = projectExtensionRoot(workspacePath);
-  return [
-    { path: path.join(configDirectory, 'extensions'), project: false },
-    ...(project ? [{ path: project, project: true }] : []),
-  ];
-}
-
+/** The project's own extension root: the user-level one belongs to the loader (see below). */
 function projectExtensionRoot(workspacePath: string | null): string | undefined {
   return workspacePath ? path.join(workspacePath, '.derivon', 'extensions') : undefined;
 }
@@ -61,20 +39,6 @@ function projectExtensionRoot(workspacePath: string | null): string | undefined 
 /** The file the operator writes to trust a project; it lives in the application's own root. */
 export function trustFile(configDirectory: string): string {
   return path.join(configDirectory, 'trust.json');
-}
-
-/**
- * Paths are compared in canonical form, so a workspace reached through a symlink matches the
- * path the operator wrote down, and two spellings of one directory are one entry.
- */
-function canonical(target: string): string {
-  const resolved = path.resolve(target);
-  try {
-    return realpathSync(resolved);
-  } catch {
-    // A path that is not there cannot be canonicalised; its resolved spelling is all there is.
-    return resolved;
-  }
 }
 
 /** Path to decision, canonicalised. An absent entry means "nothing has been said about this". */
@@ -92,7 +56,8 @@ export type TrustStore = ReadonlyMap<string, boolean>;
  *
  * A store that cannot be read trusts nothing and says so: refusing to load a project's code
  * because its permission file is malformed is the safe side, and reading a broken file as
- * permission is not.
+ * permission is not. `null` is Pi's own way of writing "no entry here", so it is not an error —
+ * any other value is.
  */
 export function readTrustStore(file: string): { readonly trust: TrustStore; readonly note?: string } {
   if (!existsSync(file)) return { trust: new Map() };
@@ -100,16 +65,24 @@ export function readTrustStore(file: string): { readonly trust: TrustStore; read
   try {
     parsed = JSON.parse(readFileSync(file, 'utf8'));
   } catch (error) {
-    return { trust: new Map(), note: `信任文件不可读：${file}（${message(error)}），没有任何项目受信任。` };
+    return untrusted(`信任文件不可读：${file}（${message(error)}）`);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return { trust: new Map(), note: `信任文件不是一个「路径 → true/false」的对象：${file}，没有任何项目受信任。` };
+    return untrusted(`信任文件不是一个「路径 → true/false」的对象：${file}`);
   }
   const trust = new Map<string, boolean>();
   for (const [key, value] of Object.entries(parsed)) {
-    if (value === true || value === false) trust.set(canonical(key), value);
+    if (value === null) continue;
+    if (value !== true && value !== false) {
+      return untrusted(`信任文件里 ${key} 的值不是 true/false：${file}`);
+    }
+    trust.set(canonicalizeNearest(key), value);
   }
   return { trust };
+}
+
+function untrusted(reason: string): { readonly trust: TrustStore; readonly note: string } {
+  return { trust: new Map(), note: `${reason}，没有任何项目受信任。` };
 }
 
 /**
@@ -120,7 +93,7 @@ export function readTrustStore(file: string): { readonly trust: TrustStore; read
  * for it: a workspace cannot trust itself.
  */
 export function trustDecisionAt(trust: TrustStore, workspacePath: string): boolean {
-  let current = canonical(workspacePath);
+  let current = canonicalizeNearest(workspacePath);
   for (;;) {
     const decision = trust.get(current);
     if (decision !== undefined) return decision;
@@ -138,55 +111,63 @@ export function trustDecisionAt(trust: TrustStore, workspacePath: string): boole
  * declaring `pi.extensions`), the same TypeScript transform, and the same load errors. Two things
  * are this application's, and both are in the arguments:
  *
- * - **The roots.** The user-level root is the agent directory's own `extensions/`, which is the
- *   global root this loader looks in, and the project-level root is passed explicitly — only when
- *   the project is trusted, and only when the directory is there.
+ * - **The roots.** The user-level root is the agent directory's own `extensions/` — `<root>/
+ *   extensions`, since the agent directory is this application's root — which is the global root
+ *   this loader looks in by itself, and the project-level root, `<workspace>/.derivon/extensions`,
+ *   is passed explicitly, only when the project is trusted and only when it is there. Neither is
+ *   `~/.pi/agent/extensions` or `<workspace>/.pi/extensions`: this application's roots are its own,
+ *   the same rule the skills and the model configuration follow.
  * - **The working directory the loading happens in.** It is the application's own root and never
  *   the workspace. Pi's discovery adds `<cwd>/.pi/extensions` as a root of its own, with no
- *   argument able to turn it off, so a loading cwd inside a workspace would let that workspace's
- *   `.pi` tree be loaded with no trust decision at all. The application's root is a directory a
- *   workspace cannot write. An extension's `pi.exec` without an explicit working directory
- *   therefore starts there rather than in the workspace; `ctx.cwd`, which is what a tool's own
- *   handler reads, is the session's.
+ *   argument able to turn it off — so the loading cwd decides which project's `.pi` tree is
+ *   reachable at all — and a cwd inside a workspace would let that workspace's tree be loaded with
+ *   no trust decision. The application's root is a directory a workspace cannot write; the loader's
+ *   own project root is therefore `<root>/.pi/extensions`, inside the operator's own root and not a
+ *   root this application declares, alongside the two above. An extension's `pi.exec` without an
+ *   explicit working directory also starts there rather than in the workspace; `ctx.cwd`, which is
+ *   what a registered tool's handler reads, is the session's own.
  *
  * A root that is not there offers nothing, and nothing installed anywhere is the ordinary state of
  * a machine rather than a diagnostic — the same rule the skills follow. What is reported is a load
  * that failed and a project root that was skipped because the project is not trusted.
  *
- * This never rejects. An extension is the operator's own code and a broken one must not be able to
- * fail the session, the model list, or the application: every failure becomes a note the operator
- * reads and, in the panel, a diagnosis beside the model catalog's own.
+ * This never rejects, and that promise is enforced here rather than assumed: an extension is the
+ * operator's own code and a broken one must not be able to fail the session, the model list, or the
+ * application. Every failure becomes a note the operator reads and, in the panel, a diagnosis
+ * beside the model catalog's own.
  */
 export async function openExtensions(options: {
   configDirectory: string;
   workspacePath: string | null;
 }): Promise<ExtensionState> {
   const { configDirectory, workspacePath } = options;
-  const notes: string[] = [];
-  const { trust, note } = readTrustStore(trustFile(configDirectory));
-  if (note) notes.push(note);
-
-  const projectRoot = projectExtensionRoot(workspacePath);
-  const configuredPaths: string[] = [];
-  if (projectRoot && workspacePath && existsSync(projectRoot)) {
-    if (trustDecisionAt(trust, workspacePath)) {
-      configuredPaths.push(projectRoot);
-    } else {
-      notes.push(untrustedNote(workspacePath, configDirectory));
-    }
-  }
-
-  let loaded: LoadExtensionsResult;
   try {
-    loaded = await discoverAndLoadExtensions(configuredPaths, configDirectory, configDirectory);
+    const notes: string[] = [];
+    const { trust, note } = readTrustStore(trustFile(configDirectory));
+    if (note) notes.push(note);
+
+    const projectRoot = projectExtensionRoot(workspacePath);
+    const configuredPaths: string[] = [];
+    if (projectRoot && workspacePath && existsSync(projectRoot)) {
+      if (trustDecisionAt(trust, workspacePath)) {
+        configuredPaths.push(projectRoot);
+      } else {
+        notes.push(untrustedNote(workspacePath, configDirectory));
+      }
+    }
+    const loaded = await discoverAndLoadExtensions(configuredPaths, configDirectory, configDirectory);
+    for (const failure of loaded.errors) {
+      notes.push(`扩展加载失败：${failure.path}（${failure.error}）`);
+    }
+    return { extensions: loaded.extensions, errors: loaded.errors, runtime: loaded.runtime, notes };
   } catch (error) {
-    notes.push(`扩展未能加载：${message(error)}`);
-    loaded = { extensions: [], errors: [], runtime: createExtensionRuntime() };
+    return {
+      extensions: [],
+      errors: [],
+      runtime: createExtensionRuntime(),
+      notes: [`扩展未能加载：${message(error)}`],
+    };
   }
-  for (const failure of loaded.errors) {
-    notes.push(`扩展加载失败：${failure.path}（${failure.error}）`);
-  }
-  return { extensions: loaded.extensions, errors: loaded.errors, runtime: loaded.runtime, notes };
 }
 
 /**
@@ -201,12 +182,12 @@ export function extensionToolNames(state: ExtensionState): string[] {
   return [...new Set(state.extensions.flatMap((extension) => [...extension.tools.keys()]))];
 }
 
-function message(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /** The one line that tells the operator how to make a project's own extensions loadable. */
 function untrustedNote(workspacePath: string, configDirectory: string): string {
   const file = trustFile(configDirectory);
   return `项目级扩展未加载：${workspacePath} 未受信任。把该路径（或它的某一级父目录）写进 ${file} 并置为 true，即可信任它。`;
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
