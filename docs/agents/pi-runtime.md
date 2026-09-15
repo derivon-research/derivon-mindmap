@@ -30,7 +30,8 @@ slice. The architecture is fixed by
 ├── auth.json               # credentials
 ├── selected-models.json    # the model each mode is on (the companion's)
 ├── skills/                 # command-surface scripts (#104)
-└── extensions/             # user Pi extensions (#121)
+├── extensions/             # user Pi extensions (#121)
+└── bin/                    # the `node` a session's shell finds (#129)
 ```
 
 `derivon_root` in `src-tauri/src/conversation.rs` is the only place that spells the
@@ -150,8 +151,9 @@ evidence on the way to the panel is a regression:
   branching inside the webview, and never as a second list of what a mode may do.
 - **Built-in tools start disabled**, and a mode *grants* the ones it needs: a tool is either a
   script command wrapped with Pi’s custom tool API, one of the mode’s own custom tools below, or
-  a built-in the mode asks for — the learning session grants `bash`, so a user can run something
-  like `tavily-cli` while learning. The apparatus is `settings.defaultTools` (an empty array
+  a built-in the mode asks for — both modes grant `read` and the platform’s shell, so a user can
+  run something like `tavily-cli` while learning and the model can read the documents it works on.
+  The apparatus is `settings.defaultTools` (an empty array
   disables the built-ins while keeping extension and custom tools) plus the session’s `tools`
   allowlist, not `noTools: 'all'`, which also filters custom tools out.
 - **What a mode must not do is refused as an operation class, not by removing the tool.** The
@@ -221,8 +223,8 @@ a skill the operator installs while the application runs reaches the next sessio
 `src/companion/guard.ts` owns it: one inline extension whose `tool_call` handler refuses the calls
 that would write inside the workspace, registered only for the learning session and only when a
 workspace is open. It reads the built-in tools' own arguments — `path` for `write` and `edit`, the
-command text for `bash` — and judges containment on the resolved real path, so a symlinked parent
-does not hide where a write lands.
+command text for `bash` and for `powershell` — and judges containment on the resolved real path, so
+a symlinked parent does not hide where a write lands.
 
 The shell rule is deliberately narrow, because the working directory *is* the workspace and every
 relative path in a command therefore resolves inside it: only the arguments a write form actually
@@ -230,6 +232,57 @@ lands on are inspected (redirections, `tee`, `rm`, `mv`, `cp`'s destination, `se
 the like), while reads that merely name the workspace are left alone. Everything an interpreter, an
 editor or an unfamiliar quoting can do is outside it, which is what "a guard is a fence, not a
 sandbox" means in practice (ADR-0011).
+
+PowerShell has its own rule rather than a shared one, because its write forms are cmdlets: a target
+is a positional argument or a named path parameter, and each form declares which of those it writes
+to — `Copy-Item`'s source is a read while `Move-Item`'s source is a removal, and `Set-Content -Path
+x y` writes `x`, not `y`. Anything the rule does not recognise — an alias, a parameter spelled some
+third way, a form that is not listed — reads as a relative path and is refused, which is the safe
+side. It is the same fence, and no more: a script run by an interpreter, another provider, or an
+encoding this does not know is outside it, and real isolation is the OS or container boundary
+ADR-0011 defers to ([#123](https://github.com/derivon-research/derivon-mindmap/issues/123)).
+
+So is the command surface itself: a granted command is an arbitrary script the operator installed
+(or the workspace carries), run with the companion's full permissions, and the guard never sees it.
+A capability declaration is a contract the surface keeps, not something the companion enforces;
+what the reader enforces is the artifact ([#123](https://github.com/derivon-research/derivon-mindmap/issues/123)).
+
+## The session's environment
+
+`src/companion/sessionEnvironment.ts` owns this, and it runs once, before any session exists.
+Its two effects are process-wide — Pi resolves both from this process's state, not per session —
+and neither one can fail a session: each is a line on stderr, in the `[session environment]`
+shape, and the session works anyway.
+
+- **Pi's agent directory is this application's root.** `getShellEnv()` builds a session's PATH
+from `getAgentDir()/bin`, and `getAgentDir()` reads the environment variable `PI_CODING_AGENT_DIR`
+(`ENV_AGENT_DIR` for this package; the SDK exports neither it nor `getShellEnv`). So the companion
+sets it to `--config-dir` and then checks it landed: if it did not, a diagnostic says so instead
+of the session quietly getting `~/.pi/agent/bin`. This is the one part of the agent directory Pi
+resolves from the environment; `createAgentSession({ agentDir })` moves the loader, settings and
+session directories, which this companion supplies itself, and none of them touch the PATH.
+- **`<root>/bin/node` is how `node …` works in a skill's prose.** On Unix it is a symlink to
+`process.execPath` — the sidecar runtime Rust started the companion with, never one from the
+operator's PATH; on Windows, where a symlink needs a privilege an installer does not have, it is a
+`node.cmd` that forwards. Never a copy: the runtime is about 110 MB and it already ships beside
+the companion. A file the operator put there is left alone and named in a diagnostic; a shim that
+could not be written is a diagnostic too.
+- **ADR-0010 holds here as everywhere else.** The companion neither reads nor falls back to
+`~/.pi/`, and the runtime a session gets is the application's own, not the machine's. The shim is
+the only thing the companion writes under the root besides `selected-models.json`.
+
+## The shell a mode holds
+
+Built-ins start disabled and a mode grants the ones it needs, so *which shell tool* a session
+holds is a grant decision, not a platform branch inside a tool: `bash` on darwin and linux,
+`powershell` on win32 (`shellToolName`). Naming it matters because Pi's `bash` tool resolves Git
+Bash on Windows, which this application does not require and the companion's cleared environment
+does not find, while PowerShell is there on any Windows install. Where neither exists, the note
+above says so and the session stays usable.
+
+Both modes also hold `read`, which is how the model inspects the documents it is working on. The
+modes differ in what a *write* may do, and that is a different axis (ADR-0011) — the learning
+session's shell is not taken away for it.
 
 ## Environment isolation
 

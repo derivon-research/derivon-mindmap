@@ -21,6 +21,7 @@ import {
 } from './commandSurface';
 import { workspaceWriteGuard } from './guard';
 import { openModelConfiguration, type CatalogModel, type ModelCatalog } from './modelConfiguration';
+import { prepareSessionEnvironment } from './sessionEnvironment';
 import { systemPrompt } from './systemPrompt';
 import type {
   ConversationNotification,
@@ -51,6 +52,14 @@ function requiredArgument(name: string): string {
  * reads `HOME` itself, and does not know where the directory came from (ADR-0010).
  */
 const configDirectory = requiredArgument('--config-dir');
+/**
+ * The session's environment, arranged once for the process: Pi's agent directory — which is
+ * what puts `<root>/bin` first on a session's PATH instead of `~/.pi/agent/bin` — and the
+ * `node` shim in it. Both are diagnostics when they cannot be arranged, never a failure: a
+ * session without either is still a usable session.
+ */
+const environment = prepareSessionEnvironment({ configDirectory });
+for (const note of environment.notes) process.stderr.write(`[session environment] ${note}\n`);
 const configurationPromise = openModelConfiguration(configDirectory);
 const sessions = new Map<Mode, AgentSession>();
 /**
@@ -215,6 +224,7 @@ async function createSession(mode: Mode) {
     : [];
   const { session } = await createAgentSession({
     model,
+    agentDir: configDirectory,
     ...(workspacePath ? { cwd: workspacePath } : {}),
     thinkingLevel: 'off',
     modelRuntime,
@@ -222,7 +232,7 @@ async function createSession(mode: Mode) {
     sessionManager: SessionManager.inMemory(),
     settingsManager,
     customTools,
-    tools: sessionToolNames(commands, mode),
+    tools: sessionToolNames(commands, mode, environment.shellTool),
   });
   session.subscribe((value) => {
     if (value.type === 'message_update' && value.assistantMessageEvent.type === 'text_delta') {

@@ -18,7 +18,9 @@ const GUARD_PATH = '<inline:derivon-workspace-write-guard>';
  *
  * The authoring session gets no guard: it is the session allowed to change the workspace.
  *
- * What it judges is the built-in tools and the shell. A granted command's own arguments are the
+ * What it judges is the built-in tools and the shell — whichever shell the platform's session
+ * holds, `bash` on POSIX and `powershell` on Windows, each read by its own grammar. A granted
+ * command's own arguments are the
  * command surface's contract instead: the surface declares what each command requires, and a
  * command that must not change something does not declare it. That is why this reads `path` and
  * the command text rather than hunting for path-shaped arguments in every call.
@@ -67,6 +69,12 @@ export function guardDecision(toolName: string, input: unknown, root: string): T
     if (!bashWritesWorkspace(command, root)) return undefined;
     return refusal('that shell command would write inside the workspace');
   }
+  if (toolName === 'powershell') {
+    const command = fields.command;
+    if (typeof command !== 'string' || !command) return undefined;
+    if (!powershellWritesWorkspace(command, root)) return undefined;
+    return refusal('that PowerShell command would write inside the workspace');
+  }
   return undefined;
 }
 
@@ -87,18 +95,21 @@ function refusal(what: string): ToolCallEventResult {
  * refused.
  */
 export function bashWritesWorkspace(command: string, root: string): boolean {
-  for (const target of writeTargets(command)) {
-    if (target.startsWith('/dev/')) continue;
-    // `~` and `$HOME` are outside the workspace; the shell expands them, not us.
-    if (/^(?:~|\$(?:HOME|\{HOME\}))(?:\/|$)/.test(target)) continue;
-    if (path.isAbsolute(target)) {
-      if (isInside(root, canonicalizeNearest(target))) return true;
-      continue;
-    }
-    // Relative to the session's working directory, which is the workspace.
-    return true;
-  }
-  return false;
+  return writeTargets(command).some((target) => writeLandsInsideWorkspace(target, root));
+}
+
+/**
+ * Whether a write target lands inside the workspace.
+ *
+ * Checked per entry against the resolved root, never as a bare string prefix; `~` and `$HOME`
+ * are outside because the shell expands them, not us; and a path with no root on it is
+ * relative to the session's working directory, which *is* the workspace.
+ */
+function writeLandsInsideWorkspace(target: string, root: string): boolean {
+  if (target.startsWith('/dev/')) return false;
+  if (/^(?:~|\$(?:HOME|\{HOME\}))(?:\/|$)/.test(target)) return false;
+  if (path.isAbsolute(target)) return isInside(root, canonicalizeNearest(target));
+  return true;
 }
 
 /** Shell forms that write a file, and which of their arguments the write lands on. */
@@ -111,31 +122,42 @@ const WORD = /"([^"]*)"|'([^']*)'|(\S+)/g;
 
 /** Every path-like argument a write form in this command would land on. */
 export function writeTargets(command: string): string[] {
-  const targets: string[] = [];
-  const collect = (value: string) => {
-    const trimmed = value.trim();
-    // A lone quote is what a `>` inside a quoted string leaves behind, not a path.
-    if (trimmed && !/^['"]+$/.test(trimmed)) targets.push(trimmed);
-  };
-  // Redirections: `> f`, `>> f`, `2> f`, `&> f` in any segment of the command.
-  for (const match of command.matchAll(/(?:^|[^<>])>>?(?![>&])\s*("([^"]*)"|'([^']*)'|[^\s;&|<>()]+)/g)) {
-    collect(match[2] ?? match[3] ?? match[1]);
-  }
+  const targets: string[] = [...redirectionTargets(command)];
   for (const match of command.matchAll(/\bdd\b[^;&|]*?\bof=("([^"]*)"|'([^']*)'|[^\s;&|<>()]+)/g)) {
-    collect(match[2] ?? match[3] ?? match[1]);
+    collectTarget(targets, match[2] ?? match[3] ?? match[1]);
   }
   for (const segment of command.split(/[;&|]+/)) {
     const words = [...segment.matchAll(WORD)].map((match) => match[1] ?? match[2] ?? match[3]);
     const write = writeForm(words);
     if (!write) continue;
     const values = words.slice(write.at + 1).filter((word) => !word.startsWith('-'));
-    if (write.targets === 'all') values.forEach(collect);
+    if (write.targets === 'all') values.forEach((value) => collectTarget(targets, value));
     else {
       const last = values.at(-1);
-      if (last !== undefined) collect(last);
+      if (last !== undefined) collectTarget(targets, last);
     }
   }
   return targets;
+}
+
+/**
+ * Redirections: `> f`, `>> f`, `2> f`, `&> f`, in any segment of a shell command.
+ *
+ * One rule for both shells: PowerShell's `>` and `>>` mean what the POSIX one's do, and a
+ * separator inside quotes is not a separator in either.
+ */
+function redirectionTargets(command: string): string[] {
+  const targets: string[] = [];
+  for (const match of command.matchAll(/(?:^|[^<>])>>?(?![>&])\s*("([^"]*)"|'([^']*)'|[^\s;&|<>()]+)/g)) {
+    collectTarget(targets, match[2] ?? match[3] ?? match[1]);
+  }
+  return targets;
+}
+
+/** One target, unless what was captured is a lone quote rather than a path. */
+function collectTarget(targets: string[], value: string): void {
+  const trimmed = value.trim();
+  if (trimmed && !/^['"]+$/.test(trimmed)) targets.push(trimmed);
 }
 
 /** The write form one command segment uses, and where its arguments start. */
@@ -147,6 +169,147 @@ function writeForm(words: readonly string[]): { readonly targets: 'all' | 'last'
     if (word === 'sed' && words.includes('-i')) return { targets: 'last', at };
   }
   return undefined;
+}
+
+/**
+ * A PowerShell write cmdlet, and which of its arguments the write lands on.
+ *
+ * `positionals` names the plain arguments that are targets, and acts as a *fallback*:
+ * `Set-Content -Path x y` writes `x`, and tells the cmdlet's `y` is the value it writes
+ * rather than a path. `pathParameters` says whether `-Path`/`-LiteralPath`/`-FilePath` are
+ * targets too — they are not for `Copy-Item`, whose source is a read — and `destination` says
+ * whether `-Destination` is.
+ */
+type PowershellWriteForm = {
+  readonly name: string;
+  readonly positionals: 'all' | 'first' | 'last';
+  readonly pathParameters: boolean;
+  readonly destination: boolean;
+};
+
+const POWERSHELL_WRITE_FORMS: readonly PowershellWriteForm[] = [
+  { name: 'set-content', positionals: 'first', pathParameters: true, destination: false },
+  { name: 'add-content', positionals: 'first', pathParameters: true, destination: false },
+  { name: 'out-file', positionals: 'first', pathParameters: true, destination: false },
+  { name: 'new-item', positionals: 'first', pathParameters: true, destination: false },
+  { name: 'remove-item', positionals: 'all', pathParameters: true, destination: false },
+  // A move removes its source as well, so both ends are writes on the workspace.
+  { name: 'move-item', positionals: 'all', pathParameters: true, destination: true },
+  // A copy reads its source; only the destination lands.
+  { name: 'copy-item', positionals: 'last', pathParameters: false, destination: true },
+  { name: 'rename-item', positionals: 'first', pathParameters: true, destination: false },
+];
+
+const POWERSHELL_PATH_PARAMETERS = new Set(['path', 'literalpath', 'filepath']);
+
+/**
+ * Parameters that take a value, so the word after them is that value and not an argument.
+ *
+ * Everything else is treated as a switch. That is the safe direction: a switch whose value we
+ * fail to consume becomes an extra positional, which can only make the guard refuse more, while
+ * mistaking a value-taking parameter for a switch would lose a path.
+ */
+const POWERSHELL_VALUE_PARAMETERS = new Set([
+  ...POWERSHELL_PATH_PARAMETERS, 'destination', 'value', 'name', 'newname', 'itemtype',
+  'inputobject', 'encoding', 'filter', 'include', 'exclude', 'stream', 'delimiter', 'totalcount',
+  'erroraction', 'errorvariable', 'warningaction', 'warningvariable',
+  'informationaction', 'informationvariable', 'outvariable', 'outbuffer', 'pipelinevariable',
+]);
+
+/**
+ * Whether a PowerShell command writes inside the workspace.
+ *
+ * The POSIX rule's counterpart and the same shape: only the arguments a write form actually
+ * lands on are inspected, judged on the resolved real path. Everything this does not know — an
+ * alias, a parameter spelled some third way, a form that is not listed — reads as a relative
+ * path and is refused, which is the safe side of a fence. It is a fence all the same: a script
+ * run by an interpreter, a provider that is not the filesystem, or an encoding this does not
+ * know is outside it (ADR-0011).
+ */
+export function powershellWritesWorkspace(command: string, root: string): boolean {
+  const targets = [...redirectionTargets(command), ...powershellWriteTargets(command)];
+  return targets.some((target) => writeLandsInsideWorkspace(target, root));
+}
+
+/** Every path a write form in this command would land on. */
+export function powershellWriteTargets(command: string): string[] {
+  const targets: string[] = [];
+  for (const words of powershellSegments(command)) targets.push(...segmentWriteTargets(words));
+  return targets;
+}
+
+/**
+ * The words of each statement, with quoted spans kept whole.
+ *
+ * A separator inside quotes is not a separator: `Set-Content -Path 'a;b.txt'` is one statement
+ * with one target. Escapes this does not know (a backtick, a doubled quote) leave the quoted
+ * span unterminated, which only makes the words longer, never a path shorter.
+ */
+function powershellSegments(command: string): string[][] {
+  const segments: string[][] = [];
+  let words: string[] = [];
+  let word = '';
+  let quote: '"' | "'" | undefined;
+  const endWord = () => { if (word) { words.push(word); word = ''; } };
+  const endSegment = () => { endWord(); if (words.length) segments.push(words); words = []; };
+  for (const character of command) {
+    if (quote) {
+      if (character === quote) quote = undefined;
+      else word += character;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ';' || character === '|' || character === '\n' || character === '\r') {
+      endSegment();
+    } else if (character === ' ' || character === '\t') {
+      endWord();
+    } else {
+      word += character;
+    }
+  }
+  endSegment();
+  return segments;
+}
+
+/** The targets one statement writes, or none when it holds no write form. */
+function segmentWriteTargets(words: readonly string[]): string[] {
+  const form = POWERSHELL_WRITE_FORMS.find((candidate) =>
+    words.some((word) => word.toLowerCase() === candidate.name));
+  const at = form ? words.findIndex((word) => word.toLowerCase() === form.name) : -1;
+  if (!form || at < 0) return [];
+  const targets: string[] = [];
+  const positionals: string[] = [];
+  for (let index = at + 1; index < words.length; index += 1) {
+    const word = words[index];
+    if (!word.startsWith('-')) {
+      positionals.push(word);
+      continue;
+    }
+    const parameter = splitParameter(word);
+    if (!parameter) continue;
+    const takesNext = parameter.value === undefined
+      && POWERSHELL_VALUE_PARAMETERS.has(parameter.name)
+      && words[index + 1] !== undefined && !words[index + 1].startsWith('-');
+    const value = takesNext ? words[index + 1] : parameter.value;
+    if (takesNext) index += 1;
+    if (value === undefined) continue;
+    if ((form.pathParameters && POWERSHELL_PATH_PARAMETERS.has(parameter.name))
+      || (form.destination && parameter.name === 'destination')) {
+      targets.push(value);
+    }
+  }
+  // A named path already answered "which argument is the path", so the plain arguments are the
+  // values the cmdlet writes rather than a second path.
+  if (targets.length) return form.positionals === 'all' ? [...targets, ...positionals] : targets;
+  if (form.positionals === 'all') return positionals;
+  const positional = form.positionals === 'first' ? positionals[0] : positionals.at(-1);
+  return positional === undefined ? [] : [positional];
+}
+
+/** `-Path` or `-Path:value`; the name is lower-cased, the value present only when inline. */
+function splitParameter(word: string): { readonly name: string; readonly value?: string } | null {
+  const match = /^-{1,2}([A-Za-z][A-Za-z0-9]*)(?::(.*))?$/.exec(word);
+  if (!match) return null;
+  return { name: match[1].toLowerCase(), ...(match[2] !== undefined ? { value: match[2] } : {}) };
 }
 
 /**
