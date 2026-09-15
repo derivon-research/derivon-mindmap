@@ -118,14 +118,19 @@ export function trustDecisionAt(trust: TrustStore, workspacePath: string): boole
  *   `~/.pi/agent/extensions` or `<workspace>/.pi/extensions`: this application's roots are its own,
  *   the same rule the skills and the model configuration follow.
  * - **The working directory the loading happens in.** It is the application's own root and never
- *   the workspace. Pi's discovery adds `<cwd>/.pi/extensions` as a root of its own, with no
- *   argument able to turn it off — so the loading cwd decides which project's `.pi` tree is
- *   reachable at all — and a cwd inside a workspace would let that workspace's tree be loaded with
- *   no trust decision. The application's root is a directory a workspace cannot write; the loader's
- *   own project root is therefore `<root>/.pi/extensions`, inside the operator's own root and not a
- *   root this application declares, alongside the two above. An extension's `pi.exec` without an
- *   explicit working directory also starts there rather than in the workspace; `ctx.cwd`, which is
- *   what a registered tool's handler reads, is the session's own.
+ *   the workspace — and that is the *loading* cwd only: what a session is rooted at is the
+ *   workspace, unchanged (the system prompt's `Current working directory`, `ctx.cwd`, the `derivon`
+ *   tool, the guard, and a skill's relative paths all resolve there). Pi's discovery adds
+ *   `<cwd>/.pi/extensions` as a root of its own, with no argument able to turn it off — so the
+ *   loading cwd decides which project's `.pi` tree is reachable at all — and a cwd inside a
+ *   workspace would let that workspace's tree be loaded with no trust decision, before this
+ *   function sees a path. The application's root is a directory a workspace cannot write. Pi's own
+ *   CLI can use the project because the loader it uses resolves project trust before its final
+ *   load; this companion supplies its own loader, and `discoverAndLoadExtensions` has no such hook.
+ *   Two consequences: the loader's own project root is `<root>/.pi/extensions` (inside the
+ *   operator's own root, not a root this application declares), and an extension's `pi.exec`
+ *   without an explicit working directory starts in `<root>` rather than in the workspace. A tool
+ *   handler always reads the session's workspace from `ctx.cwd`.
  *
  * A root that is not there offers nothing, and nothing installed anywhere is the ordinary state of
  * a machine rather than a diagnostic — the same rule the skills follow. What is reported is a load

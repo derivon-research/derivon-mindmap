@@ -257,15 +257,32 @@ with it. There are two roots — the user-level `<root>/extensions`, and the pro
   application supplies is which roots are reachable — the agent directory is its own root, and the
   project root is passed explicitly, only for a trusted project and only when it is there — and the
   working directory the load happens in.
-- **The loading working directory is the application's own root, never the workspace.** Pi's
-  discovery adds `<cwd>/.pi/extensions` as a root of its own and offers no argument that turns it
-  off, so the loading cwd decides which project's `.pi` tree is even reachable; a cwd inside a
-  workspace would let that workspace's tree be loaded with no trust decision at all, and `<root>` is
-  a directory a workspace cannot write. The loader's own project root is therefore
+- **The loading working directory is the application's own root, not the workspace.** Two
+  different things are called the working directory here, and only one of them is decided in this
+  module. What a **session** is rooted at does not change: the system prompt's `Current working
+  directory`, `ctx.cwd` — which is what a registered tool's handler reads — the `derivon` tool's
+  CLI, the write guard's root, and every relative path in a skill all resolve against the workspace
+  the operator has open. The **loading** cwd is the one handed to `discoverAndLoadExtensions`, and
+  it decides two things: which `.pi` tree the loader treats as its own project root, and where an
+  extension's `pi.exec` starts when it passes no working directory of its own.
+
+  It cannot be the workspace, because Pi's discovery adds `<cwd>/.pi/extensions` as a root of its
+  own *inside that same call* and offers no argument that turns it off: passing the workspace would
+  mean any workspace the operator opens can put a file in `.pi/extensions` and have it executed in
+  this process — which holds the resolved model credentials — with no trust decision at all, before
+  `openExtensions` ever sees a path. `<root>` is a directory a workspace cannot write, and the two
+  roots above are supplied as arguments rather than inferred from a cwd. Pi's own CLI can use the
+  project as the loading cwd safely because the loader it uses (`DefaultResourceLoader`) resolves
+  project trust *before* its final load, in two passes; this companion supplies its own loader for
+  skills, prompts and the prompt itself, and the standalone `discoverAndLoadExtensions` has no such
+  hook. If it grows one — a switch for that root, or an exported `loadExtensions` to drive with our
+  own runtime and paths — the loading cwd can go back to the workspace.
+
+  Two consequences, both small and both deliberate: the loader's own project root is therefore
   `<root>/.pi/extensions` — inside the operator's own root, not a root this application declares,
-  and something nothing here writes. An extension's `pi.exec` without an explicit working directory
-  also starts in `<root>` rather than in the workspace, while `ctx.cwd`, which is what a registered
-  tool's own handler reads, is the session's.
+  and something nothing here writes — and `pi.exec` without an explicit working directory starts in
+  `<root>` rather than in the workspace. An extension that passes `cwd`, or that uses `ctx.cwd`,
+  is unaffected; a tool of an extension always has the session's workspace in `ctx.cwd`.
 - **A project's extensions wait for trust.** The project root is loaded only when the operator has
   written its path, or an ancestor's, into `<root>/trust.json` with `true` — `{ "/work/graph": true }`,
   the same shape and the same nearest-ancestor rule as Pi's own trust file, read from this
