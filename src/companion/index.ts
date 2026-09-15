@@ -87,24 +87,26 @@ function rememberSelection() {
 const modeQueues = new Map<Mode, Promise<void>>();
 
 /**
- * The command surface one workspace offers, read once per workspace rather than once per
- * mode: `--capabilities` is the same answer for both sessions, and spawning it twice would
- * only make the two sessions able to disagree.
+ * The command surface this workspace offers, read when a session is built rather than held from
+ * the last one: the operator installs and edits skills while the application runs, and re-reading
+ * is cheap next to leaving a session on a stale surface — the same reason the model catalog is
+ * not cached either.
+ *
+ * A missing command surface is a configuration state, not an error, so its notes travel on
+ * stderr — where the application keeps the companion's recent lines — rather than failing a
+ * session that can still be used without one.
  */
-let commandSurfaceCache: { readonly workspacePath: string | null; readonly state: Promise<CommandSurfaceState> } | null = null;
-
-function commandSurfaceFor(target: string | null): Promise<CommandSurfaceState> {
-  if (commandSurfaceCache?.workspacePath === target) return commandSurfaceCache.state;
-  const state = openCommandSurface({ configDirectory, workspacePath: target });
-  commandSurfaceCache = { workspacePath: target, state };
-  // A missing command surface is a configuration state, not an error, so it travels as a
-  // note on stderr — where the application keeps the companion's recent lines — rather than
-  // failing the session that can still be used without it.
-  void state.then(
-    (resolved) => { for (const note of resolved.notes) process.stderr.write(`[command surface] ${note}\n`); },
-    () => {},
-  );
-  return state;
+async function commandSurfaceFor(target: string | null): Promise<CommandSurfaceState> {
+  try {
+    const state = await openCommandSurface({ configDirectory, workspacePath: target });
+    for (const note of state.notes) process.stderr.write(`[command surface] ${note}\n`);
+    return state;
+  } catch (error) {
+    // An unexpected failure still leaves a line where the operator reads diagnostics; the
+    // request itself fails as it always did.
+    process.stderr.write(`[command surface] ${error instanceof Error ? error.message : String(error)}\n`);
+    throw error;
+  }
 }
 
 /**
@@ -254,7 +256,6 @@ async function endSession(mode: Mode) {
 async function setWorkspace(path: string | null) {
   if (path === workspacePath) return;
   workspacePath = path;
-  commandSurfaceCache = null;
   for (const mode of [...sessions.keys()]) await endSession(mode);
 }
 

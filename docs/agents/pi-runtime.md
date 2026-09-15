@@ -212,7 +212,9 @@ child runs under `process.execPath`, the sidecar Node Rust started the companion
 so a command cannot appear in the prompt and not in the session or the other way round.
 - **No installed skill is a configuration state, not an error.** No tool is registered, one line
 on stderr names both roots that were searched, and the session still works — the same shape as an
-empty model catalog, and the panel's own rendering of configuration states is its own ticket.
+empty model catalog, whose own rendering in the panel is a separate change rather than something
+this ticket reaches. The surface is read when a session is built, not kept from the last one, so
+a skill the operator installs while the application runs reaches the next session.
 
 ## The guard the learning session carries
 

@@ -524,6 +524,32 @@ it('finds a command surface installed under the user-level root', { timeout: 30_
 });
 
 /**
+ * #104: two installs of the same skill are a choice, and the choice is said out loud — Pi keeps
+ * the first one it found (the user-level root comes first) and only its diagnostic reports it.
+ */
+it('names the skill it kept when both roots install one', { timeout: 30_000 }, async () => {
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-104-collision-config-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  await installCommandSurface(path.join(configDirectory, 'skills', 'derivon-mindmap'));
+  const workspace = await workspaceWithCommandSurface('derivon-issue-104-collision-');
+  const companion = startCompanion(configDirectory);
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'authoring', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+    companion.send({ id: 3, type: 'send', mode: 'authoring', prompt: 'hello' });
+    await companion.await((line) => line.type === 'event' && line.event.kind === 'message' && line.event.text === 'Hello');
+
+    expect(companion.diagnostics()).toContain('技能冲突');
+    expect(companion.diagnostics()).toContain(path.join(configDirectory, 'skills', 'derivon-mindmap'));
+    expect(companion.diagnostics()).toContain(path.join(workspace, '.derivon', 'skills', 'derivon-mindmap'));
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
  * #104: no installed skill is a configuration state, not an error. The session stays usable,
  * and the note names both roots it searched so the operator can act on it.
  */

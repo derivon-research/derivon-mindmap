@@ -7,7 +7,8 @@ import type { ConversationMode } from '../ports/ConversationProvider';
 type Mode = ConversationMode;
 
 /** Where a skill keeps its command surface, inside the skill's own directory. */
-const SURFACE_SCRIPT = ['scripts', 'derivon-workspace.mjs'] as const;
+const SURFACE_SCRIPT_NAME = 'derivon-workspace.mjs';
+const SURFACE_SCRIPT = ['scripts', SURFACE_SCRIPT_NAME] as const;
 
 /**
  * Which (artifact, capability) pairs a mode holds.
@@ -93,6 +94,12 @@ export type CommandSurfaceState = {
   readonly notes: readonly string[];
 };
 
+/**
+ * What one call's result means, said once: the tool's own description and the session prompt
+ * both carry this sentence, and two copies would be two things to keep in step.
+ */
+export const COMMAND_RESULT_NOTE = 'One call is one commit. The command prints one derivon.command-result/v1 envelope on stdout: status is "ok" or "diagnostics", and issues[] carries a stable code, a path and a message. Exit 0 is clean, 1 carries diagnostics, 2 is a usage error. A diagnostics result is a normal refusal rather than a crash — read issues[].code and retry with corrected input.';
+
 /** The two roots a command surface is installed under, in the order Pi loads skills. */
 export function skillRoots(configDirectory: string, workspacePath: string): readonly string[] {
   return [path.join(configDirectory, 'skills'), path.join(workspacePath, '.derivon', 'skills')];
@@ -135,33 +142,47 @@ export async function openCommandSurface(options: {
   const roots = skillRoots(configDirectory, workspacePath);
   // The roots are passed explicitly and includeDefaults is off, so this can only read them:
   // the application has its own user-level root and does not consult Pi's (#120).
-  const { skills } = loadSkills({
+  const { skills, diagnostics } = loadSkills({
     cwd: workspacePath,
     agentDir: configDirectory,
     skillPaths: [...roots],
     includeDefaults: false,
   });
+  // Pi resolves a conflict by keeping the skill it found first and diagnosing it; that
+  // diagnostic is the only thing that says a choice happened, so it travels rather than
+  // staying in the loader's return value.
+  const notes = diagnostics
+    .filter((diagnostic) => diagnostic.type === 'collision')
+    .map(collisionNote);
   const scripts = skills
     .map((skill) => path.join(skill.baseDir, ...SURFACE_SCRIPT))
     .filter((scriptPath) => existsSync(scriptPath));
   if (!scripts.length) {
-    return { surface: null, notes: [noSurfaceNote(roots)] };
+    return { surface: null, notes: [...notes, noSurfaceNote(roots)] };
   }
-  // Pi keeps the first skill it found; a surface follows the same rule and says so rather
-  // than quietly using one of several.
+  // Pi keeps the first skill it found; the surface follows the same rule, and says so rather
+  // than quietly using one of however many there are.
   const [scriptPath, ...ignored] = scripts;
   const capabilities = await readCapabilities(scriptPath);
   if (!capabilities) {
     return {
       surface: null,
-      notes: [`脚本命令面不可用：${scriptPath} 没有给出可用的 --capabilities 输出。`],
+      notes: [...notes, `脚本命令面不可用：${scriptPath} 没有给出可用的 --capabilities 输出（搜索过的根：${roots.join(' 和 ')}）。`],
     };
   }
   return {
     surface: { scriptPath, commands: capabilities },
-    notes: ignored.map((other) =>
-      `发现多个脚本命令面，使用 ${scriptPath}，忽略 ${other}。`),
+    notes: [...notes, ...ignored.map((other) =>
+      `发现多个脚本命令面，使用 ${scriptPath}，忽略 ${other}。`)],
   };
+}
+
+type SkillDiagnostic = ReturnType<typeof loadSkills>['diagnostics'][number];
+
+function collisionNote(diagnostic: SkillDiagnostic): string {
+  const collision = diagnostic.collision;
+  if (!collision) return `技能冲突：${diagnostic.message}`;
+  return `技能冲突：${diagnostic.message}（保留 ${collision.winnerPath}，忽略 ${collision.loserPath}）`;
 }
 
 function noSurfaceNote(roots: readonly string[]): string {
@@ -319,7 +340,7 @@ function describeCommand(command: Command): string {
   const lines = [command.summary, ''];
   const positionals = command.argv.filter((argument) => argument.positional && !isSuppliedWorkspaceArgument(argument));
   const flags = command.argv.filter((argument) => !argument.positional);
-  lines.push(`Usage: derivon-workspace.mjs ${command.name} <workspace>${positionals.map((argument) => ` <${argument.name}>${argument.repeatable ? '…' : ''}`).join('')}${flags.length ? ' [flags]' : ''}`);
+  lines.push(`Usage: ${SURFACE_SCRIPT_NAME} ${command.name} <workspace>${positionals.map((argument) => ` <${argument.name}>${argument.repeatable ? '…' : ''}`).join('')}${flags.length ? ' [flags]' : ''}`);
   for (const argument of [...positionals, ...flags]) {
     const spelling = argumentSpelling(argument);
     const traits = [
@@ -334,7 +355,7 @@ function describeCommand(command: Command): string {
     lines.push(`- stdin (${command.stdin.schema}, ${command.stdin.required ? 'required' : 'optional'}): ${command.stdin.description}`);
   }
   lines.push('', 'The workspace is the one this session is rooted at; it is not a parameter.');
-  lines.push('One call is one commit. The command prints one derivon.command-result/v1 envelope on stdout: status is "ok" or "diagnostics", and issues[] carries a stable code, a path and a message. Exit 0 is clean, 1 carries diagnostics, 2 is a usage error. A diagnostics result is a normal refusal rather than a crash — read issues[].code and retry with corrected input.');
+  lines.push(COMMAND_RESULT_NOTE);
   return lines.join('\n');
 }
 
