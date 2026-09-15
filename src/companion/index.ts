@@ -5,12 +5,23 @@ import {
   SettingsManager,
   type AgentSession,
   type ResourceLoader,
+  type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { statSync } from 'node:fs';
 import path from 'node:path';
 import type { ConversationMode } from '../ports/ConversationProvider';
+import {
+  commandTools,
+  grantedCommands,
+  openCommandSurface,
+  sessionToolNames,
+  type Command,
+  type CommandSurfaceState,
+} from './commandSurface';
+import { workspaceWriteGuard } from './guard';
 import { openModelConfiguration, type CatalogModel, type ModelCatalog } from './modelConfiguration';
+import { systemPrompt } from './systemPrompt';
 import type {
   ConversationNotification,
   ConversationRequest,
@@ -28,8 +39,18 @@ function argument(name: string): string | undefined {
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
-const configDirectory = argument('--config-dir');
-if (!configDirectory) throw new Error('companion 需要 --config-dir');
+/** One argument the companion cannot start without. */
+function requiredArgument(name: string): string {
+  const value = argument(name);
+  if (!value) throw new Error(`companion 需要 ${name}`);
+  return value;
+}
+
+/**
+ * The user-level root (`~/.derivon`), which Rust resolves and passes in. The companion never
+ * reads `HOME` itself, and does not know where the directory came from (ADR-0010).
+ */
+const configDirectory = requiredArgument('--config-dir');
 const configurationPromise = openModelConfiguration(configDirectory);
 const sessions = new Map<Mode, AgentSession>();
 /**
@@ -65,23 +86,65 @@ function rememberSelection() {
 }
 const modeQueues = new Map<Mode, Promise<void>>();
 
-const resourceLoader: ResourceLoader = {
-  getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
-  getSkills: () => ({ skills: [], diagnostics: [] }),
-  getPrompts: () => ({ prompts: [], diagnostics: [] }),
-  getThemes: () => ({ themes: [], diagnostics: [] }),
-  getAgentsFiles: () => ({ agentsFiles: [] }),
-  getSystemPrompt: () => 'You are a helpful assistant inside Derivon Mindmap.',
-  getSystemPromptSource: () => undefined,
-  getAppendSystemPrompt: () => [],
-  getAppendSystemPromptSources: () => [],
-  extendResources: () => {},
-  reload: async () => {},
-};
+/**
+ * The command surface one workspace offers, read once per workspace rather than once per
+ * mode: `--capabilities` is the same answer for both sessions, and spawning it twice would
+ * only make the two sessions able to disagree.
+ */
+let commandSurfaceCache: { readonly workspacePath: string | null; readonly state: Promise<CommandSurfaceState> } | null = null;
+
+function commandSurfaceFor(target: string | null): Promise<CommandSurfaceState> {
+  if (commandSurfaceCache?.workspacePath === target) return commandSurfaceCache.state;
+  const state = openCommandSurface({ configDirectory, workspacePath: target });
+  commandSurfaceCache = { workspacePath: target, state };
+  // A missing command surface is a configuration state, not an error, so it travels as a
+  // note on stderr — where the application keeps the companion's recent lines — rather than
+  // failing the session that can still be used without it.
+  void state.then(
+    (resolved) => { for (const note of resolved.notes) process.stderr.write(`[command surface] ${note}\n`); },
+    () => {},
+  );
+  return state;
+}
+
+/**
+ * The resource loader for one mode's session.
+ *
+ * Everything is supplied from here, and nothing is discovered: no extension is loaded from
+ * disk, no skill is loaded, no context file is read from the workspace, and the prompt is the
+ * mode's own. The write guard is an inline extension — the one place Pi's extension API is
+ * used — and user extensions would be loaded into this same seam (#121).
+ */
+function resourceLoaderFor(options: {
+  mode: Mode;
+  prompt: string;
+  workspacePath: string | null;
+}): ResourceLoader {
+  const runtime = createExtensionRuntime();
+  const guard = options.mode === 'learning' && options.workspacePath
+    ? [workspaceWriteGuard(options.workspacePath)]
+    : [];
+  return {
+    getExtensions: () => ({ extensions: guard, errors: [], runtime }),
+    getSkills: () => ({ skills: [], diagnostics: [] }),
+    getPrompts: () => ({ prompts: [], diagnostics: [] }),
+    getThemes: () => ({ themes: [], diagnostics: [] }),
+    getAgentsFiles: () => ({ agentsFiles: [] }),
+    getSystemPrompt: () => options.prompt,
+    getSystemPromptSource: () => undefined,
+    getAppendSystemPrompt: () => [],
+    getAppendSystemPromptSources: () => [],
+    extendResources: () => {},
+    reload: async () => {},
+  };
+}
 
 const settingsManager = SettingsManager.inMemory({
   retry: { enabled: true, maxRetries: 2 },
   compaction: { enabled: false },
+  // Built-in tools start disabled; a mode grants the ones it needs through the session's
+  // `tools` allowlist, which is also what keeps extension and custom tools enabled.
+  defaultTools: [],
 });
 
 function write(value: unknown) {
@@ -140,15 +203,24 @@ async function createSession(mode: Mode) {
       throw new Error(`工作区目录不可用：${workspacePath}`);
     }
   }
+  // The tool set is built per mode: the commands the mode is granted, and nothing else. The
+  // learning session holds no write-capability command at all, so "learning mode cannot edit"
+  // is structural rather than a switch something else could turn back on.
+  const surface = await commandSurfaceFor(workspacePath);
+  const commands: readonly Command[] = surface.surface ? grantedCommands(surface.surface, mode) : [];
+  const customTools: ToolDefinition[] = surface.surface && workspacePath
+    ? commandTools({ surface: surface.surface, mode, workspacePath })
+    : [];
   const { session } = await createAgentSession({
     model,
     ...(workspacePath ? { cwd: workspacePath } : {}),
     thinkingLevel: 'off',
     modelRuntime,
-    resourceLoader,
+    resourceLoader: resourceLoaderFor({ mode, prompt: systemPrompt(mode, commands), workspacePath }),
     sessionManager: SessionManager.inMemory(),
     settingsManager,
-    noTools: 'all',
+    customTools,
+    tools: sessionToolNames(commands, mode),
   });
   session.subscribe((value) => {
     if (value.type === 'message_update' && value.assistantMessageEvent.type === 'text_delta') {
@@ -182,6 +254,7 @@ async function endSession(mode: Mode) {
 async function setWorkspace(path: string | null) {
   if (path === workspacePath) return;
   workspacePath = path;
+  commandSurfaceCache = null;
   for (const mode of [...sessions.keys()]) await endSession(mode);
 }
 

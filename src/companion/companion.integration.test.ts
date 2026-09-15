@@ -1,10 +1,12 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
+import { installCommandSurface } from '../testing/commandSurface';
 
 type Output =
   | { id: number; type: 'models'; models: { providerId: string; modelId: string; name?: string }[]; selected?: unknown }
@@ -16,6 +18,49 @@ const companionPath = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../../dist-companion/companion.mjs',
 );
+
+/**
+ * The tool call each marker asks the fake model for. A marker in the user's message is the
+ * whole request protocol: the turn's second request carries a tool result, which is what
+ * tells the server to answer with text instead of asking for the same call again.
+ */
+const TOOL_CALLS: Record<string, { name: string; arguments: Record<string, unknown> }> = {
+  'add-concept': { name: 'add-concept', arguments: { stdin: { id: 'c-fixture', label: 'Fixture concept' } } },
+  'write-document': { name: 'write-document', arguments: { stdin: { object: 'c-fixture', markdown: '# changed' } } },
+  bash: { name: 'bash', arguments: { command: 'echo written > poc.txt' } },
+};
+
+/** Every request body the fake provider received, in order, for the test to assert on. */
+let requestBodies: string[] = [];
+
+/** The messages of one request body. */
+function messagesOf(body: string): { role?: string; content?: unknown }[] {
+  try {
+    return (JSON.parse(body) as { messages?: { role?: string; content?: unknown }[] }).messages ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Whether this request is the follow-up that carries tool results back.
+ *
+ * The conversation accumulates, so an earlier turn's tool message is still in the body: it is
+ * the *last* message that says whether this request is the second leg of the current turn.
+ */
+function endsWithToolResult(body: string): boolean {
+  return messagesOf(body).at(-1)?.role === 'tool';
+}
+
+/** The tools the provider was offered, which is the session's grant as the model sees it. */
+function offeredToolNames(body: string): string[] {
+  try {
+    const tools = (JSON.parse(body) as { tools?: { function?: { name?: string } }[] }).tools ?? [];
+    return tools.map((tool) => tool.function?.name ?? '').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
 let server: Server;
 let serverUrl: string;
@@ -53,18 +98,23 @@ function startCompanion(configDir: string, environment: NodeJS.ProcessEnv = proc
     stdio: ['pipe', 'pipe', 'pipe'],
     env: environment,
   });
-  let text = '';
-  for (const stream of [process_.stdout!, process_.stderr!]) {
-    stream.setEncoding('utf8');
-    stream.on('data', (chunk: string) => { text += chunk; });
-  }
+  // The two streams stay apart: stdout carries one JSON line per reply, and stderr carries
+  // the companion's diagnostics — a missing command surface is one of them — which are not
+  // JSON and must not be parsed as if they were.
+  let stdout = '';
+  let stderr = '';
+  process_.stdout!.setEncoding('utf8');
+  process_.stderr!.setEncoding('utf8');
+  process_.stdout!.on('data', (chunk: string) => { stdout += chunk; });
+  process_.stderr!.on('data', (chunk: string) => { stderr += chunk; });
   // A write can land mid-line, so the last segment is dropped until the rest of it
   // arrives. Everything before it is whole and safe to parse.
   const lines = () =>
-    text.split('\n').slice(0, -1).filter(Boolean).map((value) => JSON.parse(value) as Output);
+    stdout.split('\n').slice(0, -1).filter(Boolean).map((value) => JSON.parse(value) as Output);
   return {
     process: process_,
-    output: () => text,
+    output: () => `${stdout}${stderr}`,
+    diagnostics: () => stderr,
     /** Where the output ends now, so a later read sees only what comes after it. */
     mark: () => lines().length,
     /** Everything written after `mark`, in the order it arrived. */
@@ -76,7 +126,7 @@ function startCompanion(configDir: string, environment: NodeJS.ProcessEnv = proc
         const line = lines().find(matcher);
         if (line) return resolve(line);
         if (Date.now() - start > timeoutMs) {
-          return reject(new Error(`Timed out waiting for companion output. Output so far:\n${text}`));
+          return reject(new Error(`Timed out waiting for companion output. Output so far:\n${stdout}${stderr}`));
         }
         setTimeout(check, 20);
       };
@@ -92,18 +142,40 @@ const waitFor = (matcher: (line: Output) => boolean, timeoutMs = 10_000) =>
   companion.await(matcher, timeoutMs);
 const request = (value: unknown) => companion.send(value);
 
+beforeEach(() => {
+  requestBodies = [];
+});
+
+/** A model directory the companion accepts: the fake provider, and nothing else. */
+async function configureModelDirectory(directory: string, baseUrl: string) {
+  await Promise.all([
+    writeFile(path.join(directory, 'models.json'), JSON.stringify({
+      providers: {
+        test: {
+          baseUrl: `${baseUrl}/v1`,
+          api: 'openai-completions',
+          apiKey: 'test-key',
+          models: [{ id: 'stream-model', name: 'Stream Model' }],
+        },
+      },
+    })),
+    writeFile(path.join(directory, 'auth.json'), '{}'),
+  ]);
+}
+
+/** A workspace with the fixture command surface installed as a project-level skill. */
+async function workspaceWithCommandSurface(prefix: string): Promise<string> {
+  const workspace = await mkdtemp(path.join(tmpdir(), prefix));
+  await installCommandSurface(path.join(workspace, '.derivon', 'skills', 'derivon-mindmap'));
+  return workspace;
+}
+
 beforeAll(async () => {
   temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-pi-companion-'));
   server = createServer((incoming, response) => {
     let body = '';
     incoming.on('data', (chunk: string) => { body += chunk; });
     incoming.on('end', () => {
-      const prompt = lastUserText(body);
-      if (prompt.includes('error')) {
-        response.writeHead(500, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({ error: { message: 'test provider failure' } }));
-        return;
-      }
       const chunk = (text: string, finishReason: string | null) => JSON.stringify({
         id: 'chatcmpl-test',
         object: 'chat.completion.chunk',
@@ -111,6 +183,46 @@ beforeAll(async () => {
         model: 'stream-model',
         choices: [{ index: 0, delta: text ? { content: text } : {}, finish_reason: finishReason }],
       });
+      const prompt = lastUserText(body);
+      requestBodies.push(body);
+      const toolCall = /tool-call:([a-z-]+)/.exec(prompt)?.[1];
+      if (toolCall && TOOL_CALLS[toolCall]) {
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        if (endsWithToolResult(body)) {
+          // The call has been made and its result travelled back: finish the turn.
+          response.write(`data: ${chunk('tool finished', null)}\n\n`);
+          response.write(`data: ${chunk('', 'stop')}\n\n`);
+        } else {
+          const call = TOOL_CALLS[toolCall];
+          response.write(`data: ${JSON.stringify({
+            id: 'chatcmpl-test',
+            object: 'chat.completion.chunk',
+            created: Math.floor(Date.now() / 1000),
+            model: 'stream-model',
+            choices: [{
+              index: 0,
+              delta: {
+                tool_calls: [{
+                  index: 0,
+                  id: 'call_fixture',
+                  type: 'function',
+                  function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                }],
+              },
+              finish_reason: null,
+            }],
+          })}\n\n`);
+          response.write(`data: ${chunk('', 'tool_calls')}\n\n`);
+        }
+        response.write('data: [DONE]\n\n');
+        response.end();
+        return;
+      }
+      if (prompt.includes('error')) {
+        response.writeHead(500, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ error: { message: 'test provider failure' } }));
+        return;
+      }
       // A turn that starts and then never finishes. Nothing but an abort can end it, so
       // a test can tell whether the abort reached the turn or merely queued behind it.
       if (prompt.includes('never-ends')) {
@@ -134,21 +246,7 @@ beforeAll(async () => {
       else reject(new Error('test server did not start'));
     });
   });
-  const modelsPath = path.join(temporaryDirectory, 'models.json');
-  const authPath = path.join(temporaryDirectory, 'auth.json');
-  await Promise.all([
-    writeFile(modelsPath, JSON.stringify({
-      providers: {
-        test: {
-          baseUrl: `${serverUrl}/v1`,
-          api: 'openai-completions',
-          apiKey: 'test-key',
-          models: [{ id: 'stream-model', name: 'Stream Model' }],
-        },
-      },
-    })),
-    writeFile(authPath, '{}'),
-  ]);
+  await configureModelDirectory(temporaryDirectory, serverUrl);
   // Deliberately hostile: a machine-wide provider credential in the companion's own
   // environment must not put a single extra model in the catalog (ADR-0010).
   companion = startCompanion(temporaryDirectory, { ...process.env, ANTHROPIC_API_KEY: 'machine-wide-not-ours' });
@@ -325,5 +423,125 @@ it('remembers the chosen model across companion restarts', async () => {
     expect(catalog).toMatchObject({ selected: { providerId: 'test', modelId: 'stream-model' } });
   } finally {
     second.stop();
+  }
+});
+
+/**
+ * #104: the authoring session holds the command surface, and one tool call changes the
+ * workspace on disk.
+ */
+it('registers the command surface as tools and changes the workspace through one', { timeout: 30_000 }, async () => {
+  const workspace = await workspaceWithCommandSurface('derivon-issue-104-authoring-');
+  const companion = startCompanion(temporaryDirectory);
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'authoring', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+
+    companion.send({ id: 3, type: 'send', mode: 'authoring', prompt: 'tool-call:add-concept' });
+    await companion.await((line) => line.type === 'event' && line.event.kind === 'message' && line.event.text === 'tool finished');
+    await companion.await((line) => line.type === 'ok' && line.id === 3);
+
+    // The workspace really changed, by the command the surface declared.
+    const manifest = JSON.parse(await readFile(path.join(workspace, '.derivon/workspace.json'), 'utf8')) as {
+      graph: { points: { id: string }[] };
+    };
+    expect(manifest.graph.points.map((point) => point.id)).toEqual(['c-fixture']);
+    expect(await readFile(path.join(workspace, 'objects/c-fixture/document.md'), 'utf8')).toContain('Fixture concept');
+
+    // The tool set is the capability intersection: write-structure commands are offered, and
+    // no built-in is enabled in authoring at all.
+    const offered = offeredToolNames(requestBodies[0]);
+    expect(offered).toContain('add-concept');
+    expect(offered).toContain('write-document');
+    expect(offered).toContain('delete-object');
+    expect(offered).toContain('validate');
+    expect(offered).not.toContain('read-learner-record');
+    for (const builtin of ['read', 'write', 'edit', 'bash']) expect(offered).not.toContain(builtin);
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #104: the learning session is structurally the read-only one, and the guard is what keeps
+ * its granted shell from writing the workspace.
+ */
+it('holds no write command in the learning session, and refuses a shell write', { timeout: 30_000 }, async () => {
+  const workspace = await workspaceWithCommandSurface('derivon-issue-104-learning-');
+  const companion = startCompanion(temporaryDirectory);
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+
+    // A write-capability command is not registered, so the model cannot call it at all.
+    companion.send({ id: 3, type: 'send', mode: 'learning', prompt: 'tool-call:write-document' });
+    await companion.await((line) => line.type === 'event' && line.event.kind === 'message' && line.event.text === 'tool finished');
+    await companion.await((line) => line.type === 'ok' && line.id === 3);
+
+    const offered = offeredToolNames(requestBodies[0]);
+    expect(offered).toEqual(expect.arrayContaining(['validate', 'read-learner-record', 'bash']));
+    for (const write of ['add-concept', 'write-document', 'delete-object']) expect(offered).not.toContain(write);
+    // Pi answered that the tool is unavailable, and the command never ran.
+    expect(requestBodies[1]).toContain('not found');
+    expect(existsSync(path.join(workspace, 'objects/c-fixture/document.md'))).toBe(false);
+
+    // The shell is granted, and the guard refuses the write it would perform. The send's
+    // reply arrives after the turn's second request, so the tool result is recorded by then.
+    companion.send({ id: 4, type: 'send', mode: 'learning', prompt: 'tool-call:bash' });
+    await companion.await((line) => line.type === 'ok' && line.id === 4);
+    expect(existsSync(path.join(workspace, 'poc.txt'))).toBe(false);
+    expect(requestBodies[3]).toContain('learning session');
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #104: the command surface is installed under the user-level root (`<config-dir>/skills`),
+ * which the companion reaches through `--config-dir` rather than by reading HOME itself.
+ */
+it('finds a command surface installed under the user-level root', { timeout: 30_000 }, async () => {
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-104-config-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  await installCommandSurface(path.join(configDirectory, 'skills', 'derivon-mindmap'));
+  const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-104-user-root-'));
+  const companion = startCompanion(configDirectory);
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'authoring', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+    companion.send({ id: 3, type: 'send', mode: 'authoring', prompt: 'hello' });
+    await companion.await((line) => line.type === 'event' && line.event.kind === 'message' && line.event.text === 'Hello');
+    expect(offeredToolNames(requestBodies[0])).toContain('add-concept');
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #104: no installed skill is a configuration state, not an error. The session stays usable,
+ * and the note names both roots it searched so the operator can act on it.
+ */
+it('stays usable with no command surface installed, and says where it looked', { timeout: 30_000 }, async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-104-none-'));
+  const companion = startCompanion(temporaryDirectory);
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'authoring', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+    companion.send({ id: 3, type: 'send', mode: 'authoring', prompt: 'hello' });
+    await companion.await((line) => line.type === 'event' && line.event.kind === 'message' && line.event.text === 'Hello');
+
+    expect(offeredToolNames(requestBodies[0])).toEqual([]);
+    expect(companion.diagnostics()).toContain(path.join(temporaryDirectory, 'skills'));
+    expect(companion.diagnostics()).toContain(path.join(workspace, '.derivon/skills'));
+  } finally {
+    companion.stop();
   }
 });

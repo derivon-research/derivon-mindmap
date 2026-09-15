@@ -44,9 +44,12 @@ why it is one root on every platform rather than each platform's own convention.
   `app_config_dir()`; nothing reads that directory now, and there is no migration — a
   configuration left there produces the ordinary “no `models.json`” diagnosis, which names
   the root that is read.
-- **`skills/` and `extensions/` are fixed here, though nothing reads them yet**: the
-  command surface starts looking in `skills/` (#104) and user extensions load from
-  `extensions/` (#121). Neither is `~/.pi/`, which this application never consults.
+- **`skills/` is read; `extensions/` is fixed here but still unread**: the companion
+  discovers one command surface per workspace under `<root>/skills` and
+  `<workspace>/.derivon/skills` ([the command surface, as the companion wires
+  it](#the-command-surface-as-the-companion-wires-it)); user extensions load from
+  `extensions/` in #121. Neither is `~/.pi/`, which this application never consults, and
+  neither is where Pi's own skills live.
 
 ## Provider/model configuration
 
@@ -121,7 +124,7 @@ only place a desktop `WorkspaceHandle.id` is made).
 
 - Pi fixes `cwd` when a session is created and offers no way to move it, so changing
   workspaces ends the sessions rooted at the old one.
-- `noTools: 'all'` does **not** make `cwd` irrelevant: Pi appends
+- Disabling the built-in tools does **not** make `cwd` irrelevant: Pi appends
   `Current working directory: <cwd>` to the system prompt either way, and `cwd` also keys
   project settings, project resource discovery and session metadata. The companion
   supplies its own `ResourceLoader` and in-memory `SessionManager`, so nothing is read
@@ -143,9 +146,8 @@ evidence on the way to the panel is a regression:
 
 ## Prompt and tool extension
 
-- Start from a neutral, fixed system prompt.
-- Add mode-specific prompts by composing a new harness config in the companion, not by
-  branching inside the webview.
+- Compose the system prompt in the companion, per mode, from the session's grant table — never by
+  branching inside the webview, and never as a second list of what a mode may do.
 - **Built-in tools start disabled**, and a mode *grants* the ones it needs: a tool is either a
   script command wrapped with Pi’s custom tool API, one of the mode’s own custom tools below, or
   a built-in the mode asks for — the learning session grants `bash`, so a user can run something
@@ -178,6 +180,54 @@ evidence on the way to the panel is a regression:
 
 Both modes build their session with the built-in tools disabled and an explicit grant. The tool
 sets above are what the v1.0.0 tickets build (#50 for the learning side, #104 for authoring).
+
+## The command surface, as the companion wires it
+
+`src/companion/commandSurface.ts` owns this, and `src/companion/systemPrompt.ts` owns the
+prompt. The command surface itself stays in the user's installed skill —
+`<root>/<skill-dir>/scripts/derivon-workspace.mjs` — and the companion only wraps it: it keeps
+no command list of its own, so the two cannot drift apart.
+
+- **Discovery is Pi's**, through the SDK's own `loadSkills`, with the two roots passed
+explicitly and `includeDefaults` off: `<config-dir>/skills` — the user-level root Rust passes as
+`--config-dir`, spelled the way it arrived rather than by reading `HOME` here — and
+`<workspace>/.derivon/skills`. Pi's semantics come with it: one directory per skill, `SKILL.md`
+marks the root, the first hit wins, and a name collision is a diagnostic rather than a silent
+choice. Pi's order puts the user-level root first, so a user-level skill wins over a project-level
+one of the same name; that is Pi's rule, adopted here so a skill is discovered exactly as Pi would
+discover it. Pi's own skill directories are never among the roots, so nothing is read from `~/.pi/`.
+- **Every tool is derived from `--capabilities`.** A granted command becomes one custom tool
+whose parameters come from that command's own `argv` and `stdin` declarations in camel case,
+with the workspace root supplied by the companion — never a parameter, since ADR-0011 fixes it
+for the session. The schema is plain JSON Schema rather than a TypeBox one, which Pi accepts and
+which keeps `typebox` out of this application's dependencies; a command that reads a document on
+stdin gets one free-form object parameter, because the surface publishes a schema *name* and a
+prose shape rather than a machine-readable description, and the command validates its own input.
+- **The envelope text is the tool result.** Exit 0 and exit 1 are both successful calls — the
+model has to be able to read `issues[].code` and retry — while exit 2 and anything that does not
+print a `derivon.command-result/v1` envelope are tool errors the model reads as failures. The
+child runs under `process.execPath`, the sidecar Node Rust started the companion with, never a
+`node` from `PATH`.
+- **The prompt lists what the grant table holds**, in the same order the tools are built from it,
+so a command cannot appear in the prompt and not in the session or the other way round.
+- **No installed skill is a configuration state, not an error.** No tool is registered, one line
+on stderr names both roots that were searched, and the session still works — the same shape as an
+empty model catalog, and the panel's own rendering of configuration states is its own ticket.
+
+## The guard the learning session carries
+
+`src/companion/guard.ts` owns it: one inline extension whose `tool_call` handler refuses the calls
+that would write inside the workspace, registered only for the learning session and only when a
+workspace is open. It reads the built-in tools' own arguments — `path` for `write` and `edit`, the
+command text for `bash` — and judges containment on the resolved real path, so a symlinked parent
+does not hide where a write lands.
+
+The shell rule is deliberately narrow, because the working directory *is* the workspace and every
+relative path in a command therefore resolves inside it: only the arguments a write form actually
+lands on are inspected (redirections, `tee`, `rm`, `mv`, `cp`'s destination, `sed -i`, `dd of=`, and
+the like), while reads that merely name the workspace are left alone. Everything an interpreter, an
+editor or an unfamiliar quoting can do is outside it, which is what "a guard is a fence, not a
+sandbox" means in practice (ADR-0011).
 
 ## Environment isolation
 
