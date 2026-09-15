@@ -1,11 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { commandSurfaceScript } from '../testing/commandSurface';
+import { commandSurfaceScript, installSkill } from '../testing/commandSurface';
 import {
-  commandTools, grantedCommands, invocationFor, parseCapabilities, sessionToolNames,
+  commandTools, discoverSkills, grantedCommands, invocationFor, parseCapabilities, sessionToolNames,
   shellToolName, type Command, type CommandSurface,
 } from './commandSurface';
 
@@ -150,5 +150,98 @@ describe('the tool a command becomes', () => {
   it('describes the stdin document with the schema name the surface published', () => {
     const addConcept = authoringTools().find((tool) => tool.name === 'add-concept');
     expect(addConcept?.description).toContain('derivon.workspace-add-concept/v1');
+  });
+});
+
+describe('the skills the two roots offer', () => {
+  it('loads a skill from either root, including one that is only a SKILL.md', async () => {
+    const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-skills-user-'));
+    const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-skills-project-'));
+    await installSkill(path.join(configDirectory, 'skills', 'method'), 'method', {
+      description: 'A methodology the model should follow.',
+    });
+    await installSkill(path.join(workspace, '.derivon', 'skills', 'body-only'), 'body-only', {
+      description: 'Nothing but a body.',
+      body: '# Body only\n\nThe passphrase is tungsten.',
+    });
+
+    const discovery = discoverSkills({ configDirectory, workspacePath: workspace });
+
+    expect(discovery.skills.map((skill) => skill.name).sort()).toEqual(['body-only', 'method']);
+    const bodyOnly = discovery.skills.find((skill) => skill.name === 'body-only');
+    expect(bodyOnly?.description).toBe('Nothing but a body.');
+    // The location the prompt carries is the file itself: `read` opens it, and nothing has
+    // to know that this skill ships no command surface.
+    expect(bodyOnly?.filePath).toBe(path.join(workspace, '.derivon', 'skills', 'body-only', 'SKILL.md'));
+    expect(discovery.skillNotes).toEqual([]);
+  });
+
+  it('loads the user-level root before a workspace is open', async () => {
+    const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-skills-nouserroot-'));
+    await installSkill(path.join(configDirectory, 'skills', 'method'), 'method', { description: 'Method.' });
+
+    const discovery = discoverSkills({ configDirectory, workspacePath: null });
+
+    expect(discovery.skills.map((skill) => skill.name)).toEqual(['method']);
+  });
+
+  it('keeps the user-level skill when both roots install the same name, and says so', async () => {
+    const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-skills-collide-user-'));
+    const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-skills-collide-project-'));
+    await installSkill(path.join(configDirectory, 'skills', 'derivon-mindmap'), 'derivon-mindmap', {
+      description: 'The user-level one.',
+    });
+    await installSkill(path.join(workspace, '.derivon', 'skills', 'derivon-mindmap'), 'derivon-mindmap', {
+      description: 'The project-level one.',
+    });
+
+    const discovery = discoverSkills({ configDirectory, workspacePath: workspace });
+
+    expect(discovery.skills.map((skill) => skill.name)).toEqual(['derivon-mindmap']);
+    expect(discovery.skills[0]?.description).toBe('The user-level one.');
+    expect(discovery.skillNotes.join('\n')).toContain('技能冲突');
+    expect(discovery.skillNotes.join('\n')).toContain(path.join(configDirectory, 'skills', 'derivon-mindmap', 'SKILL.md'));
+    expect(discovery.skillNotes.join('\n')).toContain(path.join(workspace, '.derivon', 'skills', 'derivon-mindmap', 'SKILL.md'));
+  });
+
+  it('refuses a skill with no description and names the file', async () => {
+    const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-skills-nodesc-'));
+    const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-skills-nodesc-ws-'));
+    await installSkill(path.join(workspace, '.derivon', 'skills', 'undescribed'), 'undescribed');
+
+    const discovery = discoverSkills({ configDirectory, workspacePath: workspace });
+
+    // A description is what the prompt carries, so a skill without one has nothing to be
+    // listed by; it is diagnosed instead of loaded.
+    expect(discovery.skills).toEqual([]);
+    expect(discovery.skillNotes.join('\n')).toContain(path.join(workspace, '.derivon', 'skills', 'undescribed', 'SKILL.md'));
+    expect(discovery.skillNotes.join('\n')).toContain('description');
+  });
+
+  it('diagnoses a SKILL.md whose frontmatter cannot be parsed, and loads no skill from it', async () => {
+    const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-skills-badfront-'));
+    const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-skills-badfront-ws-'));
+    const directory = path.join(workspace, '.derivon', 'skills', 'broken');
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, 'SKILL.md'), '---\nname: [unclosed\ndescription: oops\n---\n\n# Broken\n');
+
+    const discovery = discoverSkills({ configDirectory, workspacePath: workspace });
+
+    expect(discovery.skills).toEqual([]);
+    expect(discovery.skillNotes.join('\n')).toContain(path.join(directory, 'SKILL.md'));
+  });
+
+  it("never reads Pi's own skill roots", async () => {
+    const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-skills-pi-base-'));
+    const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-skills-pi-ws-'));
+    await installSkill(path.join(workspace, '.pi', 'skills', 'pi-project'), 'pi-project', { description: 'Pi only.' });
+    await installSkill(path.join(configDirectory, '.pi', 'agent', 'skills', 'pi-user'), 'pi-user', { description: 'Pi only.' });
+
+    const discovery = discoverSkills({ configDirectory, workspacePath: workspace });
+
+    expect(discovery.skills).toEqual([]);
+    // An unmatched root is not a diagnostic either: nothing is installed, which is the
+    // ordinary state of a machine this application has just been installed on.
+    expect(discovery.skillNotes).toEqual([]);
   });
 });

@@ -142,12 +142,32 @@ function fail(command, capability, message, code) {
 `;
 
 /**
- * Install one skill directory the way a user would: a `SKILL.md` the way Pi's loader wants it,
- * and the command surface script beside it. `skillDirectory` is the skill's own directory —
- * `<root>/<skill-dir>`.
+ * Install a skill directory the way a user would: a `SKILL.md` the way Pi's loader wants it,
+ * and whatever else the skill ships beside it. `skillDirectory` is the skill's own directory —
+ * `<root>/<skill-dir>` — and a skill with nothing else beside it is the body-only case #122
+ * exists for.
+ *
+ * `description` omitted writes a `SKILL.md` with no description, which is a skill a client
+ * must diagnose rather than list.
+ */
+export async function installSkill(
+  skillDirectory: string,
+  name: string,
+  options: { description?: string; body?: string } = {},
+): Promise<void> {
+  await mkdir(skillDirectory, { recursive: true });
+  const description = options.description === undefined ? '' : `description: ${options.description}\n`;
+  await writeFile(
+    path.join(skillDirectory, 'SKILL.md'),
+    `---\nname: ${name}\n${description}---\n\n${options.body ?? '# A skill body'}\n`,
+  );
+}
+
+/**
+ * Install one skill directory with the command surface script beside its `SKILL.md`.
  */
 export async function installCommandSurface(skillDirectory: string, name = 'derivon-mindmap'): Promise<void> {
+  await installSkill(skillDirectory, name, { description: 'A command surface for companion tests.' });
   await mkdir(path.join(skillDirectory, 'scripts'), { recursive: true });
-  await writeFile(path.join(skillDirectory, 'SKILL.md'), `---\nname: ${name}\ndescription: A command surface for companion tests.\n---\n`);
   await writeFile(path.join(skillDirectory, 'scripts', 'derivon-workspace.mjs'), commandSurfaceScript);
 }

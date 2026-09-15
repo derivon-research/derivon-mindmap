@@ -1,7 +1,12 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { loadSkills, type ToolDefinition } from '@earendil-works/pi-coding-agent';
+import {
+  loadSkills,
+  type ResourceDiagnostic,
+  type Skill,
+  type ToolDefinition,
+} from '@earendil-works/pi-coding-agent';
 import type { ConversationMode } from '../ports/ConversationProvider';
 
 type Mode = ConversationMode;
@@ -100,14 +105,31 @@ export type CommandSurface = {
 };
 
 /**
- * What the two fixed skill roots offered.
+ * What the two fixed skill roots offered, and what was wrong with the rest.
+ *
+ * The skills travel as Pi's own `Skill` records — name, description and file path, with no
+ * body. That is exactly what progressive disclosure needs: the description goes into the
+ * prompt, and the model opens `filePath` with `read` when the description matches the task.
+ * A skill that carries only a `SKILL.md` is therefore a usable skill, not an empty one.
+ */
+export type SkillDiscovery = {
+  readonly skills: readonly Skill[];
+  readonly diagnostics: readonly ResourceDiagnostic[];
+  /** Readable one-liners for the operator; the shape #131 raises into the panel. */
+  readonly skillNotes: readonly string[];
+};
+
+/**
+ * What the two roots offered to one session.
  *
  * A missing command surface is a configuration state, not an error: the session stays
- * usable and the notes are what says why it has no command tools.
+ * usable and the notes are what says why it has no command tools. Skill discovery is not a
+ * configuration state and not a precondition of one — the two are reported separately.
  */
-export type CommandSurfaceState = {
+export type CommandSurfaceState = SkillDiscovery & {
   readonly surface: CommandSurface | null;
-  readonly notes: readonly string[];
+  /** Readable notes about the command surface itself, not about skills. */
+  readonly surfaceNotes: readonly string[];
 };
 
 /**
@@ -116,9 +138,17 @@ export type CommandSurfaceState = {
  */
 export const COMMAND_RESULT_NOTE = 'One call is one commit. The command prints one derivon.command-result/v1 envelope on stdout: status is "ok" or "diagnostics", and issues[] carries a stable code, a path and a message. Exit 0 is clean, 1 carries diagnostics, 2 is a usage error. A diagnostics result is a normal refusal rather than a crash — read issues[].code and retry with corrected input.';
 
-/** The two roots a command surface is installed under, in the order Pi loads skills. */
-export function skillRoots(configDirectory: string, workspacePath: string): readonly string[] {
-  return [path.join(configDirectory, 'skills'), path.join(workspacePath, '.derivon', 'skills')];
+/**
+ * The two roots a skill is installed under, in the order Pi loads skills.
+ *
+ * The user-level root does not depend on a workspace, so it is the only one before one is
+ * open; the project-level root joins it after.
+ */
+export function skillRoots(configDirectory: string, workspacePath: string | null): readonly string[] {
+  return [
+    path.join(configDirectory, 'skills'),
+    ...(workspacePath ? [path.join(workspacePath, '.derivon', 'skills')] : []),
+  ];
 }
 
 /**
@@ -144,41 +174,59 @@ export function grantedCommands(surface: CommandSurface, mode: Mode): readonly C
 }
 
 /**
+ * The skills installed under this application's two roots.
+ *
+ * Discovery is Pi's — the same loader, the same one-directory-per-skill rule, the same
+ * first-wins collision rule, the same diagnostics — but only from this application's roots.
+ * Pi's own skill directories (`~/.pi/agent/skills`, `.pi/skills`) are never among them, so a
+ * skill that never left Pi's tree cannot reach a session here.
+ *
+ * This is also where the command surface's skills come from: one `loadSkills` call per
+ * session, never two, so the skills the surface draws from and the ones the prompt lists are
+ * decided together.
+ */
+export function discoverSkills(options: {
+  configDirectory: string;
+  workspacePath: string | null;
+}): SkillDiscovery {
+  const { configDirectory, workspacePath } = options;
+  // A root that is not there is the ordinary state — most machines have installed nothing —
+  // and it is not a load failure. Only the roots that exist are offered, so an absent one
+  // is silence rather than a diagnostic about a directory the application expects to miss.
+  const roots = skillRoots(configDirectory, workspacePath).filter((root) => existsSync(root));
+  // The roots are passed explicitly and includeDefaults is off, so this can only read them:
+  // the application has its own user-level root and does not consult Pi's (#120).
+  const { skills, diagnostics } = loadSkills({
+    cwd: workspacePath ?? configDirectory,
+    agentDir: configDirectory,
+    skillPaths: [...roots],
+    includeDefaults: false,
+  });
+  return { skills, diagnostics, skillNotes: diagnostics.map(skillDiagnosticNote) };
+}
+
+/**
  * Discover the installed command surface and read what it declares.
  *
- * Skills are discovered the way Pi discovers them — the same loader, the same one-directory-
- * per-skill rule, the same first-wins collision rule — but only from this application's two
- * roots. Pi's own skill directories (`~/.pi/agent/skills`, `.pi/skills`) are never consulted,
- * and no `SKILL.md` body enters a prompt here: this reads the script's `--capabilities`.
+ * Skills are loaded once, here, and travel with the surface: the prompt gets their name,
+ * description and path, and every tool is derived from the script's `--capabilities`. No
+ * `SKILL.md` body enters a prompt from this function — the model opens the file itself.
  */
 export async function openCommandSurface(options: {
   configDirectory: string;
   workspacePath: string | null;
 }): Promise<CommandSurfaceState> {
-  const { configDirectory, workspacePath } = options;
+  const { workspacePath } = options;
+  const discovery = discoverSkills(options);
   if (!workspacePath) {
-    return { surface: null, notes: ['没有打开工作区，脚本命令面不可用。'] };
+    return { ...discovery, surface: null, surfaceNotes: ['没有打开工作区，脚本命令面不可用。'] };
   }
-  const roots = skillRoots(configDirectory, workspacePath);
-  // The roots are passed explicitly and includeDefaults is off, so this can only read them:
-  // the application has its own user-level root and does not consult Pi's (#120).
-  const { skills, diagnostics } = loadSkills({
-    cwd: workspacePath,
-    agentDir: configDirectory,
-    skillPaths: [...roots],
-    includeDefaults: false,
-  });
-  // Pi resolves a conflict by keeping the skill it found first and diagnosing it; that
-  // diagnostic is the only thing that says a choice happened, so it travels rather than
-  // staying in the loader's return value.
-  const notes = diagnostics
-    .filter((diagnostic) => diagnostic.type === 'collision')
-    .map(collisionNote);
-  const scripts = skills
+  const roots = skillRoots(options.configDirectory, workspacePath);
+  const scripts = discovery.skills
     .map((skill) => path.join(skill.baseDir, ...SURFACE_SCRIPT))
     .filter((scriptPath) => existsSync(scriptPath));
   if (!scripts.length) {
-    return { surface: null, notes: [...notes, noSurfaceNote(roots)] };
+    return { ...discovery, surface: null, surfaceNotes: [noSurfaceNote(roots)] };
   }
   // Pi keeps the first skill it found; the surface follows the same rule, and says so rather
   // than quietly using one of however many there are.
@@ -186,23 +234,35 @@ export async function openCommandSurface(options: {
   const capabilities = await readCapabilities(scriptPath);
   if (!capabilities) {
     return {
+      ...discovery,
       surface: null,
-      notes: [...notes, `脚本命令面不可用：${scriptPath} 没有给出可用的 --capabilities 输出（搜索过的根：${roots.join(' 和 ')}）。`],
+      surfaceNotes: [`脚本命令面不可用：${scriptPath} 没有给出可用的 --capabilities 输出（搜索过的根：${roots.join(' 和 ')}）。`],
     };
   }
   return {
+    ...discovery,
     surface: { scriptPath, commands: capabilities },
-    notes: [...notes, ...ignored.map((other) =>
-      `发现多个脚本命令面，使用 ${scriptPath}，忽略 ${other}。`)],
+    surfaceNotes: ignored.map((other) =>
+      `发现多个脚本命令面，使用 ${scriptPath}，忽略 ${other}。`),
   };
 }
 
-type SkillDiagnostic = ReturnType<typeof loadSkills>['diagnostics'][number];
-
-function collisionNote(diagnostic: SkillDiagnostic): string {
+/**
+ * One Pi diagnostic as a line an operator can act on.
+ *
+ * A collision is the one diagnostic whose whole content is a choice — which file is in use
+ * and which was left out — so it names both paths; everything else is the loader's own
+ * message, which already says what is wrong (`description is required`, a parse failure, an
+ * unreadable file).
+ */
+function skillDiagnosticNote(diagnostic: ResourceDiagnostic): string {
   const collision = diagnostic.collision;
-  if (!collision) return `技能冲突：${diagnostic.message}`;
-  return `技能冲突：${diagnostic.message}（保留 ${collision.winnerPath}，忽略 ${collision.loserPath}）`;
+  if (collision) {
+    return `技能冲突：${diagnostic.message}（保留 ${collision.winnerPath}，忽略 ${collision.loserPath}）`;
+  }
+  return diagnostic.path
+    ? `技能诊断：${diagnostic.path}（${diagnostic.message}）`
+    : `技能诊断：${diagnostic.message}`;
 }
 
 function noSurfaceNote(roots: readonly string[]): string {
