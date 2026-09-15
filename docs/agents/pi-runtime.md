@@ -29,7 +29,7 @@ slice. The architecture is fixed by
 ├── models.json             # provider and model definitions
 ├── auth.json               # credentials
 ├── selected-models.json    # the model each mode is on (the companion's)
-├── skills/                 # command-surface scripts (#104)
+├── skills/                 # skills and their command-surface scripts (#104, #122)
 ├── extensions/             # user Pi extensions (#121)
 └── bin/                    # the `node` a session's shell finds (#129)
 ```
@@ -198,6 +198,14 @@ marks the root, the first hit wins, and a name collision is a diagnostic rather 
 choice. Pi's order puts the user-level root first, so a user-level skill wins over a project-level
 one of the same name; that is Pi's rule, adopted here so a skill is discovered exactly as Pi would
 discover it. Pi's own skill directories are never among the roots, so nothing is read from `~/.pi/`.
+- **The skills travel to the session, not just their scripts.** The same `loadSkills` call that
+finds the command surface supplies the session's skills, so the prompt lists what the surface runs
+and the two cannot drift. What enters the prompt is Pi's progressive disclosure and nothing more —
+name, description and `SKILL.md` path; the model opens the file with `read` when the description
+matches the task, which is why a skill that ships only a `SKILL.md` is a usable skill. No skill
+body is injected into a prompt. A missing root is not a diagnostic, but a `description is
+required`, an unreadable file or a name collision is, and reaches the operator on stderr under
+`[skills]` — the surface's own notes stay under `[command surface]`.
 - **Every tool is derived from `--capabilities`.** A granted command becomes one custom tool
 whose parameters come from that command's own `argv` and `stdin` declarations in camel case,
 with the workspace root supplied by the companion — never a parameter, since ADR-0011 fixes it

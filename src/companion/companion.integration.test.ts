@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -32,6 +32,21 @@ const TOOL_CALLS: Record<string, { name: string; arguments: Record<string, unkno
   'bash-path': { name: 'bash', arguments: { command: 'printf %s "$PATH"' } },
   'bash-node': { name: 'bash', arguments: { command: 'node --version' } },
 };
+
+/**
+ * The call a marker asks for, computed against the request it is answering.
+ *
+ * `read-skill` is the one call whose argument is not a fixture constant: the file to read is
+ * the location the session prompt published, which is the whole point — a model that only
+ * knows a skill's name and description has to be told where its body is.
+ */
+function toolCallFor(marker: string, body: string): { name: string; arguments: Record<string, unknown> } | null {
+  if (marker === 'read-skill') {
+    const location = /<location>([^<]+)<\/location>/.exec(body)?.[1];
+    return { name: 'read', arguments: { path: location ?? '' } };
+  }
+  return TOOL_CALLS[marker] ?? null;
+}
 
 /** Every request body the fake provider received, in order, for the test to assert on. */
 let requestBodies: string[] = [];
@@ -181,6 +196,24 @@ async function workspaceWithCommandSurface(prefix: string): Promise<string> {
   return workspace;
 }
 
+/**
+ * A skill directory as an operator installs one: a `SKILL.md`, and whatever else the skill
+ * ships beside it — here, nothing at all, which is the case this ticket exists for.
+ */
+async function installSkill(
+  directory: string,
+  name: string,
+  options: { description?: string; body: string },
+): Promise<string> {
+  await mkdir(directory, { recursive: true });
+  const description = options.description === undefined ? '' : `description: ${options.description}\n`;
+  await writeFile(
+    path.join(directory, 'SKILL.md'),
+    `---\nname: ${name}\n${description}---\n\n${options.body}\n`,
+  );
+  return directory;
+}
+
 beforeAll(async () => {
   temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-pi-companion-'));
   server = createServer((incoming, response) => {
@@ -197,14 +230,14 @@ beforeAll(async () => {
       const prompt = lastUserText(body);
       requestBodies.push(body);
       const toolCall = /tool-call:([a-z-]+)/.exec(prompt)?.[1];
-      if (toolCall && TOOL_CALLS[toolCall]) {
+      const call = toolCall ? toolCallFor(toolCall, body) : null;
+      if (toolCall && call) {
         response.writeHead(200, { 'content-type': 'text/event-stream' });
         if (endsWithToolResult(body)) {
           // The call has been made and its result travelled back: finish the turn.
           response.write(`data: ${chunk('tool finished', null)}\n\n`);
           response.write(`data: ${chunk('', 'stop')}\n\n`);
         } else {
-          const call = TOOL_CALLS[toolCall];
           response.write(`data: ${JSON.stringify({
             id: 'chatcmpl-test',
             object: 'chat.completion.chunk',
@@ -619,6 +652,114 @@ it('stays usable with no command surface installed, and says where it looked', {
     expect(offeredToolNames(requestBodies[0])).toEqual(['read', shellToolName(process.platform)]);
     expect(companion.diagnostics()).toContain(path.join(temporaryDirectory, 'skills'));
     expect(companion.diagnostics()).toContain(path.join(workspace, '.derivon/skills'));
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #122: a skill reaches the session the way Pi's progressive disclosure says it does. The
+ * prompt carries its name, description and location — never its body — and the model opens the
+ * file itself. A skill that ships nothing but a `SKILL.md` is therefore a usable skill, and Pi's
+ * own user-level skill directory is not one this application reads.
+ */
+it('lists a skill in the prompt, and the model reads the body its location names', { timeout: 30_000 }, async () => {
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-122-config-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  // A skill that only ever lived in Pi's tree: the application has its own user-level root and
+  // must not reach into `~/.pi/`, whatever HOME the process was started with.
+  const home = await mkdtemp(path.join(tmpdir(), 'derivon-issue-122-home-'));
+  await installSkill(path.join(home, '.pi', 'agent', 'skills', 'pi-only'), 'pi-only', {
+    description: 'Pi first, never this application.',
+    body: '# Pi only',
+  });
+  const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-122-workspace-'));
+  const skill = await installSkill(path.join(workspace, '.derivon', 'skills', 'derivon-method'), 'derivon-method', {
+    description: 'The method this workspace expects.',
+    body: '# Method\n\nThe passphrase is tungsten.',
+  });
+  const companion = startCompanion(configDirectory, { ...process.env, HOME: home });
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'authoring', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+
+    companion.send({ id: 3, type: 'send', mode: 'authoring', prompt: 'tool-call:read-skill' });
+    await companion.await((line) => line.type === 'ok' && line.id === 3);
+
+    const prompt = requestBodies[0];
+    expect(prompt).toContain('<name>derivon-method</name>');
+    expect(prompt).toContain('The method this workspace expects.');
+    expect(prompt).toContain(path.join(skill, 'SKILL.md'));
+    // The body itself is not injected; the prompt only says how to get it.
+    expect(prompt).not.toContain('The passphrase is tungsten.');
+    expect(prompt).toContain("Use the read tool to load a skill's file");
+    expect(prompt).not.toContain('pi-only');
+    expect(offeredToolNames(prompt)).toContain('read');
+
+    // The location the prompt carried was enough: the model opened the file and read the body.
+    expect(lastToolContent(requestBodies.at(-1) ?? '')).toContain('The passphrase is tungsten.');
+    expect(companion.diagnostics()).not.toContain('[skills]');
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #122: a skills root that reports something badly says so where the operator reads it, and the
+ * session is still usable — the same shape as a missing command surface.
+ */
+it('diagnoses a skill with no description, and keeps the session usable', { timeout: 30_000 }, async () => {
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-122-nodesc-config-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-122-nodesc-'));
+  await installSkill(path.join(workspace, '.derivon', 'skills', 'undescribed'), 'undescribed', {
+    body: '# No description',
+  });
+  const companion = startCompanion(configDirectory);
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'authoring', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+    companion.send({ id: 3, type: 'send', mode: 'authoring', prompt: 'hello' });
+    await companion.await((line) => line.type === 'event' && line.event.kind === 'message' && line.event.text === 'Hello');
+
+    expect(companion.diagnostics()).toContain('[skills]');
+    expect(companion.diagnostics()).toContain(path.join(workspace, '.derivon', 'skills', 'undescribed', 'SKILL.md'));
+    // Nothing to list, so nothing enters the prompt, and no tool changed because of it.
+    expect(requestBodies[0]).not.toContain('<available_skills>');
+    expect(offeredToolNames(requestBodies[0])).toEqual(['read', shellToolName(process.platform)]);
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #122: the user-level root is the application's own, and a skill installed there is usable the
+ * same way. The command surface beside it plays no part in that — a `SKILL.md` alone would do.
+ */
+it('lists a skill installed under the user-level root, without a workspace of its own', { timeout: 30_000 }, async () => {
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-122-userroot-config-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  await installSkill(path.join(configDirectory, 'skills', 'method'), 'method', {
+    description: 'A method that travels with the operator, not the workspace.',
+    body: '# Method',
+  });
+  const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-122-userroot-ws-'));
+  const companion = startCompanion(configDirectory);
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+    companion.send({ id: 3, type: 'send', mode: 'learning', prompt: 'hello' });
+    await companion.await((line) => line.type === 'event' && line.event.kind === 'message' && line.event.text === 'Hello');
+
+    expect(requestBodies[0]).toContain('<name>method</name>');
+    expect(requestBodies[0]).toContain('A method that travels with the operator, not the workspace.');
+    expect(requestBodies[0]).toContain(path.join(configDirectory, 'skills', 'method', 'SKILL.md'));
   } finally {
     companion.stop();
   }

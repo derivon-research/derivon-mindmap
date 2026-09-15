@@ -56,7 +56,7 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **模型配置（model configuration）**
 
-本应用自己的 `models.json` 与 `auth.json`，放在**用户级配置根 `~/.derivon/`** 下（Windows `%USERPROFILE%\.derivon\`；三平台同名同形，Linux 不跟 `$XDG_CONFIG_HOME`），语法与 Pi 一致。同一根下还有 `selected-models.json`（每个模式选中的模型）与 `skills/`（#104）、`extensions/`（#121）、`bin/`（会话里那个 node，#129），布局见 `docs/agents/pi-runtime.md`；学习者记录不在这里（它们是应用数据）。它们是这个应用的文件：companion 不读也不写 `~/.pi/`，不要求装 Pi CLI。**面板能选到什么，是这两个文件的函数，除此之外什么都不算数**——本机环境变量、Google ADC、AWS profile 提供的凭证一律不采纳。这条不是"传了自己的路径"就自动成立的，需要按凭证归属显式过滤，理由与机制记在 `docs/adr/0010-pi-sdk-companion-process.md`。
+本应用自己的 `models.json` 与 `auth.json`，放在**用户级配置根 `~/.derivon/`** 下（Windows `%USERPROFILE%\.derivon\`；三平台同名同形，Linux 不跟 `$XDG_CONFIG_HOME`），语法与 Pi 一致。同一根下还有 `selected-models.json`（每个模式选中的模型）与 `skills/`（#104、#122）、`extensions/`（#121）、`bin/`（会话里那个 node，#129），布局见 `docs/agents/pi-runtime.md`；学习者记录不在这里（它们是应用数据）。它们是这个应用的文件：companion 不读也不写 `~/.pi/`，不要求装 Pi CLI。**面板能选到什么，是这两个文件的函数，除此之外什么都不算数**——本机环境变量、Google ADC、AWS profile 提供的凭证一律不采纳。这条不是"传了自己的路径"就自动成立的，需要按凭证归属显式过滤，理由与机制记在 `docs/adr/0010-pi-sdk-companion-process.md`。
 
 **诊断（diagnosis）**
 
