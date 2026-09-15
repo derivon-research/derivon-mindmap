@@ -128,8 +128,10 @@ only place a desktop `WorkspaceHandle.id` is made).
 - Disabling the built-in tools does **not** make `cwd` irrelevant: Pi appends
   `Current working directory: <cwd>` to the system prompt either way, and `cwd` also keys
   project settings, project resource discovery and session metadata. The companion
-  supplies its own `ResourceLoader` and in-memory `SessionManager`, so nothing is read
-  from or written to the workspace today — but the agent is told where it is.
+  supplies its own `ResourceLoader` and in-memory `SessionManager`, and reads no
+  document through Pi; the one thing it reads out of the workspace is the manifest's
+  `graph`, for the `derivon` tool, and the one thing it is rooted at is the session's own
+  workspace, not a path a call can name.
 - Pi does not check that `cwd` exists; a missing directory fails much later and
   obscurely. The companion checks before creating a session and refuses by name.
 
@@ -173,8 +175,9 @@ evidence on the way to the panel is a regression:
   learning session reads learner records through `read-learner-record` and writes none, because a
   record is written either by the application’s own learning actions or by the command surface
   with no client running ([learner records](../learner-records.md)).
-- The learning session registers exactly two custom tools, both of them application state:
-  setting or appending a goal, and requesting a route recompute (entering preview). There
+- The learning session registers exactly two custom tools of its own, both of them application
+  state: setting or appending a goal, and requesting a route recompute (entering preview). The one
+  other custom tool it holds, `derivon`, belongs to both modes and changes nothing. There
   is no step-advance tool: a route’s current step is derived from mastery, so there is no
   cursor to move.
 - Authoring is the only mode that registers script commands writing workspace content;
@@ -219,12 +222,48 @@ print a `derivon.command-result/v1` envelope are tool errors the model reads as 
 child runs under `process.execPath`, the sidecar Node Rust started the companion with, never a
 `node` from `PATH`.
 - **The prompt lists what the grant table holds**, in the same order the tools are built from it,
-so a command cannot appear in the prompt and not in the session or the other way round.
+so a command cannot appear in the prompt and not in the session or the other way round. The same
+rule covers the mode-level tools: `systemPrompt` is given the session's own tool list, and the
+paragraph about `derivon` appears only when that list names it.
 - **No installed skill is a configuration state, not an error.** No tool is registered, one line
 on stderr names both roots that were searched, and the session still works — the same shape as an
 empty model catalog, whose own rendering in the panel is a separate change rather than something
 this ticket reaches. The surface is read when a session is built, not kept from the last one, so
 a skill the operator installs while the application runs reaches the next session.
+
+## The graph reads and queries, as the companion wires it
+
+`src/companion/cliTool.ts` owns one tool and nothing else. The recipes the skills carry for reading
+and querying a graph all go through `derivon`, and before this the session had no way to ask them:
+the command surface audits and changes the workspace and answers nothing about reachability. It is a
+thin shell, not a family of tools and not a structured operation table.
+
+- **Its input is the CLI's own words.** One parameter, `argv`: the command and its flags, with no
+  program name. Nothing else is interpreted, so the tool keeps no second command list and cannot
+  drift from the syntax the skills and `derivon <command> --help` describe.
+- **The graph is the session's, twice over.** The manifest's `graph` is sent to the CLI on stdin,
+  and `--input` — the one global option that would read a graph from a file — is refused before
+  anything runs. The workspace is the session's own, closed over when the tool is built, the same
+  as every command tool's workspace root (ADR-0011).
+- **Both modes hold it, and it has no capability.** `derivon` is a stateless processor that never
+  writes a file — even `point add` and `apply` print their result — so a call changes nothing and
+  there is no capability to intersect. That it changes nothing is what puts it outside the command
+  surface; changing workspace content still goes only through that surface.
+- **The child is the operator's installation.** It is spawned by name on the PATH the companion
+  was started with (Rust passes the application's own through), rooted at the workspace, and the
+  child runs as the operator with their permissions: a commissioned CLI, never a copy shipped
+  beside the companion, and never the sidecar `node`. A CLI installed somewhere that PATH does not
+  carry is therefore a session-environment problem rather than this tool's. A missing CLI is a
+  readable tool error that points at the `derivon-cli` skill for installation and updating;
+  version policy stays there, and the companion checks none.
+- **The answer is the CLI's.** A clean run is its stdout and nothing added to it, so a query's JSON
+  arrives as printed; anything on stderr and a non-zero exit are appended rather than thrown,
+  because an unreachable target and a refused argument are different answers and the model has to
+  tell them apart — the same reason the command surface treats its own diagnostics as a successful
+  call.
+- **One runner, two children.** `src/companion/childProcess.ts` holds the spawn, the two streams,
+  the stdin write and the abort, so the surface's script under the application's Node and the
+  operator's CLI by name share one implementation of the parts that are easy to get wrong.
 
 ## The guard the learning session carries
 
@@ -295,7 +334,8 @@ Bash on Windows, which this application does not require and the companion's cle
 does not find, while PowerShell is there on any Windows install. Where neither exists, the note
 above says so and the session stays usable.
 
-Both modes also hold `read`, which is how the model inspects the documents it is working on. The
+Both modes also hold `read`, which is how the model inspects the documents it is working on, and
+`derivon`, which is how it reads and queries the graph (above). The
 modes differ in what a *write* may do, and that is a different axis (ADR-0011) — the learning
 session's shell is not taken away for it.
 

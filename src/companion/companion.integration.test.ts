@@ -1,12 +1,13 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import { installCommandSurface, installSkill } from '../testing/commandSurface';
+import { installDerivonCli } from '../testing/derivonCli';
 import { shellToolName } from './commandSurface';
 
 type Output =
@@ -31,6 +32,7 @@ const TOOL_CALLS: Record<string, { name: string; arguments: Record<string, unkno
   bash: { name: 'bash', arguments: { command: 'echo written > poc.txt' } },
   'bash-path': { name: 'bash', arguments: { command: 'printf %s "$PATH"' } },
   'bash-node': { name: 'bash', arguments: { command: 'node --version' } },
+  'graph-query': { name: 'derivon', arguments: { argv: ['query', 'route', '--start', 'A', '--target', 'Z', '--pretty'] } },
 };
 
 /**
@@ -193,6 +195,25 @@ async function configureModelDirectory(directory: string, baseUrl: string) {
 async function workspaceWithCommandSurface(prefix: string): Promise<string> {
   const workspace = await mkdtemp(path.join(tmpdir(), prefix));
   await installCommandSurface(path.join(workspace, '.derivon', 'skills', 'derivon-mindmap'));
+  return workspace;
+}
+
+/** A workspace whose manifest carries the graph the fixture CLI is asked about. */
+async function workspaceWithGraph(prefix: string): Promise<string> {
+  const workspace = await mkdtemp(path.join(tmpdir(), prefix));
+  await mkdir(path.join(workspace, '.derivon'), { recursive: true });
+  await writeFile(path.join(workspace, '.derivon', 'workspace.json'), JSON.stringify({
+    schema: 'derivon.workspace/v1',
+    id: 'companion-graph-fixture',
+    document: { title: 'Fixture' },
+    graph: {
+      points: [{ id: 'A' }, { id: 'B' }, { id: 'Z' }],
+      hyperedges: [
+        { id: 'h-ab', weight: 1, tails: ['A'], head: 'B' },
+        { id: 'h-bz', weight: 2, tails: ['B'], head: 'Z' },
+      ],
+    },
+  }));
   return workspace;
 }
 
@@ -529,6 +550,60 @@ it('holds no write command in the learning session, and refuses a shell write', 
 });
 
 /**
+ * #130: the graph's reads and queries. Both modes hold one tool that hands the workspace's `graph` to
+ * the operator's own `derivon` and returns what it printed — the CLI's syntax, no second command
+ * list beside it, and no way to make it answer about another graph.
+ */
+it('answers graph queries in both modes, through the CLI the operator installed', { timeout: 30_000 }, async () => {
+  const cli = await installDerivonCli(await mkdtemp(path.join(tmpdir(), 'derivon-issue-130-cli-')));
+  const workspace = await workspaceWithGraph('derivon-issue-130-workspace-');
+  // The fixture answers on the PATH the companion is started with, exactly where the operator's
+  // own installation would be: nothing is bundled beside the companion and nothing is injected.
+  const companion = startCompanion(temporaryDirectory, {
+    ...process.env,
+    PATH: `${cli.binDirectory}${path.delimiter}${process.env.PATH ?? ''}`,
+  });
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+
+    // One turn per mode, so each session's own first request is the one to read the tool list
+    // from, and its second request is the one that carries the call's result back.
+    companion.send({ id: 2, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+    companion.send({ id: 3, type: 'send', mode: 'learning', prompt: 'tool-call:graph-query' });
+    await companion.await((line) => line.type === 'ok' && line.id === 3);
+    companion.send({ id: 4, type: 'setModel', mode: 'authoring', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 4);
+    companion.send({ id: 5, type: 'send', mode: 'authoring', prompt: 'tool-call:graph-query' });
+    await companion.await((line) => line.type === 'ok' && line.id === 5);
+
+    // Both modes hold it, and neither holds a second tool for the same thing.
+    for (const first of [0, 2]) {
+      const offered = offeredToolNames(requestBodies[first]);
+      expect(offered).toContain('derivon');
+      expect(offered.filter((name) => name === 'derivon')).toHaveLength(1);
+    }
+
+    // The answer is the CLI's own document: reachable, the selected hyperedges, the set cost.
+    for (const second of [1, 3]) {
+      const route = JSON.parse(lastToolContent(requestBodies[second])) as Record<string, unknown>;
+      expect(route.reachable).toBe(true);
+      expect(route.hyperedgeIds).toEqual(['h-ab', 'h-bz']);
+      expect(route.cost).toBe(3);
+    }
+
+    // What the CLI received was this workspace's graph and the argv the call asked for.
+    const [invocation] = await cli.calls();
+    expect(invocation.argv).toEqual(['query', 'route', '--start', 'A', '--target', 'Z', '--pretty']);
+    expect((JSON.parse(invocation.input) as { points: { id: string }[] }).points.map((point) => point.id))
+      .toEqual(['A', 'B', 'Z']);
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
  * #129: the session's shell starts at the application's own root, and the `node` in it is the
  * runtime the companion was started with. Neither is the operator's: the PATH is empty, so
  * whatever answers is the application's, and the PATH prefix is Pi's agent directory — which
@@ -630,8 +705,8 @@ it('stays usable with no command surface installed, and says where it looked', {
     companion.send({ id: 3, type: 'send', mode: 'authoring', prompt: 'hello' });
     await companion.await((line) => line.type === 'event' && line.event.kind === 'message' && line.event.text === 'Hello');
 
-    // No command surface, so no command tools — only the built-ins every mode grants itself.
-    expect(offeredToolNames(requestBodies[0])).toEqual(['read', shellToolName(process.platform)]);
+    // No command surface, so no command tools — only the tools every mode grants itself.
+    expect(offeredToolNames(requestBodies[0])).toEqual(['read', 'derivon', shellToolName(process.platform)]);
     expect(companion.diagnostics()).toContain(path.join(temporaryDirectory, 'skills'));
     expect(companion.diagnostics()).toContain(path.join(workspace, '.derivon/skills'));
   } finally {
@@ -712,7 +787,7 @@ it('diagnoses a skill with no description, and keeps the session usable', { time
     expect(companion.diagnostics()).toContain(path.join(workspace, '.derivon', 'skills', 'undescribed', 'SKILL.md'));
     // Nothing to list, so nothing enters the prompt, and no tool changed because of it.
     expect(requestBodies[0]).not.toContain('<available_skills>');
-    expect(offeredToolNames(requestBodies[0])).toEqual(['read', shellToolName(process.platform)]);
+    expect(offeredToolNames(requestBodies[0])).toEqual(['read', 'derivon', shellToolName(process.platform)]);
   } finally {
     companion.stop();
   }

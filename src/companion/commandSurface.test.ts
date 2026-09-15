@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { commandSurfaceScript, installSkill } from '../testing/commandSurface';
+import { DERIVON_TOOL_NAME } from './cliTool';
 import {
   commandTools, discoverSkills, grantedCommands, invocationFor, parseCapabilities, sessionToolNames,
   shellToolName, type Command, type CommandSurface,
@@ -46,11 +47,15 @@ describe('the capability intersection', () => {
     }
   });
 
-  it('grants both modes the ability to read, and the platform\'s shell', () => {
+  it('grants both modes the ability to read, the graph-query tool, and the platform\'s shell', () => {
+    // `derivon` is in both modes' grant because it changes nothing: there is no capability to
+    // intersect it with and no mode to leave it out of, so these reads answer the same way whether
+    // the session may write or not.
     expect(sessionToolNames(grantedCommands(surface, 'learning'), 'learning', 'bash'))
-      .toEqual(['validate', 'read-learner-record', 'read', 'bash']);
+      .toEqual(['validate', 'read-learner-record', 'read', DERIVON_TOOL_NAME, 'bash']);
     const authoring = sessionToolNames(grantedCommands(surface, 'authoring'), 'authoring', 'bash');
     expect(authoring).toContain('read');
+    expect(authoring).toContain(DERIVON_TOOL_NAME);
     expect(authoring).toContain('bash');
     expect(authoring).not.toContain('powershell');
   });
@@ -59,8 +64,8 @@ describe('the capability intersection', () => {
     expect(shellToolName('win32')).toBe('powershell');
     expect(shellToolName('darwin')).toBe('bash');
     expect(shellToolName('linux')).toBe('bash');
-    expect(sessionToolNames([], 'learning', shellToolName('win32'))).toEqual(['read', 'powershell']);
-    expect(sessionToolNames([], 'authoring', shellToolName('darwin'))).toEqual(['read', 'bash']);
+    expect(sessionToolNames([], 'learning', shellToolName('win32'))).toEqual(['read', DERIVON_TOOL_NAME, 'powershell']);
+    expect(sessionToolNames([], 'authoring', shellToolName('darwin'))).toEqual(['read', DERIVON_TOOL_NAME, 'bash']);
   });
 });
 
