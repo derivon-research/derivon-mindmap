@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import { installCommandSurface } from '../testing/commandSurface';
+import { shellToolName } from './commandSurface';
 
 type Output =
   | { id: number; type: 'models'; models: { providerId: string; modelId: string; name?: string }[]; selected?: unknown }
@@ -28,6 +29,8 @@ const TOOL_CALLS: Record<string, { name: string; arguments: Record<string, unkno
   'add-concept': { name: 'add-concept', arguments: { stdin: { id: 'c-fixture', label: 'Fixture concept' } } },
   'write-document': { name: 'write-document', arguments: { stdin: { object: 'c-fixture', markdown: '# changed' } } },
   bash: { name: 'bash', arguments: { command: 'echo written > poc.txt' } },
+  'bash-path': { name: 'bash', arguments: { command: 'printf %s "$PATH"' } },
+  'bash-node': { name: 'bash', arguments: { command: 'node --version' } },
 };
 
 /** Every request body the fake provider received, in order, for the test to assert on. */
@@ -50,6 +53,12 @@ function messagesOf(body: string): { role?: string; content?: unknown }[] {
  */
 function endsWithToolResult(body: string): boolean {
   return messagesOf(body).at(-1)?.role === 'tool';
+}
+
+/** The tool result a turn's second request carries: what the tool itself returned. */
+function lastToolContent(body: string): string {
+  const message = messagesOf(body).at(-1);
+  return typeof message?.content === 'string' ? message.content : JSON.stringify(message?.content ?? '');
 }
 
 /** The tools the provider was offered, which is the session's grant as the model sees it. */
@@ -94,7 +103,9 @@ function lastUserText(body: string): string {
  * deliberately shuts its companion down to prove it exits cleanly.
  */
 function startCompanion(configDir: string, environment: NodeJS.ProcessEnv = process.env) {
-  const process_ = spawn('node', [companionPath, '--config-dir', configDir], {
+  // The runtime this test was started with, by absolute path: a controlled PATH is part of what
+  // is under test, and resolving `node` through it would make the harness depend on it too.
+  const process_ = spawn(process.execPath, [companionPath, '--config-dir', configDir], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: environment,
   });
@@ -451,14 +462,16 @@ it('registers the command surface as tools and changes the workspace through one
     expect(await readFile(path.join(workspace, 'objects/c-fixture/document.md'), 'utf8')).toContain('Fixture concept');
 
     // The tool set is the capability intersection: write-structure commands are offered, and
-    // no built-in is enabled in authoring at all.
+    // the built-ins a mode grants itself are read and the platform's shell — never a write.
     const offered = offeredToolNames(requestBodies[0]);
     expect(offered).toContain('add-concept');
     expect(offered).toContain('write-document');
     expect(offered).toContain('delete-object');
     expect(offered).toContain('validate');
     expect(offered).not.toContain('read-learner-record');
-    for (const builtin of ['read', 'write', 'edit', 'bash']) expect(offered).not.toContain(builtin);
+    expect(offered).toContain('read');
+    expect(offered).toContain(shellToolName(process.platform));
+    for (const builtin of ['write', 'edit']) expect(offered).not.toContain(builtin);
   } finally {
     companion.stop();
   }
@@ -483,7 +496,7 @@ it('holds no write command in the learning session, and refuses a shell write', 
     await companion.await((line) => line.type === 'ok' && line.id === 3);
 
     const offered = offeredToolNames(requestBodies[0]);
-    expect(offered).toEqual(expect.arrayContaining(['validate', 'read-learner-record', 'bash']));
+    expect(offered).toEqual(expect.arrayContaining(['validate', 'read-learner-record', 'read', shellToolName(process.platform)]));
     for (const write of ['add-concept', 'write-document', 'delete-object']) expect(offered).not.toContain(write);
     // Pi answered that the tool is unavailable, and the command never ran.
     expect(requestBodies[1]).toContain('not found');
@@ -495,6 +508,44 @@ it('holds no write command in the learning session, and refuses a shell write', 
     await companion.await((line) => line.type === 'ok' && line.id === 4);
     expect(existsSync(path.join(workspace, 'poc.txt'))).toBe(false);
     expect(requestBodies[3]).toContain('learning session');
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #129: the session's shell starts at the application's own root, and the `node` in it is the
+ * runtime the companion was started with. Neither is the operator's: the PATH is empty, so
+ * whatever answers is the application's, and the PATH prefix is Pi's agent directory — which
+ * this application points at its own root instead of `~/.pi/agent`.
+ */
+it('gives the session a shell rooted at the application, with a node that works', { timeout: 30_000 }, async () => {
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-129-config-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-129-workspace-'));
+  // An empty directory as the whole PATH: nothing the operator installed is reachable, so
+  // `node` resolving at all is the application's doing.
+  const empty = await mkdtemp(path.join(tmpdir(), 'derivon-issue-129-empty-'));
+  const companion = startCompanion(configDirectory, { PATH: empty, HOME: workspace });
+  try {
+    companion.send({ id: 1, type: 'setWorkspace', path: workspace });
+    await companion.await((line) => line.type === 'ok' && line.id === 1);
+    companion.send({ id: 2, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
+    await companion.await((line) => line.type === 'ok' && line.id === 2);
+
+    companion.send({ id: 3, type: 'send', mode: 'learning', prompt: 'tool-call:bash-path' });
+    await companion.await((line) => line.type === 'ok' && line.id === 3);
+    const pathValue = lastToolContent(requestBodies.at(-1) ?? '');
+    expect(pathValue.split(path.delimiter)[0]).toBe(path.join(configDirectory, 'bin'));
+    expect(pathValue).not.toContain(path.join('.pi', 'agent', 'bin'));
+
+    companion.send({ id: 4, type: 'send', mode: 'learning', prompt: 'tool-call:bash-node' });
+    await companion.await((line) => line.type === 'ok' && line.id === 4);
+    // The shim is a link to the sidecar runtime, so the version is this process's own.
+    expect(lastToolContent(requestBodies.at(-1) ?? '').trim()).toBe(process.version);
+
+    // A healthy environment is silent: the notes are for a machine that could not provide one.
+    expect(companion.diagnostics()).not.toContain('[session environment]');
   } finally {
     companion.stop();
   }
@@ -564,7 +615,8 @@ it('stays usable with no command surface installed, and says where it looked', {
     companion.send({ id: 3, type: 'send', mode: 'authoring', prompt: 'hello' });
     await companion.await((line) => line.type === 'event' && line.event.kind === 'message' && line.event.text === 'Hello');
 
-    expect(offeredToolNames(requestBodies[0])).toEqual([]);
+    // No command surface, so no command tools — only the built-ins every mode grants itself.
+    expect(offeredToolNames(requestBodies[0])).toEqual(['read', shellToolName(process.platform)]);
     expect(companion.diagnostics()).toContain(path.join(temporaryDirectory, 'skills'));
     expect(companion.diagnostics()).toContain(path.join(workspace, '.derivon/skills'));
   } finally {

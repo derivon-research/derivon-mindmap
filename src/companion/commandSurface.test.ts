@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { commandSurfaceScript } from '../testing/commandSurface';
 import {
   commandTools, grantedCommands, invocationFor, parseCapabilities, sessionToolNames,
-  type Command, type CommandSurface,
+  shellToolName, type Command, type CommandSurface,
 } from './commandSurface';
 
 let surface: CommandSurface;
@@ -46,11 +46,21 @@ describe('the capability intersection', () => {
     }
   });
 
-  it('grants the learning session bash and the authoring session nothing built-in', () => {
-    expect(sessionToolNames(grantedCommands(surface, 'learning'), 'learning'))
-      .toEqual(['validate', 'read-learner-record', 'bash']);
-    expect(sessionToolNames(grantedCommands(surface, 'authoring'), 'authoring'))
-      .not.toContain('bash');
+  it('grants both modes the ability to read, and the platform\'s shell', () => {
+    expect(sessionToolNames(grantedCommands(surface, 'learning'), 'learning', 'bash'))
+      .toEqual(['validate', 'read-learner-record', 'read', 'bash']);
+    const authoring = sessionToolNames(grantedCommands(surface, 'authoring'), 'authoring', 'bash');
+    expect(authoring).toContain('read');
+    expect(authoring).toContain('bash');
+    expect(authoring).not.toContain('powershell');
+  });
+
+  it('names the shell tool by platform, not by grant', () => {
+    expect(shellToolName('win32')).toBe('powershell');
+    expect(shellToolName('darwin')).toBe('bash');
+    expect(shellToolName('linux')).toBe('bash');
+    expect(sessionToolNames([], 'learning', shellToolName('win32'))).toEqual(['read', 'powershell']);
+    expect(sessionToolNames([], 'authoring', shellToolName('darwin'))).toEqual(['read', 'bash']);
   });
 });
 

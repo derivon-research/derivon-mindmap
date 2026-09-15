@@ -41,16 +41,32 @@ const MODE_GRANTS = {
  * Built-in tools a mode grants itself, on the other axis from capability.
  *
  * Built-ins start disabled (`settings.defaultTools` is the empty array in `index.ts`), and a
- * mode asks for the ones it needs. The learning session holds `bash` so a user can run
- * something like `tavily-cli` while learning; what it must not do is write inside the
- * workspace, and that is refused by the `tool_call` guard as an operation class rather than
- * by taking the tool away. Authoring asks for no built-in at all: its only tools are the
- * command surface's.
+ * mode asks for the ones it needs. Both modes read the workspace — reading documents is how
+ * the model inspects what it is working on — and both hold the platform's shell: authoring
+ * looks things up while it writes, and learning runs something like `tavily-cli` while the
+ * user learns. The two modes differ in what a *write* may do, and that is a different axis:
+ * the learning session's workspace writes are refused by the `tool_call` guard, not by taking
+ * the shell away (ADR-0011).
  */
 const MODE_BUILTIN_GRANTS = {
-  authoring: [],
-  learning: ['bash'],
+  authoring: ['read'],
+  learning: ['read'],
 } satisfies Record<Mode, readonly string[]>;
+
+/** The two shell tools Pi ships, one per kind of platform. */
+export type ShellTool = 'bash' | 'powershell';
+
+/**
+ * The shell a session on this platform holds.
+ *
+ * Pi's `bash` tool resolves Git Bash on Windows, which this application does not require and
+ * the companion's cleared environment does not find, while PowerShell is there on any Windows
+ * install. Naming the tool is the whole difference: the same grant, a different tool
+ * (`sessionEnvironment.ts` reports the one case where neither is there).
+ */
+export function shellToolName(platform: NodeJS.Platform): ShellTool {
+  return platform === 'win32' ? 'powershell' : 'bash';
+}
 
 export type CommandArgument = {
   readonly name: string;
@@ -111,8 +127,12 @@ export function skillRoots(configDirectory: string, workspacePath: string): read
  * Returned as the session's `tools` allowlist, which is the whole grant — a tool that is not
  * named here is not enabled.
  */
-export function sessionToolNames(commands: readonly Command[], mode: Mode): string[] {
-  return [...commands.map((command) => command.name), ...MODE_BUILTIN_GRANTS[mode]];
+export function sessionToolNames(commands: readonly Command[], mode: Mode, shellTool: ShellTool): string[] {
+  return [
+    ...commands.map((command) => command.name),
+    ...MODE_BUILTIN_GRANTS[mode],
+    shellTool,
+  ];
 }
 
 /** The commands of one mode: the intersection of the surface's declaration and the grant. */
