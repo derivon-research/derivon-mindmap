@@ -4,7 +4,10 @@
 
 Accepted. The turn-level exclusion this decision first recorded is superseded: the application
 and the agent write optimistically, and ordering plus each command's own precondition carry the
-safety.
+safety. The claim that excluding `bash` is what makes the client's limit real is superseded too:
+built-in tools start disabled, a mode **grants** the tools it needs, and the write a mode must not
+perform is refused by a `tool_call` guard rather than by taking the tool away
+([#123](https://github.com/derivon-research/derivon-mindmap/issues/123)).
 
 ## Context
 
@@ -48,16 +51,27 @@ validates any workspace it loads, whoever wrote it, and a command validates its 
 replacing anything. An unmediated write is therefore *unvalidated*, not *forbidden*. The reader is
 what enforces.
 
-Inside the client the boundary is a capability limit. The companion registers exactly the script
-commands as tools, with a fixed workspace root, and registers no `read`, `write`, `edit` or
-`bash`. Excluding `bash` is what makes the limit real rather than decorative, and it is also why
-the shell recipes lose nothing by becoming commands: the capability they provided is the same one.
-The tool set is constructed per mode, so a session holds only the capabilities its mode grants;
-the learning session has no write command registered in it at all. "Learning mode cannot edit" is
-structural, not a switch that some other code path could turn back on. Reading follows where the
-truth lives: workspace content is on disk and is read on demand through read-capability commands,
-while learner records are not workspace content and reach the model only through the commands that
-read them ([ADR-0009](0009-persist-learner-records-outside-the-workspace.md),
+Inside the client, a mode's reach is decided by two axes and defended by two more. The first axis
+is **capability**: the companion registers exactly the script commands whose capability its mode
+grants, with a fixed workspace root, and holds no second command list. The second is the **tool
+grant**: built-in tools start disabled, and a mode gets the ones it needs — which is why the
+learning session may hold `bash` at all. Taking a tool away is not how a mode is stopped from
+writing: a mode that needs a shell for something legitimate (a user's `tavily-cli`, say) would
+lose the legitimate use with it.
+
+What a mode must not do is refused as an **operation class**, in the `tool_call` guard: in the
+learning session a call that would write inside the workspace is blocked, and every other call is
+left alone. A guard is a fence, not a sandbox — no inspection of a shell command is complete, and
+the guarantee is where it always was: an unmediated write is *unvalidated*, and the reader
+enforces the artifact. Making the refusal a **guarantee** is the job of isolation outside this
+process, not of this surface.
+
+The tool set is constructed per mode, so a session holds only what its mode grants; the learning
+session has no write *command* registered in it at all. "Learning mode cannot edit" is structural,
+not a switch that some other code path could turn back on. Reading follows where the truth lives:
+workspace content is on disk and is read on demand through read-capability commands, while learner
+records are not workspace content and reach the model only through the commands that read them
+([ADR-0009](0009-persist-learner-records-outside-the-workspace.md),
 [ADR-0012](0012-learning-state-is-mastery.md)). Containment is
 checked per entry on the real path, never by string prefix — a prefix check is exactly what let
 `/mnt/finance/data-archived` through an allowance of `/mnt/finance/data`.
@@ -109,11 +123,18 @@ during one.
 
 ### Rejected: enforcing the path instead of validating the artifact
 
-No enforcement point exists to attach the rule to. Pi has no filesystem sandbox, no session-level
-permission callback, and its only interception point — the extension layer's `tool_call` block —
-is a client-side registration detail that is absent entirely without a client. A design whose
-central claim is "the agent may not write there" would be false in the mode where the agent holds
-`bash`.
+No enforcement point exists to attach a *guarantee* to. Pi has no filesystem sandbox and no
+session-level permission callback that a client can rely on; its interception points — the
+extension layer's `tool_call` hook, a custom bash tool's spawn hook — are client-side
+registrations, absent entirely without a client. A design whose central claim is "the agent may
+not write there" would therefore be false in the mode where the agent holds `bash`.
+
+What is rejected is the **claim**, not the hook. A `tool_call` guard that refuses the operation
+class a mode must not perform is worth having: it makes the mode's promise true in practice and
+cheap to keep, while the property that holds unconditionally stays the artifact — an unmediated
+write is unvalidated, and the reader enforces it. A mode's promise is only a promise; a
+**guarantee** needs isolation outside this process
+([#123](https://github.com/derivon-research/derivon-mindmap/issues/123)).
 
 ### Rejected: keeping the application as the only writer, with the agent proposing changes
 
