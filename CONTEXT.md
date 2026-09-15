@@ -56,11 +56,13 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **模型配置（model configuration）**
 
-本应用自己的 `models.json` 与 `auth.json`，放在**用户级配置根 `~/.derivon/`** 下（Windows `%USERPROFILE%\.derivon\`；三平台同名同形，Linux 不跟 `$XDG_CONFIG_HOME`），语法与 Pi 一致。同一根下还有 `selected-models.json`（每个模式选中的模型）与 `skills/`（#104、#122）、`extensions/`（#121）、`bin/`（会话里那个 node，#129），布局见 `docs/agents/pi-runtime.md`；学习者记录不在这里（它们是应用数据）。它们是这个应用的文件：companion 不读也不写 `~/.pi/`，不要求装 Pi CLI。**面板能选到什么，是这两个文件的函数，除此之外什么都不算数**——本机环境变量、Google ADC、AWS profile 提供的凭证一律不采纳。这条不是"传了自己的路径"就自动成立的，需要按凭证归属显式过滤，理由与机制记在 `docs/adr/0010-pi-sdk-companion-process.md`。
+本应用自己的 `models.json` 与 `auth.json`，放在**用户级配置根 `~/.derivon/`** 下（Windows `%USERPROFILE%\.derivon\`；三平台同名同形，Linux 不跟 `$XDG_CONFIG_HOME`），语法与 Pi 一致。同一根下还有 `selected-models.json`（每个模式选中的模型）与 `skills/`（#104、#122）、`extensions/`（#121，用户自己的 Pi 扩展；项目级扩展在 `<workspace>/.derivon/extensions`，项目受信任才载入）、`bin/`（会话里那个 node，#129），布局见 `docs/agents/pi-runtime.md`；学习者记录不在这里（它们是应用数据）。它们是这个应用的文件：companion 不读也不写 `~/.pi/`，不要求装 Pi CLI。**面板能选到什么，是这两个文件的函数，除此之外什么都不算数**——本机环境变量、Google ADC、AWS profile 提供的凭证一律不采纳。这条不是"传了自己的路径"就自动成立的，需要按凭证归属显式过滤，理由与机制记在 `docs/adr/0010-pi-sdk-companion-process.md`。
 
 **诊断（diagnosis）**
 
 模型目录为空时随目录一起返回的那句原因。空目录是合法的配置状态而不是错误，所以它不走异常通道；但"没有可用模型"单独出现时无法与 companion 没起来区分，因此目录为空时必须带上原因。目录非空时只报真实的加载或组合错误，不报提示。
+
+同一条通道也承载**会话自身的配置状态**：扩展加载失败、扩展根读不出来、项目级扩展因为项目未受信任而跳过，各是一行，与目录自身的原因并列返回，同时在 stderr 上以 `[extensions]` 报出。这些理由与目录是否为空无关——用户写下的代码没有生效，理由就要说。
 
 **整窗模式切换（whole-window mode switch）**
 
@@ -153,6 +155,8 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 **工具授予（tool grant）**
 
 一个模式决定自己的会话有哪些工具：内建工具（如 `bash`）默认不启用，由模式按需授予；命令面工具则按能力交集加入。它与**能力**是两个轴：能力说的是「一条命令可以改变什么」，授予说的是「这件工具在不在」。用拿掉工具表达「禁止一类操作」会把工具本身一起拿掉——学习侧需要 `bash` 才能跑 `tavily-cli` 这类查证工具，所以要禁的不是工具，是**操作类别**（见「守卫」）。
+
+**授予不是能力上限。** 应用不授予 `write` / `edit` 这类内建工具（`read` 与平台 shell 按模式授予），而用户自己的 Pi 扩展（#121）登记的工具进同一份清单：会话里出现 `write`，只可能是操作者自己的代码放进去的。所以客户端里的边界不是「有什么工具」，是**工件强制**——绕过命令面的写入是未校验的，读者才是强制点。
 
 **守卫（tool guard）**
 

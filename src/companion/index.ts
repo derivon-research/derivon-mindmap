@@ -1,6 +1,5 @@
 import {
   createAgentSession,
-  createExtensionRuntime,
   SessionManager,
   SettingsManager,
   type AgentSession,
@@ -21,6 +20,7 @@ import {
   type SkillDiscovery,
 } from './commandSurface';
 import { derivonTool } from './cliTool';
+import { extensionToolNames, openExtensions, type ExtensionState } from './extensions';
 import { workspaceWriteGuard } from './guard';
 import { openModelConfiguration, type CatalogModel, type ModelCatalog } from './modelConfiguration';
 import { prepareSessionEnvironment } from './sessionEnvironment';
@@ -64,6 +64,17 @@ const environment = prepareSessionEnvironment({ configDirectory });
 for (const note of environment.notes) process.stderr.write(`[session environment] ${note}\n`);
 const configurationPromise = openModelConfiguration(configDirectory);
 const sessions = new Map<Mode, AgentSession>();
+/**
+ * The extensions a mode's session holds, one load per (mode, workspace) pair.
+ *
+ * The pair is the unit because the loaded extensions belong to one session: their runtime is
+ * bound when the session is built, and two sessions sharing one would have one session's own
+ * calls arrive in the other. What the cache buys is that the two things that need the answer —
+ * the panel's configuration read, which reports what loading said, and the session itself, which
+ * holds the tools — share one load, so an extension factory runs once and the tools are the ones
+ * the diagnosis was made from.
+ */
+const extensionStates = new Map<Mode, { readonly workspace: string | null; readonly state: Promise<ExtensionState> }>();
 /**
  * The workspace the conversation is about. Pi fixes a session's working directory when
  * the session is created, so changing workspaces ends the sessions rooted at the old one
@@ -124,26 +135,37 @@ async function commandSurfaceFor(target: string | null): Promise<CommandSurfaceS
 /**
  * The resource loader for one mode's session.
  *
- * Everything is supplied from here, and nothing is discovered: no extension is loaded from
- * disk, no skill is loaded from a third place, no context file is read from the workspace, and
- * the prompt is the mode's own. The skills are the ones this application's two roots offered,
- * passed in as one discovery rather than discovered again — Pi turns them into the prompt's
- * name, description and location, and the model opens the file itself (#122). The write guard
- * is an inline extension — the one place Pi's extension API is used — and user extensions
- * would be loaded into this same seam (#121).
+ * Everything a session may draw on is supplied here rather than discovered by Pi: the methods
+ * return what the companion already decided, and `reload` does nothing — nothing Pi would
+ * discover on its own (a context file, a prompt, a theme, its own skill roots) is a root this
+ * application reads. The prompt is the mode's own, the skills are the ones this application's
+ * two roots offered, and the extensions are the operator's own — passed in as one load rather
+ * than discovered again, so what the panel's diagnosis was made from is what the session holds
+ * ([the extensions a session may hold](../../docs/agents/pi-runtime.md#the-extensions-a-session-may-hold)).
+ * The write guard is an inline extension an operator cannot remove, and it sits in the same
+ * runtime as the loaded ones: Pi turns extension tools, handlers and skills into the session,
+ * and the model opens a skill's body itself (#122).
  */
 function resourceLoaderFor(options: {
   mode: Mode;
   prompt: string;
   workspacePath: string | null;
   skillDiscovery: SkillDiscovery;
+  extensions: ExtensionState;
 }): ResourceLoader {
-  const runtime = createExtensionRuntime();
   const guard = options.mode === 'learning' && options.workspacePath
     ? [workspaceWriteGuard(options.workspacePath)]
     : [];
+  // The application's own inline guard and the operator's own extensions in one runtime, which is
+  // the one the extensions registered into: a session's tools are its grants plus the tools the
+  // operator's code put there, and the guard sees both alike.
+  const loaded = {
+    extensions: [...guard, ...options.extensions.extensions],
+    errors: [...options.extensions.errors],
+    runtime: options.extensions.runtime,
+  };
   return {
-    getExtensions: () => ({ extensions: guard, errors: [], runtime }),
+    getExtensions: () => loaded,
     getSkills: () => ({
       skills: [...options.skillDiscovery.skills],
       diagnostics: [...options.skillDiscovery.diagnostics],
@@ -195,7 +217,14 @@ function textOf(content: unknown): string {
  * running, and re-reading is cheap next to leaving them looking at a stale empty list.
  */
 async function listModels(mode: Mode): Promise<ModelCatalog & { selected?: CatalogModel }> {
-  const catalog = await (await configurationPromise).listAvailable();
+  // The panel's configuration read carries both reasons at once: why the catalog is what it is,
+  // and what the session's own extensions did on the way in. Neither is an error channel — an
+  // empty catalog and an extension that would not load are configuration states, and each owes
+  // the operator its reason.
+  const [catalog, extensions] = await Promise.all([
+    (await configurationPromise).listAvailable(),
+    extensionsFor(mode, workspacePath),
+  ]);
   const remembered = selectedModels.get(mode);
   // A remembered model that is no longer offered is not a selection; fall back rather
   // than reporting something the panel could not use.
@@ -203,7 +232,28 @@ async function listModels(mode: Mode): Promise<ModelCatalog & { selected?: Catal
     model.providerId === remembered?.providerId && model.modelId === remembered?.modelId)
     ?? catalog.models[0];
   if (selected) selectedModels.set(mode, selected);
-  return { ...catalog, ...(selected ? { selected } : {}) };
+  const diagnosis = [catalog.diagnosis, ...extensions.notes].filter(Boolean).join('\n');
+  return { ...catalog, ...(diagnosis ? { diagnosis } : {}), ...(selected ? { selected } : {}) };
+}
+
+/**
+ * The extensions of one mode's session, loaded once per (mode, workspace) and read again when
+ * either changes.
+ *
+ * A root that cannot be read, a load that failed and a project root that was skipped because the
+ * project is not trusted all reach the operator on stderr under `[extensions]`, beside the notes
+ * the command surface and the skills already write there. They also travel in the load's own
+ * notes, which is what the panel's configuration read reports.
+ */
+function extensionsFor(mode: Mode, workspace: string | null): Promise<ExtensionState> {
+  const current = extensionStates.get(mode);
+  if (current && current.workspace === workspace) return current.state;
+  const state = openExtensions({ configDirectory, workspacePath: workspace });
+  extensionStates.set(mode, { workspace, state });
+  void state.then((value) => {
+    for (const note of value.notes) process.stderr.write(`[extensions] ${note}\n`);
+  });
+  return state;
 }
 
 async function createSession(mode: Mode) {
@@ -229,9 +279,13 @@ async function createSession(mode: Mode) {
   // is structural rather than a switch something else could turn back on.
   const surface = await commandSurfaceFor(workspacePath);
   const commands: readonly Command[] = surface.surface ? grantedCommands(surface.surface, mode) : [];
+  // Loaded before the tool set is composed, because the names an extension registered are part of
+  // that set: what the operator added to their own session is a grant like any other, and the
+  // application is not the thing that decides it.
+  const extensions = await extensionsFor(mode, workspacePath);
   // One list, three uses: the session's allowlist, the prompt's account of what the session
   // holds, and — through the two below — the tools themselves.
-  const tools = sessionToolNames(commands, mode, environment.shellTool);
+  const tools = [...sessionToolNames(commands, mode, environment.shellTool), ...extensionToolNames(extensions)];
   const customTools: ToolDefinition[] = [
     // `derivon` is a mode grant rather than a capability: it answers the graph reads and queries
     // against the workspace this session is rooted at and changes nothing.
@@ -249,6 +303,7 @@ async function createSession(mode: Mode) {
       prompt: systemPrompt(mode, commands, tools),
       workspacePath,
       skillDiscovery: surface,
+      extensions,
     }),
     sessionManager: SessionManager.inMemory(),
     settingsManager,
@@ -280,6 +335,9 @@ async function endSession(mode: Mode) {
     await session.abort();
   } finally {
     sessions.delete(mode);
+    // The next session reads the roots again: the operator installs and edits extensions while the
+    // application runs, and a session is the thing that holds them.
+    extensionStates.delete(mode);
     session.dispose();
   }
 }
@@ -288,6 +346,7 @@ async function setWorkspace(path: string | null) {
   if (path === workspacePath) return;
   workspacePath = path;
   for (const mode of [...sessions.keys()]) await endSession(mode);
+  extensionStates.clear();
 }
 
 async function setModel(mode: Mode, providerId: string, modelId: string) {

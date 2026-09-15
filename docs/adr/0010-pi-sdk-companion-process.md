@@ -85,6 +85,26 @@ stop discarding evidence — the companion surfaces `ModelRuntime.getError()`, R
 the companion's stderr instead of routing it to `/dev/null`, and the panel stops
 collapsing every rejected promise into an empty list.
 
+### An extension is the operator's own code, with the operator's own credentials
+
+The companion loads Pi extensions: the operator's own from the user-level root, and a project's own
+from `<workspace>/.derivon/extensions` once the operator has trusted that project
+([#121](https://github.com/derivon-research/derivon-mindmap/issues/121), and
+[the Pi runtime guide](../agents/pi-runtime.md) for the mechanism). An extension is arbitrary code
+in this process, and this process holds the resolved credentials of the model a session is on.
+
+Rust's cleared environment and its five-name allowlist stop an extension from reading the
+operator's shell. Nothing stops it from reading what `ModelRuntime` resolved, and no environment
+allowlist could: the credential is in this process by design, because that is where the model call
+is made. A project's extension is not distinguishable from the project's other content either — it
+is code that arrived with the workspace — which is why it waits for a trust decision the workspace
+cannot make for itself.
+
+This is the same trust as an editor's plugin: the operator's code, with the operator's credentials,
+inside the local trust boundary. It is written down here rather than papered over because the
+alternative is a claim of containment this design does not make, and it is one more reason the
+plaintext `auth.json` below is a follow-up rather than a finished answer.
+
 ### Rejected: reusing the machine's Pi configuration
 
 The first implementation used Pi's default `~/.pi/agent/auth.json` and `models.json`,
@@ -118,9 +138,11 @@ explicit follow-up, not a solved problem.
 - Tests that exercise model discovery must be able to determine the whole answer from a
   fixture directory. A test whose result depends on the developer's shell is a defect in
   the test and in the isolation it is meant to prove.
-- Built-in tools are disabled in the first slice, and script commands are registered in
-  their place as the only tools; the tool set is constructed per mode, so a session holds only
-  the capabilities its mode grants (see
-  `0011-change-workspace-content-through-the-script-command-surface.md`). Mode-specific prompts,
-  OAuth, and secure credential adapters extend the companion without leaking those details into
-  the webview.
+- Built-in tools are disabled in the first slice, and script commands are registered in their
+  place as the only tools; the tool set is constructed per mode, so a session holds only the
+  capabilities its mode grants (see
+  `0011-change-workspace-content-through-the-script-command-surface.md`). The operator's own Pi
+  extensions join that set, and may register the built-ins back ([#121](https://github.com/derivon-research/derivon-mindmap/issues/121));
+  what a mode must not do is refused as an operation class, and the boundary that always held is
+  the artifact. Mode-specific prompts, OAuth, and secure credential adapters extend the companion
+  without leaking those details into the webview.
