@@ -12,7 +12,9 @@ verification writes a `complete` judgement about that step's conclusion concept,
 placed by reading the records back. **`incomplete` is specified, writable and displayed, and the
 application has no action that writes it yet** — how mastery is evidenced is still being
 explored, and inventing a button for it now would decide that exploration by accident. The script
-command surface is `derivon-research/skills#6`.
+command surface landed in `derivon-research/skills#6`: `read-learner-record` and
+`write-learner-record` compute the application data directory path themselves from the workspace
+`id`, and read or replace one record file with no client running.
 Domain terms are defined in [CONTEXT.md](../CONTEXT.md); the decisions are
 [ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) (where they live) and
 [ADR-0012](adr/0012-learning-state-is-mastery.md) (what they are).
@@ -140,6 +142,15 @@ one route is mastered everywhere it appears.
 
   A `complete` record with neither marker is a judgement. A record that is `incomplete` is a
   judgement too, whatever its `data` holds; a claim never overwrites one.
+
+  **A judgement records its own provenance the same way**, under the namespace of whoever made
+  it: the assessment path outside the client writes `data.teaching` with its verdict, the task
+  type it used and the gap it named. That is provenance, never a second status axis: a reader
+  takes the judgement's `status` and does not care which writer produced it, and because a claim
+  never overwrites a judgement, the record of who judged survives the learner's own word. A
+  later judgement replaces the record whole — provenance included, since that judgement is now
+  the one that counts. A judgement written by a script-command session is a judgement exactly as
+  the application's own verification is.
 - **Incomplete does not block anything.** It records that this object is not mastered; the
   next step on a route is derived from mastery, so an `incomplete` record simply leaves that
   step current.
@@ -300,12 +311,15 @@ and two write paths, exactly as workspace content has two write paths and one sp
 - the application's own learning actions ("I know it", handing in a judgement, confirming a
   route), implemented in the client, and
 - the script command surface, which computes the same `<application data directory>` path and
-  can read and write records with no client running.
+  can read and write records with no client running: `read-learner-record` and
+  `write-learner-record`, each with the capability of its own name.
 
 Both must produce a file the same reader accepts. Neither is the reference implementation for
 the other, and neither may carry a second, application-only semantic. The command surface
-declares read and write capabilities for this artifact alongside the workspace-content ones
-(`derivon-research/skills#5`, `#6`).
+declares those two capabilities for this artifact alongside the workspace-content ones, which is
+what makes the artifact a **category** of the surface rather than a corner of it: every command
+declares its category, and a mode's tool set is the intersection of what it grants and what each
+command declares (`derivon-research/skills#5`, `#6`).
 
 Write discipline follows ADR-0011: a write carries a precondition — the revision, or the
 `basis`, of what it read — and replaces the file atomically (temporary file adjacent to the

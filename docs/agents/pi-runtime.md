@@ -125,7 +125,7 @@ evidence on the way to the panel is a regression:
 - The learning session registers no write capability at all: “learning mode cannot edit” is
   structural, not a switch another code path could turn back on. It holds for workspace
   content and for learner records alike — a learning session reads learner records through
-  the learner-record read commands and writes none, because a record is written either by
+  `read-learner-record` and writes none, because a record is written either by
   the application’s own learning actions or by the command surface with no client running
   ([learner records](../learner-records.md)).
 - The learning session registers exactly two custom tools, both of them application state:
