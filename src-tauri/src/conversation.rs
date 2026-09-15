@@ -144,15 +144,27 @@ fn node_path() -> Result<PathBuf, String> {
     ))
 }
 
-/// The application's own configuration directory, created if this is a first run.
+/// The user-level Derivon root, `<home>/.derivon`.
+///
+/// One root on all three platforms — `~/.derivon` on macOS and Linux,
+/// `%USERPROFILE%\.derivon` on Windows — rather than Tauri's application configuration
+/// directory. These files are the operator's: they are edited, backed up and documented by
+/// hand, and one findable place is worth more to them than the platform convention. That is
+/// also why it is not `$XDG_CONFIG_HOME` on Linux. See ADR-0010.
+fn derivon_root(home: &Path) -> PathBuf {
+    home.join(".derivon")
+}
+
+/// That root, created if this is a first run.
 ///
 /// The companion reads `models.json` and `auth.json` from here and nowhere else; it does
-/// not consult `~/.pi/`. See ADR-0010.
+/// not consult `~/.pi/`. The directory is handed to it as `--config-dir`.
 fn config_directory(app: &AppHandle) -> Result<PathBuf, String> {
-    let directory = app
+    let home = app
         .path()
-        .app_config_dir()
-        .map_err(|error| format!("no application configuration directory: {error}"))?;
+        .home_dir()
+        .map_err(|error| format!("no home directory to put ~/.derivon in: {error}"))?;
+    let directory = derivon_root(&home);
     std::fs::create_dir_all(&directory).map_err(|error| {
         format!(
             "could not create {}: {error}",
@@ -374,6 +386,23 @@ mod tests {
         let described = describe_exit(&stderr);
         assert!(described.contains("cannot find module"), "{described}");
         assert!(described.contains("at loader"), "{described}");
+    }
+
+    #[test]
+    fn the_configuration_root_has_one_shape_on_every_platform() {
+        // macOS and Linux spell a home `/Users/ada` and `/home/ada`; Windows a drive path.
+        // The root is `<home>/.derivon` on all three: a person's own files live in one
+        // place they can find and back up, not in whatever each platform calls a config
+        // directory. `$XDG_CONFIG_HOME` and `%APPDATA%` are deliberately not consulted.
+        for home in ["/Users/ada", "/home/ada", r"C:\Users\ada"] {
+            let root = derivon_root(Path::new(home));
+            assert_eq!(root.parent(), Some(Path::new(home)), "{home}");
+            assert_eq!(
+                root.file_name(),
+                Some(std::ffi::OsStr::new(".derivon")),
+                "{home}"
+            );
+        }
     }
 
     #[test]

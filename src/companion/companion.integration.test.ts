@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -308,6 +308,13 @@ it('remembers the chosen model across companion restarts', async () => {
   } finally {
     first.stop();
   }
+
+  // The selection is written under the root the host passed as `--config-dir` — in the
+  // application that is `~/.derivon/` — and nothing else appears there: the catalog store
+  // is in memory, so the root holds what the operator and the application own, no more.
+  const remembered = JSON.parse(await readFile(path.join(temporaryDirectory, 'selected-models.json'), 'utf8'));
+  expect(remembered.authoring).toEqual({ providerId: 'test', modelId: 'stream-model', name: 'Stream Model' });
+  expect(await readdir(temporaryDirectory)).not.toContain('models-store.json');
 
   // A new process, and the selection is still the companion's to report — it is not
   // held in the webview, so nothing about the panel's storage can lose it.
