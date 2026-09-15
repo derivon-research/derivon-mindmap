@@ -46,10 +46,11 @@ writer.
 ```
 
 `<application data directory>` is the application's data directory — the Tauri app-data
-directory, not the config directory that holds `models.json` and `auth.json`. On macOS that
-is `~/Library/Application Support/<bundle-id>/`; on Linux `$XDG_DATA_HOME/<bundle-id>/` or
-`~/.local/share/<bundle-id>/`; on Windows `%APPDATA%\<bundle-id>\`. This is the one layout the
-application and the script command surface both compute; neither derives a second one.
+directory, not the user-level config root `~/.derivon/` that holds `models.json` and
+`auth.json`. On macOS that is `~/Library/Application Support/<bundle-id>/`; on Linux
+`$XDG_DATA_HOME/<bundle-id>/` or `~/.local/share/<bundle-id>/`; on Windows
+`%APPDATA%\<bundle-id>\`. This is the one layout the application and the script command
+surface both compute; neither derives a second one.
 
 Rules the layout depends on:
 

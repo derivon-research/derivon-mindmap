@@ -18,9 +18,35 @@ slice. The architecture is fixed by
 
 3. **Node companion**
    - Owns `AgentSession`, `ModelRuntime`, settings, and model discovery.
-   - Reads the application's own `models.json` and `auth.json` from the configuration
-     directory Rust passes as `--config-dir`. It never reads `~/.pi/`.
+   - Reads the application's own `models.json` and `auth.json` from the user-level Derivon
+     root Rust passes as `--config-dir`. It never reads `~/.pi/`.
    - Runs one process with one session per mode.
+
+## The user-level root is one directory
+
+```text
+~/.derivon/                 # %USERPROFILE%\.derivon\ on Windows
+├── models.json             # provider and model definitions
+├── auth.json               # credentials
+├── selected-models.json    # the model each mode is on (the companion's)
+├── skills/                 # command-surface scripts (#104)
+└── extensions/             # user Pi extensions (#121)
+```
+
+`derivon_root` in `src-tauri/src/conversation.rs` is the only place that spells the
+user-level root (`workspace.rs` spells the different, workspace-local `.derivon`); the
+companion receives the directory and does not know where it came from. ADR-0010 records
+why it is one root on every platform rather than each platform's own convention.
+
+- **Learner records are not here.** They are application data, keyed by workspace, and
+  stay in the app-data directory ([learner records](../learner-records.md), ADR-0009).
+- **The old location is not read.** Before this root existed the two files were read from
+  `app_config_dir()`; nothing reads that directory now, and there is no migration — a
+  configuration left there produces the ordinary “no `models.json`” diagnosis, which names
+  the root that is read.
+- **`skills/` and `extensions/` are fixed here, though nothing reads them yet**: the
+  command surface starts looking in `skills/` (#104) and user extensions load from
+  `extensions/` (#121). Neither is `~/.pi/`, which this application never consults.
 
 ## Provider/model configuration
 
@@ -28,13 +54,18 @@ slice. The architecture is fixed by
 argument — `openModelConfiguration(configDir)` — and everything else about where models
 come from sits behind it. Extend it there, not at the call sites.
 
-- Discovery and credentials both come from `<configDir>/models.json` and
-  `<configDir>/auth.json`, in Pi's file syntax. Rust supplies `configDir` from Tauri's
-  application configuration directory.
+- Discovery and credentials both come from `<root>/models.json` and `<root>/auth.json`,
+  in Pi's file syntax. Rust resolves the root from the user's home directory and passes it
+  as `--config-dir` (see above).
 - A provider is offered only when `ModelRuntime.getProviderAuthStatus` attributes its
   credential to one of those files (`stored`, `models_json_key`, `models_json_command`).
   `environment` and `fallback` are refused: they mean the operator's machine configured
   it, not this application. See ADR-0010.
+- The catalog store Pi can persist is held in memory, so no `models-store.json` is written.
+  This application never refreshes a catalog over the network (`allowModelNetwork` is left
+  off), and the root is meant to hold the operator's files and nothing else. Pi's own
+  in-memory store is not exported from the SDK entry point; the contract is restated in
+  `modelConfiguration.ts`.
 - Do not reintroduce a path to `~/.pi/`, and do not hardcode a provider or model.
 - Each mode remembers its own selected model; switching modes does not change the other
   mode’s selection.
@@ -64,7 +95,7 @@ nor suppresses those.
 ## The companion owns the model selection
 
 Which model a mode is on is the companion's, remembered in
-`<configDir>/selected-models.json` and reported back on `listModels`. The panel renders
+`<root>/selected-models.json` and reported back on `listModels`. The panel renders
 it and never stores it: the session lives on the companion's side, so a second copy in
 the webview could only ever disagree. A remembered model that the catalog no longer
 offers falls back to the first available one rather than being reported as selected.
@@ -158,7 +189,7 @@ environment allowlist covers. The attribution filter above is what actually hold
 
 ## Security follow-up
 
-Credentials sit in a plain JSON file in the application configuration directory. A later
+Credentials sit in a plain JSON file, `~/.derivon/auth.json`. A later
 slice should replace that with an OS credential store or a custom Pi `CredentialStore`
 adapter. Until then, do not add remote providers or web-hosted model access.
 

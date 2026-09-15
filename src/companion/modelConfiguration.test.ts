@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
@@ -99,6 +99,16 @@ it('says the declared providers have no credential when both files are valid but
 
   expect(catalog.models).toEqual([]);
   expect(catalog.diagnosis).toContain('auth.json');
+});
+
+it('leaves no catalog store beside the operator\'s own files', async () => {
+  const configuration = await openModelConfiguration(directory);
+  await configuration.listAvailable();
+
+  // Pi's file-backed store creates `models-store.json` the moment the configuration is
+  // opened — a file that stays `{}` here, because this application never refreshes a
+  // catalog over the network. The root holds what the operator wrote and nothing else.
+  expect(await readdir(directory)).not.toContain('models-store.json');
 });
 
 it('leaves a model the catalog does not name without one', async () => {

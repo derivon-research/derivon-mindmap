@@ -40,9 +40,13 @@ copy to keep in step, and the one no compiler checks.
 
 ### The application owns its model configuration
 
-The application reads its own `models.json` and `auth.json` from the Tauri application
-configuration directory. Both files use Pi's file syntax, so a provider block can be
-copied from Pi's documentation or from an existing `~/.pi/agent/models.json` unchanged.
+The application reads its own `models.json` and `auth.json` from the user-level Derivon
+root, `~/.derivon/` — the same directory on all three platforms, and deliberately neither
+the Tauri application configuration directory nor `$XDG_CONFIG_HOME` / `%APPDATA%`. These
+are files the operator edits, backs up and is told about by hand, and one place they can
+find is worth more than each platform's own convention. Both files use Pi's file syntax, so
+a provider block can be copied from Pi's documentation or from an existing
+`~/.pi/agent/models.json` unchanged.
 They are the application's files: it does not read, write, or fall back to `~/.pi/`, and
 it does not require Pi CLI to be installed.
 
@@ -95,8 +99,8 @@ where the fixture had declared none. And a GUI application launched from Finder 
 inherit a shell environment, so the configuration that appears to work in `tauri dev`
 is not the configuration that runs after packaging.
 
-Secure credential storage remains deferred. Credentials sit in a plain JSON file in the
-application configuration directory, which is a smaller exposure than before — one
+Secure credential storage remains deferred. Credentials sit in a plain JSON file,
+`~/.derivon/auth.json`, which is a smaller exposure than before — one
 application's file rather than the operator's Pi credentials — but it is still an
 explicit follow-up, not a solved problem.
 

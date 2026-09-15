@@ -6,15 +6,33 @@
 
 ## 结论速览
 
-桌面版有自己的两个配置文件，放在**应用配置目录**下，语法与 Pi 一致：
+桌面版有一条**用户级配置根 `~/.derivon/`**——三个平台同名同形（Windows 是
+`%USERPROFILE%\.derivon\`），Linux 不跟 `$XDG_CONFIG_HOME`。语法与 Pi 一致：
 
-| 文件 | 作用 | 缺失时的行为 |
+```text
+~/.derivon/
+├── models.json            # 提供商与模型目录（你写）
+├── auth.json              # 凭证（你写）
+├── selected-models.json   # 每个模式选中的模型（应用自己写）
+├── skills/                # 命令面脚本的根（#104 实现）
+└── extensions/            # 用户自己的 Pi 扩展（#121）
+```
+
+| 文件 | 作用 | 缺少内容时的行为 |
 | --- | --- | --- |
 | `models.json` | 提供商与模型目录（面板里能选到什么） | 面板列表为空，并写明找不到这个文件 |
 | `auth.json` | 凭证（哪些模型真正可用） | 面板列表为空，并写明这里没有任何凭证 |
 
-macOS 上应用配置目录是 `~/Library/Application Support/<bundle identifier>/`。
-目录在应用第一次启动 companion 时自动创建；两个文件需要你自己放进去。
+根目录在应用第一次启动 companion 时自动创建；两个文件的内容需要你自己写（应用只会建出一个空的
+`auth.json`）。它就在你的家目录下，一眼看到、可直接备份。`skills/` 与 `extensions/` 是这里定下的
+布局，只是读它们的票还没实现。
+
+旧版本读的是各平台的 Tauri 应用配置目录（macOS 是
+`~/Library/Application Support/net.derivon.mindmap/`）。**那个位置现在不读也不写了，也没有自动迁移**：
+配置留在旧处，面板只会告诉你它在 `~/.derivon/models.json` 找不到文件——按那句提示自己搬过去即可。
+
+根目录里不会多出别的东西：Pi 那份会落盘的模型目录缓存保持在本应用的内存里，永远不写
+`models-store.json`（本应用不做网络目录刷新）。
 
 **这个应用不读 `~/.pi/`，也不要求装 Pi CLI。** 它只是沿用 Pi 的文件格式，所以你可以
 把 Pi 文档里的 provider 段落、或者现成的 `~/.pi/agent/models.json` 直接拷过来。
@@ -89,6 +107,6 @@ companion 起不来时，那里显示的是它退出前打印的内容，而不�
 - 凭证是明文 JSON 文件，无 OS 钥匙串集成（ADR-0010 的安全后续项）。
 - Companion 固定系统提示、禁用全部内置工具。
 - 模型选择按模式（学习 / 创作）各记一个，由 companion 持有并写在
-  `<配置目录>/selected-models.json`，重启后保留；没选过时取列表第一个。
+  `~/.derivon/selected-models.json`，重启后保留；没选过时取列表第一个。
   记住的模型若已不在目录里，会回落到第一个可用的。
 - Web 构建（`--mode web`）没有 provider，Agent 面板不可用，与本配置无关。

@@ -3,10 +3,42 @@ import path from 'node:path';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
 
 /**
- * The SDK does not export this type from its entry point, so it is taken from the method
- * that produces it rather than reached for inside the package.
+ * The SDK does not export these types from its entry point, so they are taken from the
+ * method that produces and consumes them rather than reached for inside the package.
  */
 type Model = NonNullable<ReturnType<ModelRuntime['getModel']>>;
+type ModelRuntimeOptions = NonNullable<Parameters<typeof ModelRuntime.create>[0]>;
+type ModelsStore = NonNullable<ModelRuntimeOptions['modelsStore']>;
+type ModelsStoreEntry = Parameters<ModelsStore['write']>[1];
+
+/**
+ * Pi's catalog store, held in memory.
+ *
+ * The file-backed default creates `models-store.json` in the configuration directory the
+ * moment it is opened, and that file would stay `{}` here: this application never refreshes
+ * a catalog over the network (`allowModelNetwork` is left off), so the store is never
+ * written. The root is the operator's to read, back up and edit, so it carries the files
+ * they wrote and nothing else. Pi's own in-memory store is not exported from the SDK entry
+ * point, so the contract — three methods over a map — is restated here.
+ */
+function inMemoryModelsStore(): ModelsStore {
+  const entries = new Map<string, ModelsStoreEntry>();
+  return {
+    async read(providerId, options) {
+      options?.signal?.throwIfAborted();
+      const entry = entries.get(providerId);
+      return entry ? structuredClone(entry) : undefined;
+    },
+    async write(providerId, entry, options) {
+      options?.signal?.throwIfAborted();
+      entries.set(providerId, structuredClone(entry));
+    },
+    async delete(providerId, options) {
+      options?.signal?.throwIfAborted();
+      entries.delete(providerId);
+    },
+  };
+}
 
 /**
  * A provider is offered only when Pi attributes its credential to one of the
@@ -76,9 +108,7 @@ export async function openModelConfiguration(configDir: string): Promise<ModelCo
   const runtime = await ModelRuntime.create({
     modelsPath: paths.models,
     authPath: paths.auth,
-    // The catalog store is the application's too; it must not be written next to
-    // somebody else's models.json.
-    modelsStorePath: path.join(configDir, 'models-store.json'),
+    modelsStore: inMemoryModelsStore(),
   });
 
   const ours = (providerId: string) => {
