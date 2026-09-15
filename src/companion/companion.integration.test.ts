@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
-import { installCommandSurface } from '../testing/commandSurface';
+import { installCommandSurface, installSkill } from '../testing/commandSurface';
 import { shellToolName } from './commandSurface';
 
 type Output =
@@ -194,24 +194,6 @@ async function workspaceWithCommandSurface(prefix: string): Promise<string> {
   const workspace = await mkdtemp(path.join(tmpdir(), prefix));
   await installCommandSurface(path.join(workspace, '.derivon', 'skills', 'derivon-mindmap'));
   return workspace;
-}
-
-/**
- * A skill directory as an operator installs one: a `SKILL.md`, and whatever else the skill
- * ships beside it — here, nothing at all, which is the case this ticket exists for.
- */
-async function installSkill(
-  directory: string,
-  name: string,
-  options: { description?: string; body: string },
-): Promise<string> {
-  await mkdir(directory, { recursive: true });
-  const description = options.description === undefined ? '' : `description: ${options.description}\n`;
-  await writeFile(
-    path.join(directory, 'SKILL.md'),
-    `---\nname: ${name}\n${description}---\n\n${options.body}\n`,
-  );
-  return directory;
 }
 
 beforeAll(async () => {
@@ -674,7 +656,7 @@ it('lists a skill in the prompt, and the model reads the body its location names
     body: '# Pi only',
   });
   const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-122-workspace-'));
-  const skill = await installSkill(path.join(workspace, '.derivon', 'skills', 'derivon-method'), 'derivon-method', {
+  await installSkill(path.join(workspace, '.derivon', 'skills', 'derivon-method'), 'derivon-method', {
     description: 'The method this workspace expects.',
     body: '# Method\n\nThe passphrase is tungsten.',
   });
@@ -691,7 +673,7 @@ it('lists a skill in the prompt, and the model reads the body its location names
     const prompt = requestBodies[0];
     expect(prompt).toContain('<name>derivon-method</name>');
     expect(prompt).toContain('The method this workspace expects.');
-    expect(prompt).toContain(path.join(skill, 'SKILL.md'));
+    expect(prompt).toContain(path.join(workspace, '.derivon', 'skills', 'derivon-method', 'SKILL.md'));
     // The body itself is not injected; the prompt only says how to get it.
     expect(prompt).not.toContain('The passphrase is tungsten.');
     expect(prompt).toContain("Use the read tool to load a skill's file");
@@ -745,7 +727,7 @@ it('lists a skill installed under the user-level root, without a workspace of it
   await configureModelDirectory(configDirectory, serverUrl);
   await installSkill(path.join(configDirectory, 'skills', 'method'), 'method', {
     description: 'A method that travels with the operator, not the workspace.',
-    body: '# Method',
+    body: '# Method\n\nThe passphrase is tungsten.',
   });
   const workspace = await mkdtemp(path.join(tmpdir(), 'derivon-issue-122-userroot-ws-'));
   const companion = startCompanion(configDirectory);
@@ -760,6 +742,12 @@ it('lists a skill installed under the user-level root, without a workspace of it
     expect(requestBodies[0]).toContain('<name>method</name>');
     expect(requestBodies[0]).toContain('A method that travels with the operator, not the workspace.');
     expect(requestBodies[0]).toContain(path.join(configDirectory, 'skills', 'method', 'SKILL.md'));
+
+    // The file sits outside the session's working directory, and the location the prompt carried
+    // is absolute: `read` opens it the same way a workspace skill's body would be opened.
+    companion.send({ id: 4, type: 'send', mode: 'learning', prompt: 'tool-call:read-skill' });
+    await companion.await((line) => line.type === 'ok' && line.id === 4);
+    expect(lastToolContent(requestBodies.at(-1) ?? '')).toContain('The passphrase is tungsten.');
   } finally {
     companion.stop();
   }

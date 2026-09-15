@@ -116,7 +116,7 @@ export type SkillDiscovery = {
   readonly skills: readonly Skill[];
   readonly diagnostics: readonly ResourceDiagnostic[];
   /** Readable one-liners for the operator; the shape #131 raises into the panel. */
-  readonly notes: readonly string[];
+  readonly skillNotes: readonly string[];
 };
 
 /**
@@ -182,14 +182,18 @@ export function grantedCommands(surface: CommandSurface, mode: Mode): readonly C
  * skill that never left Pi's tree cannot reach a session here.
  *
  * This is also where the command surface's skills come from: one `loadSkills` call per
- * session, never two, so what the prompt lists and what the surface runs cannot disagree.
+ * session, never two, so the skills the surface draws from and the ones the prompt lists are
+ * decided together.
  */
 export function discoverSkills(options: {
   configDirectory: string;
   workspacePath: string | null;
 }): SkillDiscovery {
   const { configDirectory, workspacePath } = options;
-  const roots = skillRoots(configDirectory, workspacePath);
+  // A root that is not there is the ordinary state — most machines have installed nothing —
+  // and it is not a load failure. Only the roots that exist are offered, so an absent one
+  // is silence rather than a diagnostic about a directory the application expects to miss.
+  const roots = skillRoots(configDirectory, workspacePath).filter((root) => existsSync(root));
   // The roots are passed explicitly and includeDefaults is off, so this can only read them:
   // the application has its own user-level root and does not consult Pi's (#120).
   const { skills, diagnostics } = loadSkills({
@@ -198,17 +202,7 @@ export function discoverSkills(options: {
     skillPaths: [...roots],
     includeDefaults: false,
   });
-  // A root that is not there is the ordinary state — most machines have installed nothing —
-  // and it is not a load failure. Pi reports each declared path it cannot find, so the two
-  // roots this application declares are taken as offered-and-empty rather than diagnosed.
-  const offered = diagnostics.filter((diagnostic) => !isAbsentRoot(diagnostic, roots));
-  return { skills, diagnostics: offered, notes: offered.map(skillDiagnosticNote) };
-}
-
-function isAbsentRoot(diagnostic: ResourceDiagnostic, roots: readonly string[]): boolean {
-  return diagnostic.message === 'skill path does not exist'
-    && diagnostic.path !== undefined
-    && roots.includes(diagnostic.path);
+  return { skills, diagnostics, skillNotes: diagnostics.map(skillDiagnosticNote) };
 }
 
 /**

@@ -4,9 +4,7 @@ import {
   SessionManager,
   SettingsManager,
   type AgentSession,
-  type ResourceDiagnostic,
   type ResourceLoader,
-  type Skill,
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -20,6 +18,7 @@ import {
   sessionToolNames,
   type Command,
   type CommandSurfaceState,
+  type SkillDiscovery,
 } from './commandSurface';
 import { workspaceWriteGuard } from './guard';
 import { openModelConfiguration, type CatalogModel, type ModelCatalog } from './modelConfiguration';
@@ -111,7 +110,7 @@ async function commandSurfaceFor(target: string | null): Promise<CommandSurfaceS
   try {
     const state = await openCommandSurface({ configDirectory, workspacePath: target });
     for (const note of state.surfaceNotes) process.stderr.write(`[command surface] ${note}\n`);
-    for (const note of state.notes) process.stderr.write(`[skills] ${note}\n`);
+    for (const note of state.skillNotes) process.stderr.write(`[skills] ${note}\n`);
     return state;
   } catch (error) {
     // An unexpected failure still leaves a line where the operator reads diagnostics; the
@@ -127,17 +126,16 @@ async function commandSurfaceFor(target: string | null): Promise<CommandSurfaceS
  * Everything is supplied from here, and nothing is discovered: no extension is loaded from
  * disk, no skill is loaded from a third place, no context file is read from the workspace, and
  * the prompt is the mode's own. The skills are the ones this application's two roots offered,
- * passed in rather than discovered again — Pi turns them into the prompt's name, description and
- * location, and the model opens the file itself (#122). The write guard is an inline extension —
- * the one place Pi's extension API is used — and user extensions would be loaded into this same
- * seam (#121).
+ * passed in as one discovery rather than discovered again — Pi turns them into the prompt's
+ * name, description and location, and the model opens the file itself (#122). The write guard
+ * is an inline extension — the one place Pi's extension API is used — and user extensions
+ * would be loaded into this same seam (#121).
  */
 function resourceLoaderFor(options: {
   mode: Mode;
   prompt: string;
   workspacePath: string | null;
-  skills: readonly Skill[];
-  skillDiagnostics: readonly ResourceDiagnostic[];
+  skillDiscovery: SkillDiscovery;
 }): ResourceLoader {
   const runtime = createExtensionRuntime();
   const guard = options.mode === 'learning' && options.workspacePath
@@ -145,7 +143,10 @@ function resourceLoaderFor(options: {
     : [];
   return {
     getExtensions: () => ({ extensions: guard, errors: [], runtime }),
-    getSkills: () => ({ skills: [...options.skills], diagnostics: [...options.skillDiagnostics] }),
+    getSkills: () => ({
+      skills: [...options.skillDiscovery.skills],
+      diagnostics: [...options.skillDiscovery.diagnostics],
+    }),
     getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles: [] }),
@@ -240,8 +241,7 @@ async function createSession(mode: Mode) {
       mode,
       prompt: systemPrompt(mode, commands),
       workspacePath,
-      skills: surface.skills,
-      skillDiagnostics: surface.diagnostics,
+      skillDiscovery: surface,
     }),
     sessionManager: SessionManager.inMemory(),
     settingsManager,
