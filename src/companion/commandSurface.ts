@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import {
@@ -8,6 +7,8 @@ import {
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import type { ConversationMode } from '../ports/ConversationProvider';
+import { runProcess } from './childProcess';
+import { DERIVON_TOOL_NAME } from './cliTool';
 
 type Mode = ConversationMode;
 
@@ -43,19 +44,22 @@ const MODE_GRANTS = {
 } satisfies Record<Mode, readonly Grant[]>;
 
 /**
- * Built-in tools a mode grants itself, on the other axis from capability.
+ * The tools a mode grants itself, on the other axis from capability.
  *
- * Built-ins start disabled (`settings.defaultTools` is the empty array in `index.ts`), and a
- * mode asks for the ones it needs. Both modes read the workspace — reading documents is how
- * the model inspects what it is working on — and both hold the platform's shell: authoring
- * looks things up while it writes, and learning runs something like `tavily-cli` while the
- * user learns. The two modes differ in what a *write* may do, and that is a different axis:
- * the learning session's workspace writes are refused by the `tool_call` guard, not by taking
+ * Pi's built-ins start disabled (`settings.defaultTools` is the empty array in `index.ts`), and a
+ * mode asks for the ones it needs. Both modes read the workspace — reading documents is how the
+ * model inspects what it is working on — and both hold the platform's shell: authoring looks
+ * things up while it writes, and learning runs something like `tavily-cli` while the user learns.
+ *
+ * `derivon` is the companion's own tool rather than a Pi built-in: it answers the graph's reads
+ * and queries against this workspace's graph, changes nothing, and so needs no capability and
+ * belongs to both modes. The two modes differ in what a *write* may do, and that is a different
+ * axis: the learning session's workspace writes are refused by the `tool_call` guard, not by taking
  * the shell away (ADR-0011).
  */
-const MODE_BUILTIN_GRANTS = {
-  authoring: ['read'],
-  learning: ['read'],
+const MODE_TOOL_GRANTS = {
+  authoring: ['read', DERIVON_TOOL_NAME],
+  learning: ['read', DERIVON_TOOL_NAME],
 } satisfies Record<Mode, readonly string[]>;
 
 /** The two shell tools Pi ships, one per kind of platform. */
@@ -160,7 +164,7 @@ export function skillRoots(configDirectory: string, workspacePath: string | null
 export function sessionToolNames(commands: readonly Command[], mode: Mode, shellTool: ShellTool): string[] {
   return [
     ...commands.map((command) => command.name),
-    ...MODE_BUILTIN_GRANTS[mode],
+    ...MODE_TOOL_GRANTS[mode],
     shellTool,
   ];
 }
@@ -526,48 +530,27 @@ type RunResult = {
 };
 
 /**
- * Run the command surface with the bundled Node runtime, not one from `PATH`.
+ * Run the surface's script with the bundled Node runtime, not one from `PATH`.
  *
- * The companion is itself started by the application's sidecar Node, so `process.execPath`
- * is that runtime; borrowing the operator's would let a bundle ship without its sidecar and
- * still work on the build machine.
+ * The companion is itself started by the application's sidecar Node, so `process.execPath` is that
+ * runtime; borrowing the operator's would let a bundle ship without its sidecar and still work on
+ * the build machine.
  */
-function run(scriptPath: string, args: readonly string[], stdin: string | undefined, signal: AbortSignal | undefined): Promise<RunResult> {
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(process.execPath, [scriptPath, ...args], {
-        cwd: path.dirname(scriptPath),
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-    } catch (error) {
-      resolve({ code: null, stdout: '', stderr: error instanceof Error ? error.message : String(error) });
-      return;
-    }
-    let stdout = '';
-    let stderr = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => { stdout += chunk; });
-    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
-    // A command that exits before reading its input leaves the write to fail with EPIPE, and an
-    // unhandled 'error' on a stream would take the companion down with it. The exit code and the
-    // envelope are the whole report; the failed write adds nothing to them.
-    child.stdin.on('error', () => {});
-    const abort = () => { child.kill(); };
-    if (signal?.aborted) abort();
-    else signal?.addEventListener('abort', abort, { once: true });
-    child.on('error', (error) => {
-      signal?.removeEventListener('abort', abort);
-      resolve({ code: null, stdout, stderr: `${stderr}${error.message}` });
-    });
-    child.on('close', (code) => {
-      signal?.removeEventListener('abort', abort);
-      resolve({ code, stdout, stderr });
-    });
-    if (stdin === undefined) child.stdin.end();
-    else child.stdin.end(stdin);
+async function run(scriptPath: string, args: readonly string[], stdin: string | undefined, signal: AbortSignal | undefined): Promise<RunResult> {
+  const result = await runProcess({
+    command: process.execPath,
+    args: [scriptPath, ...args],
+    cwd: path.dirname(scriptPath),
+    stdin,
+    signal,
   });
+  return {
+    code: result.code,
+    stdout: result.stdout,
+    // A process that never started reports its reason where the tool's error text reads it:
+    // appended to whatever the streams carried.
+    stderr: result.failure ? `${result.stderr}${result.failure.message}` : result.stderr,
+  };
 }
 
 function parseEnvelope(text: string): Record<string, unknown> | null {

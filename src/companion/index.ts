@@ -20,6 +20,7 @@ import {
   type CommandSurfaceState,
   type SkillDiscovery,
 } from './commandSurface';
+import { derivonTool } from './cliTool';
 import { workspaceWriteGuard } from './guard';
 import { openModelConfiguration, type CatalogModel, type ModelCatalog } from './modelConfiguration';
 import { prepareSessionEnvironment } from './sessionEnvironment';
@@ -228,9 +229,15 @@ async function createSession(mode: Mode) {
   // is structural rather than a switch something else could turn back on.
   const surface = await commandSurfaceFor(workspacePath);
   const commands: readonly Command[] = surface.surface ? grantedCommands(surface.surface, mode) : [];
-  const customTools: ToolDefinition[] = surface.surface && workspacePath
-    ? commandTools({ surface: surface.surface, mode, workspacePath })
-    : [];
+  // One list, three uses: the session's allowlist, the prompt's account of what the session
+  // holds, and — through the two below — the tools themselves.
+  const tools = sessionToolNames(commands, mode, environment.shellTool);
+  const customTools: ToolDefinition[] = [
+    // `derivon` is a mode grant rather than a capability: it answers the graph reads and queries
+    // against the workspace this session is rooted at and changes nothing.
+    derivonTool({ workspacePath }),
+    ...(surface.surface && workspacePath ? commandTools({ surface: surface.surface, mode, workspacePath }) : []),
+  ];
   const { session } = await createAgentSession({
     model,
     agentDir: configDirectory,
@@ -239,14 +246,14 @@ async function createSession(mode: Mode) {
     modelRuntime,
     resourceLoader: resourceLoaderFor({
       mode,
-      prompt: systemPrompt(mode, commands),
+      prompt: systemPrompt(mode, commands, tools),
       workspacePath,
       skillDiscovery: surface,
     }),
     sessionManager: SessionManager.inMemory(),
     settingsManager,
     customTools,
-    tools: sessionToolNames(commands, mode, environment.shellTool),
+    tools,
   });
   session.subscribe((value) => {
     if (value.type === 'message_update' && value.assistantMessageEvent.type === 'text_delta') {
