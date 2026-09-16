@@ -1,4 +1,4 @@
-import { Ban, Check, ChevronRight, LoaderCircle, Minus, OctagonAlert } from 'lucide-react';
+import { Ban, Check, ChevronRight, LoaderCircle, OctagonAlert } from 'lucide-react';
 import type { ToolPartStatus, TranscriptPart } from './transcript';
 
 /**
@@ -13,7 +13,6 @@ const TOOL_STATES: Record<ToolPartStatus, { readonly label: string; readonly Ico
   ok: { label: '完成', Icon: Check },
   refused: { label: '已拒绝', Icon: Ban },
   failed: { label: '失败', Icon: OctagonAlert },
-  skipped: { label: '已跳过', Icon: Minus },
 };
 
 /**

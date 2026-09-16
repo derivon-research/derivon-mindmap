@@ -57,9 +57,10 @@ export const emptyTranscript: Transcript = { turns: [] };
 /**
  * Open a turn: the user's request, then an empty streaming response.
  *
- * The ids are handed in, never made here. React keys come from them, so making a new one
- * on every update would remount a streaming node and drop its expansion state, scroll
- * position and focus — see #127.
+ * The turn ids are handed in, never made here; a part's id is derived from the turn it is in
+ * and from the call it belongs to, so it is the same id every time that part is updated.
+ * React keys come from them, so minting a new one on every update would remount a streaming
+ * node and drop its expansion state, scroll position and focus — see #127.
  */
 export function beginTurn(transcript: Transcript, turn: {
   readonly userId: string;
@@ -104,7 +105,13 @@ export function applyEvent(transcript: Transcript, event: ConversationEvent): Tr
   if (!turn) return transcript;
   switch (event.kind) {
     case 'delta':
-      return writeTurn(transcript, turn, { status: 'streaming', parts: withTailText(turn, event.text, 'append') });
+      return writeTurn(transcript, turn, {
+        // A failed turn does not come back to life: a delta after an error would only repaint
+        // the turn that has already said it failed. A `done` turn does resume streaming,
+        // because an agent that calls a tool between two messages still has one turn.
+        status: turn.status === 'error' ? 'error' : 'streaming',
+        parts: withTailText(turn, event.text, 'append'),
+      });
     case 'message':
       // A turn can hold several assistant messages, with tool calls between them, so this
       // marks the turn finished without ending it: a later delta belongs to the same turn.
@@ -154,12 +161,39 @@ export function stopActiveTurn(transcript: Transcript): Transcript {
   return endTurn(transcript, turn, 'stopped');
 }
 
-/** The turn a new conversation starts from: nothing carried over, including the active one. */
-export function clearTranscript(): Transcript {
-  return emptyTranscript;
+/**
+ * The assistant turn that most recently stopped streaming, or nothing while one is running.
+ *
+ * A screen reader gets one announcement per turn rather than one per token, and this names the
+ * turn due one: the id changes exactly when a turn finishes, so an announcement keyed on it
+ * fires once instead of on every later render of the same turn.
+ */
+export function lastFinishedTurn(transcript: Transcript): TranscriptTurn | undefined {
+  for (let index = transcript.turns.length - 1; index >= 0; index -= 1) {
+    const turn = transcript.turns[index];
+    if (turn.role === 'assistant' && turn.status !== 'streaming') return turn;
+  }
+  return undefined;
 }
 
-export function activeTurn(transcript: Transcript): TranscriptTurn | undefined {
+/**
+ * What a finished turn says when it is announced as a whole.
+ *
+ * The same words the transcript shows — this is the one announcement that stands in for the
+ * per-token ones, so leaving the prose out would leave it unspoken entirely. A turn that
+ * failed or was interrupted says so too, because its status is not visible in the prose.
+ */
+export function turnAnnouncement(turn: TranscriptTurn): string {
+  const text = turnText(turn);
+  if (turn.status === 'error') {
+    const failure = turn.parts.find((part) => part.kind === 'error');
+    return [text, failure?.message].filter(Boolean).join(' ') || '回答失败。';
+  }
+  if (turn.status === 'stopped') return [text, '回答已停止。'].filter(Boolean).join(' ');
+  return text;
+}
+
+function activeTurn(transcript: Transcript): TranscriptTurn | undefined {
   const id = transcript.activeTurnId;
   return id === undefined ? undefined : transcript.turns.find((turn) => turn.id === id);
 }

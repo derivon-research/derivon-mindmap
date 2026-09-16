@@ -3,9 +3,10 @@ import {
   appendTurn,
   applyEvent,
   beginTurn,
-  clearTranscript,
   emptyTranscript,
+  lastFinishedTurn,
   stopActiveTurn,
+  turnAnnouncement,
   turnText,
   type Transcript,
 } from './transcript';
@@ -124,9 +125,48 @@ describe('appendTurn', () => {
   });
 });
 
-describe('clearTranscript', () => {
-  it('returns a transcript with no turns and no active turn', () => {
-    expect(clearTranscript()).toEqual({ turns: [] });
+describe('emptyTranscript', () => {
+  it('is the transcript a new conversation starts from', () => {
+    expect(emptyTranscript).toEqual({ turns: [] });
+  });
+});
+
+describe('lastFinishedTurn', () => {
+  it('names the turn that most recently stopped streaming, and nothing while one is running', () => {
+    expect(lastFinishedTurn(started())).toBeUndefined();
+    expect(lastFinishedTurn(applyEvent(started(), { kind: 'settled' }))?.id).toBe('a1');
+  });
+
+  it('passes over the user turn that opened it', () => {
+    expect(lastFinishedTurn(applyEvent(started(), { kind: 'settled' }))?.role).toBe('assistant');
+  });
+
+  it('moves to a newer turn, which is what makes one announcement per turn possible', () => {
+    const first = applyEvent(started(), { kind: 'settled' });
+    const second = beginTurn(first, { userId: 'u2', assistantId: 'a2', prompt: '再问一句' });
+    expect(lastFinishedTurn(applyEvent(second, { kind: 'settled' }))?.id).toBe('a2');
+  });
+});
+
+describe('turnAnnouncement', () => {
+  it('says the prose of a finished turn', () => {
+    const done = applyEvent(applyEvent(started(), { kind: 'delta', text: '这是回答。' }), { kind: 'settled' });
+    expect(turnAnnouncement(done.turns[1])).toBe('这是回答。');
+  });
+
+  it('says a turn failed as well, because its status is not in the prose', () => {
+    const failed = applyEvent(applyEvent(started(), { kind: 'delta', text: '前半段。' }), { kind: 'error', message: '模型返回错误' });
+    expect(turnAnnouncement(failed.turns[1])).toBe('前半段。 模型返回错误');
+  });
+
+  it('says a stopped turn stopped', () => {
+    const stopped = stopActiveTurn(applyEvent(started(), { kind: 'delta', text: '写到一半' }));
+    expect(turnAnnouncement(stopped.turns[1])).toBe('写到一半 回答已停止。');
+  });
+
+  it('still says why when the turn produced no prose at all', () => {
+    expect(turnAnnouncement(applyEvent(started(), { kind: 'error', message: '模型返回错误' }).turns[1]))
+      .toBe('模型返回错误');
   });
 });
 describe('tool parts', () => {
@@ -214,6 +254,13 @@ describe('tool parts', () => {
     ), { kind: 'delta', text: '后半段。' });
     expect(transcript.turns[1].parts).toHaveLength(1);
     expect(transcript.turns[1].parts[0]).toMatchObject({ text: '前半段。后半段。' });
+  });
+});
+
+describe('a delta after a failure', () => {
+  it('does not paint the failed turn as streaming again', () => {
+    const failed = applyEvent(started(), { kind: 'error', message: '模型返回错误' });
+    expect(applyEvent(failed, { kind: 'delta', text: 'x' }).turns[1].status).toBe('error');
   });
 });
 

@@ -12,29 +12,38 @@ import { REFUSAL_PREFIX } from './guard';
  * difference (#127).
  */
 
-/** How much of an input or a result the collapsed line shows. The rest is in the expansion. */
-const SUMMARY_LIMIT = 140;
+/**
+ * How much of an input the port carries.
+ *
+ * Not a display limit — CSS truncates the collapsed line. This only stops a pathological
+ * argument (a whole document in `stdin`) from crossing the process boundary on every call. It
+ * is far above anything a real call carries, so the expanded row shows what was actually sent.
+ */
+const INPUT_LIMIT = 20_000;
 
 /**
- * A readable one-line summary of a call's input.
+ * A readable rendering of a call's input, on one line.
  *
  * The shapes differ by tool and are not worth a table per tool: a shell names its command, a
- * graph query names its argv, and everything else is short scalar arguments. Whatever is
- * summarised is also what the expanded row shows in full, so a bad summary costs readability
- * and never information.
+ * graph query names its argv, and everything else is its arguments. A nested argument is shown
+ * as JSON rather than elided — for a command tool the nested `stdin` *is* the payload, so
+ * `{…}` would hide the one part the expanded row exists to show.
+ *
+ * What is summarised is also what the row expands to, so a poor summary costs readability and
+ * never information (see #127).
  */
 export function summarizeToolInput(args: unknown): string | undefined {
   if (typeof args !== 'object' || args === null) return undefined;
   const fields = args as Record<string, unknown>;
-  // A shell call is its command; quoting it again would only make it harder to read.
-  if (typeof fields.command === 'string' && fields.command.trim()) return truncate(fields.command);
-  if (Array.isArray(fields.argv)) return truncate(fields.argv.map((word) => String(word)).join(' '));
+  // A shell call is its command; quoting or labelling it again would only make it harder to read.
+  if (typeof fields.command === 'string' && fields.command.trim()) return bound(fields.command);
+  if (Array.isArray(fields.argv)) return bound(fields.argv.map((word) => String(word)).join(' '));
   const parts: string[] = [];
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined || value === null || value === '') continue;
-    parts.push(typeof value === 'object' ? `${key}: {…}` : `${key}: ${String(value)}`);
+    parts.push(`${key}: ${readableValue(value)}`);
   }
-  return parts.length ? truncate(parts.join(' · ')) : undefined;
+  return parts.length ? bound(parts.join(' · ')) : undefined;
 }
 
 /**
@@ -85,7 +94,19 @@ function envelopeStatus(result: unknown): string | undefined {
   return typeof status === 'string' ? status : undefined;
 }
 
-function truncate(text: string): string {
+function readableValue(value: unknown): string {
+  if (value === null || typeof value !== 'object') return String(value);
+  // A nested argument is the payload of a command tool, so it is shown rather than elided.
+  try {
+    return JSON.stringify(value);
+  } catch {
+    // A cyclic or otherwise unprintable argument is still worth naming.
+    return Array.isArray(value) ? '[…]' : '{…}';
+  }
+}
+
+/** One line, bounded so a pathological argument cannot cross the port on every call. */
+function bound(text: string): string {
   const single = text.replace(/\s+/g, ' ').trim();
-  return single.length > SUMMARY_LIMIT ? `${single.slice(0, SUMMARY_LIMIT - 1)}…` : single;
+  return single.length > INPUT_LIMIT ? `${single.slice(0, INPUT_LIMIT - 1)}…` : single;
 }

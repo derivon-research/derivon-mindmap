@@ -8,6 +8,14 @@ import { ConversationPane } from './ConversationPane';
 let container: HTMLDivElement;
 let root: Root | undefined;
 
+/**
+ * What the transcript says.
+ *
+ * Not a bare `getByText`: the announcer mirrors the finished turn for screen readers, so the
+ * same words exist twice in the document by design.
+ */
+const transcriptText = () => container.querySelector('.conversation-transcript')?.textContent ?? '';
+
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   container = document.createElement('div');
@@ -78,7 +86,7 @@ it('streams a reply and marks the turn complete', async () => {
   await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
   await page.getByRole('button', { name: '发送消息' }).click();
 
-  await expect.element(page.getByText('Hello')).toBeVisible();
+  await expect.poll(transcriptText).toContain('Hello');
   expect(provider.send).toHaveBeenCalledWith('这一步为什么成立？');
 });
 
@@ -111,7 +119,7 @@ it('starts a new conversation without keeping the old transcript', async () => {
   const provider = await render();
   await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
   await page.getByRole('button', { name: '发送消息' }).click();
-  await expect.element(page.getByText('Hello')).toBeVisible();
+  await expect.poll(transcriptText).toContain('Hello');
 
   await page.getByRole('button', { name: '新对话' }).click();
   await expect.element(page.getByText('卡在哪一步？说出来。')).toBeVisible();
@@ -195,7 +203,7 @@ it('answers a quick question from the graph even when a model is connected', asy
   await page.getByRole('button', { name: '这一步的前提是什么？' }).click();
 
   // The answer is sourced from the workspace, so the model is not asked to regenerate it.
-  await expect.element(page.getByText('取自图上文档的答案。')).toBeVisible();
+  await expect.poll(transcriptText).toContain('取自图上文档的答案。');
   expect(provider.send).not.toHaveBeenCalled();
 });
 
@@ -239,7 +247,7 @@ it('starts the turn even when the drain fails', async () => {
   await page.getByRole('button', { name: '发送消息' }).click();
 
   // A failed drain adds no refusal path of its own: the save banner is the whole explanation.
-  await expect.element(page.getByText('Hello')).toBeVisible();
+  await expect.poll(transcriptText).toContain('Hello');
   expect(provider.send).toHaveBeenCalledWith('照样开始');
 });
 
@@ -281,14 +289,17 @@ it('holds one row per tool call and updates it in place', async () => {
 it('shows the call\'s input and the envelope verbatim once the row is expanded', async () => {
   const provider = new FakeProvider();
   provider.send.mockImplementation(async () => {
-    provider.emit({ kind: 'tool-start', toolCallId: 'call-1', name: 'add-concept', summary: 'name: 二次型' });
-    provider.emit({ kind: 'tool-end', toolCallId: 'call-1', name: 'add-concept', status: 'ok', detail: '{"status":"ok","issues":[]}' });
+    // A nested argument is the payload of a command tool, so it crosses the port as itself.
+    provider.emit({ kind: 'tool-start', toolCallId: 'call-1', name: 'write-document', summary: 'conceptId: c-1 · stdin: {"markdown":"# 二次型"}' });
+    provider.emit({ kind: 'tool-end', toolCallId: 'call-1', name: 'write-document', status: 'ok', detail: '{"status":"ok","issues":[]}' });
   });
   await sendAwaitingEvents(provider);
 
   // Collapsed by default: the row is a line while it runs, and the detail is on demand.
   expect(toolRows()[0].querySelector('.conversation-tool-body')).not.toBeVisible();
-  await page.getByText('add-concept').click();
+  await page.getByText('write-document').click();
+  await expect.poll(() => toolRows()[0].querySelector('.conversation-tool-body')!.textContent)
+    .toContain('"markdown":"# 二次型"');
   await expect.poll(() => toolRows()[0].querySelector('.conversation-tool-body')!.textContent)
     .toContain('"status":"ok"');
 });
@@ -311,8 +322,8 @@ it('renders a declined call as declined, and keeps the prose the turn already st
   await expect.element(page.getByText('已拒绝')).toBeVisible();
   // Nothing was drawn as an error, and the streamed prose is still there.
   expect(container.querySelectorAll('.conversation-error').length).toBe(0);
-  await expect.element(page.getByText('我先试着改一下。')).toBeVisible();
-  await expect.element(page.getByText('这个名字已经有了，我没有改。')).toBeVisible();
+  await expect.poll(transcriptText).toContain('我先试着改一下。');
+  await expect.poll(transcriptText).toContain('这个名字已经有了，我没有改。');
 });
 
 /** #127: the failure belongs to the turn and does not swallow what it already said. */
@@ -326,11 +337,32 @@ it('adds a failure as a part of the turn instead of replacing its prose', async 
   await sendAwaitingEvents(provider);
 
   expect(container.querySelectorAll('.conversation-error').length).toBe(1);
-  await expect.element(page.getByText('模型返回错误')).toBeVisible();
-  await expect.element(page.getByText('前半段已经流出来了。')).toBeVisible();
+  await expect.poll(transcriptText).toContain('模型返回错误');
+  await expect.poll(transcriptText).toContain('前半段已经流出来了。');
 });
 
-it('names the transcript as a log, and does not mark the streaming turn as a live region', async () => {
+/** #127: streaming rewrites the trailing text in place; a remount would drop scroll and focus. */
+it('rewrites the streaming text in place instead of adding a row per delta', async () => {
+  const provider = new FakeProvider();
+  provider.send.mockImplementation(async () => {
+    provider.emit({ kind: 'delta', text: '第一段' });
+  });
+  await sendAwaitingEvents(provider);
+
+  const textNodes = () => container.querySelectorAll('.conversation-assistant .conversation-text');
+  expect(textNodes().length).toBe(1);
+  const first = textNodes()[0];
+
+  provider.emit({ kind: 'delta', text: '，第二段' });
+
+  // The same node, holding more text — not a second paragraph and not a new turn.
+  expect(textNodes().length).toBe(1);
+  expect(textNodes()[0]).toBe(first);
+  await expect.poll(() => first.textContent).toBe('第一段，第二段');
+});
+
+/** #127: streaming is silent, and the finished turn is announced once, from its own region. */
+it('keeps the transcript silent and announces the finished turn once from a separate region', async () => {
   const provider = new FakeProvider();
   provider.send.mockImplementation(async () => {
     provider.emit({ kind: 'delta', text: '正在写' });
@@ -339,7 +371,16 @@ it('names the transcript as a log, and does not mark the streaming turn as a liv
 
   const transcript = container.querySelector('.conversation-transcript')!;
   expect(transcript.getAttribute('role')).toBe('log');
-  // Streaming is silent: a polite announcer on the growing node would read every token.
-  expect(transcript.querySelector('.conversation-assistant[aria-live]')).toBeNull();
+  // `role="log"` on its own implies a polite live region, which would read every delta.
+  expect(transcript.getAttribute('aria-live')).toBe('off');
+  expect(transcript.querySelector('[aria-live]')).toBeNull();
   expect(transcript.querySelector('.conversation-assistant[role]')).toBeNull();
+
+  // Nothing is said while the turn is still streaming.
+  const announcer = container.querySelector('.conversation-announcer')!;
+  expect(announcer.getAttribute('aria-live')).toBe('polite');
+  expect(announcer.textContent).toBe('');
+
+  provider.emit({ kind: 'settled' });
+  await expect.poll(() => announcer.textContent).toBe('正在写');
 });

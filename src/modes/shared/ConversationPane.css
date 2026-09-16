@@ -1,6 +1,9 @@
 .conversation-pane { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 .conversation-pane :is(button, input, textarea) { font: inherit; letter-spacing: 0; }
 .conversation-transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 16px; }
+/* A screen reader's turn announcement: in the accessible tree, out of the visual layout.
+   The transcript itself is aria-live="off" so streaming stays silent. */
+.conversation-announcer { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .conversation-welcome { display: flex; align-items: center; gap: 9px; color: var(--app-muted); font-size: 13px; }
 /* Configuration states, as transcript view state: above the turns, not behind a menu. */
 .conversation-notices { display: flex; flex-direction: column; gap: 4px; }

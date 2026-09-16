@@ -69,7 +69,11 @@ export type ConversationEvent =
     readonly kind: 'tool-start';
     readonly toolCallId: string;
     readonly name: string;
-    /** The call's input, rendered readable. Absent when there is nothing worth showing. */
+    /**
+     * The call's input, rendered readable — one line, with nested arguments shown as JSON.
+     * The row shows this collapsed, and the whole of it expanded, so it is not truncated
+     * here: CSS truncates the collapsed line, and the expanded `<pre>` shows the whole of it.
+     */
     readonly summary?: string;
   }
   /** A tool call ended. `name` travels again so the row stands on its own when a start was missed. */
@@ -91,7 +95,7 @@ export type ConversationEvent =
  * script command surface answered with `status: "diagnostics"`. The model reads both and
  * retries, so the panel must not render either as a crash.
  */
-export type ToolCallStatus = 'ok' | 'refused' | 'failed' | 'skipped';
+export type ToolCallStatus = 'ok' | 'refused' | 'failed';
 
 export interface ConversationProvider {
   /**

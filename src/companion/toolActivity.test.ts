@@ -21,8 +21,9 @@ describe('summarizeToolInput', () => {
     expect(summarizeToolInput({ name: '二次型', conceptId: 'c-k7f3q2' })).toBe('name: 二次型 · conceptId: c-k7f3q2');
   });
 
-  it('does not try to print a nested argument', () => {
-    expect(summarizeToolInput({ conceptId: 'c-1', stdin: { markdown: '# x' } })).toBe('conceptId: c-1 · stdin: {…}');
+  it('shows a nested argument as its JSON, because for a command tool it is the payload', () => {
+    expect(summarizeToolInput({ conceptId: 'c-1', stdin: { markdown: '# x' } }))
+      .toBe('conceptId: c-1 · stdin: {"markdown":"# x"}');
   });
 
   it('says nothing when there is nothing worth saying', () => {
@@ -32,11 +33,17 @@ describe('summarizeToolInput', () => {
     expect(summarizeToolInput('a string')).toBeUndefined();
   });
 
-  it('keeps one line and bounds its length', () => {
+  it('keeps one line, and bounds only what is pathological', () => {
     const summary = summarizeToolInput({ command: `echo ${'x'.repeat(400)}` })!;
     expect(summary).not.toContain('\n');
-    expect(summary.length).toBeLessThanOrEqual(140);
-    expect(summary.endsWith('…')).toBe(true);
+    // A short call is not truncated: CSS truncates the collapsed line, and the expanded
+    // row has to show what was actually sent.
+    expect(summary.endsWith('…')).toBe(false);
+    expect(summary).toContain('x'.repeat(400));
+
+    const huge = summarizeToolInput({ stdin: { markdown: 'y'.repeat(30_000) } })!;
+    expect(huge.length).toBeLessThanOrEqual(20_000);
+    expect(huge.endsWith('…')).toBe(true);
   });
 });
 

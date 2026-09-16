@@ -5,9 +5,10 @@ import {
   appendTurn,
   applyEvent,
   beginTurn,
-  clearTranscript,
   emptyTranscript,
+  lastFinishedTurn,
   stopActiveTurn,
+  turnAnnouncement,
   turnText,
   type Transcript,
 } from './transcript';
@@ -81,6 +82,22 @@ export function ConversationPane({
   onMessageComplete?: (text: string) => void;
 }) {
   const [transcript, setTranscript] = useState<Transcript>(emptyTranscript);
+  const [announcement, setAnnouncement] = useState('');
+  /**
+   * What a screen reader hears, once per finished turn.
+   *
+   * The transcript is `aria-live="off"` on purpose: `role="log"` alone implies a polite live
+   * region, which would read every delta as it landed. This is the separate region that stands
+   * in for it — keyed on the finished turn's id, so it fires once and not on every later render
+   * of the same turn (#127).
+   */
+  const announcedTurn = useRef<string | undefined>(undefined);
+  const finishedTurn = lastFinishedTurn(transcript);
+  useEffect(() => {
+    if (!finishedTurn || announcedTurn.current === finishedTurn.id) return;
+    announcedTurn.current = finishedTurn.id;
+    setAnnouncement(turnAnnouncement(finishedTurn));
+  }, [finishedTurn]);
   const [composer, setComposer] = useState('');
   const [running, setRunning] = useState(false);
   const [models, setModels] = useState<readonly ConversationModel[]>([]);
@@ -201,8 +218,11 @@ export function ConversationPane({
 
   const newConversation = async () => {
     if (provider) await provider.newConversation();
-    setTranscript(clearTranscript());
+    setTranscript(emptyTranscript);
     setRunning(false);
+    // Nothing of the ended conversation should be announced again.
+    announcedTurn.current = undefined;
+    setAnnouncement('');
   };
 
   const selectModel = async (model: ConversationModel) => {
@@ -213,7 +233,8 @@ export function ConversationPane({
   };
 
   return <div className="conversation-pane" data-shared-pane="conversation">
-    <div className="conversation-transcript" role="log" aria-label="Agent 对话">
+    {/* Silent while it streams; the announcer below is where a turn is heard, once. */}
+    <div className="conversation-transcript" role="log" aria-live="off" aria-label="Agent 对话">
       <Notices notices={notices} />
       {!transcript.turns.length && <div className="conversation-welcome">
         <Bot size={20} aria-hidden="true" /><span>{placeholder}</span>
@@ -232,6 +253,7 @@ export function ConversationPane({
             </div>}
       </article>)}
     </div>
+    <div className="conversation-announcer" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
     {quickQuestions && quickQuestions.length > 0 && <div className="conversation-quick">
       {/* These answers are taken from the graph's own documents. A model is not asked to
           regenerate them: the point of the quick question is that its answer is sourced.

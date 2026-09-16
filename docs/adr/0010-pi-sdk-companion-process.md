@@ -75,8 +75,11 @@ that no environment allowlist can reach.
 ### A failure says what failed
 
 An empty model list is a legitimate configuration state, not an error channel. The
-`ConversationProvider` port therefore reports a diagnosis alongside the catalog, and the
-panel shows it next to "没有可用模型".
+`ConversationProvider` port therefore reports the reason alongside the catalog — as
+`notices`, one fact per entry and each naming the source it came from, because an extension
+that would not load and a missing `models.json` are different problems and one paragraph
+cannot say which is which. The panel renders them as view state rather than inside the model
+picker, so they are readable without opening a menu.
 
 This is load-bearing for the section above rather than a nicety: a missing `models.json`
 is silent in Pi's loader, an unparseable one resolves successfully with an empty
