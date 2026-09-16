@@ -13,8 +13,8 @@ function imageDataUrl(blob: Blob): Promise<string> {
 }
 
 /** Render only the document being viewed; generated HTML never enters workspace content. */
-export function MarkdownPreview({ markdown, ...props }: Omit<ComponentProps<typeof DocumentPreview>, 'html'> & { markdown: string }) {
-  const html = useMemo(() => markdownToHtml(markdown, props.title), [markdown, props.title]);
+export function MarkdownPreview({ markdown, style, ...props }: Omit<ComponentProps<typeof DocumentPreview>, 'html'> & { markdown: string; style?: string }) {
+  const html = useMemo(() => markdownToHtml(markdown, props.title, style), [markdown, props.title, style]);
   return <DocumentPreview {...props} html={html} />;
 }
 
@@ -102,14 +102,16 @@ export function DocumentPreview({ html, title, documentPath, readAsset, resolveI
       await Promise.all([...parsed.querySelectorAll('img')].map(async (image) => {
         try {
           const resource = await resolve(image.getAttribute('src') ?? '');
-          if (cancelled) { resource.release?.(); return; }
+          if (cancelled) { resource.release?.(); return undefined; }
           if (resource.release) releases.push(resource.release);
           image.src = resource.url;
           image.removeAttribute('srcset');
+          return undefined;
         } catch {
           image.removeAttribute('src');
           image.removeAttribute('srcset');
           image.alt = `${image.alt || '图片'}（无法加载）`;
+          return undefined;
         }
       }));
       if (!cancelled) setPrepared({ source: html, path: documentPath, markup: parsed.documentElement.outerHTML,

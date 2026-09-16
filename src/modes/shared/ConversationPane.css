@@ -38,6 +38,9 @@
 .conversation-tool-body pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 @keyframes conversation-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .conversation-tool.is-running .conversation-tool-icon { animation: none; } }
+/* A finished answer segment, rendered as its own document in a sandboxed frame: full width,
+   no frame chrome, height measured by the frame itself. */
+.conversation-markdown { display: block; width: 100%; border: 0; background: none; }
 /* A failure is one more part of the turn: the prose it already streamed stays above it. */
 .conversation-error { margin-top: 6px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; padding: 7px 9px; }
 .conversation-error-tag { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #b91c1c; }

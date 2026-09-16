@@ -34,7 +34,15 @@ function escapeHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
 
-export function htmlDocument(body: string, title: string): string {
+/**
+ * One rendered document, as a page.
+ *
+ * `style` replaces the page's own styling rather than adding to it: a document is a page, but
+ * the same Markdown is also rendered as one block in a narrow column, and the two want
+ * different measures. It is a whole stylesheet, not a patch, because the frame is a separate
+ * document — the application's CSS variables and rules do not cross into it.
+ */
+export function htmlDocument(body: string, title: string, style: string = DEFAULT_STYLE): string {
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -43,7 +51,7 @@ export function htmlDocument(body: string, title: string): string {
   <title>${escapeHtml(title)}</title>
   <style>
 ${katexCss}
-${DEFAULT_STYLE.split('\n').map((line) => `    ${line}`).join('\n')}
+${style.split('\n').map((line) => `    ${line}`).join('\n')}
   </style>
 </head>
 <body>
@@ -53,9 +61,9 @@ ${body}
 `;
 }
 
-export function markdownToHtml(markdown: string, title: string): string {
+export function markdownToHtml(markdown: string, title: string, style?: string): string {
   const body = markdownRenderer.parse(markdown, { async: false }) as string;
-  return htmlDocument(body.trim(), title);
+  return htmlDocument(body.trim(), title, style);
 }
 
 export function htmlToMarkdown(html: string): string {

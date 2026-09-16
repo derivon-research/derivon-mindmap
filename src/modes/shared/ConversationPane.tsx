@@ -7,6 +7,7 @@ import {
   beginTurn,
   emptyTranscript,
   lastFinishedTurn,
+  partIsComplete,
   stopActiveTurn,
   turnAnnouncement,
   turnText,
@@ -249,7 +250,8 @@ export function ConversationPane({
                   of its own, because it has no part yet. */}
               {!turn.parts.length && turn.status === 'streaming'
                 ? <p className="conversation-text">…</p>
-                : turn.parts.map((part) => <TurnPart key={part.id} part={part} />)}
+                : turn.parts.map((part, index) =>
+                    <TurnPart key={part.id} part={part} complete={partIsComplete(turn, index)} />)}
             </div>}
       </article>)}
     </div>

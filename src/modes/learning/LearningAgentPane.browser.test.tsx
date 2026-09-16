@@ -22,6 +22,18 @@ const QUESTIONS = [
  */
 const transcriptText = () => container.querySelector('.conversation-transcript')?.textContent ?? '';
 
+/**
+ * Everything a reader can see, the rendered answers included.
+ *
+ * A finished answer is rendered in its own sandboxed document, so it is not part of the
+ * transcript's `textContent` — asking the transcript alone would report it as missing.
+ */
+const visibleText = () => [
+  transcriptText(),
+  ...[...container.querySelectorAll<HTMLIFrameElement>('iframe.conversation-markdown')]
+    .map((frame) => frame.contentDocument?.body?.textContent ?? ''),
+].join('\n');
+
 async function render(onWideAnswer = vi.fn()) {
   root = createRoot(container);
   await act(async () => root?.render(
@@ -42,7 +54,7 @@ it('leaves the panel alone for an answer that reads fine in a narrow column', as
   const onWideAnswer = await render();
   await page.getByRole('button', { name: '「A」是什么来着？' }).click();
 
-  await expect.poll(transcriptText).toContain('第 1 步做出来的，靠的是 数域。');
+  await expect.poll(visibleText).toContain('第 1 步做出来的，靠的是 数域。');
   expect(onWideAnswer).not.toHaveBeenCalled();
 });
 
@@ -56,7 +68,7 @@ it('asks the layout for width when an answer arrives with a formula on its own l
 it('throws the conversation away without touching anything outside it', async () => {
   await render();
   await page.getByRole('button', { name: '「A」是什么来着？' }).click();
-  await expect.poll(transcriptText).toContain('第 1 步做出来的，靠的是 数域。');
+  await expect.poll(visibleText).toContain('第 1 步做出来的，靠的是 数域。');
 
   await page.getByRole('button', { name: '新对话' }).click();
   await expect.element(page.getByText('卡在哪一步？说出来。')).toBeVisible();

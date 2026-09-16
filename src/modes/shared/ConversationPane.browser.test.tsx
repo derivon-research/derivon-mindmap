@@ -16,6 +16,22 @@ let root: Root | undefined;
  */
 const transcriptText = () => container.querySelector('.conversation-transcript')?.textContent ?? '';
 
+/** The sandboxed frame holding a rendered answer, if one is on screen. */
+const answerFrames = () => [...container.querySelectorAll<HTMLIFrameElement>('iframe.conversation-markdown')];
+/** What the first rendered answer's own document contains. */
+const answerMarkup = () => answerFrames()[0]?.contentDocument?.body?.innerHTML ?? '';
+
+/**
+ * Everything a reader can see, the rendered answers included.
+ *
+ * A rendered answer lives in its own document, so it is not part of the transcript's
+ * `textContent` — asking the transcript alone would report the answer as not there at all.
+ */
+const visibleText = () => [
+  transcriptText(),
+  ...answerFrames().map((frame) => frame.contentDocument?.body?.textContent ?? ''),
+].join('\n');
+
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   container = document.createElement('div');
@@ -86,7 +102,7 @@ it('streams a reply and marks the turn complete', async () => {
   await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
   await page.getByRole('button', { name: '发送消息' }).click();
 
-  await expect.poll(transcriptText).toContain('Hello');
+  await expect.poll(visibleText).toContain('Hello');
   expect(provider.send).toHaveBeenCalledWith('这一步为什么成立？');
 });
 
@@ -119,7 +135,7 @@ it('starts a new conversation without keeping the old transcript', async () => {
   const provider = await render();
   await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
   await page.getByRole('button', { name: '发送消息' }).click();
-  await expect.poll(transcriptText).toContain('Hello');
+  await expect.poll(visibleText).toContain('Hello');
 
   await page.getByRole('button', { name: '新对话' }).click();
   await expect.element(page.getByText('卡在哪一步？说出来。')).toBeVisible();
@@ -203,7 +219,7 @@ it('answers a quick question from the graph even when a model is connected', asy
   await page.getByRole('button', { name: '这一步的前提是什么？' }).click();
 
   // The answer is sourced from the workspace, so the model is not asked to regenerate it.
-  await expect.poll(transcriptText).toContain('取自图上文档的答案。');
+  await expect.poll(visibleText).toContain('取自图上文档的答案。');
   expect(provider.send).not.toHaveBeenCalled();
 });
 
@@ -247,7 +263,7 @@ it('starts the turn even when the drain fails', async () => {
   await page.getByRole('button', { name: '发送消息' }).click();
 
   // A failed drain adds no refusal path of its own: the save banner is the whole explanation.
-  await expect.poll(transcriptText).toContain('Hello');
+  await expect.poll(visibleText).toContain('Hello');
   expect(provider.send).toHaveBeenCalledWith('照样开始');
 });
 
@@ -322,8 +338,8 @@ it('renders a declined call as declined, and keeps the prose the turn already st
   await expect.element(page.getByText('已拒绝')).toBeVisible();
   // Nothing was drawn as an error, and the streamed prose is still there.
   expect(container.querySelectorAll('.conversation-error').length).toBe(0);
-  await expect.poll(transcriptText).toContain('我先试着改一下。');
-  await expect.poll(transcriptText).toContain('这个名字已经有了，我没有改。');
+  await expect.poll(visibleText).toContain('我先试着改一下。');
+  await expect.poll(visibleText).toContain('这个名字已经有了，我没有改。');
 });
 
 /** #127: the failure belongs to the turn and does not swallow what it already said. */
@@ -338,7 +354,7 @@ it('adds a failure as a part of the turn instead of replacing its prose', async 
 
   expect(container.querySelectorAll('.conversation-error').length).toBe(1);
   await expect.poll(transcriptText).toContain('模型返回错误');
-  await expect.poll(transcriptText).toContain('前半段已经流出来了。');
+  await expect.poll(visibleText).toContain('前半段已经流出来了。');
 });
 
 /** #127: streaming rewrites the trailing text in place; a remount would drop scroll and focus. */
@@ -383,4 +399,57 @@ it('keeps the transcript silent and announces the finished turn once from a sepa
 
   provider.emit({ kind: 'settled' });
   await expect.poll(() => announcer.textContent).toBe('正在写');
+});
+
+/** #127: Markdown and formulas, once a segment is finished. */
+it('renders a finished answer as Markdown and formulas inside a frame', async () => {
+  const provider = new FakeProvider();
+  provider.send.mockImplementation(async () => {
+    provider.emit({ kind: 'message', text: '**重点**\n\n$$\n\\int_0^1 x^2 \\, dx\n$$' });
+    provider.emit({ kind: 'settled' });
+  });
+  await sendAwaitingEvents(provider);
+
+  await expect.poll(answerMarkup).toContain('<strong>重点</strong>');
+  // The formula is typeset rather than left as TeX in the prose. Its source does stay in the
+  // markup, inside KaTeX's MathML `annotation`, which is what a screen reader reads.
+  await expect.poll(answerMarkup).toContain('class="katex-display"');
+  // And the Markdown source no longer shows as itself anywhere the reader can look.
+  expect(answerMarkup()).not.toContain('**重点**');
+});
+
+/** #127: the renderer is asked for a segment, not for every token of one. */
+it('keeps streaming prose plain and hands it to the renderer when it is finished', async () => {
+  const provider = new FakeProvider();
+  provider.send.mockImplementation(async () => {
+    provider.emit({ kind: 'delta', text: '**还在写**' });
+  });
+  await sendAwaitingEvents(provider);
+
+  // Still arriving: plain text, untouched by Markdown, and no frame to be seen.
+  expect(answerFrames().length).toBe(0);
+  await expect.poll(() => container.querySelector('.conversation-text')?.textContent).toBe('**还在写**');
+
+  provider.emit({ kind: 'settled' });
+
+  await expect.poll(() => answerFrames().length).toBe(1);
+  await expect.poll(answerMarkup).toContain('<strong>还在写</strong>');
+});
+
+/** The frame is the only thing standing between an answer's raw HTML and the application. */
+it('renders the answer in a frame that cannot run script', async () => {
+  const provider = new FakeProvider();
+  provider.send.mockImplementation(async () => {
+    // `marked` does not sanitise, so this tag reaches the frame exactly as written.
+    provider.emit({ kind: 'message', text: '<script>parent.__derivonAnswerRan = true</script>ok' });
+    provider.emit({ kind: 'settled' });
+  });
+  await sendAwaitingEvents(provider);
+
+  await expect.poll(() => answerFrames().length).toBe(1);
+  const frame = answerFrames()[0];
+  // `allow-same-origin` is for measuring the frame's height; scripts stay off with or without it.
+  expect(frame.getAttribute('sandbox')).not.toContain('allow-scripts');
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+  expect((window as unknown as { __derivonAnswerRan?: boolean }).__derivonAnswerRan).toBeUndefined();
 });

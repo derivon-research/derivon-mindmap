@@ -5,6 +5,7 @@ import {
   beginTurn,
   emptyTranscript,
   lastFinishedTurn,
+  partIsComplete,
   stopActiveTurn,
   turnAnnouncement,
   turnText,
@@ -254,6 +255,30 @@ describe('tool parts', () => {
     ), { kind: 'delta', text: '后半段。' });
     expect(transcript.turns[1].parts).toHaveLength(1);
     expect(transcript.turns[1].parts[0]).toMatchObject({ text: '前半段。后半段。' });
+  });
+});
+
+describe('partIsComplete', () => {
+  const start = (toolCallId: string) =>
+    ({ kind: 'tool-start', toolCallId, name: 'add-concept' }) as const;
+
+  it('says only the last part of a streaming turn is unfinished', () => {
+    const transcript = applyEvent(applyEvent(started(), { kind: 'delta', text: '一段。' }), start('call-1'));
+    // Streaming, and the tool row is last: the prose before it has stopped growing.
+    expect(partIsComplete(transcript.turns[1], 0)).toBe(true);
+    expect(partIsComplete(transcript.turns[1], 1)).toBe(false);
+  });
+
+  it('says every part is finished once the turn ends', () => {
+    const transcript = applyEvent(applyEvent(started(), { kind: 'delta', text: '一段。' }), start('call-1'));
+    const done = applyEvent(transcript, { kind: 'settled' });
+    expect(partIsComplete(done.turns[1], 0)).toBe(true);
+    expect(partIsComplete(done.turns[1], 1)).toBe(true);
+  });
+
+  it('treats a stopped turn as finished, because nothing more will be written to it', () => {
+    const stopped = stopActiveTurn(applyEvent(started(), { kind: 'delta', text: '一半' }));
+    expect(partIsComplete(stopped.turns[1], 0)).toBe(true);
   });
 });
 

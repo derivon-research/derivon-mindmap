@@ -203,6 +203,17 @@ export function turnText(turn: TranscriptTurn): string {
   return turn.parts.map((part) => (part.kind === 'text' ? part.text : '')).join('');
 }
 
+/**
+ * Whether a part is finished, or still being appended to.
+ *
+ * Only the last part of a streaming turn can grow, and only while it is text — a tool row ends
+ * a text segment, and the end of the turn ends all of them. Rendering decides what is worth
+ * re-rendering from this: prose that is still arriving is not parsed as Markdown.
+ */
+export function partIsComplete(turn: TranscriptTurn, index: number): boolean {
+  return turn.status !== 'streaming' || index !== turn.parts.length - 1;
+}
+
 function textTurn(turn: { readonly id: string; readonly role: TurnRole; readonly status: TurnStatus; readonly text: string }): TranscriptTurn {
   return { id: turn.id, role: turn.role, status: turn.status, parts: [{ id: `${turn.id}.0`, kind: 'text', text: turn.text }] };
 }

@@ -1,5 +1,15 @@
 import { Ban, Check, ChevronRight, LoaderCircle, OctagonAlert } from 'lucide-react';
+import { lazy, Suspense } from 'react';
 import type { ToolPartStatus, TranscriptPart } from './transcript';
+
+/**
+ * The Markdown and KaTeX pipeline, fetched when a finished answer needs it.
+ *
+ * A dynamic `import()` rather than a static one so the transcript's own module graph does not
+ * carry it: #127 requires the panel not to drag the Markdown and formula implementation in,
+ * and a static import here would make the panel the thing that carries it.
+ */
+const RichText = lazy(async () => ({ default: (await import('./RichText')).RichText }));
 
 /**
  * How each tool state reads, and what marks it.
@@ -22,13 +32,34 @@ const TOOL_STATES: Record<ToolPartStatus, { readonly label: string; readonly Ico
  * only place that has to change when one is added. What a part *is* is the transcript's
  * decision; how it looks is this module's.
  */
-export function TurnPart({ part }: { part: TranscriptPart }) {
-  if (part.kind === 'text') return <p className="conversation-text">{part.text}</p>;
+export function TurnPart({ part, complete }: {
+  readonly part: TranscriptPart;
+  /** See `partIsComplete`: false while this part is still being appended to. */
+  readonly complete: boolean;
+}) {
+  if (part.kind === 'text') return <TextPart text={part.text} complete={complete} />;
   if (part.kind === 'error') return <div className="conversation-error" role="note">
     <span className="conversation-error-tag">错误</span>
     <p>{part.message}</p>
   </div>;
   return <ToolRow part={part} />;
+}
+
+/**
+ * One stretch of prose.
+ *
+ * Streaming text stays plain. Re-parsing Markdown on every delta would re-render the whole
+ * segment per token, and a half-written formula, table or code fence has no meaning to render
+ * yet — so the renderer is asked for a segment only once nothing more is being appended to it.
+ *
+ * While that renderer is on its way the segment reads as plain text, which is the honest
+ * loading state rather than a placeholder: it is exactly what those words looked like a moment
+ * ago, so nothing shifts out from under the reader.
+ */
+function TextPart({ text, complete }: { readonly text: string; readonly complete: boolean }) {
+  const plain = <p className="conversation-text">{text}</p>;
+  if (!complete || !text.trim()) return plain;
+  return <Suspense fallback={plain}><RichText markdown={text} /></Suspense>;
 }
 
 /**
