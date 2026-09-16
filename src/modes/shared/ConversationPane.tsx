@@ -1,6 +1,6 @@
 import { Bot, MessageSquarePlus, Send, Square } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ConversationModel, ConversationProvider } from '../../ports/ConversationProvider';
+import type { ConversationModel, ConversationProvider, Notice, NoticeScope } from '../../ports/ConversationProvider';
 import {
   appendTurn,
   applyEvent,
@@ -18,6 +18,39 @@ export type QuickQuestion = {
   readonly label: string;
   readonly answer: string;
 };
+
+/** What each scope is called where the operator reads it, rather than in the companion's vocabulary. */
+const NOTICE_SCOPES: Record<NoticeScope, string> = {
+  models: '模型',
+  'command-surface': '命令面',
+  skills: '技能',
+  extensions: '扩展',
+  companion: '会话',
+};
+
+/**
+ * The configuration states this session is in, as transcript view state.
+ *
+ * Deliberately not inside the model menu. "No model" and "no command surface" are facts about
+ * the whole panel — there is nothing to ask, and tools are missing — so they have to be
+ * readable without knowing to open a picker, and separable from each other. A missing command
+ * surface must not be swallowed by an empty catalog, and neither is an error banner: an empty
+ * catalog is a legitimate configuration.
+ *
+ * The band is deliberately neutral rather than alarming. Most of what lands here is "nothing is
+ * installed yet", which is the ordinary state of a fresh install, and `Notice` carries no
+ * severity to colour it by. Attribution is the part that had to be visible; where these sit and
+ * how loud they are is what #127's prototype is for.
+ */
+function Notices({ notices }: { notices: readonly Notice[] }) {
+  if (!notices.length) return null;
+  return <div className="conversation-notices" role="status" aria-label="会话配置状态">
+    {notices.map((notice) => <p className="conversation-notice" key={`${notice.scope}:${notice.text}`}>
+      <span className="conversation-notice-scope">{NOTICE_SCOPES[notice.scope]}</span>
+      <span className="conversation-notice-text">{notice.text}</span>
+    </p>)}
+  </div>;
+}
 
 /**
  * A model is named by its id; a catalog name is a convenience on top of that. So the id
@@ -51,7 +84,7 @@ export function ConversationPane({
   const [composer, setComposer] = useState('');
   const [running, setRunning] = useState(false);
   const [models, setModels] = useState<readonly ConversationModel[]>([]);
-  const [diagnosis, setDiagnosis] = useState<string>();
+  const [notices, setNotices] = useState<readonly Notice[]>([]);
   const [selectedModel, setSelectedModel] = useState<ConversationModel>();
   const [modelQuery, setModelQuery] = useState('');
   const [modelOpen, setModelOpen] = useState(false);
@@ -73,7 +106,7 @@ export function ConversationPane({
       .then((catalog) => {
         if (cancelled) return;
         setModels(catalog.models);
-        setDiagnosis(catalog.diagnosis);
+        setNotices(catalog.notices);
         // The provider owns the selection and remembers it; the panel only shows it.
         setSelectedModel(catalog.selected);
       })
@@ -82,7 +115,7 @@ export function ConversationPane({
         // an empty list on its own says nothing about what went wrong.
         if (cancelled) return;
         setModels([]);
-        setDiagnosis(error instanceof Error ? error.message : String(error));
+        setNotices([{ scope: 'companion', text: error instanceof Error ? error.message : String(error) }]);
       });
     return () => { cancelled = true; };
   }, [provider]);
@@ -181,6 +214,7 @@ export function ConversationPane({
 
   return <div className="conversation-pane" data-shared-pane="conversation">
     <div className="conversation-transcript" role="log" aria-label="Agent 对话">
+      <Notices notices={notices} />
       {!transcript.turns.length && <div className="conversation-welcome">
         <Bot size={20} aria-hidden="true" /><span>{placeholder}</span>
       </div>}
@@ -235,7 +269,6 @@ export function ConversationPane({
               </section>)}
               {!groupedModels.length && <p>没有可用模型</p>}
             </div>
-            {diagnosis && <p className="conversation-model-diagnosis" role="status">{diagnosis}</p>}
           </div>}
         </div>}
         <button type="button" className="conversation-icon" title="新对话" aria-label="新对话" onClick={() => void newConversation()}>

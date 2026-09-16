@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { ConversationEvent, ConversationModel, ConversationProvider } from '../../ports/ConversationProvider';
+import type { ConversationEvent, ConversationModel, ConversationProvider, Notice } from '../../ports/ConversationProvider';
 import { ConversationPane } from './ConversationPane';
 
 let container: HTMLDivElement;
@@ -36,7 +36,7 @@ class FakeProvider implements ConversationProvider {
   readonly newConversation = vi.fn(async () => {});
   readonly setWorkspace = vi.fn(async () => {});
   readonly setModel = vi.fn(async (model: ConversationModel) => { this.selected = model; });
-  diagnosis: string | undefined;
+  notices: readonly Notice[] = [];
   readonly models: readonly ConversationModel[] = [
     { providerId: 'anthropic', modelId: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
     // No catalog name: the picker must show this one by its id.
@@ -46,7 +46,7 @@ class FakeProvider implements ConversationProvider {
   readonly listModels = vi.fn(async () => ({
     models: this.models,
     selected: this.selected,
-    ...(this.diagnosis ? { diagnosis: this.diagnosis } : {}),
+    notices: this.notices,
   }));
 
   emit(event: ConversationEvent) {
@@ -118,24 +118,33 @@ it('starts a new conversation without keeping the old transcript', async () => {
   expect(provider.newConversation).toHaveBeenCalledTimes(1);
 });
 
-it('shows why the catalog is the way it is instead of only an empty list', async () => {
+/** What each configuration state is called where the operator reads it, in order. */
+const noticeScopes = () => [...container.querySelectorAll('.conversation-notice-scope')]
+  .map((element) => element.textContent);
+
+/** #127: a configuration state is view state, not something you have to open a menu to find. */
+it('shows why the catalog is the way it is without opening the model menu', async () => {
   const provider = new FakeProvider();
-  provider.diagnosis = '未找到 models.json：/tmp/derivon/models.json';
+  provider.notices = [{ scope: 'models', text: '未找到 models.json：/tmp/derivon/models.json' }];
   await render(provider);
 
-  await page.getByRole('button', { name: /Claude Sonnet 4\.5/ }).click();
   await expect.element(page.getByText('未找到 models.json：/tmp/derivon/models.json')).toBeVisible();
+  expect(noticeScopes()).toEqual(['模型']);
 });
 
-/** #121: the session's own configuration state travels in the same field, and shows up here. */
-it('shows a session configuration reason beside the catalog\'s own', async () => {
+/** #121: the session's own configuration states travel on the same channel, each named. */
+it('keeps each configuration state separable instead of joining them into one paragraph', async () => {
   const provider = new FakeProvider();
-  // Two reasons, the way the companion joins them: the catalog's, and what an extension did.
-  provider.diagnosis = '未找到 models.json：/tmp/derivon/models.json\n项目级扩展未加载：/work/graph 未受信任。';
+  provider.notices = [
+    { scope: 'models', text: '未找到 models.json：/tmp/derivon/models.json' },
+    { scope: 'command-surface', text: '没有发现命令面。' },
+    { scope: 'extensions', text: '项目级扩展未加载：/work/graph 未受信任。' },
+  ];
   await render(provider);
 
-  await page.getByRole('button', { name: /Claude Sonnet 4\.5/ }).click();
   await expect.element(page.getByText(/项目级扩展未加载：\/work\/graph/)).toBeVisible();
+  // Three facts, three scopes: no single string was parsed back apart to draw this.
+  expect(noticeScopes()).toEqual(['模型', '命令面', '扩展']);
 });
 
 it('reports a provider that rejects rather than silently emptying the picker', async () => {
@@ -143,8 +152,9 @@ it('reports a provider that rejects rather than silently emptying the picker', a
   provider.listModels.mockRejectedValueOnce(new Error('Pi companion exited unexpectedly'));
   await render(provider);
 
-  await page.getByRole('button', { name: '选择模型' }).click();
+  // The scope says which side of the process boundary went quiet.
   await expect.element(page.getByText('Pi companion exited unexpectedly')).toBeVisible();
+  expect(noticeScopes()).toEqual(['会话']);
 });
 
 it('sends on Enter, leaves Shift+Enter to the textarea, and waits for the IME', async () => {

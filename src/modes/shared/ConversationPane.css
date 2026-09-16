@@ -2,6 +2,12 @@
 .conversation-pane :is(button, input, textarea) { font: inherit; letter-spacing: 0; }
 .conversation-transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 16px; }
 .conversation-welcome { display: flex; align-items: center; gap: 9px; color: var(--app-muted); font-size: 13px; }
+/* Configuration states, as transcript view state: above the turns, not behind a menu. */
+.conversation-notices { display: flex; flex-direction: column; gap: 4px; }
+.conversation-notices:not(:empty) { margin-bottom: 4px; }
+.conversation-notice { display: flex; gap: 8px; align-items: baseline; margin: 0; padding: 6px 9px; border: 1px solid var(--app-line); border-radius: 8px; background: var(--app-surface, #f8fafc); color: var(--app-muted); font-size: 11px; line-height: 1.5; }
+.conversation-notice-scope { flex: none; min-width: 3.5em; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--app-muted); }
+.conversation-notice-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .conversation-exchange { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .conversation-user small, .conversation-assistant small { color: var(--app-muted); font-size: 11px; }
 .conversation-user p, .conversation-assistant p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -55,7 +61,6 @@
 .conversation-model-list button { display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 7px; background: none; color: var(--app-ink); text-align: left; font-size: 12px; }
 .conversation-model-list button.is-selected { background: #eef2ff; color: var(--app-accent); }
 .conversation-model-list p { margin: 8px; color: var(--app-muted); font-size: 12px; }
-.conversation-model-diagnosis { margin: 0; padding: 8px 10px; border-top: 1px solid var(--app-line); background: #fffbeb; color: #92400e; font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .conversation-icon, .conversation-primary { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 32px; border: 1px solid var(--app-line); border-radius: 9px; background: #fff; color: var(--app-ink); }
 .conversation-primary { border-color: var(--app-accent); background: var(--app-accent); color: #fff; }
 .conversation-primary:disabled { opacity: .45; }

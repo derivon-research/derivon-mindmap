@@ -14,14 +14,41 @@ export type ConversationModel = {
 };
 
 /**
+ * Which part of the session's configuration is speaking.
+ *
+ * A scope is real structure the companion already has: it knows whether a line came from
+ * reading the model files, the command surface, skill discovery or extension loading.
+ */
+export type NoticeScope = 'models' | 'command-surface' | 'skills' | 'extensions' | 'companion';
+
+/**
+ * One thing the operator is owed about how the session was configured, and where it came from.
+ *
+ * There is deliberately no severity. The companion's notes arrive as prose —
+ * `扩展加载失败：…` beside `没有发现命令面` — so a severity field could only be filled in by
+ * reading the sentence, which is the parsing this type exists to remove. A source that wants
+ * to distinguish a skipped thing from a broken one should say so in its own return value
+ * first; then a severity here would mean something.
+ */
+export type Notice = {
+  readonly scope: NoticeScope;
+  readonly text: string;
+};
+
+/**
  * The catalog and, when it is empty or partial, why. An empty catalog is a legitimate
- * configuration state, so it never travels as a rejected promise — but it always
- * carries its reason, because "没有可用模型" on its own is indistinguishable from a
- * provider that failed to start.
+ * configuration state, so it never travels as a rejected promise — and its reasons always
+ * travel with it, because "没有可用模型" on its own is indistinguishable from a provider
+ * that failed to start.
  */
 export type ConversationCatalog = {
   readonly models: readonly ConversationModel[];
-  readonly diagnosis?: string;
+  /**
+   * What could not be configured, one line per fact, each naming its own source. Empty when
+   * everything worked. Never collapsed into a single string: the panel has to be able to say
+   * *which* thing is not working, and #121 and #122 add to this list as they land.
+   */
+  readonly notices: readonly Notice[];
   /**
    * The model this mode is currently on. The provider owns this, remembers it, and
    * decides the default; the panel renders it. Two copies of "which model" is one copy

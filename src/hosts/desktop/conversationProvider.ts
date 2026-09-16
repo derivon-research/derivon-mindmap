@@ -58,12 +58,16 @@ export function createDesktopConversationProvider(mode: ConversationMode): Conve
     },
     async listModels(): Promise<ConversationCatalog> {
       try {
-        const { models, diagnosis, selected } =
+        const { models, notices, selected } =
           await ask<Extract<ConversationResponse, { type: 'models' }>>({ type: 'listModels', mode });
-        return { models, diagnosis, selected };
+        return { models, notices, selected };
       } catch (error) {
-        // The bridge could not reach the companion at all: no catalog, but a reason.
-        return { models: [], diagnosis: error instanceof Error ? error.message : String(error) };
+        // The bridge could not reach the companion at all: no catalog, but a reason — and the
+        // scope says it was this side of the process boundary, not the operator's config.
+        return {
+          models: [],
+          notices: [{ scope: 'companion', text: error instanceof Error ? error.message : String(error) }],
+        };
       }
     },
     async setModel(model: ConversationModel) {

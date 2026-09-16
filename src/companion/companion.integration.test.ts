@@ -329,13 +329,15 @@ it('streams, completes, reports errors, aborts, and exits cleanly', { timeout: 3
   request({ id: 1, type: 'listModels', mode: 'learning' });
   const models = await waitFor((line) => line.type === 'models' && line.id === 1);
   const streamModel = { providerId: 'test', modelId: 'stream-model', name: 'Stream Model' };
-  expect(models).toEqual({
+  expect(models).toMatchObject({
     id: 1,
     type: 'models',
     models: [streamModel],
     // The companion owns the selection and defaults it, so the panel has one to show.
     selected: streamModel,
   });
+  // Whatever this machine's roots offered, the reasons travel as a list, one fact per entry.
+  expect(Array.isArray((models as { notices?: unknown }).notices)).toBe(true);
 
   request({ id: 2, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
   await waitFor((line) => line.type === 'ok' && line.id === 2);
@@ -885,10 +887,14 @@ it('does not load a project-level extension until the project is trusted', { tim
   try {
     untrusted.send({ id: 1, type: 'setWorkspace', path: workspace });
     await untrusted.await((line) => line.type === 'ok' && line.id === 1);
-    // The panel's own configuration read is where the diagnosis has to land.
+    // The panel's own configuration read is where the reason has to land, under its own scope.
     untrusted.send({ id: 2, type: 'listModels', mode: 'learning' });
     const catalog = await untrusted.await((line) => line.type === 'models' && line.id === 2);
-    expect(catalog).toMatchObject({ diagnosis: expect.stringContaining('项目级扩展未加载') });
+    expect(catalog).toMatchObject({
+      notices: expect.arrayContaining([
+        expect.objectContaining({ scope: 'extensions', text: expect.stringContaining('项目级扩展未加载') }),
+      ]),
+    });
 
     untrusted.send({ id: 3, type: 'setModel', mode: 'learning', providerId: 'test', modelId: 'stream-model' });
     await untrusted.await((line) => line.type === 'ok' && line.id === 3);

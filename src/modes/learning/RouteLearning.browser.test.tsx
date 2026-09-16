@@ -452,7 +452,7 @@ it('drains the workspace write-back queue on the learning side too, before the A
   const provider: ConversationProvider = {
     send: async () => { order.push('send'); },
     abort: async () => {}, newConversation: async () => {}, setWorkspace: async () => {},
-    setModel: async () => {}, listModels: async () => ({ models: [] }), subscribe: () => () => {},
+    setModel: async () => {}, listModels: async () => ({ models: [], notices: [] }), subscribe: () => () => {},
   };
   await render({ conversation: provider, drainPendingChanges: async () => { order.push('drain'); } });
 

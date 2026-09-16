@@ -123,7 +123,7 @@ class TurnProvider implements ConversationProvider {
   readonly newConversation = vi.fn(async () => {});
   readonly setWorkspace = vi.fn(async () => {});
   readonly setModel = vi.fn(async () => {});
-  readonly listModels = vi.fn(async () => ({ models: [] }));
+  readonly listModels = vi.fn(async () => ({ models: [], notices: [] }));
   constructor(private readonly onSend: () => Promise<void>) {}
   subscribe() { return () => {}; }
 }
