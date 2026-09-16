@@ -1,14 +1,16 @@
 import { Bot, MessageSquarePlus, Send, Square } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationMode, ConversationModel, ConversationProvider } from '../../ports/ConversationProvider';
+import {
+  appendTurn,
+  applyEvent,
+  beginTurn,
+  clearTranscript,
+  emptyTranscript,
+  stopActiveTurn,
+  type Transcript,
+} from './transcript';
 import './ConversationPane.css';
-
-type Message = {
-  readonly id: number;
-  readonly role: 'user' | 'assistant';
-  text: string;
-  state: 'streaming' | 'done' | 'error' | 'stopped';
-};
 
 export type QuickQuestion = {
   readonly label: string;
@@ -45,7 +47,7 @@ export function ConversationPane({
   drainPendingChanges?: () => Promise<void>;
   onMessageComplete?: (text: string) => void;
 }) {
-  const [messages, setMessages] = useState<readonly Message[]>([]);
+  const [transcript, setTranscript] = useState<Transcript>(emptyTranscript);
   const [composer, setComposer] = useState('');
   const [running, setRunning] = useState(false);
   const [models, setModels] = useState<readonly ConversationModel[]>([]);
@@ -55,7 +57,6 @@ export function ConversationPane({
   const [modelOpen, setModelOpen] = useState(false);
   const modelRoot = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
-  const activeAssistantId = useRef<number | undefined>(undefined);
 
   /**
    * The completion callback is held rather than depended on: callers pass an inline
@@ -89,29 +90,9 @@ export function ConversationPane({
   useEffect(() => {
     if (!provider) return;
     return provider.subscribe((event) => {
-      if (event.kind === 'delta') {
-        setMessages((current) => current.map((message) =>
-          message.id === activeAssistantId.current
-            ? { ...message, text: message.text + event.text, state: 'streaming' }
-            : message));
-      } else if (event.kind === 'message') {
-        setMessages((current) => current.map((message) =>
-          message.id === activeAssistantId.current
-            ? { ...message, text: event.text, state: 'done' }
-            : message));
-        completionHandler.current?.(event.text);
-      } else if (event.kind === 'error') {
-        setMessages((current) => current.map((message) =>
-          message.id === activeAssistantId.current
-            ? { ...message, text: event.message, state: 'error' }
-            : message));
-      } else if (event.kind === 'settled') {
-        setRunning(false);
-        setMessages((current) => current.map((message) =>
-          message.id === activeAssistantId.current && message.state === 'streaming'
-            ? { ...message, state: 'done' }
-            : message));
-      }
+      setTranscript((current) => applyEvent(current, event));
+      if (event.kind === 'message') completionHandler.current?.(event.text);
+      else if (event.kind === 'settled') setRunning(false);
     });
   }, [provider]);
 
@@ -149,23 +130,21 @@ export function ConversationPane({
     return [...groups].map(([providerId, items]) => ({ providerId, items }));
   }, [models, modelQuery]);
 
-  const appendMessage = (role: Message['role'], text = '', state: Message['state'] = 'done') => {
-    const id = nextId.current++;
-    setMessages((current) => [...current, { id, role, text, state }]);
-    return id;
-  };
+  /** One id per turn, handed to the transcript so a React key survives the whole stream. */
+  const takeId = () => String(nextId.current++);
 
   const send = async (prompt: string) => {
     const text = prompt.trim();
     if (!text || running) return;
-    appendMessage('user', text);
+    const userId = takeId();
+    const assistantId = takeId();
+    setTranscript((current) => beginTurn(current, { userId, assistantId, prompt: text }));
     setComposer('');
     if (!provider) {
-      appendMessage('assistant', fallbackMessage, 'error');
+      setTranscript((current) => applyEvent(current, { kind: 'error', message: fallbackMessage }));
       onMessageComplete?.(fallbackMessage);
       return;
     }
-    activeAssistantId.current = appendMessage('assistant');
     setRunning(true);
     // Before the Agent is asked anything, so its first read sees what the user has accepted.
     // Best effort: a drain that fails is the save-state banner's story, not this turn's.
@@ -173,24 +152,23 @@ export function ConversationPane({
     try {
       await provider.send(text);
     } catch (error) {
-      setMessages((current) => current.map((message) =>
-        message.id === activeAssistantId.current
-          ? { ...message, text: error instanceof Error ? error.message : String(error), state: 'error' }
-          : message));
+      setTranscript((current) => applyEvent(current, {
+        kind: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      }));
       setRunning(false);
     }
   };
 
   const abort = async () => {
     if (!provider || !running) return;
-    setMessages((current) => current.map((message) =>
-      message.id === activeAssistantId.current ? { ...message, state: 'stopped' } : message));
+    setTranscript(stopActiveTurn);
     await provider.abort();
   };
 
   const newConversation = async () => {
     if (provider) await provider.newConversation();
-    setMessages([]);
+    setTranscript(clearTranscript());
     setRunning(false);
   };
 
@@ -203,15 +181,15 @@ export function ConversationPane({
 
   return <div className="conversation-pane" data-shared-pane="conversation">
     <div className="conversation-transcript" role="log" aria-label="Agent 对话">
-      {!messages.length && <div className="conversation-welcome">
+      {!transcript.turns.length && <div className="conversation-welcome">
         <Bot size={20} aria-hidden="true" /><span>{placeholder}</span>
       </div>}
-      {messages.map((message) => <article className="conversation-exchange" key={message.id}>
-        {message.role === 'user'
-          ? <div className="conversation-user"><small>你</small><p>{message.text}</p></div>
-          : <div className={`conversation-assistant is-${message.state}`}>
-              <strong><Bot size={15} aria-hidden="true" />Agent {message.state === 'error' && <small>错误</small>}{message.state === 'stopped' && <small>已停止</small>}</strong>
-              <p>{message.text || (message.state === 'streaming' ? '…' : '')}</p>
+      {transcript.turns.map((turn) => <article className="conversation-exchange" key={turn.id}>
+        {turn.role === 'user'
+          ? <div className="conversation-user"><small>你</small><p>{turn.parts.map((part) => part.text).join('')}</p></div>
+          : <div className={`conversation-assistant is-${turn.status}`}>
+              <strong><Bot size={15} aria-hidden="true" />Agent {turn.status === 'error' && <small>错误</small>}{turn.status === 'stopped' && <small>已停止</small>}</strong>
+              <p>{turn.parts.map((part) => part.text).join('') || (turn.status === 'streaming' ? '…' : '')}</p>
             </div>}
       </article>)}
     </div>
@@ -220,8 +198,8 @@ export function ConversationPane({
           regenerate them: the point of the quick question is that its answer is sourced.
           Free-form questions go through the composer. */}
       {quickQuestions.map((question) => <button key={question.label} type="button" onClick={() => {
-        appendMessage('user', question.label);
-        appendMessage('assistant', question.answer);
+        setTranscript((current) => appendTurn(current, { id: takeId(), role: 'user', text: question.label }));
+        setTranscript((current) => appendTurn(current, { id: takeId(), role: 'assistant', text: question.answer }));
         onMessageComplete?.(question.answer);
       }}>{question.label}</button>)}
     </div>}
