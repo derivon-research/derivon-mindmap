@@ -4,6 +4,7 @@ mod conversation;
 mod desktop_debug;
 mod learner_records;
 mod route;
+mod skills_seed;
 mod workspace;
 
 use tauri::Manager;

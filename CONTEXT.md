@@ -54,6 +54,14 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 应用内对话能力的纯接口。学习侧和创作侧通过它发送消息、接收流式事件、中止或新建对话；实现可以来自桌面 Pi companion，也可以来自未来的远端服务。学习与创作的状态机只认识这个接口，不感知具体 provider 或进程形态。
 
+**基础技能与技能种子（base skills, skills seed）**
+
+应用自己装进用户级技能根的两个技能：`derivon-mindmap`（承载脚本命令面）与 `derivon-cli`（`derivon` 工具要用它）。其余四个技能是给操作者在别处用的方法技能，不属于本应用的会话，也不随包。
+
+随包的那一份叫**种子**：构建期按钉住的 `derivon-research/skills` revision 取出，作为 resource 进包；首次创建 `~/.derivon` 时把**尚不存在**的技能拷进 `<root>/skills/`。技能根是操作者的，与扩展根同形：已经在那里的目录，不管是谁放的，应用都不改写也不删除，也不认为它「旧」。
+
+因此**技能版本不与应用版本绑定**。应用只说出自己带的是哪个 revision；装着的技能自己说版本（`--capabilities` 里的 `surfaceVersion`），两者不同就报一条 `skills` 归属的 notice，**只报告、不强制一致**；技能面不声明版本时则什么都不说，因为「未知」不等于「不同」。这让快的东西（技能是文档加脚本）不必等慢的列车（应用发布带 110MB sidecar、逐平台打包与公证）。「把已装的更新到随包那个版本」这个动作不在其中——那需要先知道那份是否被人改过。决策与被否掉的替代形态见 `docs/adr/0013-who-owns-the-user-level-skills-root.md`。
+
 **模型配置（model configuration）**
 
 本应用自己的 `models.json` 与 `auth.json`，放在**用户级配置根 `~/.derivon/`** 下（Windows `%USERPROFILE%\.derivon\`；三平台同名同形，Linux 不跟 `$XDG_CONFIG_HOME`），语法与 Pi 一致。同一根下还有 `selected-models.json`（每个模式选中的模型）与 `skills/`（#104、#122）、`extensions/`（#121，用户自己的 Pi 扩展；项目级扩展在 `<workspace>/.derivon/extensions`，项目受信任才载入）、`bin/`（会话里那个 node，#129），布局见 `docs/agents/pi-runtime.md`；学习者记录不在这里（它们是应用数据）。它们是这个应用的文件：companion 不读也不写 `~/.pi/`，不要求装 Pi CLI。**面板能选到什么，是这两个文件的函数，除此之外什么都不算数**——本机环境变量、Google ADC、AWS profile 提供的凭证一律不采纳。这条不是"传了自己的路径"就自动成立的，需要按凭证归属显式过滤，理由与机制记在 `docs/adr/0010-pi-sdk-companion-process.md`。

@@ -19,9 +19,9 @@ beforeAll(async () => {
   // The fixture speaks the real contract, so parsing it here is parsing what the command
   // surface publishes rather than a shape invented by this test.
   const output = execFileSync(process.execPath, [scriptPath, '--capabilities'], { encoding: 'utf8' });
-  const commands = parseCapabilities(output);
-  if (!commands) throw new Error(`the fixture did not publish capabilities: ${output}`);
-  surface = { scriptPath, commands };
+  const parsed = parseCapabilities(output);
+  if (!parsed) throw new Error(`the fixture did not publish capabilities: ${output}`);
+  surface = { scriptPath, commands: parsed.commands, ...(parsed.surfaceVersion ? { surfaceVersion: parsed.surfaceVersion } : {}) };
 });
 
 describe('the capability intersection', () => {
@@ -83,7 +83,19 @@ describe('reading --capabilities', () => {
         { name: 'broken', capability: 'read' },
       ],
     }));
-    expect(parsed?.map((command) => command.name)).toEqual(['validate']);
+    expect(parsed?.commands.map((command) => command.name)).toEqual(['validate']);
+  });
+
+  it('reads the version the surface declares about itself', () => {
+    expect(parseCapabilities('{"surfaceVersion":"0.2.0","commands":[]}')?.surfaceVersion).toBe('0.2.0');
+  });
+
+  it('leaves the version out rather than defaulting one, so "declares none" is visible', () => {
+    // A surface that says nothing about itself must be distinguishable from one that does: the
+    // version comparison reports a difference and must never invent one side of it.
+    expect(parseCapabilities('{"commands":[]}')?.surfaceVersion).toBeUndefined();
+    expect(parseCapabilities('{"surfaceVersion":"","commands":[]}')?.surfaceVersion).toBeUndefined();
+    expect(parseCapabilities('{"surfaceVersion":7,"commands":[]}')?.surfaceVersion).toBeUndefined();
   });
 });
 

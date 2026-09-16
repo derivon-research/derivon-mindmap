@@ -129,10 +129,12 @@ function startCompanion(
   configDir: string,
   environment: NodeJS.ProcessEnv = process.env,
   scriptPath: string = companionPath,
+  /** Arguments the bridge itself would pass, such as the path to the shipped skills seed. */
+  extraArguments: readonly string[] = [],
 ) {
   // The runtime this test was started with, by absolute path: a controlled PATH is part of what
   // is under test, and resolving `node` through it would make the harness depend on it too.
-  const process_ = spawn(process.execPath, [scriptPath, '--config-dir', configDir], {
+  const process_ = spawn(process.execPath, [scriptPath, '--config-dir', configDir, ...extraArguments], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: environment,
   });
@@ -656,8 +658,7 @@ it('gives the session a shell rooted at the application, with a node that works'
 /**
  * #104: the command surface is installed under the user-level root (`<config-dir>/skills`),
  * which the companion reaches through `--config-dir` rather than by reading HOME itself.
- */
-it('finds a command surface installed under the user-level root', { timeout: 30_000 }, async () => {
+ */it('finds a command surface installed under the user-level root', { timeout: 30_000 }, async () => {
   const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-104-config-'));
   await configureModelDirectory(configDirectory, serverUrl);
   await installCommandSurface(path.join(configDirectory, 'skills', 'derivon-mindmap'));
@@ -671,6 +672,42 @@ it('finds a command surface installed under the user-level root', { timeout: 30_
     companion.send({ id: 3, type: 'send', mode: 'authoring', prompt: 'hello' });
     await companion.await((line) => line.type === 'event' && line.event.kind === 'message' && line.event.text === 'Hello');
     expect(offeredToolNames(requestBodies[0])).toContain('add-concept');
+  } finally {
+    companion.stop();
+  }
+});
+
+/**
+ * #136: the bundle ships a seed of the base skills, and what it carries is compared with what is
+ * actually installed. A skill that could not be installed — or that the operator deleted — is a
+ * configuration state under the `skills` scope, not a failure: a session without it still works.
+ */
+it('says which bundled skill is not in the skills root', { timeout: 30_000 }, async () => {
+  const configDirectory = await mkdtemp(path.join(tmpdir(), 'derivon-issue-136-config-'));
+  await configureModelDirectory(configDirectory, serverUrl);
+  // The bundle's own account of what it carries, exactly as `prepare-skills-seed.mjs` writes it.
+  // `surfaceVersion` is null here because the revision pinned today declares none, and a version
+  // that is not declared must produce no version line rather than a guessed one.
+  const seedManifest = path.join(configDirectory, 'skills-seed-manifest.json');
+  await writeFile(seedManifest, JSON.stringify({
+    repository: 'derivon-research/skills',
+    revision: '8466baad58c7f325fcfdb32874d8187d151481c8',
+    surfaceVersion: null,
+    skills: ['derivon-mindmap', 'derivon-cli'],
+  }));
+
+  const companion = startCompanion(configDirectory, process.env, companionPath,
+    ['--skills-seed-manifest', seedManifest]);
+  try {
+    companion.send({ id: 1, type: 'listModels', mode: 'learning' });
+    const catalog = await companion.await((line) => line.type === 'models' && line.id === 1);
+
+    expect(catalog).toMatchObject({
+      notices: expect.arrayContaining([
+        expect.objectContaining({ scope: 'skills', text: expect.stringContaining('derivon-mindmap') }),
+        expect.objectContaining({ scope: 'skills', text: expect.stringContaining('derivon-cli') }),
+      ]),
+    });
   } finally {
     companion.stop();
   }

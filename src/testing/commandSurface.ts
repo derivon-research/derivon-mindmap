@@ -57,8 +57,18 @@ const COMMANDS = [
 
 const argv = process.argv.slice(2);
 
+/** What this fixture's surface claims to be, so the version comparison has something to read. */
+const SURFACE_VERSION = '0.2.0';
+
 if (argv[0] === '--capabilities') {
-  process.stdout.write(JSON.stringify({ schema: 'derivon.command-capabilities/v1', commands: COMMANDS }) + '\\n');
+  // The surface's own version, beside the schemas: a fixture that did not publish one would not
+  // be speaking the same contract, and the application could not tell it from a surface that
+  // declares nothing.
+  process.stdout.write(JSON.stringify({
+    schema: 'derivon.command-capabilities/v1',
+    surfaceVersion: SURFACE_VERSION,
+    commands: COMMANDS,
+  }) + '\\n');
 } else {
   run(argv[0], argv[1]);
 }
