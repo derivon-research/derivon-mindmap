@@ -143,7 +143,7 @@ function turnModes(observation: TurnObservation): WorkspaceSurfaceProps['modes']
       if (syncStatus) observation.saveStates.push(syncStatus.state);
       return <>
         <button type="button" onClick={() => { authoring!.createConcept({ label: 'B' }); }}>接受变更</button>
-        <ConversationPane mode="authoring" provider={conversation} placeholder="描述你想完成的修改…"
+        <ConversationPane provider={conversation} placeholder="描述你想完成的修改…"
           fallbackMessage="未连接模型，未修改工作区。" drainPendingChanges={drainPendingChanges} />
       </>;
     } })),

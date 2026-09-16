@@ -66,7 +66,6 @@ async function render(provider?: FakeProvider) {
   root = createRoot(container);
   await act(async () => root?.render(
     <ConversationPane
-      mode="learning"
       provider={value}
       placeholder="卡在哪一步？说出来。"
       fallbackMessage="未连接模型。"
@@ -177,7 +176,6 @@ it('answers a quick question from the graph even when a model is connected', asy
   root = createRoot(container);
   await act(async () => root?.render(
     <ConversationPane
-      mode="learning"
       provider={provider}
       placeholder="卡在哪一步？说出来。"
       fallbackMessage="未连接模型。"
@@ -196,7 +194,6 @@ async function renderWithDrain(provider: FakeProvider, drain: () => Promise<void
   root = createRoot(container);
   await act(async () => root?.render(
     <ConversationPane
-      mode="authoring"
       provider={provider}
       placeholder="描述你想完成的修改…"
       fallbackMessage="未连接模型。"
@@ -234,4 +231,105 @@ it('starts the turn even when the drain fails', async () => {
   // A failed drain adds no refusal path of its own: the save banner is the whole explanation.
   await expect.element(page.getByText('Hello')).toBeVisible();
   expect(provider.send).toHaveBeenCalledWith('照样开始');
+});
+
+/** A turn whose conversation the test drives event by event. */
+async function sendAwaitingEvents(provider: FakeProvider, prompt = '把这些加到图上') {
+  root = createRoot(container);
+  await act(async () => root?.render(
+    <ConversationPane
+      provider={provider}
+      placeholder="卡在哪一步？说出来。"
+      fallbackMessage="未连接模型。"
+    />));
+  await page.getByRole('textbox', { name: 'Agent 消息' }).fill(prompt);
+  await page.getByRole('button', { name: '发送消息' }).click();
+}
+
+const toolRows = () => container.querySelectorAll('.conversation-tool');
+
+it('holds one row per tool call and updates it in place', async () => {
+  const provider = new FakeProvider();
+  // The turn stays open: the call is what this test is about, not the reply.
+  provider.send.mockImplementation(async () => {
+    provider.emit({ kind: 'tool-start', toolCallId: 'call-1', name: 'add-concept', summary: 'name: 二次型' });
+  });
+  await sendAwaitingEvents(provider);
+
+  expect(toolRows().length).toBe(1);
+  expect(toolRows()[0].className).toContain('is-running');
+  await expect.element(page.getByText('运行中')).toBeVisible();
+
+  provider.emit({ kind: 'tool-end', toolCallId: 'call-1', name: 'add-concept', status: 'ok', detail: '{"status":"ok","issues":[]}' });
+
+  // Same call, same row: a later event replaced it rather than stacking a second one.
+  expect(toolRows().length).toBe(1);
+  expect(toolRows()[0].className).toContain('is-ok');
+  await expect.element(page.getByText('完成')).toBeVisible();
+});
+
+it('shows the call\'s input and the envelope verbatim once the row is expanded', async () => {
+  const provider = new FakeProvider();
+  provider.send.mockImplementation(async () => {
+    provider.emit({ kind: 'tool-start', toolCallId: 'call-1', name: 'add-concept', summary: 'name: 二次型' });
+    provider.emit({ kind: 'tool-end', toolCallId: 'call-1', name: 'add-concept', status: 'ok', detail: '{"status":"ok","issues":[]}' });
+  });
+  await sendAwaitingEvents(provider);
+
+  // Collapsed by default: the row is a line while it runs, and the detail is on demand.
+  expect(toolRows()[0].querySelector('.conversation-tool-body')).not.toBeVisible();
+  await page.getByText('add-concept').click();
+  await expect.poll(() => toolRows()[0].querySelector('.conversation-tool-body')!.textContent)
+    .toContain('"status":"ok"');
+});
+
+/** #127: a diagnostics refusal is a declined call, not a crash. */
+it('renders a declined call as declined, and keeps the prose the turn already streamed', async () => {
+  const provider = new FakeProvider();
+  provider.send.mockImplementation(async () => {
+    provider.emit({ kind: 'delta', text: '我先试着改一下。' });
+    provider.emit({ kind: 'tool-start', toolCallId: 'call-1', name: 'add-concept', summary: 'name: 二次型' });
+    // The command surface answered `status: "diagnostics"`: a successful call that refused.
+    provider.emit({ kind: 'tool-end', toolCallId: 'call-1', name: 'add-concept', status: 'refused', detail: '{"status":"diagnostics","issues":[{"code":"duplicate-name"}]}' });
+    provider.emit({ kind: 'message', text: '这个名字已经有了，我没有改。' });
+    provider.emit({ kind: 'settled' });
+  });
+  await sendAwaitingEvents(provider);
+
+  expect(toolRows()[0].className).toContain('is-refused');
+  expect(toolRows()[0].className).not.toContain('is-failed');
+  await expect.element(page.getByText('已拒绝')).toBeVisible();
+  // Nothing was drawn as an error, and the streamed prose is still there.
+  expect(container.querySelectorAll('.conversation-error').length).toBe(0);
+  await expect.element(page.getByText('我先试着改一下。')).toBeVisible();
+  await expect.element(page.getByText('这个名字已经有了，我没有改。')).toBeVisible();
+});
+
+/** #127: the failure belongs to the turn and does not swallow what it already said. */
+it('adds a failure as a part of the turn instead of replacing its prose', async () => {
+  const provider = new FakeProvider();
+  provider.send.mockImplementation(async () => {
+    provider.emit({ kind: 'delta', text: '前半段已经流出来了。' });
+    provider.emit({ kind: 'error', message: '模型返回错误' });
+    provider.emit({ kind: 'settled' });
+  });
+  await sendAwaitingEvents(provider);
+
+  expect(container.querySelectorAll('.conversation-error').length).toBe(1);
+  await expect.element(page.getByText('模型返回错误')).toBeVisible();
+  await expect.element(page.getByText('前半段已经流出来了。')).toBeVisible();
+});
+
+it('names the transcript as a log, and does not mark the streaming turn as a live region', async () => {
+  const provider = new FakeProvider();
+  provider.send.mockImplementation(async () => {
+    provider.emit({ kind: 'delta', text: '正在写' });
+  });
+  await sendAwaitingEvents(provider);
+
+  const transcript = container.querySelector('.conversation-transcript')!;
+  expect(transcript.getAttribute('role')).toBe('log');
+  // Streaming is silent: a polite announcer on the growing node would read every token.
+  expect(transcript.querySelector('.conversation-assistant[aria-live]')).toBeNull();
+  expect(transcript.querySelector('.conversation-assistant[role]')).toBeNull();
 });

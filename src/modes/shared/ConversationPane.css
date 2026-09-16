@@ -5,9 +5,36 @@
 .conversation-exchange { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .conversation-user small, .conversation-assistant small { color: var(--app-muted); font-size: 11px; }
 .conversation-user p, .conversation-assistant p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A tool row is a collapsed line in the same surface as the prose, not a card of its own. */
+.conversation-tool { margin-top: 6px; border: 1px solid var(--app-line); border-radius: 8px; background: #fcfcfd; }
+.conversation-tool > summary { display: flex; align-items: center; gap: 6px; padding: 5px 8px; cursor: pointer; list-style: none; font-size: 12px; }
+.conversation-tool > summary::-webkit-details-marker { display: none; }
+.conversation-tool > summary:focus-visible { outline: 2px solid var(--app-accent); outline-offset: -2px; border-radius: 7px; }
+.conversation-tool-twisty { flex: none; color: var(--app-muted); transition: transform .12s ease; }
+.conversation-tool[open] .conversation-tool-twisty { transform: rotate(90deg); }
+.conversation-tool-icon { flex: none; color: var(--app-muted); }
+.conversation-tool-name { flex: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
+.conversation-tool-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-muted); }
+.conversation-tool-status { margin-left: auto; flex: none; font-size: 10px; letter-spacing: .04em; color: var(--app-muted); }
+.conversation-tool.is-running .conversation-tool-status, .conversation-tool.is-running .conversation-tool-icon { color: var(--app-accent); }
+.conversation-tool.is-running .conversation-tool-icon { animation: conversation-spin 1.1s linear infinite; }
+/* Declined, not broken: amber says "the surface said no", which the model reads and retries. */
+.conversation-tool.is-refused { border-color: #fde68a; background: #fffbeb; }
+.conversation-tool.is-refused .conversation-tool-status, .conversation-tool.is-refused .conversation-tool-icon { color: #92400e; }
+.conversation-tool.is-failed { border-color: #fecaca; background: #fef2f2; }
+.conversation-tool.is-failed .conversation-tool-status, .conversation-tool.is-failed .conversation-tool-icon { color: #b91c1c; }
+.conversation-tool-body { border-top: 1px solid var(--app-line); padding: 6px 8px 8px; }
+.conversation-tool-body h6 { margin: 0 0 3px; font-size: 10px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--app-muted); }
+.conversation-tool-body section + section { margin-top: 8px; }
+.conversation-tool-body pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+@keyframes conversation-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .conversation-tool.is-running .conversation-tool-icon { animation: none; } }
+/* A failure is one more part of the turn: the prose it already streamed stays above it. */
+.conversation-error { margin-top: 6px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; padding: 7px 9px; }
+.conversation-error-tag { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #b91c1c; }
+.conversation-error p { margin: 2px 0 0; color: #7f1d1d; }
 .conversation-user { padding: 10px 12px; border-radius: 12px; background: #f2f4f7; }
-.conversation-assistant { padding: 10px 12px; border: 1px solid var(--app-line); border-radius: 12px; background: #fff; }
-.conversation-assistant > strong { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.conversation-assistant { padding: 10px 12px; border: 1px solid var(--app-line); border-radius: 12px; background: #fff; }.conversation-assistant > strong { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .conversation-assistant.is-error { border-color: #fecaca; background: #fef2f2; }
 .conversation-assistant.is-stopped { border-style: dashed; color: var(--app-muted); }
 .conversation-quick { display: flex; flex-direction: column; gap: 6px; padding: 0 14px 10px; }

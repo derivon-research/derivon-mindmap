@@ -1,4 +1,4 @@
-import type { ConversationEvent } from '../../ports/ConversationProvider';
+import type { ConversationEvent, ToolCallStatus } from '../../ports/ConversationProvider';
 
 /**
  * One turn's assistant surface, as an ordered list of typed parts.
@@ -14,11 +14,23 @@ export type TurnStatus = 'streaming' | 'done' | 'error' | 'stopped';
 export type TurnRole = 'user' | 'assistant';
 
 /** A part of one turn. A discriminated union, so a new kind is a new renderer, not a new branch. */
-export type TranscriptPart = {
-  readonly id: string;
-  readonly kind: 'text';
-  readonly text: string;
-};
+export type TranscriptPart =
+  | { readonly id: string; readonly kind: 'text'; readonly text: string }
+  | {
+    readonly id: string;
+    readonly kind: 'tool';
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly status: ToolPartStatus;
+    /** Readable input, shown when the row is expanded. */
+    readonly summary?: string;
+    /** The result envelope's own text, verbatim. */
+    readonly detail?: string;
+  }
+  | { readonly id: string; readonly kind: 'error'; readonly message: string };
+
+/** A tool row's state. `running` is the only one that is not yet a `ToolCallStatus`. */
+export type ToolPartStatus = 'running' | ToolCallStatus;
 
 export type TranscriptTurn = {
   readonly id: string;
@@ -97,8 +109,31 @@ export function applyEvent(transcript: Transcript, event: ConversationEvent): Tr
       // A turn can hold several assistant messages, with tool calls between them, so this
       // marks the turn finished without ending it: a later delta belongs to the same turn.
       return writeTurn(transcript, turn, { status: 'done', parts: withTailText(turn, event.text, 'replace') });
+    case 'tool-start':
+      return writeTurn(transcript, turn, {
+        parts: upsertTool(turn.parts, {
+          toolCallId: event.toolCallId,
+          name: event.name,
+          status: 'running',
+          ...(event.summary === undefined ? {} : { summary: event.summary }),
+        }),
+      });
+    case 'tool-end':
+      // A call whose start never arrived still gets a row, finished rather than lost.
+      return writeTurn(transcript, turn, {
+        parts: upsertTool(turn.parts, {
+          toolCallId: event.toolCallId,
+          name: event.name,
+          status: event.status,
+          ...(event.detail === undefined ? {} : { detail: event.detail }),
+        }),
+      });
     case 'error':
-      return writeTurn(transcript, turn, { status: 'error', parts: withTailText(turn, event.message, 'replace') });
+      // The turn keeps the text it already streamed; the failure is one more part of it.
+      return writeTurn(transcript, turn, {
+        status: 'error',
+        parts: [...turn.parts, { id: `${turn.id}.${turn.parts.length}`, kind: 'error', message: event.message }],
+      });
     case 'settled':
       return endTurn(transcript, turn, turn.status === 'streaming' ? 'done' : turn.status);
     default:
@@ -129,8 +164,33 @@ export function activeTurn(transcript: Transcript): TranscriptTurn | undefined {
   return id === undefined ? undefined : transcript.turns.find((turn) => turn.id === id);
 }
 
+/** A turn's prose, with its non-text parts left out. The question the panel was asked, and what it said. */
+export function turnText(turn: TranscriptTurn): string {
+  return turn.parts.map((part) => (part.kind === 'text' ? part.text : '')).join('');
+}
+
 function textTurn(turn: { readonly id: string; readonly role: TurnRole; readonly status: TurnStatus; readonly text: string }): TranscriptTurn {
   return { id: turn.id, role: turn.role, status: turn.status, parts: [{ id: `${turn.id}.0`, kind: 'text', text: turn.text }] };
+}
+
+/**
+ * Create or update one tool row, keyed by the call's own id.
+ *
+ * The id is the row's identity in both senses: it is the React key that keeps the row's
+ * expanded state across a stream, and it is what stops a second event for the same call
+ * from becoming a second row.
+ */
+function upsertTool(parts: readonly TranscriptPart[], next: {
+  readonly toolCallId: string;
+  readonly name: string;
+  readonly status: ToolPartStatus;
+  readonly summary?: string;
+  readonly detail?: string;
+}): readonly TranscriptPart[] {
+  const at = parts.findIndex((part) => part.kind === 'tool' && part.toolCallId === next.toolCallId);
+  if (at < 0) return [...parts, { id: `tool:${next.toolCallId}`, kind: 'tool', ...next }];
+  const existing = parts[at] as Extract<TranscriptPart, { kind: 'tool' }>;
+  return [...parts.slice(0, at), { ...existing, ...next }, ...parts.slice(at + 1)];
 }
 
 /** Rewrite the turn, keeping the turn open. */
@@ -149,18 +209,18 @@ function endTurn(transcript: Transcript, turn: TranscriptTurn, status: TurnStatu
 }
 
 /**
- * Write text into the turn's tail text part — the last one, not necessarily the last part,
- * because a tool row may have been appended after it.
+ * Write text at the end of the turn, when the end is text.
  *
- * A turn with no text part yet gets one, numbered by the parts already there, so the id is
- * derived from the turn's own shape and stays the same across updates to the same part.
+ * A tool row ends the segment. The prose after one belongs to a later assistant message —
+ * the same turn, but not the same paragraph — so it starts a text part of its own; folding
+ * it back into the earlier part would render the second half of an answer above the call
+ * that produced it.
  */
 function withTailText(turn: TranscriptTurn, text: string, mode: 'append' | 'replace'): readonly TranscriptPart[] {
-  for (let index = turn.parts.length - 1; index >= 0; index -= 1) {
-    const part = turn.parts[index];
-    if (part.kind !== 'text') continue;
-    const written = mode === 'append' ? part.text + text : text;
-    return [...turn.parts.slice(0, index), { ...part, text: written }, ...turn.parts.slice(index + 1)];
+  const tail = turn.parts.at(-1);
+  if (tail?.kind !== 'text') {
+    return [...turn.parts, { id: `${turn.id}.${turn.parts.length}`, kind: 'text', text }];
   }
-  return [...turn.parts, { id: `${turn.id}.${turn.parts.length}`, kind: 'text', text }];
+  const written = mode === 'append' ? tail.text + text : text;
+  return [...turn.parts.slice(0, -1), { ...tail, text: written }];
 }

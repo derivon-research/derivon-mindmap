@@ -6,6 +6,7 @@ import {
   clearTranscript,
   emptyTranscript,
   stopActiveTurn,
+  turnText,
   type Transcript,
 } from './transcript';
 
@@ -69,7 +70,7 @@ describe('applyEvent', () => {
     expect(settled.activeTurnId).toBe('a1');
     const continued = applyEvent(settled, { kind: 'delta', text: '再看第二步。' });
     expect(continued.turns[1].status).toBe('streaming');
-    expect(continued.turns[1].parts.map((part) => part.text)).toEqual(['先看第一步。再看第二步。']);
+    expect(turnText(continued.turns[1])).toBe('先看第一步。再看第二步。');
   });
 
   it('ends the turn on settled, so a late event is ignored', () => {
@@ -126,5 +127,106 @@ describe('appendTurn', () => {
 describe('clearTranscript', () => {
   it('returns a transcript with no turns and no active turn', () => {
     expect(clearTranscript()).toEqual({ turns: [] });
+  });
+});
+describe('tool parts', () => {
+  const start = (toolCallId: string, name = 'add-concept', summary?: string) =>
+    ({ kind: 'tool-start', toolCallId, name, ...(summary === undefined ? {} : { summary }) }) as const;
+
+  it('opens one running row per call', () => {
+    const transcript = applyEvent(started(), start('call-1', 'add-concept', 'name: 二次型'));
+    expect(transcript.turns[1].parts).toEqual([
+      { id: 'tool:call-1', kind: 'tool', toolCallId: 'call-1', name: 'add-concept', status: 'running', summary: 'name: 二次型' },
+    ]);
+  });
+
+  it('updates that row in place when the call ends, rather than stacking a second one', () => {
+    const running = applyEvent(started(), start('call-1', 'add-concept', 'name: 二次型'));
+    const done = applyEvent(running, {
+      kind: 'tool-end',
+      toolCallId: 'call-1',
+      name: 'add-concept',
+      status: 'ok',
+      detail: '{"status":"ok"}',
+    });
+    expect(done.turns[1].parts).toHaveLength(1);
+    expect(done.turns[1].parts[0]).toEqual({
+      id: 'tool:call-1',
+      kind: 'tool',
+      toolCallId: 'call-1',
+      name: 'add-concept',
+      status: 'ok',
+      summary: 'name: 二次型',
+      detail: '{"status":"ok"}',
+    });
+  });
+
+  it('keeps the call\'s own id as the part id, so an expanded row survives the stream', () => {
+    const running = applyEvent(started(), start('call-1'));
+    const done = applyEvent(running, { kind: 'tool-end', toolCallId: 'call-1', name: 'add-concept', status: 'ok' });
+    expect(done.turns[1].parts[0].id).toBe(running.turns[1].parts[0].id);
+  });
+
+  it('gives a call whose start never arrived a row of its own, finished', () => {
+    const transcript = applyEvent(started(), {
+      kind: 'tool-end',
+      toolCallId: 'call-9',
+      name: 'bash',
+      status: 'refused',
+      detail: 'Refused: …',
+    });
+    expect(transcript.turns[1].parts).toEqual([
+      { id: 'tool:call-9', kind: 'tool', toolCallId: 'call-9', name: 'bash', status: 'refused', detail: 'Refused: …' },
+    ]);
+  });
+
+  it('does not fold two different calls into one row', () => {
+    const transcript = applyEvent(applyEvent(started(), start('call-1')), start('call-2', 'bash'));
+    expect(transcript.turns[1].parts.map((part) => part.id)).toEqual(['tool:call-1', 'tool:call-2']);
+  });
+
+  it('lets a refused call leave the turn status alone, because it is an ordinary outcome', () => {
+    const refused = applyEvent(applyEvent(started(), start('call-1', 'bash')), {
+      kind: 'tool-end',
+      toolCallId: 'call-1',
+      name: 'bash',
+      status: 'refused',
+    });
+    expect(refused.turns[1].status).toBe('streaming');
+  });
+
+  it('starts a new text part after a tool row, so prose keeps its order', () => {
+    const transcript = applyEvent(applyEvent(applyEvent(
+      started(),
+      { kind: 'delta', text: '先读一下。' },
+    ), start('call-1')), { kind: 'delta', text: '读完了。' });
+    expect(transcript.turns[1].parts).toEqual([
+      { id: 'a1.0', kind: 'text', text: '先读一下。' },
+      { id: 'tool:call-1', kind: 'tool', toolCallId: 'call-1', name: 'add-concept', status: 'running' },
+      { id: 'a1.2', kind: 'text', text: '读完了。' },
+    ]);
+  });
+
+  it('keeps streaming into the same text part while the tail is still text', () => {
+    const transcript = applyEvent(applyEvent(
+      started(),
+      { kind: 'delta', text: '前半段。' },
+    ), { kind: 'delta', text: '后半段。' });
+    expect(transcript.turns[1].parts).toHaveLength(1);
+    expect(transcript.turns[1].parts[0]).toMatchObject({ text: '前半段。后半段。' });
+  });
+});
+
+describe('a failure as a part', () => {
+  it('keeps the prose the turn already streamed', () => {
+    const transcript = applyEvent(applyEvent(started(), { kind: 'delta', text: '前半段。' }), {
+      kind: 'error',
+      message: '模型返回错误',
+    });
+    expect(transcript.turns[1].status).toBe('error');
+    expect(transcript.turns[1].parts).toEqual([
+      { id: 'a1.0', kind: 'text', text: '前半段。' },
+      { id: 'a1.1', kind: 'error', message: '模型返回错误' },
+    ]);
   });
 });

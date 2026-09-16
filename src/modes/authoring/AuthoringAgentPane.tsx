@@ -32,7 +32,6 @@ export function AuthoringAgentPane({ open, onToggle, contextLabel, conversation,
         <span>{contextLabel}</span>
       </div>
       <ConversationPane
-        mode="authoring"
         provider={conversation}
         placeholder="描述你想完成的修改…"
         fallbackMessage="未连接模型，未修改工作区。"

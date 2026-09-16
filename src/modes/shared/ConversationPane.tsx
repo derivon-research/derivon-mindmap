@@ -1,6 +1,6 @@
 import { Bot, MessageSquarePlus, Send, Square } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ConversationMode, ConversationModel, ConversationProvider } from '../../ports/ConversationProvider';
+import type { ConversationModel, ConversationProvider } from '../../ports/ConversationProvider';
 import {
   appendTurn,
   applyEvent,
@@ -8,8 +8,10 @@ import {
   clearTranscript,
   emptyTranscript,
   stopActiveTurn,
+  turnText,
   type Transcript,
 } from './transcript';
+import { TurnPart } from './TurnPart';
 import './ConversationPane.css';
 
 export type QuickQuestion = {
@@ -30,7 +32,6 @@ function ModelIdentity({ model }: { model: ConversationModel }) {
 }
 
 export function ConversationPane({
-  mode,
   provider,
   placeholder,
   quickQuestions,
@@ -38,7 +39,6 @@ export function ConversationPane({
   drainPendingChanges,
   onMessageComplete,
 }: {
-  mode: ConversationMode;
   provider?: ConversationProvider;
   placeholder: string;
   quickQuestions?: readonly QuickQuestion[];
@@ -186,10 +186,15 @@ export function ConversationPane({
       </div>}
       {transcript.turns.map((turn) => <article className="conversation-exchange" key={turn.id}>
         {turn.role === 'user'
-          ? <div className="conversation-user"><small>你</small><p>{turn.parts.map((part) => part.text).join('')}</p></div>
+          ? <div className="conversation-user"><small>你</small><p>{turnText(turn)}</p></div>
           : <div className={`conversation-assistant is-${turn.status}`}>
-              <strong><Bot size={15} aria-hidden="true" />Agent {turn.status === 'error' && <small>错误</small>}{turn.status === 'stopped' && <small>已停止</small>}</strong>
-              <p>{turn.parts.map((part) => part.text).join('') || (turn.status === 'streaming' ? '…' : '')}</p>
+              <strong><Bot size={15} aria-hidden="true" />Agent {turn.status === 'stopped' && <small>已停止</small>}</strong>
+              {/* One continuous assistant surface: the parts, in order, are what the turn said
+                  and what it did. An empty streaming turn is the only thing that needs a mark
+                  of its own, because it has no part yet. */}
+              {!turn.parts.length && turn.status === 'streaming'
+                ? <p className="conversation-text">…</p>
+                : turn.parts.map((part) => <TurnPart key={part.id} part={part} />)}
             </div>}
       </article>)}
     </div>

@@ -34,8 +34,37 @@ export type ConversationCatalog = {
 export type ConversationEvent =
   | { readonly kind: 'delta'; readonly text: string }
   | { readonly kind: 'message'; readonly text: string }
+  /**
+   * A tool call began. `toolCallId` is the call's own identity, so a row is created once
+   * and updated in place rather than duplicated across a stream.
+   */
+  | {
+    readonly kind: 'tool-start';
+    readonly toolCallId: string;
+    readonly name: string;
+    /** The call's input, rendered readable. Absent when there is nothing worth showing. */
+    readonly summary?: string;
+  }
+  /** A tool call ended. `name` travels again so the row stands on its own when a start was missed. */
+  | {
+    readonly kind: 'tool-end';
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly status: ToolCallStatus;
+    /** The result envelope's own text, verbatim, for the row's expanded view. */
+    readonly detail?: string;
+  }
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'settled' };
+
+/**
+ * What a tool call ended as.
+ *
+ * `refused` is not a failure: it is a call the workspace write guard declined, or one the
+ * script command surface answered with `status: "diagnostics"`. The model reads both and
+ * retries, so the panel must not render either as a crash.
+ */
+export type ToolCallStatus = 'ok' | 'refused' | 'failed' | 'skipped';
 
 export interface ConversationProvider {
   /**

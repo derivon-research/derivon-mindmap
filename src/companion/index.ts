@@ -25,6 +25,7 @@ import { workspaceWriteGuard } from './guard';
 import { openModelConfiguration, type CatalogModel, type ModelCatalog } from './modelConfiguration';
 import { prepareSessionEnvironment } from './sessionEnvironment';
 import { systemPrompt } from './systemPrompt';
+import { classifyToolEnd, summarizeToolInput } from './toolActivity';
 import type {
   ConversationNotification,
   ConversationRequest,
@@ -313,6 +314,26 @@ async function createSession(mode: Mode) {
   session.subscribe((value) => {
     if (value.type === 'message_update' && value.assistantMessageEvent.type === 'text_delta') {
       event(mode, { kind: 'delta', text: value.assistantMessageEvent.delta });
+    } else if (value.type === 'tool_execution_start') {
+      // Forwarded because the panel has no other way to know a tool ran: the streamed text
+      // is not an account of what the turn did. The call's own id is what lets the panel
+      // update one row in place instead of stacking a line per event (#127).
+      const summary = summarizeToolInput(value.args);
+      event(mode, {
+        kind: 'tool-start',
+        toolCallId: value.toolCallId,
+        name: value.toolName,
+        ...(summary === undefined ? {} : { summary }),
+      });
+    } else if (value.type === 'tool_execution_end') {
+      const ended = classifyToolEnd(value.result, value.isError);
+      event(mode, {
+        kind: 'tool-end',
+        toolCallId: value.toolCallId,
+        name: value.toolName,
+        status: ended.status,
+        ...(ended.detail === undefined ? {} : { detail: ended.detail }),
+      });
     } else if (value.type === 'message_end' && value.message.role === 'assistant') {
       const message = value.message as { content?: unknown; stopReason?: string; errorMessage?: string };
       if (message.stopReason === 'error') {
