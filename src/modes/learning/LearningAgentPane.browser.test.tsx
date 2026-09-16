@@ -14,6 +14,26 @@ const QUESTIONS = [
   { label: '展开写是什么样？', answer: '展开来是：\n$$\n\\dim(U + W) = \\dim U + \\dim W\n$$' },
 ];
 
+/**
+ * What the transcript says.
+ *
+ * Not a bare `getByText`: the announcer mirrors a finished turn for screen readers, so those
+ * words exist twice in the document by design.
+ */
+const transcriptText = () => container.querySelector('.conversation-transcript')?.textContent ?? '';
+
+/**
+ * Everything a reader can see, the rendered answers included.
+ *
+ * A finished answer is rendered in its own sandboxed document, so it is not part of the
+ * transcript's `textContent` — asking the transcript alone would report it as missing.
+ */
+const visibleText = () => [
+  transcriptText(),
+  ...[...container.querySelectorAll<HTMLIFrameElement>('iframe.conversation-markdown')]
+    .map((frame) => frame.contentDocument?.body?.textContent ?? ''),
+].join('\n');
+
 async function render(onWideAnswer = vi.fn()) {
   root = createRoot(container);
   await act(async () => root?.render(
@@ -26,7 +46,7 @@ it('says plainly that nothing is connected rather than pretending to answer', as
   await page.getByRole('textbox', { name: 'Agent 消息' }).fill('这一步为什么成立？');
   await page.getByRole('button', { name: '发送消息' }).click();
 
-  await expect.element(page.getByText('未连接模型，没有生成任何讲解。')).toBeVisible();
+  await expect.poll(transcriptText).toContain('未连接模型，没有生成任何讲解。');
   expect(container.textContent).toContain('错误');
 });
 
@@ -34,7 +54,7 @@ it('leaves the panel alone for an answer that reads fine in a narrow column', as
   const onWideAnswer = await render();
   await page.getByRole('button', { name: '「A」是什么来着？' }).click();
 
-  await expect.element(page.getByText('第 1 步做出来的，靠的是 数域。')).toBeVisible();
+  await expect.poll(visibleText).toContain('第 1 步做出来的，靠的是 数域。');
   expect(onWideAnswer).not.toHaveBeenCalled();
 });
 
@@ -48,7 +68,7 @@ it('asks the layout for width when an answer arrives with a formula on its own l
 it('throws the conversation away without touching anything outside it', async () => {
   await render();
   await page.getByRole('button', { name: '「A」是什么来着？' }).click();
-  await expect.element(page.getByText('第 1 步做出来的，靠的是 数域。')).toBeVisible();
+  await expect.poll(visibleText).toContain('第 1 步做出来的，靠的是 数域。');
 
   await page.getByRole('button', { name: '新对话' }).click();
   await expect.element(page.getByText('卡在哪一步？说出来。')).toBeVisible();

@@ -140,14 +140,25 @@ only place a desktop `WorkspaceHandle.id` is made).
 ## Diagnosis
 
 An empty catalog is a configuration state, not an error, so it travels as
-`{ models: [], diagnosis }` rather than a rejected promise. Anything that discards
-evidence on the way to the panel is a regression:
+`{ models: [], notices }` rather than a rejected promise. `notices` is a list of
+`{ scope, text }` — one fact per entry, each naming the subsystem it came from — because the
+reasons have different sources and the panel has to be able to say which one is not working.
+The scopes are `models` for the catalog's own reason, `command-surface` for the script survey,
+`skills` for what the two skill roots offered, `extensions` for what loading the operator's own
+code said, and `companion` for a bridge that never reached this process at all. There is
+deliberately no severity field: the notes arrive as prose, so a severity could only be filled in
+by reading the sentence, which is the parsing this channel exists to remove.
+
+Anything that discards evidence on the way to the panel is a regression:
 
 - The companion surfaces `ModelRuntime.getError()` and names the files it read.
 - Rust pipes the companion's stderr, keeps the recent lines, and quotes them when the
   process exits unexpectedly. Do not route that stream to `/dev/null` again.
-- The panel renders the diagnosis next to “没有可用模型”; it must not collapse a rejected
-  `listModels()` into a bare empty list.
+- A state that used to reach only stderr belongs in `notices` too. The command surface's notes
+  and the skills' notes are written to both channels now; the extensions' already were.
+- The panel renders the notices as transcript view state rather than inside the model picker, so
+  they are readable without opening a menu. An empty catalog is still a configuration state and
+  not an error banner, and a rejected `listModels()` must not collapse into a bare empty list.
 
 ## Prompt and tool extension
 
@@ -233,9 +244,12 @@ rule covers the mode-level tools: `systemPrompt` is given the session's own tool
 paragraph about `derivon` appears only when that list names it.
 - **No installed skill is a configuration state, not an error.** No tool is registered, one line
 on stderr names both roots that were searched, and the session still works — the same shape as an
-empty model catalog, whose own rendering in the panel is a separate change rather than something
-this ticket reaches. The surface is read when a session is built, not kept from the last one, so
-a skill the operator installs while the application runs reaches the next session.
+empty model catalog. The surface is read **once per workspace** and shared: the panel's
+configuration read and the session are served by one load, so what the panel reports and what the
+session holds cannot disagree, and the load is dropped when a session ends or another workspace
+opens so a skill installed while the application runs still reaches the next session. The surface
+does not depend on the mode, so its cache is keyed by workspace alone rather than by (mode,
+workspace) as the extensions' is.
 
 - Extension loading is the other configuration state that travels on the same reply. A load that
   failed, a root that could not be read, and a project root that was skipped because the project is

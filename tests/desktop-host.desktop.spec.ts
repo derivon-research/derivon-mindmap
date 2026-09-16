@@ -79,7 +79,7 @@ test.beforeEach(async ({ page }) => {
       const payload = (args as { payload: { type: string } }).payload;
       conversationCommands.push(payload);
       if (payload.type === 'listModels') {
-        return { type: 'models', models: CONVERSATION_MODELS, selected: CONVERSATION_MODELS[0] };
+        return { type: 'models', models: CONVERSATION_MODELS, selected: CONVERSATION_MODELS[0], notices: [] };
       }
       return { type: 'ok' };
     }

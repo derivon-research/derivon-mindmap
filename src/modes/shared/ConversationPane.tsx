@@ -1,19 +1,58 @@
 import { Bot, MessageSquarePlus, Send, Square } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ConversationMode, ConversationModel, ConversationProvider } from '../../ports/ConversationProvider';
+import type { ConversationModel, ConversationProvider, Notice, NoticeScope } from '../../ports/ConversationProvider';
+import {
+  appendTurn,
+  applyEvent,
+  beginTurn,
+  emptyTranscript,
+  lastFinishedTurn,
+  partIsComplete,
+  stopActiveTurn,
+  turnAnnouncement,
+  turnText,
+  type Transcript,
+} from './transcript';
+import { TurnPart } from './TurnPart';
 import './ConversationPane.css';
-
-type Message = {
-  readonly id: number;
-  readonly role: 'user' | 'assistant';
-  text: string;
-  state: 'streaming' | 'done' | 'error' | 'stopped';
-};
 
 export type QuickQuestion = {
   readonly label: string;
   readonly answer: string;
 };
+
+/** What each scope is called where the operator reads it, rather than in the companion's vocabulary. */
+const NOTICE_SCOPES: Record<NoticeScope, string> = {
+  models: '模型',
+  'command-surface': '命令面',
+  skills: '技能',
+  extensions: '扩展',
+  companion: '会话',
+};
+
+/**
+ * The configuration states this session is in, as transcript view state.
+ *
+ * Deliberately not inside the model menu. "No model" and "no command surface" are facts about
+ * the whole panel — there is nothing to ask, and tools are missing — so they have to be
+ * readable without knowing to open a picker, and separable from each other. A missing command
+ * surface must not be swallowed by an empty catalog, and neither is an error banner: an empty
+ * catalog is a legitimate configuration.
+ *
+ * The band is deliberately neutral rather than alarming. Most of what lands here is "nothing is
+ * installed yet", which is the ordinary state of a fresh install, and `Notice` carries no
+ * severity to colour it by. Attribution is the part that had to be visible; where these sit and
+ * how loud they are is what #127's prototype is for.
+ */
+function Notices({ notices }: { notices: readonly Notice[] }) {
+  if (!notices.length) return null;
+  return <div className="conversation-notices" role="status" aria-label="会话配置状态">
+    {notices.map((notice) => <p className="conversation-notice" key={`${notice.scope}:${notice.text}`}>
+      <span className="conversation-notice-scope">{NOTICE_SCOPES[notice.scope]}</span>
+      <span className="conversation-notice-text">{notice.text}</span>
+    </p>)}
+  </div>;
+}
 
 /**
  * A model is named by its id; a catalog name is a convenience on top of that. So the id
@@ -28,7 +67,6 @@ function ModelIdentity({ model }: { model: ConversationModel }) {
 }
 
 export function ConversationPane({
-  mode,
   provider,
   placeholder,
   quickQuestions,
@@ -36,7 +74,6 @@ export function ConversationPane({
   drainPendingChanges,
   onMessageComplete,
 }: {
-  mode: ConversationMode;
   provider?: ConversationProvider;
   placeholder: string;
   quickQuestions?: readonly QuickQuestion[];
@@ -45,17 +82,32 @@ export function ConversationPane({
   drainPendingChanges?: () => Promise<void>;
   onMessageComplete?: (text: string) => void;
 }) {
-  const [messages, setMessages] = useState<readonly Message[]>([]);
+  const [transcript, setTranscript] = useState<Transcript>(emptyTranscript);
+  const [announcement, setAnnouncement] = useState('');
+  /**
+   * What a screen reader hears, once per finished turn.
+   *
+   * The transcript is `aria-live="off"` on purpose: `role="log"` alone implies a polite live
+   * region, which would read every delta as it landed. This is the separate region that stands
+   * in for it — keyed on the finished turn's id, so it fires once and not on every later render
+   * of the same turn (#127).
+   */
+  const announcedTurn = useRef<string | undefined>(undefined);
+  const finishedTurn = lastFinishedTurn(transcript);
+  useEffect(() => {
+    if (!finishedTurn || announcedTurn.current === finishedTurn.id) return;
+    announcedTurn.current = finishedTurn.id;
+    setAnnouncement(turnAnnouncement(finishedTurn));
+  }, [finishedTurn]);
   const [composer, setComposer] = useState('');
   const [running, setRunning] = useState(false);
   const [models, setModels] = useState<readonly ConversationModel[]>([]);
-  const [diagnosis, setDiagnosis] = useState<string>();
+  const [notices, setNotices] = useState<readonly Notice[]>([]);
   const [selectedModel, setSelectedModel] = useState<ConversationModel>();
   const [modelQuery, setModelQuery] = useState('');
   const [modelOpen, setModelOpen] = useState(false);
   const modelRoot = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
-  const activeAssistantId = useRef<number | undefined>(undefined);
 
   /**
    * The completion callback is held rather than depended on: callers pass an inline
@@ -72,7 +124,7 @@ export function ConversationPane({
       .then((catalog) => {
         if (cancelled) return;
         setModels(catalog.models);
-        setDiagnosis(catalog.diagnosis);
+        setNotices(catalog.notices);
         // The provider owns the selection and remembers it; the panel only shows it.
         setSelectedModel(catalog.selected);
       })
@@ -81,7 +133,7 @@ export function ConversationPane({
         // an empty list on its own says nothing about what went wrong.
         if (cancelled) return;
         setModels([]);
-        setDiagnosis(error instanceof Error ? error.message : String(error));
+        setNotices([{ scope: 'companion', text: error instanceof Error ? error.message : String(error) }]);
       });
     return () => { cancelled = true; };
   }, [provider]);
@@ -89,29 +141,9 @@ export function ConversationPane({
   useEffect(() => {
     if (!provider) return;
     return provider.subscribe((event) => {
-      if (event.kind === 'delta') {
-        setMessages((current) => current.map((message) =>
-          message.id === activeAssistantId.current
-            ? { ...message, text: message.text + event.text, state: 'streaming' }
-            : message));
-      } else if (event.kind === 'message') {
-        setMessages((current) => current.map((message) =>
-          message.id === activeAssistantId.current
-            ? { ...message, text: event.text, state: 'done' }
-            : message));
-        completionHandler.current?.(event.text);
-      } else if (event.kind === 'error') {
-        setMessages((current) => current.map((message) =>
-          message.id === activeAssistantId.current
-            ? { ...message, text: event.message, state: 'error' }
-            : message));
-      } else if (event.kind === 'settled') {
-        setRunning(false);
-        setMessages((current) => current.map((message) =>
-          message.id === activeAssistantId.current && message.state === 'streaming'
-            ? { ...message, state: 'done' }
-            : message));
-      }
+      setTranscript((current) => applyEvent(current, event));
+      if (event.kind === 'message') completionHandler.current?.(event.text);
+      else if (event.kind === 'settled') setRunning(false);
     });
   }, [provider]);
 
@@ -149,23 +181,21 @@ export function ConversationPane({
     return [...groups].map(([providerId, items]) => ({ providerId, items }));
   }, [models, modelQuery]);
 
-  const appendMessage = (role: Message['role'], text = '', state: Message['state'] = 'done') => {
-    const id = nextId.current++;
-    setMessages((current) => [...current, { id, role, text, state }]);
-    return id;
-  };
+  /** One id per turn, handed to the transcript so a React key survives the whole stream. */
+  const takeId = () => String(nextId.current++);
 
   const send = async (prompt: string) => {
     const text = prompt.trim();
     if (!text || running) return;
-    appendMessage('user', text);
+    const userId = takeId();
+    const assistantId = takeId();
+    setTranscript((current) => beginTurn(current, { userId, assistantId, prompt: text }));
     setComposer('');
     if (!provider) {
-      appendMessage('assistant', fallbackMessage, 'error');
+      setTranscript((current) => applyEvent(current, { kind: 'error', message: fallbackMessage }));
       onMessageComplete?.(fallbackMessage);
       return;
     }
-    activeAssistantId.current = appendMessage('assistant');
     setRunning(true);
     // Before the Agent is asked anything, so its first read sees what the user has accepted.
     // Best effort: a drain that fails is the save-state banner's story, not this turn's.
@@ -173,25 +203,27 @@ export function ConversationPane({
     try {
       await provider.send(text);
     } catch (error) {
-      setMessages((current) => current.map((message) =>
-        message.id === activeAssistantId.current
-          ? { ...message, text: error instanceof Error ? error.message : String(error), state: 'error' }
-          : message));
+      setTranscript((current) => applyEvent(current, {
+        kind: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      }));
       setRunning(false);
     }
   };
 
   const abort = async () => {
     if (!provider || !running) return;
-    setMessages((current) => current.map((message) =>
-      message.id === activeAssistantId.current ? { ...message, state: 'stopped' } : message));
+    setTranscript(stopActiveTurn);
     await provider.abort();
   };
 
   const newConversation = async () => {
     if (provider) await provider.newConversation();
-    setMessages([]);
+    setTranscript(emptyTranscript);
     setRunning(false);
+    // Nothing of the ended conversation should be announced again.
+    announcedTurn.current = undefined;
+    setAnnouncement('');
   };
 
   const selectModel = async (model: ConversationModel) => {
@@ -202,26 +234,35 @@ export function ConversationPane({
   };
 
   return <div className="conversation-pane" data-shared-pane="conversation">
-    <div className="conversation-transcript" role="log" aria-label="Agent 对话">
-      {!messages.length && <div className="conversation-welcome">
+    {/* Silent while it streams; the announcer below is where a turn is heard, once. */}
+    <div className="conversation-transcript" role="log" aria-live="off" aria-label="Agent 对话">
+      <Notices notices={notices} />
+      {!transcript.turns.length && <div className="conversation-welcome">
         <Bot size={20} aria-hidden="true" /><span>{placeholder}</span>
       </div>}
-      {messages.map((message) => <article className="conversation-exchange" key={message.id}>
-        {message.role === 'user'
-          ? <div className="conversation-user"><small>你</small><p>{message.text}</p></div>
-          : <div className={`conversation-assistant is-${message.state}`}>
-              <strong><Bot size={15} aria-hidden="true" />Agent {message.state === 'error' && <small>错误</small>}{message.state === 'stopped' && <small>已停止</small>}</strong>
-              <p>{message.text || (message.state === 'streaming' ? '…' : '')}</p>
+      {transcript.turns.map((turn) => <article className="conversation-exchange" key={turn.id}>
+        {turn.role === 'user'
+          ? <div className="conversation-user"><small>你</small><p>{turnText(turn)}</p></div>
+          : <div className={`conversation-assistant is-${turn.status}`}>
+              <strong><Bot size={15} aria-hidden="true" />Agent {turn.status === 'stopped' && <small>已停止</small>}</strong>
+              {/* One continuous assistant surface: the parts, in order, are what the turn said
+                  and what it did. An empty streaming turn is the only thing that needs a mark
+                  of its own, because it has no part yet. */}
+              {!turn.parts.length && turn.status === 'streaming'
+                ? <p className="conversation-text">…</p>
+                : turn.parts.map((part, index) =>
+                    <TurnPart key={part.id} part={part} complete={partIsComplete(turn, index)} />)}
             </div>}
       </article>)}
     </div>
+    <div className="conversation-announcer" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
     {quickQuestions && quickQuestions.length > 0 && <div className="conversation-quick">
       {/* These answers are taken from the graph's own documents. A model is not asked to
           regenerate them: the point of the quick question is that its answer is sourced.
           Free-form questions go through the composer. */}
       {quickQuestions.map((question) => <button key={question.label} type="button" onClick={() => {
-        appendMessage('user', question.label);
-        appendMessage('assistant', question.answer);
+        setTranscript((current) => appendTurn(current, { id: takeId(), role: 'user', text: question.label }));
+        setTranscript((current) => appendTurn(current, { id: takeId(), role: 'assistant', text: question.answer }));
         onMessageComplete?.(question.answer);
       }}>{question.label}</button>)}
     </div>}
@@ -252,7 +293,6 @@ export function ConversationPane({
               </section>)}
               {!groupedModels.length && <p>没有可用模型</p>}
             </div>
-            {diagnosis && <p className="conversation-model-diagnosis" role="status">{diagnosis}</p>}
           </div>}
         </div>}
         <button type="button" className="conversation-icon" title="新对话" aria-label="新对话" onClick={() => void newConversation()}>

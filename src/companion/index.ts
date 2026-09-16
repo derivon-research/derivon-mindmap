@@ -9,7 +9,7 @@ import {
 import { readFileSync, writeFileSync } from 'node:fs';
 import { statSync } from 'node:fs';
 import path from 'node:path';
-import type { ConversationMode } from '../ports/ConversationProvider';
+import type { ConversationMode, Notice, NoticeScope } from '../ports/ConversationProvider';
 import {
   commandTools,
   grantedCommands,
@@ -22,9 +22,10 @@ import {
 import { derivonTool } from './cliTool';
 import { extensionToolNames, openExtensions, type ExtensionState } from './extensions';
 import { workspaceWriteGuard } from './guard';
-import { openModelConfiguration, type CatalogModel, type ModelCatalog } from './modelConfiguration';
+import { openModelConfiguration, type CatalogModel } from './modelConfiguration';
 import { prepareSessionEnvironment } from './sessionEnvironment';
 import { systemPrompt } from './systemPrompt';
+import { classifyToolEnd, summarizeToolInput } from './toolActivity';
 import type {
   ConversationNotification,
   ConversationRequest,
@@ -76,6 +77,17 @@ const sessions = new Map<Mode, AgentSession>();
  */
 const extensionStates = new Map<Mode, { readonly workspace: string | null; readonly state: Promise<ExtensionState> }>();
 /**
+ * The command surface one workspace resolved to, and which workspace it was read for. The read
+ * is shared between the panel's configuration read and the session, and dropped when either a
+ * session ends or another workspace is opened — see `commandSurfaceFor`.
+ */
+let surfaceState: { readonly workspace: string | null; readonly state: Promise<CommandSurfaceState> } | undefined;
+
+/** The operator's reason, said the same way everywhere. */
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+/**
  * The workspace the conversation is about. Pi fixes a session's working directory when
  * the session is created, so changing workspaces ends the sessions rooted at the old one
  * rather than leaving them pointed somewhere the user has closed.
@@ -109,27 +121,32 @@ function rememberSelection() {
 const modeQueues = new Map<Mode, Promise<void>>();
 
 /**
- * The command surface this workspace offers, read when a session is built rather than held from
- * the last one: the operator installs and edits skills while the application runs, and re-reading
- * is cheap next to leaving a session on a stale surface — the same reason the model catalog is
- * not cached either.
+ * The command surface this workspace offers, read once per workspace and re-read when it changes.
  *
- * A missing command surface is a configuration state, not an error, so its notes travel on
- * stderr — where the application keeps the companion's recent lines — rather than failing a
- * session that can still be used without one.
+ * The two things that need the answer share one read: the panel's configuration read, which
+ * reports what loading said, and the session itself, which holds the tools derived from it. An
+ * operator installs and edits skills while the application runs, so the read is dropped when a
+ * session ends rather than kept for the lifetime of the process.
+ *
+ * A missing command surface is a configuration state, not an error, so its notes travel on both
+ * channels — the panel's notices, where the operator sees them, and stderr, where the process log
+ * keeps them. An unexpected failure leaves its line on stderr too, and then fails the request as
+ * it always did.
  */
-async function commandSurfaceFor(target: string | null): Promise<CommandSurfaceState> {
-  try {
-    const state = await openCommandSurface({ configDirectory, workspacePath: target });
-    for (const note of state.surfaceNotes) process.stderr.write(`[command surface] ${note}\n`);
-    for (const note of state.skillNotes) process.stderr.write(`[skills] ${note}\n`);
-    return state;
-  } catch (error) {
-    // An unexpected failure still leaves a line where the operator reads diagnostics; the
-    // request itself fails as it always did.
-    process.stderr.write(`[command surface] ${error instanceof Error ? error.message : String(error)}\n`);
-    throw error;
-  }
+function commandSurfaceFor(target: string | null): Promise<CommandSurfaceState> {
+  if (surfaceState && surfaceState.workspace === target) return surfaceState.state;
+  const state = openCommandSurface({ configDirectory, workspacePath: target })
+    .then((value) => {
+      for (const note of value.surfaceNotes) process.stderr.write(`[command surface] ${note}\n`);
+      for (const note of value.skillNotes) process.stderr.write(`[skills] ${note}\n`);
+      return value;
+    })
+    .catch((error: unknown) => {
+      process.stderr.write(`[command surface] ${message(error)}\n`);
+      throw error;
+    });
+  surfaceState = { workspace: target, state };
+  return state;
 }
 
 /**
@@ -216,14 +233,25 @@ function textOf(content: unknown): string {
  * Not cached: the operator edits the two configuration files while the application is
  * running, and re-reading is cheap next to leaving them looking at a stale empty list.
  */
-async function listModels(mode: Mode): Promise<ModelCatalog & { selected?: CatalogModel }> {
-  // The panel's configuration read carries both reasons at once: why the catalog is what it is,
-  // and what the session's own extensions did on the way in. Neither is an error channel — an
-  // empty catalog and an extension that would not load are configuration states, and each owes
-  // the operator its reason.
-  const [catalog, extensions] = await Promise.all([
+async function listModels(mode: Mode): Promise<{
+  readonly models: readonly CatalogModel[];
+  readonly selected?: CatalogModel;
+  readonly notices: readonly Notice[];
+}> {
+  // One read carries every reason at once: why the catalog is what it is, whether there is a
+  // command surface, what the skills roots offered, and what the session's extensions did on
+  // the way in. None of them is an error channel — an empty catalog, a project with no skills
+  // installed and an extension that would not load are all configuration states, and each owes
+  // the operator its own reason, under its own scope, rather than a line in one paragraph.
+  const [catalog, extensions, surface] = await Promise.all([
     (await configurationPromise).listAvailable(),
     extensionsFor(mode, workspacePath),
+    commandSurfaceFor(workspacePath).then(
+      (value) => ({ surface: value.surfaceNotes, skills: value.skillNotes }),
+      // The reason still reaches the panel: a surface that could not be read at all is a
+      // configuration state like the others, and the model list is not the thing that failed.
+      (error: unknown) => ({ surface: [message(error)], skills: [] }),
+    ),
   ]);
   const remembered = selectedModels.get(mode);
   // A remembered model that is no longer offered is not a selection; fall back rather
@@ -232,8 +260,22 @@ async function listModels(mode: Mode): Promise<ModelCatalog & { selected?: Catal
     model.providerId === remembered?.providerId && model.modelId === remembered?.modelId)
     ?? catalog.models[0];
   if (selected) selectedModels.set(mode, selected);
-  const diagnosis = [catalog.diagnosis, ...extensions.notes].filter(Boolean).join('\n');
-  return { ...catalog, ...(diagnosis ? { diagnosis } : {}), ...(selected ? { selected } : {}) };
+  const notices: readonly Notice[] = [
+    ...noticesFor('models', catalog.diagnosis ? [catalog.diagnosis] : []),
+    ...noticesFor('command-surface', surface.surface),
+    ...noticesFor('skills', surface.skills),
+    ...noticesFor('extensions', extensions.notes),
+  ];
+  return { models: catalog.models, ...(selected ? { selected } : {}), notices };
+}
+
+function noticesFor(scope: NoticeScope, lines: readonly string[]): readonly Notice[] {
+  return lines.filter(Boolean).map((text) => ({ scope, text }));
+}
+
+/** The one reason that answers "why is there no model": the catalog's own, never another scope's. */
+function modelsReason(notices: readonly Notice[]): string | undefined {
+  return notices.find((notice) => notice.scope === 'models')?.text;
 }
 
 /**
@@ -262,7 +304,7 @@ async function createSession(mode: Mode) {
   const configuration = await configurationPromise;
   const catalog = await listModels(mode);
   const selected = catalog.selected;
-  if (!selected) throw new Error(catalog.diagnosis ?? '没有可用模型');
+  if (!selected) throw new Error(modelsReason(catalog.notices) ?? '没有可用模型');
   const model = await configuration.resolve(selected.providerId, selected.modelId);
   const modelRuntime = configuration.runtime;
   // Pi does not check `cwd`; a missing directory surfaces much later as a confusing
@@ -313,12 +355,32 @@ async function createSession(mode: Mode) {
   session.subscribe((value) => {
     if (value.type === 'message_update' && value.assistantMessageEvent.type === 'text_delta') {
       event(mode, { kind: 'delta', text: value.assistantMessageEvent.delta });
+    } else if (value.type === 'tool_execution_start') {
+      // Forwarded because the panel has no other way to know a tool ran: the streamed text
+      // is not an account of what the turn did. The call's own id is what lets the panel
+      // update one row in place instead of stacking a line per event (#127).
+      const summary = summarizeToolInput(value.args);
+      event(mode, {
+        kind: 'tool-start',
+        toolCallId: value.toolCallId,
+        name: value.toolName,
+        ...(summary === undefined ? {} : { summary }),
+      });
+    } else if (value.type === 'tool_execution_end') {
+      const ended = classifyToolEnd(value.result, value.isError);
+      event(mode, {
+        kind: 'tool-end',
+        toolCallId: value.toolCallId,
+        name: value.toolName,
+        status: ended.status,
+        ...(ended.detail === undefined ? {} : { detail: ended.detail }),
+      });
     } else if (value.type === 'message_end' && value.message.role === 'assistant') {
-      const message = value.message as { content?: unknown; stopReason?: string; errorMessage?: string };
-      if (message.stopReason === 'error') {
-        event(mode, { kind: 'error', message: message.errorMessage ?? '模型返回错误' });
+      const assistant = value.message as { content?: unknown; stopReason?: string; errorMessage?: string };
+      if (assistant.stopReason === 'error') {
+        event(mode, { kind: 'error', message: assistant.errorMessage ?? '模型返回错误' });
       } else {
-        event(mode, { kind: 'message', text: textOf(message.content) });
+        event(mode, { kind: 'message', text: textOf(assistant.content) });
       }
     } else if (value.type === 'agent_settled') {
       event(mode, { kind: 'settled' });
@@ -335,9 +397,10 @@ async function endSession(mode: Mode) {
     await session.abort();
   } finally {
     sessions.delete(mode);
-    // The next session reads the roots again: the operator installs and edits extensions while the
-    // application runs, and a session is the thing that holds them.
+    // The next session reads the roots again: the operator installs and edits extensions and
+    // skills while the application runs, and a session is the thing that holds them.
     extensionStates.delete(mode);
+    surfaceState = undefined;
     session.dispose();
   }
 }
@@ -347,6 +410,9 @@ async function setWorkspace(path: string | null) {
   workspacePath = path;
   for (const mode of [...sessions.keys()]) await endSession(mode);
   extensionStates.clear();
+  // The surface belongs to one workspace: the roots and the script path it published are that
+  // workspace's, so another one must not inherit them.
+  surfaceState = undefined;
 }
 
 async function setModel(mode: Mode, providerId: string, modelId: string) {
@@ -391,7 +457,7 @@ async function handle(request: Request): Promise<Response> {
         id: request.id,
         type: 'models',
         models: catalog.models,
-        ...(catalog.diagnosis ? { diagnosis: catalog.diagnosis } : {}),
+        notices: catalog.notices,
         ...(catalog.selected ? { selected: catalog.selected } : {}),
       };
     }

@@ -14,14 +14,41 @@ export type ConversationModel = {
 };
 
 /**
+ * Which part of the session's configuration is speaking.
+ *
+ * A scope is real structure the companion already has: it knows whether a line came from
+ * reading the model files, the command surface, skill discovery or extension loading.
+ */
+export type NoticeScope = 'models' | 'command-surface' | 'skills' | 'extensions' | 'companion';
+
+/**
+ * One thing the operator is owed about how the session was configured, and where it came from.
+ *
+ * There is deliberately no severity. The companion's notes arrive as prose —
+ * `扩展加载失败：…` beside `没有发现命令面` — so a severity field could only be filled in by
+ * reading the sentence, which is the parsing this type exists to remove. A source that wants
+ * to distinguish a skipped thing from a broken one should say so in its own return value
+ * first; then a severity here would mean something.
+ */
+export type Notice = {
+  readonly scope: NoticeScope;
+  readonly text: string;
+};
+
+/**
  * The catalog and, when it is empty or partial, why. An empty catalog is a legitimate
- * configuration state, so it never travels as a rejected promise — but it always
- * carries its reason, because "没有可用模型" on its own is indistinguishable from a
- * provider that failed to start.
+ * configuration state, so it never travels as a rejected promise — and its reasons always
+ * travel with it, because "没有可用模型" on its own is indistinguishable from a provider
+ * that failed to start.
  */
 export type ConversationCatalog = {
   readonly models: readonly ConversationModel[];
-  readonly diagnosis?: string;
+  /**
+   * What could not be configured, one line per fact, each naming its own source. Empty when
+   * everything worked. Never collapsed into a single string: the panel has to be able to say
+   * *which* thing is not working, and #121 and #122 add to this list as they land.
+   */
+  readonly notices: readonly Notice[];
   /**
    * The model this mode is currently on. The provider owns this, remembers it, and
    * decides the default; the panel renders it. Two copies of "which model" is one copy
@@ -34,8 +61,41 @@ export type ConversationCatalog = {
 export type ConversationEvent =
   | { readonly kind: 'delta'; readonly text: string }
   | { readonly kind: 'message'; readonly text: string }
+  /**
+   * A tool call began. `toolCallId` is the call's own identity, so a row is created once
+   * and updated in place rather than duplicated across a stream.
+   */
+  | {
+    readonly kind: 'tool-start';
+    readonly toolCallId: string;
+    readonly name: string;
+    /**
+     * The call's input, rendered readable — one line, with nested arguments shown as JSON.
+     * The row shows this collapsed, and the whole of it expanded, so it is not truncated
+     * here: CSS truncates the collapsed line, and the expanded `<pre>` shows the whole of it.
+     */
+    readonly summary?: string;
+  }
+  /** A tool call ended. `name` travels again so the row stands on its own when a start was missed. */
+  | {
+    readonly kind: 'tool-end';
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly status: ToolCallStatus;
+    /** The result envelope's own text, verbatim, for the row's expanded view. */
+    readonly detail?: string;
+  }
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'settled' };
+
+/**
+ * What a tool call ended as.
+ *
+ * `refused` is not a failure: it is a call the workspace write guard declined, or one the
+ * script command surface answered with `status: "diagnostics"`. The model reads both and
+ * retries, so the panel must not render either as a crash.
+ */
+export type ToolCallStatus = 'ok' | 'refused' | 'failed';
 
 export interface ConversationProvider {
   /**

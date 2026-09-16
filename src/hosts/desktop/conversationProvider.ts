@@ -58,12 +58,25 @@ export function createDesktopConversationProvider(mode: ConversationMode): Conve
     },
     async listModels(): Promise<ConversationCatalog> {
       try {
-        const { models, diagnosis, selected } =
+        const reply =
           await ask<Extract<ConversationResponse, { type: 'models' }>>({ type: 'listModels', mode });
-        return { models, diagnosis, selected };
+        // The wire is unvalidated: `invoke` casts, and nothing on this path checks the reply's
+        // shape. So this is the one place that can hold the port's promise that these two are
+        // lists — and it has to, because the panel iterates both. An absent `notices` did not
+        // degrade the panel, it unmounted the whole mode, and a type cannot see that. Found by
+        // the desktop host test, whose companion stub predated the field.
+        return {
+          models: reply.models ?? [],
+          notices: reply.notices ?? [],
+          selected: reply.selected,
+        };
       } catch (error) {
-        // The bridge could not reach the companion at all: no catalog, but a reason.
-        return { models: [], diagnosis: error instanceof Error ? error.message : String(error) };
+        // The bridge could not reach the companion at all: no catalog, but a reason — and the
+        // scope says it was this side of the process boundary, not the operator's config.
+        return {
+          models: [],
+          notices: [{ scope: 'companion', text: error instanceof Error ? error.message : String(error) }],
+        };
       }
     },
     async setModel(model: ConversationModel) {

@@ -7,6 +7,16 @@ import type { ShellTool } from './commandSurface';
 const GUARD_PATH = '<inline:derivon-workspace-write-guard>';
 
 /**
+ * The prefix every refusal carries.
+ *
+ * `ToolCallEventResult` gives a refusal one field — a reason, as prose — so the only way a
+ * reader can tell a refused call from a failed one is that this guard says so in a fixed
+ * way. Exported so the writer here and the reader in `toolActivity.ts` share one spelling
+ * rather than two that drift.
+ */
+export const REFUSAL_PREFIX = 'Refused: ';
+
+/**
  * The learning session's fence: a `tool_call` handler that refuses a call which would write
  * inside the workspace.
  *
@@ -90,7 +100,7 @@ function shellRule(toolName: string): ((command: string, root: string) => boolea
 function refusal(what: string): ToolCallEventResult {
   return {
     block: true,
-    reason: `Refused: ${what}, and this is the learning session. It reads the workspace but never changes it. Workspace content changes only in the authoring session, through the command tools. Say what you want changed and let the user make that change there.`,
+    reason: `${REFUSAL_PREFIX}${what}, and this is the learning session. It reads the workspace but never changes it. Workspace content changes only in the authoring session, through the command tools. Say what you want changed and let the user make that change there.`,
   };
 }
 

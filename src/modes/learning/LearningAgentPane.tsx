@@ -9,7 +9,6 @@ export function LearningAgentPane({ quickQuestions, onWideAnswer, conversation, 
   drainPendingChanges?: () => Promise<void>;
 }) {
   return <ConversationPane
-    mode="learning"
     provider={conversation}
     placeholder="卡在哪一步？说出来。"
     quickQuestions={quickQuestions}
