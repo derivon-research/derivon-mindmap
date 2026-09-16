@@ -10,6 +10,7 @@ use std::{
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
+use crate::skills_seed;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, Command},
@@ -171,7 +172,27 @@ fn configuration_root(app: &AppHandle) -> Result<PathBuf, String> {
         .path()
         .home_dir()
         .map_err(|error| format!("no home directory to put ~/.derivon in: {error}"))?;
-    create_derivon_root(&home)
+    let root = create_derivon_root(&home)?;
+    install_skill_seed(app, &root);
+    Ok(root)
+}
+
+/// Put the bundle's base skills in place, and only the ones that are not already there.
+///
+/// This runs from the same call that creates `~/.derivon`, because that is the one moment this
+/// application knows the root is new to it. What it will not do is overwrite: the skills root is
+/// the operator's, so a directory that is already there is left exactly as it is, and a skill it
+/// could not install is a line on stderr rather than a refusal — a session without a command
+/// surface is still a usable session (ADR-0013).
+///
+/// The panel hears about a skill that is missing from its own side: the companion compares this
+/// seed with what is installed, which covers a failed copy without a second channel.
+fn install_skill_seed(app: &AppHandle, root: &Path) {
+    let Ok(resource_dir) = app.path().resource_dir() else { return };
+    let Some((seed, manifest)) = skills_seed::seed_in(&resource_dir) else { return };
+    for note in skills_seed::install_absent(&seed, &root.join("skills"), &manifest) {
+        eprintln!("[skills seed] {note}");
+    }
 }
 
 /// Variables the companion is allowed to inherit.
@@ -194,7 +215,17 @@ async fn start(app: &AppHandle) -> Result<ConversationProcess, String> {
     command
         .arg(script)
         .arg("--config-dir")
-        .arg(&config)
+        .arg(&config);
+    // What the bundle ships as a seed, so the companion can tell the operator when what is
+    // installed differs from it. Absent in a bundle prepared without the seed step, and the
+    // companion then has nothing to compare — see `skills_seed.rs`.
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let manifest = resource_dir.join("skills-seed").join("manifest.json");
+        if manifest.is_file() {
+            command.arg("--skills-seed-manifest").arg(manifest);
+        }
+    }
+    command
         .env_clear()
         .envs(inherited)
         .stdin(Stdio::piped())

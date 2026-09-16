@@ -28,7 +28,8 @@
     "targets": "all",
     "externalBin": ["binaries/node"],
     "resources": {
-      "../dist-companion/companion.mjs": "companion.mjs"
+      "../dist-companion/companion.mjs": "companion.mjs",
+      "../dist-skills/": "skills-seed/"
     },
     "license": "MIT",
     "licenseFile": "../LICENSE",

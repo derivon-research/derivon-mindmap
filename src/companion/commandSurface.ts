@@ -106,6 +106,13 @@ export type Command = {
 export type CommandSurface = {
   readonly scriptPath: string;
   readonly commands: readonly Command[];
+  /**
+   * What the surface says about itself, when it says anything.
+   *
+   * Absent is a legitimate state and it is not "different": a surface that declares no version
+   * produces no version notice, rather than one made up on its behalf. See `skillsSeed.ts`.
+   */
+  readonly surfaceVersion?: string;
 };
 
 /**
@@ -245,7 +252,11 @@ export async function openCommandSurface(options: {
   }
   return {
     ...discovery,
-    surface: { scriptPath, commands: capabilities },
+    surface: {
+      scriptPath,
+      commands: capabilities.commands,
+      ...(capabilities.surfaceVersion === undefined ? {} : { surfaceVersion: capabilities.surfaceVersion }),
+    },
     surfaceNotes: ignored.map((other) =>
       `发现多个脚本命令面，使用 ${scriptPath}，忽略 ${other}。`),
   };
@@ -274,19 +285,26 @@ function noSurfaceNote(roots: readonly string[]): string {
 }
 
 /** The command surface's own description of itself, or null when it does not give one. */
-async function readCapabilities(scriptPath: string): Promise<readonly Command[] | null> {
+async function readCapabilities(scriptPath: string): Promise<ParsedCapabilities | null> {
   const result = await run(scriptPath, ['--capabilities'], undefined, undefined);
   if (result.code !== 0) return null;
   return parseCapabilities(result.stdout);
 }
 
+/** What `--capabilities` published: the commands, and whatever the surface says about itself. */
+export type ParsedCapabilities = {
+  readonly commands: readonly Command[];
+  /** The skill surface's own version, absent when it declares none. */
+  readonly surfaceVersion?: string;
+};
+
 /**
  * `--capabilities` as `derivon.command-capabilities/v1`.
  *
- * Read by shape rather than by a pinned schema string: the surface may add fields, and a
- * command that does not declare the parts a tool needs is skipped instead of guessed at.
+ * Read by shape rather than by a pinned schema string: the surface may add fields, and a command
+ * that does not declare the parts a tool needs is skipped instead of guessed at.
  */
-export function parseCapabilities(text: string): readonly Command[] | null {
+export function parseCapabilities(text: string): ParsedCapabilities | null {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -301,7 +319,13 @@ export function parseCapabilities(text: string): readonly Command[] | null {
     const command = parseCommand(entry);
     if (command) parsed.push(command);
   }
-  return parsed;
+  // A version the surface does not declare is left out rather than defaulted: the caller has to
+  // be able to tell "declares nothing" from "declares this".
+  const version = (value as { surfaceVersion?: unknown }).surfaceVersion;
+  return {
+    commands: parsed,
+    ...(typeof version === 'string' && version ? { surfaceVersion: version } : {}),
+  };
 }
 
 function parseCommand(entry: unknown): Command | null {

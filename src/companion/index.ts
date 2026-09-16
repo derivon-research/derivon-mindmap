@@ -25,6 +25,7 @@ import { workspaceWriteGuard } from './guard';
 import { openModelConfiguration, type CatalogModel } from './modelConfiguration';
 import { prepareSessionEnvironment } from './sessionEnvironment';
 import { systemPrompt } from './systemPrompt';
+import { readSeedManifest, seedNotes } from './skillsSeed';
 import { classifyToolEnd, summarizeToolInput } from './toolActivity';
 import type {
   ConversationNotification,
@@ -55,6 +56,15 @@ function requiredArgument(name: string): string {
  * reads `HOME` itself, and does not know where the directory came from (ADR-0010).
  */
 const configDirectory = requiredArgument('--config-dir');
+/**
+ * What the bundle ships as a seed of the base skills, and the revision it came from.
+ *
+ * Rust passes the path to the resource it prepared, and passes nothing when the bundle has no
+ * seed — a companion that cannot compare anything is not a companion that failed. Read once,
+ * here, because it describes the bundle rather than anything the operator changes; whether the
+ * skills are installed is read again every time, from the roots themselves.
+ */
+const skillSeed = readSeedManifest(argument('--skills-seed-manifest'));
 /**
  * The session's environment, arranged once for the process: Pi's agent directory — which is
  * what puts `<root>/bin` first on a session's PATH instead of `~/.pi/agent/bin` — and the
@@ -243,15 +253,16 @@ async function listModels(mode: Mode): Promise<{
   // the way in. None of them is an error channel — an empty catalog, a project with no skills
   // installed and an extension that would not load are all configuration states, and each owes
   // the operator its own reason, under its own scope, rather than a line in one paragraph.
+  const surfaceFailure: string[] = [];
   const [catalog, extensions, surface] = await Promise.all([
     (await configurationPromise).listAvailable(),
     extensionsFor(mode, workspacePath),
-    commandSurfaceFor(workspacePath).then(
-      (value) => ({ surface: value.surfaceNotes, skills: value.skillNotes }),
-      // The reason still reaches the panel: a surface that could not be read at all is a
-      // configuration state like the others, and the model list is not the thing that failed.
-      (error: unknown) => ({ surface: [message(error)], skills: [] }),
-    ),
+    // The reason still reaches the panel: a surface that could not be read at all is a
+    // configuration state like the others, and the model list is not the thing that failed.
+    commandSurfaceFor(workspacePath).catch((error: unknown) => {
+      surfaceFailure.push(message(error));
+      return undefined;
+    }),
   ]);
   const remembered = selectedModels.get(mode);
   // A remembered model that is no longer offered is not a selection; fall back rather
@@ -262,8 +273,17 @@ async function listModels(mode: Mode): Promise<{
   if (selected) selectedModels.set(mode, selected);
   const notices: readonly Notice[] = [
     ...noticesFor('models', catalog.diagnosis ? [catalog.diagnosis] : []),
-    ...noticesFor('command-surface', surface.surface),
-    ...noticesFor('skills', surface.skills),
+    ...noticesFor('command-surface', [...surfaceFailure, ...(surface?.surfaceNotes ?? [])]),
+    ...noticesFor('skills', [
+      ...(surface?.skillNotes ?? []),
+      // What the bundle shipped as a seed and what is installed, compared. The seed is read once
+      // at startup: it describes the bundle, not anything the operator changes.
+      ...seedNotes({
+        seed: skillSeed,
+        installedSkills: (surface?.skills ?? []).map((skill) => skill.name),
+        installedSurfaceVersion: surface?.surface?.surfaceVersion,
+      }),
+    ]),
     ...noticesFor('extensions', extensions.notes),
   ];
   return { models: catalog.models, ...(selected ? { selected } : {}), notices };

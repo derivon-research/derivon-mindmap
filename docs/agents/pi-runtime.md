@@ -29,7 +29,7 @@ slice. The architecture is fixed by
 ├── models.json             # provider and model definitions
 ├── auth.json               # credentials
 ├── selected-models.json    # the model each mode is on (the companion's)
-├── skills/                 # skills and their command-surface scripts (#104, #122)
+├── skills/                 # skills and their command-surface scripts (#104, #122, #136)
 ├── extensions/             # user Pi extensions (#121)
 └── bin/                    # the `node` a session's shell finds (#129)
 ```
@@ -52,6 +52,10 @@ why it is one root on every platform rather than each platform's own convention.
   `<workspace>/.derivon/extensions` ([the extensions a session may
   hold](#the-extensions-a-session-may-hold)). Neither root is `~/.pi/`, which this application never
   consults, and neither is where Pi's own skills or extensions live.
+- **`skills/` is seeded by the application, and only seeded.** The bundle ships the two base skills
+  at a pinned revision, and the first run that creates this root copies in whatever is not already
+  there. Nothing is overwritten and nothing is deleted — see [the base skills the bundle
+  ships](#the-base-skills-the-bundle-ships) and ADR-0013.
 
 ## Provider/model configuration
 
@@ -137,6 +141,34 @@ only place a desktop `WorkspaceHandle.id` is made).
 - Pi does not check that `cwd` exists; a missing directory fails much later and
   obscurely. The companion checks before creating a session and refuses by name.
 
+## The base skills the bundle ships
+
+`scripts/prepare-skills-seed.mjs` and `src-tauri/src/skills_seed.rs` own this, and
+ADR-0013 records why. A fresh install has to be able to change a workspace, so the two skills
+that make that possible cannot be something the operator is asked to fetch first.
+
+- **The seed is fetched at build time from a pinned revision.** `prepare-skills-seed.mjs` names a
+  revision of `derivon-research/skills`, downloads that revision's archive, keeps the two base
+  skills (`derivon-mindmap`, which carries the script command surface, and `derivon-cli`, which
+  `derivon` needs installed), and writes `dist-skills/manifest.json` beside them. The manifest
+  records the repository, the revision, a digest over the contents, and what the seeded surface
+  declared about itself at the time. `tauri.conf.json` ships the directory as `skills-seed/`.
+  Pinning is the same shape `prepare-companion.mjs` uses for the Node runtime, and nothing is
+  fetched at runtime.
+- **The seed is a default, never an authority.** `install_skill_seed` runs from the same call that
+  creates `~/.derivon`, and copies a skill only when `<root>/skills/<name>` is not there yet. A
+  directory that exists — the operator's own, the skills CLI's, an earlier run's — is left exactly
+  as it is, and a copy that fails is a line on stderr rather than a refusal. `skills/` belongs to
+  the operator the way `extensions/` does (#121).
+- **A version difference is reported, not enforced.** The surface publishes its own version in
+  `--capabilities` as `surfaceVersion`; the companion compares it with the manifest's and says so
+  under the `skills` scope. No ordering is claimed, and a side that declares nothing produces no
+  line at all — "unknown" is not "different". Nothing is repaired back to the seed, so a skill
+  installed by hand or by the skills CLI is what a session uses. The comparison is read once per
+  process from `--skills-seed-manifest`, which Rust passes only when the bundle has a seed.
+- **A skill the seed carries that is not installed is said out loud**, under the same scope. That
+  covers a copy that failed without a second channel, and a skill the operator deleted on purpose.
+
 ## Diagnosis
 
 An empty catalog is a configuration state, not an error, so it travels as
@@ -144,7 +176,8 @@ An empty catalog is a configuration state, not an error, so it travels as
 `{ scope, text }` — one fact per entry, each naming the subsystem it came from — because the
 reasons have different sources and the panel has to be able to say which one is not working.
 The scopes are `models` for the catalog's own reason, `command-surface` for the script survey,
-`skills` for what the two skill roots offered, `extensions` for what loading the operator's own
+`skills` for what the two skill roots offered and how what is installed differs from the bundle's
+seed, `extensions` for what loading the operator's own
 code said, and `companion` for a bridge that never reached this process at all. There is
 deliberately no severity field: the notes arrive as prose, so a severity could only be filled in
 by reading the sentence, which is the parsing this channel exists to remove.
