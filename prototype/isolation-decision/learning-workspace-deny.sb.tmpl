@@ -1,0 +1,12 @@
+;; PROTOTYPE (issue #124) — macOS seatbelt profile, posture L1: "the workspace is the only thing
+;; the learning session cannot write".
+;;
+;; Read everything, write everything EXCEPT the workspace subtree. One rule; no allow-list, so
+;; whatever a skill needs anywhere else on the machine keeps working.
+;;
+;; `__WORKSPACE__` must be the *canonical* path (realpath). macOS spells /tmp, /var and /etc
+;; through symlinks, and a rule written against the symlink spelling matches nothing — see the
+;; "misconfiguration" section of evidence.json, which measures exactly that leak.
+(version 1)
+(allow default)
+(deny file-write* (subpath "__WORKSPACE__"))

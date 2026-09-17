@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>外部隔离机制 — #124 证据面板（一次性原型）</title>
+<style>
+  :root {
+    --ink: #1c1c1e; --dim: #6b6b70; --line: #e2e2e5; --bg: #fbfbfc; --panel: #fff;
+    --accent: #b0500a; --good: #1f7a3f; --bad: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif;
+  }
+  main { max-width: 1060px; margin: 0 auto; padding: 40px 24px 96px; }
+  h1 { font-size: 25px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 17px; margin: 44px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 14px; margin: 24px 0 8px; }
+  .lede { color: var(--dim); margin: 0 0 4px; }
+  .proto {
+    display: inline-block; margin: 10px 0 0; padding: 3px 9px; border-radius: 999px;
+    background: #fdf1e6; color: var(--accent); font-size: 12px; font-weight: 600;
+  }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 18px 0 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .card h4 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+  .card p { margin: 0; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); padding: 7px 12px; text-align: left;
+  }
+  button:hover { border-color: #c9c9cf; }
+  button.on { border-color: var(--accent); background: #fdf1e6; color: var(--accent); font-weight: 600; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+  .tabs button { border-radius: 999px; }
+  .scenario { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin-top: 14px; }
+  .scenario .blurb { color: #44444a; margin: 0 0 14px; }
+  .step { display: block; width: 100%; margin-bottom: 8px; }
+  .step .k { color: var(--dim); margin-right: 8px; font-variant-numeric: tabular-nums; }
+  .step .meta { color: var(--dim); }
+  .status { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; padding: 18px 20px; }
+  .status dl { display: grid; grid-template-columns: 132px 1fr; gap: 6px 14px; margin: 0; }
+  .status dt { color: var(--dim); }
+  .status dd { margin: 0; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  pre { background: #f5f5f7; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre-wrap; margin: 4px 0 0; }
+  .ok { color: var(--good); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .pill.wrote { background: #fbe9e7; color: var(--bad); }
+  .pill.no { background: #e8f3ec; color: var(--good); }
+  .pill.ghost { background: #f1f1f4; color: var(--dim); font-weight: 400; }
+  table { border-collapse: collapse; width: 100%; background: var(--panel); font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f6f6f8; font-size: 13px; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .wrap { overflow-x: auto; }
+  ol.bounds { padding-left: 22px; }
+  ol.bounds > li { margin-bottom: 10px; }
+  .muted { color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>让「学习侧写不进工作区」成为保证：用哪种机制</h1>
+  <p class="lede">问题：把学习会话放进系统沙箱，能不能让一条<b>刻意绕过 <code>tool_call</code> 守卫</b>的命令依然写不进工作区，代价是多少，边界在哪。</p>
+  <p class="proto">一次性原型 · 不进产品代码 · 下面的数字与输出都是真跑出来的</p>
+
+  <div class="cards">
+    <div class="card">
+      <h4>证据</h4>
+      <p id="host-line" class="muted"></p>
+      <p id="obs-line" class="muted"></p>
+    </div>
+    <div class="card">
+      <h4>怎么复跑</h4>
+      <p><code>node prototype/isolation-decision/run-experiments.mjs</code><br>
+      <span class="muted">无依赖；重新生成 evidence.json 与这一页的数字。</span></p>
+    </div>
+    <div class="card">
+      <h4>结论（一句话）</h4>
+      <p>把<b>会话自己的进程</b>放进系统沙箱，而不是把工具执行路由进沙箱。macOS 零授权、零体积；Windows 走免管理员的受限令牌。<br><br>姿态已定：<b>L2（白名单外全禁写）</b>，白名单 = TMPDIR / 用户级根目录 / 应用数据目录。</p>
+    </div>
+  </div>
+
+  <h2>1 · 状态面板（每次点击后更新）</h2>
+  <div class="status" id="status"></div>
+  <h3>姿态（决定「除了工作区还能不能写别处」）</h3>
+  <div class="row" id="postures"></div>
+
+  <h2>2 · 走查：按顺序点，看每一条命令在系统层发生了什么</h2>
+  <div class="tabs" id="tabs"></div>
+  <div id="scenario"></div>
+
+  <h2>3 · 自由玩：每条命令 × 3 种姿态</h2>
+  <p class="muted">每一行是实际观测，不是预测。换姿态后整表重算。</p>
+  <div class="wrap"><table id="grid"></table></div>
+
+  <h2>4 · 配置错一次，隔离静默归零</h2>
+  <div id="misconfig"></div>
+
+  <h2>5 · 代价（实测）</h2>
+  <div class="wrap"><table id="cost"></table></div>
+  <p class="muted">读法：只有「把 bash 工具路由进沙箱」这条路才付每调用一次的启动钱；把会话进程放进沙箱是一次性的。
+  profile 编译费随规则数超线性增长（1 条 ~11 ms，500 条 ~149 ms），所以规则不能随文件数增长。</p>
+
+  <h2>6 · 候选机制 × 判据</h2>
+  <div class="wrap">
+    <table>
+      <tr><th>候选</th><th>保证强度</th><th>需要管理员？</th><th>覆盖子进程/后代</th><th>覆盖技能脚本与进程内扩展</th><th>机器变更 / 可逆性</th><th>体积与启动</th></tr>
+      <tr><td><b>0. 今天：工具授予 + <code>tool_call</code> 守卫</b></td><td>无（护栏）</td><td>否</td><td>否</td><td>否（技能脚本压根不进守卫）</td><td>无</td><td>0</td></tr>
+      <tr><td>1. Node 层（<code>--permission</code> / <code>vm</code> / isolated-vm / WASI）</td><td>无（官方文档自称不是安全机制）</td><td>否</td><td>否</td><td>否</td><td>无</td><td>0</td></tr>
+      <tr><td>2. 只路由 bash 工具（<code>settings.shellPath</code>）</td><td>部分：只有 shell 那一支</td><td>否</td><td>是（该支）</td><td><b>否</b>（实测技能脚本照写）</td><td>一个 wrapper + 一份 profile</td><td>每次工具调用 +6~16 ms</td></tr>
+      <tr><td>3. 路由每一个 spawn 点</td><td>部分：spawn 点是开放集合</td><td>否</td><td>是</td><td>部分（进程内 <code>writeFileSync</code> 仍在外面）</td><td>改多处调用点</td><td>同 2</td></tr>
+      <tr><td><b>4. 会话进程进系统沙箱（推荐）</b></td><td><b>强</b>：该进程树写不进工作区</td><td><b>否</b>（macOS 零授权 / Windows 免管理员档）</td><td><b>是</b></td><td><b>是</b></td><td>一份 profile，删掉即回退</td><td>0 体积；启动 +~6 ms；每模式多一个进程 ≈ +120 MB</td></tr>
+      <tr><td>5. 整进程进容器 / 微虚拟机</td><td>最强（还能收读取）</td><td>macOS 否 / Windows 需 WHP 或提权</td><td>是</td><td>是</td><td>引入运行时依赖</td><td>+100 MB~GB；每会话 VM 启动 0.5~2 s；凭据随进程进沙箱</td></tr>
+      <tr><td>6. Windows 免管理员档：受限令牌 <code>WRITE_RESTRICTED</code></td><td>强（写侧）</td><td><b>否</b></td><td>是</td><td>是</td><td>无机器变更</td><td>需 Rust 原生代码</td></tr>
+      <tr><td>7. Windows 强化档：Codex 式账户 + 防火墙 + DACL</td><td>最强（还能收读取）</td><td><b>是</b>（一次性 UAC）</td><td>是</td><td>是</td><td>本地账户 / 防火墙 / 登录项，卸载路径要专门做</td><td>重；企业策略下会失败</td></tr>
+    </table>
+  </div>
+
+  <h2>7 · 三条边界（票里 AC 第四条要的东西）</h2>
+  <ol class="bounds">
+    <li><b>覆盖：</b>被沙箱的那个会话进程树内的一切文件写入 —— companion 自己的代码、命令面技能脚本（子进程）、shell 工具及其全部后代；对工作区的写、重命名、删除、chmod、xattr 都在<b>系统层失败</b>；符号链接、硬链接、firmlink 别名、<code>..</code> 拼写与嵌套 <code>sandbox-exec</code> 都不构成逃逸。</li>
+    <li><b>不覆盖 —— 进程内扩展：</b>它跑在被沙箱的进程里，所以它的<b>文件写入</b>被覆盖；但它的读取、网络、以及它手里的模型凭据不受限（ADR-0010 已写明这是「操作者自己的代码，带着操作者的凭据」）。要收读取，只有容器/VM（形态 5）或 Windows 强化档 / AppContainer。</li>
+    <li><b>不覆盖 —— 凭据：</b>留在宿主、留在 companion 进程内。进程级沙箱不搬运凭据；把进程放进容器才会把凭据带进去。</li>
+    <li><b>不覆盖 —— 宿主的其它路径：</b>L1 完全不覆盖（<code>rm -rf ~</code> 仍可）；L2 覆盖写入，但<b>不覆盖读取</b> —— 整个文件系统仍可读，包括 <code>~/.ssh</code>。</li>
+    <li><b>不覆盖 —— 网络：</b>不覆盖，且必须允许（模型调用、<code>tavily-cli</code>）。</li>
+    <li><b>不覆盖 —— macOS TCC 与签名：</b>seatbelt 子进程默认继承宿主 app 的 TCC 身份，所以给 app 授权（Full Disk Access / 辅助功能）等于给沙箱里的会话授权；这条要写进 ADR。</li>
+    <li><b>不覆盖 —— 创作侧与宿主应用自身：</b>创作侧不沙箱（写工作区是它的职责）；Rust 宿主、webview、命令面之外的写入不在沙箱里，它们不是 agent。</li>
+    <li><b>与既有 ADR 的一致性：</b>ADR-0010 的「一个 companion 进程服务整个应用」必须改成按模式一个进程；ADR-0011 要补一句「学习侧另有一层系统层保证，管的是工作区（L1）或几乎所有写入（L2）」；新立 ADR-0014 把「沙箱 / 外部隔离 / 平台授权 / 护栏」四个词分开。</li>
+  </ol>
+
+  <p class="muted" style="margin-top:36px">完整论证、Windows 一手来源、实现接缝与决定：同目录 <code>findings.md</code>、<code>windows-sources.md</code>。</p>
+</main>
+
+<script>
+const EVIDENCE = /*__EVIDENCE__*/;
+
+const POSTURES = [
+  { id: 'none', label: '无隔离（今天）' },
+  { id: 'workspace-deny', label: 'L1 · 只禁工作区' },
+  { id: 'write-allowlist', label: 'L2 · 白名单外全禁' },
+];
+
+const byId = new Map();
+for (const row of EVIDENCE.attempts) {
+  if (!byId.has(row.id)) byId.set(row.id, { id: row.id, purpose: row.purpose, command: row.command, byPosture: {} });
+  byId.get(row.id).byPosture[row.posture] = row;
+}
+const ATTEMPTS = [...byId.values()];
+const postureLabel = (id) => POSTURES.find((p) => p.id === id).label;
+
+/** Minimal DOM builder: no HTML strings, so nothing here needs escaping. */
+function h(tag, props, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props ?? {})) {
+    if (key === 'class') node.className = value;
+    else if (key === 'text') node.textContent = value;
+    else if (key === 'dataset') Object.assign(node.dataset, value);
+    else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value);
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(typeof child === 'string' ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+const clear = (node) => { while (node.firstChild) node.removeChild(node.firstChild); };
+const pillNode = (observed) => h('span', { class: observed === 'WROTE' ? 'pill wrote' : 'pill no' },
+  observed === 'WROTE' ? '写进去了' : '没写进去');
+
+const SCENARIOS = [
+  {
+    title: '① 绕开守卫的那条命令',
+    blurb: '守卫的写入形式是「词」：rm/mkdir/touch/tee/cp/mv/ln/install、dd of=、sed -i、重定向。这条命令一个都没有，所以守卫会放行（不是推测：check-guard.mjs 直接调 guardDecision，3 条构造命令 pass、3 条对照 refused）。先看无隔离时它真的写得进去（对照组），再看沙箱。',
+    steps: [
+      { label: '无隔离：它真的改写了工作区的文件', id: 'guard-invisible: node -e writes a workspace file', posture: 'none' },
+      { label: 'L1：同一个命令，写入在内核层失败', id: 'guard-invisible: node -e writes a workspace file', posture: 'workspace-deny' },
+      { label: 'L1：最坏的那一个文件 —— 工作区清单', id: 'guard-invisible: node -e rewrites the manifest', posture: 'workspace-deny' },
+      { label: 'L2：换成最严的姿态，结果一样', id: 'guard-invisible: node -e rewrites the manifest', posture: 'write-allowlist' },
+    ],
+  },
+  {
+    title: '② 守卫根本看不到的那条路',
+    blurb: '技能脚本由应用自己 spawn(node, [script]) 跑（commandSurface.ts 的 run），完全不进 tool_call 钩子。这是本票「最便宜的绕过」，也是为什么只有进程级沙箱够用。',
+    steps: [
+      { label: '无隔离：脚本照写', id: 'command-surface script writes the workspace', posture: 'none' },
+      { label: 'L1：系统层拒绝（脚本是子进程，跟着被约束）', id: 'command-surface script writes the workspace', posture: 'workspace-deny' },
+      { label: 'L2：一样', id: 'command-surface script writes the workspace', posture: 'write-allowlist' },
+    ],
+  },
+  {
+    title: '③ 守卫认得的写法，也拦在更低一层',
+    blurb: '这些命令守卫会拒绝 —— 但护栏不是保证。换成系统层：写、重命名进/出、删除、改权限全部失败，而且孙进程也算。',
+    steps: [
+      { label: 'shell 重定向', id: 'shell redirect', posture: 'workspace-deny' },
+      { label: '孙进程 bash → sh', id: 'grandchild (bash → sh)', posture: 'workspace-deny' },
+      { label: 'cp 进工作区', id: 'cp into the workspace', posture: 'workspace-deny' },
+      { label: 'mv 进工作区（重命名的目标路径也查）', id: 'mv into the workspace', posture: 'workspace-deny' },
+      { label: 'rm 工作区里的文件', id: 'rm inside the workspace', posture: 'workspace-deny' },
+      { label: 'chmod（元数据也是内容）', id: 'chmod inside the workspace', posture: 'workspace-deny' },
+      { label: 'xattr（不是文件内容的写）', id: 'extended attribute on a workspace file', posture: 'workspace-deny' },
+      { label: 'mv 出工作区（用移走的方式删除）', id: 'mv out of the workspace', posture: 'workspace-deny' },
+    ],
+  },
+  {
+    title: '④ 「可以 rm -rf ~」：两种姿态的分水岭',
+    blurb: 'AC 第 1 条只要求工作区；但这张票是拿「rm -rf ~」开的头。L1 拦不住它，L2 可以。L2 的代价是能力而不是性能：会话从此只能写 TMPDIR、用户级根目录、应用数据目录。',
+    steps: [
+      { label: '无隔离：删掉 $HOME 下的文件', id: 'delete a file in $HOME', posture: 'none' },
+      { label: 'L1：仍然可以（L1 只管工作区）', id: 'delete a file in $HOME', posture: 'workspace-deny' },
+      { label: 'L2：被拒绝', id: 'delete a file in $HOME', posture: 'write-allowlist' },
+      { label: 'L1：覆写 ~/.ssh/authorized_keys 这种安静的版本，也可以', id: 'write anywhere else in $HOME (e.g. ~/.zshrc, ~/.ssh/authorized_keys)', posture: 'workspace-deny' },
+      { label: 'L2：被拒绝', id: 'write anywhere else in $HOME (e.g. ~/.zshrc, ~/.ssh/authorized_keys)', posture: 'write-allowlist' },
+      { label: 'L2 的代价：在工作区旁边写个产物文件也被拒绝', id: 'write a scratch file next to the workspace (neither TMPDIR nor root)', posture: 'write-allowlist' },
+    ],
+  },
+  {
+    title: '⑤ 必须继续能用的东西',
+    blurb: '沙箱只谈写、且只在白名单外禁写。读工作区、TMPDIR 缓存、用户级根目录、学习者记录、网络请求都得照旧，否则学习侧就废了。',
+    steps: [
+      { label: '读工作区', id: 'read the workspace', posture: 'write-allowlist' },
+      { label: 'TMPDIR 里写缓存', id: 'write a cache file in TMPDIR', posture: 'write-allowlist' },
+      { label: '写用户级根目录（selected-models.json）', id: 'write the user-level root (selected-models.json)', posture: 'write-allowlist' },
+      { label: '写应用数据目录（学习者记录，ADR-0009）', id: 'write the application data directory (learner records)', posture: 'write-allowlist' },
+      { label: '发网络请求（模型调用、tavily-cli）', id: 'reach the network (a model call, tavily-cli)', posture: 'write-allowlist' },
+    ],
+  },
+  {
+    title: '⑥ 逃逸尝试（全部失败）',
+    blurb: '路径型规则只有路径匹配做得好才算数。这些是刻意试的：硬链接、符号链接、符号链接父目录、`..` 拼写、macOS firmlink 别名 /System/Volumes/Data，以及子进程自己再套一层「允许一切」的 sandbox-exec。',
+    steps: [
+      { label: '硬链接出去再改写', id: 'hardlink out of the workspace, then rewrite through it', posture: 'workspace-deny' },
+      { label: '符号链接出去再改写', id: 'symlink out of the workspace, then rewrite through it', posture: 'workspace-deny' },
+      { label: '通过符号链接的父目录进入', id: 'symlinked parent directory', posture: 'workspace-deny' },
+      { label: '用 `/../` 拼出同一条路径', id: '`..` spelling of the same path', posture: 'workspace-deny' },
+      { label: 'firmlink 别名 /System/Volumes/Data', id: 'firmlink alias (/System/Volumes/Data)', posture: 'workspace-deny' },
+      { label: '子进程再套一层「全允许」的 sandbox-exec', id: 'nested sandbox-exec with a permissive profile (can the child undo it?)', posture: 'workspace-deny' },
+    ],
+  },
+];
+
+const state = { posture: 'workspace-deny', attempt: 'guard-invisible: node -e writes a workspace file', scenario: 0 };
+
+function renderHost() {
+  document.getElementById('host-line').textContent =
+    `${EVIDENCE.host.os} · node ${EVIDENCE.host.node} · /usr/bin/sandbox-exec 存在（Apple 已弃用但仍随系统分发）`;
+  document.getElementById('obs-line').textContent =
+    `${EVIDENCE.attempts.length} 条观测，生成于 ${EVIDENCE.generatedAt.slice(0, 16).replace('T', ' ')}。数字来自这台机器，不是估算。`;
+}
+
+function renderPostures() {
+  const host = document.getElementById('postures');
+  clear(host);
+  for (const posture of POSTURES) {
+    host.append(h('button', {
+      class: posture.id === state.posture ? 'on' : '',
+      onclick: () => { state.posture = posture.id; render(); },
+    }, posture.label));
+  }
+}
+
+function renderStatus() {
+  const attempt = byId.get(state.attempt);
+  const row = attempt.byPosture[state.posture];
+  const host = document.getElementById('status');
+  clear(host);
+  const rows = [
+    ['姿态', postureLabel(state.posture)],
+    ['这条命令为什么在测', attempt.purpose],
+    ['命令', h('code', { text: attempt.command })],
+    ['设计预期', h('span', {}, row.expect === 'WROTE' ? '设计上应该写得进去' : '设计上应该写不进去',
+      row.probes.length ? h('span', { class: 'pill ghost', style: 'margin-left:8px', text: row.probes.join(' · ') }) : '')],
+    ['实际观测', h('span', {}, pillNode(row.observed), ' ',
+      h('span', { class: row.verdict === 'PASS' ? 'ok' : 'bad', text: row.verdict === 'PASS' ? '与设计一致' : 'CONTRADICTS 与设计不符' }),
+      h('span', { class: 'muted', text: `　exit ${row.exitStatus}` }))],
+    ['系统的原话', row.stderrFirstLine ? h('pre', { text: row.stderrFirstLine }) : h('span', { class: 'muted', text: '（无输出）' })],
+    ['耗时', h('span', { class: 'muted', text: `${row.ms} ms（含进程启动）` })],
+  ];
+  const list = h('dl', {});
+  for (const [term, value] of rows) list.append(h('dt', { text: term }), h('dd', {}, value));
+  host.append(list);
+}
+
+function renderTabs() {
+  const host = document.getElementById('tabs');
+  clear(host);
+  SCENARIOS.forEach((scenario, index) => {
+    host.append(h('button', {
+      class: index === state.scenario ? 'on' : '',
+      onclick: () => { state.scenario = index; render(); },
+    }, scenario.title));
+  });
+}
+
+function renderScenario() {
+  const scenario = SCENARIOS[state.scenario];
+  const host = document.getElementById('scenario');
+  clear(host);
+  const card = h('div', { class: 'scenario' }, h('p', { class: 'blurb', text: scenario.blurb }));
+  scenario.steps.forEach((step, index) => {
+    const row = byId.get(step.id).byPosture[step.posture];
+    card.append(h('button', {
+      class: `step ${state.attempt === step.id && state.posture === step.posture ? 'on' : ''}`,
+      onclick: () => {
+        state.attempt = step.id; state.posture = step.posture;
+        render();
+        document.getElementById('status').scrollIntoView({ block: 'nearest' });
+      },
+    }, h('span', { class: 'k', text: `${index + 1}.` }), step.label,
+      h('span', { class: 'meta', text: ` — ${postureLabel(step.posture)} ` }), pillNode(row.observed)));
+  });
+  host.append(card);
+}
+
+function renderGrid() {
+  const host = document.getElementById('grid');
+  clear(host);
+  const head = h('tr', {}, h('th', { text: '命令' }), ...POSTURES.map((p) => h('th', { text: p.label })));
+  host.append(head);
+  for (const attempt of ATTEMPTS) {
+    const cells = POSTURES.map((posture) => {
+      const row = attempt.byPosture[posture.id];
+      return h('td', {}, h('span', { class: row.verdict === 'PASS' ? '' : 'bad' }, pillNode(row.observed)));
+    });
+    host.append(h('tr', {},
+      h('td', {}, h('button', {
+        class: 'step',
+        onclick: () => {
+          state.attempt = attempt.id;
+          render();
+          document.getElementById('status').scrollIntoView({ block: 'nearest' });
+        },
+      }, attempt.id)),
+      ...cells));
+  }
+}
+
+function renderMisconfig() {
+  const host = document.getElementById('misconfig');
+  clear(host);
+  const table = h('table', {}, h('tr', {}, h('th', { text: 'profile 的写法' }), h('th', { text: '观测' }), h('th', { text: '内核原话' })));
+  for (const row of EVIDENCE.misconfigurations) {
+    table.append(h('tr', {},
+      h('td', {}, row.id, h('br'), h('span', { class: 'muted' }, '写入路径：', h('code', { text: row.target }))),
+      h('td', {}, pillNode(row.observed)),
+      h('td', {}, row.stderrFirstLine ? h('code', { text: row.stderrFirstLine }) : h('span', { class: 'muted', text: '（无输出 —— 静默通过）' }))));
+  }
+  host.append(h('div', { class: 'wrap' }, table),
+    h('p', { class: 'muted' }, '所以：profile 必须由 ', h('code', { text: 'realpath(工作区)' }),
+      ' 生成，并且会话启动时要用一次探针写入验证隔离真的生效，而不是相信那个字符串。'));
+}
+
+function renderCost() {
+  const host = document.getElementById('cost');
+  clear(host);
+  host.append(h('tr', {}, h('th', { text: '项目' }), h('th', { text: '测的是什么' }), h('th', { text: 'n' }), h('th', { text: '中位' }), h('th', { text: 'p90' })));
+  for (const [label, value] of Object.entries(EVIDENCE.timings)) {
+    if (label === 'companion') continue;
+    host.append(h('tr', {}, h('td', { text: label }), h('td', { class: 'muted', text: value.what }),
+      h('td', { class: 'n', text: String(value.n) }), h('td', { class: 'n', text: `${value.medianMs} ms` }), h('td', { class: 'n', text: `${value.p90Ms} ms` })));
+  }
+  for (const row of EVIDENCE.timings.companion ?? []) {
+    host.append(h('tr', {}, h('td', { text: row.label }), h('td', { class: 'muted', text: '常驻进程内存' }),
+      h('td', { class: 'n', text: '–' }),
+      h('td', { class: 'n', text: row.rssKb ? `${Math.round(row.rssKb / 1024)} MB` : `exit ${row.exitedEarlyWith}` }),
+      h('td', { class: 'n', text: '–' })));
+  }
+}
+
+function render() { renderPostures(); renderStatus(); renderTabs(); renderScenario(); renderGrid(); }
+
+renderHost();
+renderMisconfig();
+renderCost();
+render();
+</script>
+</body>
+</html>

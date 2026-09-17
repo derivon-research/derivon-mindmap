@@ -1,0 +1,36 @@
+;; PROTOTYPE (issue #124) — macOS seatbelt profile, posture L2: "the learning session cannot
+;; write anywhere except the few places it is told it may".
+;;
+;; This is the posture that answers the motivation the ticket was opened with — today a granted
+;; skill script can `rm -rf ~` — rather than only the acceptance criterion (the workspace).
+;;
+;; Seatbelt takes the LAST matching rule, so the order here is the design: deny all writes, hand
+;; back the places a session legitimately writes, then re-deny the workspace in case one of those
+;; grants overlaps it (a TMPDIR inside the workspace, say).
+;;
+;; `__WORKSPACE__` must be canonical; `__HOME__` and `__TMPDIR__` come from the real environment.
+(version 1)
+(allow default)
+
+(deny file-write*)
+
+;; Pi and the shell need these two or nothing runs.
+(allow file-write* (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr") (literal "/dev/dtracehelper"))
+
+;; Scratch space: TMPDIR, and the system temp roots behind it.
+(allow file-write* (subpath "__TMPDIR__"))
+(allow file-write* (subpath "/private/var/folders"))
+(allow file-write* (subpath "/private/tmp"))
+(allow file-write* (subpath "/tmp"))
+
+;; The user-level root: models.json, auth.json, selected-models.json, the skills and the node
+;; shim live here, and the companion maintains them (ADR-0010, ADR-0013).
+(allow file-write* (subpath "__ROOT__"))
+
+;; The application's own data directory: learner records are application data keyed by workspace
+;; (ADR-0009), and the learning session's commands write them.
+(allow file-write* (subpath "__APPDATA__"))
+
+;; The workspace is content, and learning mode reads it and never writes it — whatever the rules
+;; above granted.
+(deny file-write* (subpath "__WORKSPACE__"))
