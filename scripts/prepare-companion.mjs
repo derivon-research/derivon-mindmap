@@ -16,9 +16,9 @@ const run = promisify(execFile);
  * binary that cannot start — on this machine or on a user's. The official builds are
  * self-contained, and pinning them also makes the bundle reproducible.
  *
- * Pi SDK requires >= 22.19.0.
+ * Pi SDK requires >= 22.19.0; the bundle tracks the Active LTS line.
  */
-const NODE_VERSION = 'v22.23.2';
+const NODE_VERSION = 'v24.21.0';
 
 const triples = {
   darwin: { arm64: 'aarch64-apple-darwin', x64: 'x86_64-apple-darwin' },
