@@ -23,3 +23,9 @@ The five canonical roles, each label string equal to its name. See
 
 Single-context. Before naming or changing product concepts, derivations, object documents,
 tags, or replacement compatibility, read `CONTEXT.md` and `docs/agents/domain.md`.
+
+## Dev shell
+
+Native Tauri dependencies come from `flake.nix`. Interactive shells load it through direnv;
+non-interactive commands need `nix develop -c <command>`. `cargo` in `src-tauri/` needs the
+companion binary, so run `npm run build:desktop` first.
