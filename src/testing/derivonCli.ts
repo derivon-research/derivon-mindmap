@@ -34,6 +34,10 @@ export async function installDerivonCli(directory: string, interpreter: string =
   await mkdir(binDirectory, { recursive: true });
   const script = path.join(binDirectory, 'derivon');
   await writeFile(script, derivonCliScript(recordPath, interpreter));
+  // The script has no extension, so Node takes its module format from the nearest package.json.
+  // Without this one it inherits whatever sits above the temporary directory, and a stray
+  // `"type": "commonjs"` in /tmp makes it exit 0 having printed nothing.
+  await writeFile(path.join(binDirectory, 'package.json'), '{"type":"module"}\n');
   // The kernel has to run it by name, the way it runs the installed CLI.
   await chmod(script, 0o755);
   return { binDirectory, calls: () => readCalls(recordPath) };
