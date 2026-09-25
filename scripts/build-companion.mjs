@@ -9,7 +9,7 @@ await build({
   banner: {
     js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
   },
-  target: 'node22',
+  target: 'node24',
   legalComments: 'none',
   define: {
     // The Pi SDK configures its extension loader from this flag: with it, extension modules are

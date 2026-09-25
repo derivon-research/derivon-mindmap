@@ -18,7 +18,7 @@
           nativeBuildInputs = with pkgs; [
             pkg-config
             gobject-introspection
-            nodejs_22
+            nodejs_24
             cargo
             rustc
             clippy
