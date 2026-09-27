@@ -25,12 +25,12 @@ const run = promisify(execFile);
  * application's sessions.
  */
 const SKILLS_REPOSITORY = 'derivon-research/skills';
-const SKILLS_REVISION = '8466baad58c7f325fcfdb32874d8187d151481c8';
+const SKILLS_REVISION = '28b22cefd9fba0536a85694bbfbc67d904107de9';
 const BASE_SKILLS = ['derivon-mindmap', 'derivon-cli'];
 
 /** Where the Tauri bundle picks the seed up from. Mirrors `dist-companion/`. */
 const DESTINATION = 'dist-skills';
-/** Where one download is kept between runs, so a rebuild does not fetch again. */
+/** Where downloads are kept between runs, one per revision, so a rebuild does not fetch again. */
 const CACHE = path.join('.skills-seed');
 
 const revisionArgument = process.argv.indexOf('--revision');
@@ -94,7 +94,8 @@ async function exists(target) {
 }
 
 async function fetchArchive() {  await mkdir(CACHE, { recursive: true });
-  const archivePath = path.join(CACHE, 'skills.tar.gz');
+  // Named by revision: an archive kept under one name would be reused for the next pin.
+  const archivePath = path.join(CACHE, `skills-${revision}.tar.gz`);
   try {
     // Already fetched for this revision: codeload archives are immutable, so there is nothing
     // to check. `--force` is for the case where the download itself is suspect.
