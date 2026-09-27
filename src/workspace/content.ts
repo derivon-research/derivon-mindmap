@@ -1,7 +1,7 @@
 import type { WorkspaceCommit } from '../ports/WorkspaceSource';
 import { imageMimeType } from './imageReference';
 import {
-  WORKSPACE_ID_RULE, WORKSPACE_SCHEMA, generateObjectId, isValidWeight, isValidWorkspaceId,
+  WORKSPACE_ID_RULE, WORKSPACE_SCHEMA, isValidWeight, isValidWorkspaceId, newObjectIdentity,
   objectSourcePath, parseWorkspaceManifest, serializeWorkspaceManifest,
   type ConceptPoint, type DerivationHyperedge, type DocumentReference, type ManifestGraph, type TagDeclaration,
   type WorkspaceManifest,
@@ -241,24 +241,10 @@ export function createWorkspace(intent: { id: string; title: string }): ContentC
   return { content: parseWorkspaceContent({ graph, documents: {} }), changes: { graph, createOnly: true } };
 }
 
-/** A directory that belongs to a new object alone, never nested in or around an existing one. */
-function objectDirectory(content: WorkspaceContent, base: string): string {
-  const usedDirectories = [...content.graph.points, ...content.graph.hyperedges].map((object) => object.data.document);
-  let directory = base;
-  let suffix = 2;
-  while (usedDirectories.some((used) => used === directory || used.startsWith(`${directory}/`) || directory.startsWith(`${used}/`))
-    || Object.keys(content.documents).some((path) => path.startsWith(`${directory}/`))) {
-    directory = `${base}-${suffix++}`;
-  }
-  return directory;
-}
-
 export function createConcept(content: WorkspaceContent, intent: CreateConceptIntent): ContentChange & { objectId: string } {
   const label = intent.label.trim();
   if (!label) throw new Error('概念名称不能为空');
-  const usedIds = new Set([...content.graph.points, ...content.graph.hyperedges].map((object) => object.id));
-  const id = generateObjectId('c', usedIds);
-  const directory = objectDirectory(content, `docs/concept-${id.slice(2)}`);
+  const { id, directory } = newObjectIdentity('concept', content.graph, Object.keys(content.documents));
   const point: ConceptPoint = { id, data: { label, document: directory } };
   const manifest = manifestOf(content);
   const graph = serializeWorkspaceManifest({ ...manifest, graph: {
@@ -307,9 +293,7 @@ function validatedStructure(content: WorkspaceContent, intent: DerivationStructu
  */
 export function createDerivation(content: WorkspaceContent, intent: CreateDerivationIntent): ContentChange & { objectId: string } {
   const { tails, head, weight } = validatedStructure(content, intent);
-  const usedIds = new Set([...content.graph.points, ...content.graph.hyperedges].map((object) => object.id));
-  const id = generateObjectId('h', usedIds);
-  const directory = objectDirectory(content, `docs/derivation-${id.slice(2)}`);
+  const { id, directory } = newObjectIdentity('derivation', content.graph, Object.keys(content.documents));
   const edge: DerivationHyperedge = { id, weight, tails, head, data: { document: directory } };
   const manifest = manifestOf(content);
   const graph = serializeWorkspaceManifest({ ...manifest, graph: {

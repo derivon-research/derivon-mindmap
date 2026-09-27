@@ -7,7 +7,6 @@ import {
   normalizeWeight,
   parseDocument,
   parseDocumentWithMigration,
-  uniqueId,
   validateDocument,
 } from './domain';
 import { sampleDocument } from './sample';
@@ -152,10 +151,5 @@ describe('authoring document', () => {
       { points: ['B'], replaceWith: 'A', show: 'points' },
     ];
     expect(validateDocument(cyclic).some((issue) => issue.message.includes('形成循环'))).toBe(true);
-  });
-
-  it('generates readable ids without collision', () => {
-    expect(uniqueId('c', ['c-1', 'c-2', 'c-4'])).toBe('c-3');
-    expect(uniqueId('h', ['h-1'])).toBe('h-2');
   });
 });

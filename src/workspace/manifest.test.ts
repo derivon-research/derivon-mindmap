@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import nativeRouteFixture from '../../src-tauri/tests/fixtures/complete-workspace/.derivon/workspace.json';
 import {
   WORKSPACE_SCHEMA,
@@ -6,6 +6,7 @@ import {
   conceptsWithTag,
   isValidWorkspaceId,
   generateObjectId,
+  newObjectIdentity,
   parseWorkspaceManifest,
   serializeWorkspaceManifest,
   validateWorkspaceManifest,
@@ -190,5 +191,34 @@ describe('generateObjectId', () => {
     expect(generateObjectId('r', taken)).not.toBe('');
     for (const id of taken) expect(id).toHaveLength(8);
     expect(new Set([...taken, generateObjectId('r', taken)]).size).toBe(201);
+  });
+});
+
+describe('newObjectIdentity', () => {
+  const graph = {
+    points: [{ id: 'c-a', data: { document: 'docs/concept-a' } }],
+    hyperedges: [{ id: 'h-b', data: { document: 'docs/derivation-b' } }],
+  };
+
+  it('names the directory after the id without its prefix', () => {
+    const concept = newObjectIdentity('concept', graph, []);
+    expect(concept.id).toMatch(/^c-[23456789abcdefghjkmnpqrstvwxyz]{6}$/);
+    expect(concept.directory).toBe(`docs/concept-${concept.id.slice(2)}`);
+    const derivation = newObjectIdentity('derivation', graph, []);
+    expect(derivation.id).toMatch(/^h-[23456789abcdefghjkmnpqrstvwxyz]{6}$/);
+    expect(derivation.directory).toBe(`docs/derivation-${derivation.id.slice(2)}`);
+  });
+
+  it('suffixes the directory while a file already occupies it', () => {
+    const { id } = newObjectIdentity('concept', graph, []);
+    const taken = `docs/concept-${id.slice(2)}`;
+    const random = vi.spyOn(crypto, 'getRandomValues');
+    const bytes = [...id.slice(2)].map((character) => '23456789abcdefghjkmnpqrstvwxyz'.indexOf(character));
+    random.mockImplementation(((array: Uint8Array) => { array.set(bytes); return array; }) as typeof crypto.getRandomValues);
+    try {
+      expect(newObjectIdentity('concept', graph, [`${taken}/document.md`]).directory).toBe(`${taken}-2`);
+    } finally {
+      random.mockRestore();
+    }
   });
 });

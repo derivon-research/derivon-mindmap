@@ -235,6 +235,8 @@ my-workspace/
   才经共享会话按需读取 Markdown；读取结果经过版本检查并缓存。
 - 对象 ID 由应用生成，形如 `c-k7f3q2` / `h-2m9dxb`：`c-` 或 `h-` 前缀加六位小写字符，字母表去掉
   `0 1 i l o u`。它永不重用，图内唯一即可；协议本身接受任意 ASCII ID，手写的图可以用 `svd` 这样的名字。
+  新对象的文档目录是 `docs/concept-` 或 `docs/derivation-` 加去掉前缀的 ID（`c-k7f3q2` → `docs/concept-k7f3q2`），
+  目录已被占用时依次加 `-2`、`-3`。应用与 Agent Skills 的 `new-object-id` 按同一条规则同时给出 ID 与目录。
 - 自动保存会检测磁盘修订变化；发生外部修改冲突时暂停写入并要求用户选择版本。
 - 图片引用保留作者写下的相对路径；运行时 Blob URL 和绝对磁盘路径不会写入 Markdown。
 
