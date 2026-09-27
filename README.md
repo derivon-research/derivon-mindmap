@@ -266,6 +266,7 @@ my-workspace/
         "id": "B",
         "data": {
           "label": "概念 B",
+          "qualifier": "另一种定义",
           "document": "docs/concept-b"
         }
       }
@@ -288,6 +289,7 @@ my-workspace/
 
 `description` 在概念和推导上都可选，是给选择器、搜索结果和列表用的一句话，不是文档的摘要。
 推导的 `label` 也可选；不写就按端点显示成「A + B → C」。
+概念的 `label` 可以与别的概念重名；可选的 `qualifier` 是几个字的限定语，画布显示在名称下方，用来区分同名的概念（见 [ADR-0014](docs/adr/0014-concept-names-may-repeat.md)）。
 
 v1 是唯一的工作区协议，没有旧版本需要迁移：schema 串不是 `derivon.workspace/v1`、缺少顶层 `id`、
 `id` 不是一段可用的路径名、清单里还留着 `view` 或 `format`，或者顶层出现了协议未定义的键，
