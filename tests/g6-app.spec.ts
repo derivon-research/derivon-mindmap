@@ -598,7 +598,7 @@ test('renders an empty workspace and incrementally adds its first concept', asyn
   await page.getByTitle('新建概念').click();
   await expect(surface).toHaveAttribute('data-rendered-nodes', '1');
   await expect(page.locator('.inspector .eyebrow')).toHaveText('概念');
-  await expect(page.locator('.inspector-heading strong')).toHaveText('c-1');
+  await expect(page.locator('.inspector-heading strong')).toHaveText(/^c-[23456789abcdefghjkmnpqrstvwxyz]{6}$/);
 });
 
 test('creates and edits a derivation through the G6 authoring workflow', async ({ page }) => {
