@@ -339,3 +339,31 @@ export function generateObjectId(prefix: 'c' | 'h' | 'r', existing: Iterable<str
     if (!used.has(id)) return id;
   }
 }
+
+type ObjectOwners = {
+  readonly points: readonly { readonly id: string; readonly data: { readonly document: string } }[];
+  readonly hyperedges: readonly { readonly id: string; readonly data: { readonly document: string } }[];
+};
+
+/**
+ * A new object's id and document directory, the one rule every creation path follows and the
+ * README states for other writers: `docs/concept-` or `docs/derivation-` plus the id without its
+ * prefix, then `-2`, `-3`… while an object or a file already occupies that directory, sits inside
+ * it, or contains it. The id is unique among concepts and derivations together.
+ */
+export function newObjectIdentity(
+  kind: 'concept' | 'derivation', graph: ObjectOwners, documentPaths: Iterable<string>,
+): { id: string; directory: string } {
+  const objects = [...graph.points, ...graph.hyperedges];
+  const id = generateObjectId(kind === 'concept' ? 'c' : 'h', objects.map((object) => object.id));
+  const usedDirectories = objects.map((object) => object.data.document);
+  const paths = [...documentPaths];
+  const base = `docs/${kind}-${id.slice(2)}`;
+  let directory = base;
+  let suffix = 2;
+  while (usedDirectories.some((used) => used === directory || used.startsWith(`${directory}/`) || directory.startsWith(`${used}/`))
+    || paths.some((path) => path.startsWith(`${directory}/`))) {
+    directory = `${base}-${suffix++}`;
+  }
+  return { id, directory };
+}

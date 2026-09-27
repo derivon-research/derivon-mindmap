@@ -32,7 +32,6 @@ import {
   documentMigrationSource,
   formatWeight,
   normalizeWeight,
-  uniqueId,
   type AuthoringDocument,
   type DocumentFormat,
   type Hyperedge,
@@ -99,7 +98,6 @@ import {
   WORKSPACE_MANIFEST,
   chooseWorkspaceDirectory,
   conceptTemplate,
-  createDocumentDirectory,
   derivationTemplate,
   documentEntryPath,
   documentSourcePath,
@@ -120,6 +118,7 @@ import {
   type WorkspaceDirectory,
   type WorkspaceDirectorySnapshot,
 } from './workspace';
+import { newObjectIdentity } from './workspace/manifest';
 const G6GraphSurface = lazy(() => import('./G6GraphSurface'));
 
 type GraphConnection = {
@@ -960,11 +959,7 @@ function AuthoringCanvas() {
   }, [activeIds, focusedId, layoutPositions, visibleGroupByNodeId]);
 
   const addConcept = useCallback((position?: Position) => {
-    const id = uniqueId('c', document.graph.points.map((concept) => concept.id));
-    const directory = createDocumentDirectory('concept', id, [
-      ...document.graph.points.map((item) => item.data.document),
-      ...document.graph.hyperedges.map((item) => item.data.document),
-    ]);
+    const { id, directory } = newObjectIdentity('concept', document.graph, Object.keys(files));
     const format: DocumentFormat = 'markdown';
     const source = conceptTemplate('新概念', format);
     const conceptIndex = document.graph.points.length;
@@ -986,14 +981,10 @@ function AuthoringCanvas() {
     setSelectedNodeIds([id]);
     setSelectedId(id);
     notifyTourAction('concept-added');
-  }, [clientToGraph, commit, document.graph.hyperedges, document.graph.points]);
+  }, [clientToGraph, commit, document.graph.hyperedges, document.graph.points, files]);
 
   const createDerivation = useCallback((tails: string[], head: string, weight = 1): string => {
-    const id = uniqueId('h', document.graph.hyperedges.map((item) => item.id));
-    const directory = createDocumentDirectory('derivation', id, [
-      ...document.graph.points.map((item) => item.data.document),
-      ...document.graph.hyperedges.map((item) => item.data.document),
-    ]);
+    const { id, directory } = newObjectIdentity('derivation', document.graph, Object.keys(files));
     const format: DocumentFormat = 'markdown';
     const source = derivationTemplate(id, format);
     const nextHyperedge: Hyperedge = {
@@ -1037,7 +1028,7 @@ function AuthoringCanvas() {
       notifyTourAction('tutorial-surjective-parallel-created');
     }
     return id;
-  }, [commit, derivationGroups, document.graph.hyperedges, document.graph.points, layoutPositions]);
+  }, [commit, derivationGroups, document.graph.hyperedges, document.graph.points, files, layoutPositions]);
 
   const connectNodes = useCallback((connection: GraphConnection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return;
