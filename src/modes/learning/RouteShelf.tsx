@@ -180,7 +180,7 @@ function EntryList({ graph, entries, selected, onSelect }: {
           </span>
           {entry.route && entry.reading && <span className="route-shelf-meta">
             走到 {entry.route.targets.map((id) => labelOf(graph, id)).join('、')}
-            {' · '}{entry.route.steps.length} 步 · 成本 {entry.reading.cost}
+            {' · '}{entry.reading.order.length} 步 · 成本 {entry.reading.cost}
           </span>}
         </button>
       </li>;
@@ -215,9 +215,10 @@ function EntryDetail({ graph, entry, active, canCopy, basedOnLabel, onStart, onC
     </section>;
   }
 
-  // The route's own steps are the route; the steps that can still be drawn are fewer when the
-  // graph lost an object the route names. Both are shown, because the difference is the point.
-  const undrawable = route.steps.length - steps.length;
+  // Step count and cost are the reading's, as in the editor and the authoring list. The entries
+  // the graph lost are not steps of the reading; they are named separately, because the
+  // difference is the point.
+  const undrawable = new Set(route.steps).size - reading.order.length;
   return <section className="route-shelf-detail" aria-label={route.label}>
     <header>
       <div>
@@ -226,7 +227,7 @@ function EntryDetail({ graph, entry, active, canCopy, basedOnLabel, onStart, onC
         <p>
           {entry.group === 'workspace' ? '这个工作区带的 · ' : '我的 · '}
           走到 {route.targets.map((id) => labelOf(graph, id)).join('、')}
-          {' · '}{route.steps.length} 步 · 成本 {reading.cost}
+          {' · '}{reading.order.length} 步 · 成本 {reading.cost}
         </p>
         {route.basedOn && <p className="route-shelf-based-on">
           改自这个工作区带的「{basedOnLabel ?? route.basedOn}」{basedOnLabel === null ? '（工作区里已经没有这条路线）' : ''}

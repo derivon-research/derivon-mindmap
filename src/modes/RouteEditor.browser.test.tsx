@@ -131,6 +131,31 @@ it('swaps a step for its parallel derivation in place, and reports what the swap
   await expect.element(button('保存')).toBeEnabled();
 });
 
+it('offers only the parallel derivations that are not already steps', async () => {
+  const both: Route = { ...solved, steps: ['h-ab', 'h-ab2', 'h-ax', 'h-bc', 'h-cd'] };
+  harness({ route: both, saved: both });
+  expect(page.getByRole('combobox', { name: /换掉第 \d 步的推导/ }).elements()).toHaveLength(0);
+  await expect.element(page.getByRole('listitem', { name: '第 1 步：向量空间' })).toHaveTextContent('有 1 种平行推导');
+});
+
+it('asks before a new draft replaces steps the author changed, and not before replacing an untouched draft', async () => {
+  harness({ route: solved, saved: solved });
+  await button('去掉第 3 步').click();
+  await button('按目标与已知重新求初稿').click();
+  const question = page.getByRole('group', { name: '确认重新求初稿' });
+  await expect.element(question).toHaveTextContent('对步骤的改动都会丢掉');
+  await button('算了').click();
+  expect(steps()).toEqual(['向量空间', '子空间']);
+
+  await button('按目标与已知重新求初稿').click();
+  await button('丢掉改动，重新求初稿').click();
+  await expect.poll(steps).toEqual(['向量空间', '子空间', '维数']);
+
+  // The draft the solver just gave is untouched: drafting again loses nothing and asks nothing.
+  await button('按目标与已知重新求初稿').click();
+  expect(page.getByRole('group', { name: '确认重新求初稿' }).elements()).toHaveLength(0);
+});
+
 it('writes the order down when a step moves, refuses an order that cannot be walked, and returns to the computed order', async () => {
   harness({ route: solved, saved: solved });
   expect(container.textContent).toContain('顺序：现算');

@@ -7,6 +7,7 @@ import {
   type Route, type RouteDiagnostic, type RouteReading, type TagDeclaration, type WorkspaceGraph,
 } from '../workspace/index';
 import { ConceptPicker, labelOf } from './ConceptPicker';
+import { ConfirmButton } from './ConfirmButton';
 import { RetainedGraph } from './RetainedGraph';
 import { routeGraphView, routeSolutionOfReading } from './routePreview';
 import './route-editor.css';
@@ -174,6 +175,8 @@ function DraftFromSolver({ graph, route, routeSolver, onDraft }: {
   const [state, setState] = useState<{ readonly status: 'idle' | 'solving' } | { readonly status: 'note'; readonly note: string }>({ status: 'idle' });
   const latest = useRef(route);
   latest.current = route;
+  /** The steps the last solve drafted: re-solving over exactly those loses nothing. */
+  const drafted = useRef<readonly string[] | null>(null);
   const request = `${route.targets.join(' ')}|${route.known.join(' ')}`;
   useEffect(() => { setState({ status: 'idle' }); }, [request]);
 
@@ -187,17 +190,24 @@ function DraftFromSolver({ graph, route, routeSolver, onDraft }: {
       const current = latest.current;
       // Targets or known changed while solving: this draft answers a question no longer asked.
       if (`${current.targets.join(' ')}|${current.known.join(' ')}` !== request) return;
-      onDraft(draftFromSolution(current, solution));
+      const next = draftFromSolution(current, solution);
+      drafted.current = next.steps;
+      onDraft(next);
       setState(solution.reachable ? { status: 'idle' } : { status: 'note', note: '求解器到不了全部目标，初稿只含它找到的推导。' });
     } catch (error) {
       setState({ status: 'note', note: `求解失败：${error instanceof Error ? error.message : String(error)}` });
     }
   };
+  // Steps the author wrote or changed — anything but the last draft, untouched — are lost to a
+  // new draft, so it asks first; an empty route or an untouched draft has nothing to lose.
+  const edited = route.steps.length > 0 && !(drafted.current !== null && !route.ordered
+    && drafted.current.length === route.steps.length && drafted.current.every((id, index) => route.steps[index] === id));
   return <p className="route-editor-solver">
-    <button type="button" disabled={!route.targets.length || state.status === 'solving'} onClick={() => void solve()}>
+    <ConfirmButton ask={edited} disabled={!route.targets.length || state.status === 'solving'} onConfirm={() => void solve()}
+      groupLabel="确认重新求初稿" confirmLabel="丢掉改动，重新求初稿" prompt="重新求初稿会用求解结果替换现在的步骤，对步骤的改动都会丢掉。">
       <Wand2 size={14} />{state.status === 'solving' ? '正在求解…' : '按目标与已知重新求初稿'}
-    </button>
-    <span>{route.targets.length ? '会丢掉对步骤的改动' : '先选至少一个目标'}</span>
+    </ConfirmButton>
+    {!route.targets.length ? <span>先选至少一个目标</span> : edited && <span>会丢掉对步骤的改动，会先问你</span>}
     {state.status === 'note' && <em role="status">{state.note}</em>}
   </p>;
 }
@@ -248,6 +258,8 @@ function StepTable({ graph, route, reading, onEdit }: {
       const own = notes.get(id) ?? [];
       const severity = own.some((note) => note.severity === 'error') ? 'error' : own.length ? 'warning' : '';
       const parallels = parallelDerivations(graph, id);
+      // A parallel already among the steps would only become a duplicate step: it is not offered.
+      const swappable = parallels.filter((parallel) => !route.steps.includes(parallel));
       const concept = labelOf(graph, edge.head);
       return <li key={id} className={severity ? `is-${severity}` : undefined} aria-label={`第 ${index + 1} 步：${concept}`}
         draggable={Boolean(onEdit)}
@@ -262,13 +274,13 @@ function StepTable({ graph, route, reading, onEdit }: {
           <small>{needsOf(graph, id)}</small>
           {own.map((note, noteIndex) => <em key={`${note.code}:${noteIndex}`} className={`is-${note.severity}`}>{note.message}</em>)}
         </span>
-        {parallels.length > 0 && (onEdit
+        {onEdit && swappable.length > 0
           ? <select value="" aria-label={`换掉第 ${index + 1} 步的推导`}
             onChange={(event) => { if (event.target.value) onEdit(swapStep(route, id, event.target.value)); }}>
             <option value="">换成平行推导…</option>
-            {parallels.map((parallel) => <option key={parallel} value={parallel}>{needsOf(graph, parallel)}</option>)}
+            {swappable.map((parallel) => <option key={parallel} value={parallel}>{needsOf(graph, parallel)}</option>)}
           </select>
-          : <small className="route-editor-parallels">有 {parallels.length} 种平行推导</small>)}
+          : parallels.length > 0 && <small className="route-editor-parallels">有 {parallels.length} 种平行推导</small>}
         <span className="route-editor-step-weight">{edge.weight}</span>
         {onEdit && <span className="route-editor-step-tools">
           <button type="button" aria-label={`上移第 ${index + 1} 步`} disabled={index === 0} onClick={() => move(id, index - 1)}>

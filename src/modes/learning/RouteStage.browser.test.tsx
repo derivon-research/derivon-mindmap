@@ -161,8 +161,10 @@ it('marks a route that no longer fits the graph as invalid, and does not let it 
   await render({ records, onSelectRoute });
 
   await expect.element(page.getByRole('heading', { name: '丢了一步的路线' })).toBeVisible();
-  // The route is three steps as saved; the graph can only draw two of them, and it says so.
-  expect(container.textContent).toContain('3 步');
+  // Saved with three entries, the route has two steps on this graph — counted as the editor
+  // counts them — and the entry the graph lost is named separately.
+  expect(container.textContent).toContain('2 步 · 成本');
+  expect(container.textContent).not.toContain('3 步');
   expect(container.textContent).toContain('路线里的 1 步已经不在当前图里');
   expect(container.textContent).toContain('与当前图不符');
   expect(container.textContent).toContain('d-gone');

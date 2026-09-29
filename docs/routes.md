@@ -189,7 +189,7 @@ codes for the same subjects.
 
 | Code | Condition | Carries |
 | --- | --- | --- |
-| `never-fires` | A step's premises are never all available, and at least one missing premise is concluded by no step of the route. See [root causes](#root-causes-only). | the step and its missing premises |
+| `never-fires` | A step's premises are never all available, and it is a root cause: at least one missing premise is concluded by no step of the route, or it is the first step in list order of a cycle of steps that only wait on each other. See [root causes](#root-causes-only). | the step and all its missing premises |
 | `idle` | A step that fires is not needed for any target. Not reported at all while the route has a `target-unreached` error. See [needed steps](#needed-steps). | the step |
 | `duplicate-head` | An earlier step in the display order already concludes the same concept. | the step, the concept, and the earlier step |
 
@@ -197,7 +197,7 @@ Two derivations concluding the same concept — parallel derivations — are leg
 an author may teach both accounts. That is the `duplicate-head` warning and never an error.
 
 Besides the diagnostics the reading carries one number, the **blocked count**: how many steps
-never fire only because another step of the route never fires. The interface shows it as one
+never fire only because a root-cause step of the route never fires. The interface shows it as one
 sentence («另有 N 步因此暂时走不了») rather than one diagnostic per step.
 
 ## Reading a route on the graph
@@ -293,10 +293,29 @@ suggestion is out of scope.
 
 ### Root causes only
 
-For each unfired step, its missing premises are those not in the closure. If every missing
-premise is concluded by some step of the route, the step never fires only because other steps
-never fire: it adds one to the blocked count and is not listed. Otherwise it is a
-`never-fires` warning carrying all of its missing premises.
+For each unfired step, its missing premises are those not in the closure. A step **waits on**
+another unfired step when that step concludes one of its missing premises. Every unfired step
+is either a **root**, reported as a `never-fires` warning carrying all of its missing premises,
+or **blocked**, counted and not listed:
+
+```text
+roots   := unfired steps with a missing premise that no step concludes
+blocked := {}
+repeat
+  add to blocked every unfired step, not a root, that waits on a root or a blocked step,
+    until nothing more is added
+  if some unfired step is neither a root nor blocked:
+    the first such step, in list order, that lies on a cycle of waiting among such steps
+      becomes a root
+until every unfired step is a root or blocked
+```
+
+The first rule is the ordinary case: a premise nothing in the route concludes. The second is
+the cycle nothing outside starts — steps that only wait on each other. Each group of steps
+waiting on each other this way has exactly one root, its first member on a cycle in list
+order, so a route whose unfired steps form a cycle still names a cause instead of reporting
+only a blocked count. A step that merely waits on a cycle is not itself on it, and is blocked
+rather than a root.
 
 ### Needed steps
 
@@ -350,14 +369,14 @@ effective content, not auto-saved, and protected against external updates.
 
 | Edit | Effect |
 | --- | --- |
-| Swap for a parallel derivation | Replaces the step in place; position and `ordered` unchanged. |
+| Swap for a parallel derivation | Replaces the step in place; position and `ordered` unchanged. Swapping in a derivation that is already a step keeps both entries, which is a `duplicate-step` error; the editor therefore offers only parallel derivations not yet in `steps`. |
 | Remove a step | Removes it from `steps`. |
 | Add a derivation | `ordered: false`: appended to `steps`. `ordered: true`: inserted before the first position at which all its premises are in hand (known, or concluded by an earlier step), so that filling a gap does not itself create an order error. Adding a derivation already among the steps changes nothing. |
-| Move a step | Writes the order down: `steps` becomes the current display order with the step moved, and `ordered` becomes `true`. |
+| Move a step | Writes the order down: `steps` becomes the current display order with the step moved, followed by the entries that take no part — dangling ids and repeats — in their list order; `ordered` becomes `true`. Nothing is dropped. |
 | Return to computed order | `ordered` becomes `false`; `steps` is left as it is. |
 | Rename, describe | Sets `label`, `description`. |
 | Change targets or known | Sets `targets`, `known`; `steps` is left as it is. |
-| Draft again from targets and known | `steps` becomes the solve's derivations, `ordered: false`. Discards the step edits and says so first. |
+| Draft again from targets and known | `steps` becomes the solve's derivations, `ordered: false`. When that would discard steps the author wrote or changed, the editor asks for confirmation first. |
 | Save as mine | See [personal routes](#personal-routes--learner-recordsworkspace-idroutes). |
 
 A new route starts from targets and known, and its first draft comes from the `RouteSolver`

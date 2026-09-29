@@ -150,9 +150,29 @@ describe('reading a route on the graph', () => {
     ]);
   });
 
-  it('reports an unreached target with no gap when only a cycle leads to it', () => {
+  it('reports an unreached target with no gap when only a cycle leads to it, and names the cycle\'s first step', () => {
     const reading = readRoute(graph, route({ targets: ['loose'], steps: ['h-loose', 'h-orphan'] }));
-    expect(reading.diagnostics).toEqual([expect.objectContaining({ code: 'target-unreached', gaps: [] })]);
+    expect(reading.diagnostics).toEqual([
+      expect.objectContaining({ code: 'target-unreached', gaps: [] }),
+      expect.objectContaining({ code: 'never-fires', derivationId: 'h-loose', position: 1, missing: ['orphan'] }),
+    ]);
+    expect(reading.blocked).toBe(1);
+  });
+
+  it('reports a root cause for a cycle of steps that only wait on each other, even when every target is reached', () => {
+    const reading = readRoute(graph, route({ steps: ['h-space', 'h-sub', 'h-thm', 'h-orphan', 'h-loose'] }));
+    expect(reading.errors).toBe(0);
+    expect(reading.diagnostics).toEqual([
+      expect.objectContaining({ code: 'never-fires', derivationId: 'h-orphan', position: 4, missing: ['loose'] }),
+    ]);
+    expect(reading.blocked).toBe(1);
+  });
+
+  it('counts a step waiting on a cycle as blocked, and puts the root on the cycle itself', () => {
+    const cyclic: ManifestGraph = { ...graph, hyperedges: [...graph.hyperedges, derivation('h-after', ['loose'], 'extra')] };
+    const reading = readRoute(cyclic, route({ steps: ['h-space', 'h-sub', 'h-thm', 'h-after', 'h-orphan', 'h-loose'] }));
+    expect(reading.diagnostics.filter((item) => item.code === 'never-fires'))
+      .toEqual([expect.objectContaining({ derivationId: 'h-orphan' })]);
     expect(reading.blocked).toBe(2);
   });
 
@@ -196,6 +216,13 @@ describe('editing a route', () => {
     expect(readRoute(graph, swapped).errors).toBe(0);
   });
 
+  it('swaps in place even when the parallel is already a step, leaving the duplicate for the author to see', () => {
+    const both = route({ steps: ['h-space', 'h-space-alt', 'h-sub', 'h-thm'], ordered: true });
+    const swapped = swapStep(both, 'h-space', 'h-space-alt');
+    expect(swapped.steps).toEqual(['h-space-alt', 'h-space-alt', 'h-sub', 'h-thm']);
+    expect(codes(swapped)).toContain('duplicate-step');
+  });
+
   it('removes a step', () => {
     expect(removeStep(route(), 'h-sub').steps).toEqual(['h-space', 'h-thm']);
   });
@@ -227,6 +254,14 @@ describe('editing a route', () => {
     const moved = moveStep(graph, route(), 'h-thm', 0);
     expect(moved.steps).toEqual(['h-thm', 'h-space', 'h-sub']);
     expect(codes(moved)).toEqual(['order-not-executable']);
+  });
+
+  it('never drops a dangling or repeated entry when a step moves', () => {
+    const broken = route({ steps: ['h-gone', 'h-space', 'h-sub', 'h-space', 'h-thm'] });
+    const moved = moveStep(graph, broken, 'h-thm', 0);
+    expect(moved.steps).toEqual(['h-thm', 'h-space', 'h-sub', 'h-gone', 'h-space']);
+    expect(codes(moved)).toEqual(expect.arrayContaining(['duplicate-step', 'dangling-derivation']));
+    expect(readRoute(graph, moved).order).toEqual(['h-thm', 'h-space', 'h-sub']);
   });
 
   it('keeps a step that never fires when another one moves', () => {

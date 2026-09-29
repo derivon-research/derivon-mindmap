@@ -209,6 +209,15 @@ it('marks an invalid workspace route and does not let it start', async () => {
   expect((page.getByRole('button', { name: '开始学' }).element() as HTMLButtonElement).disabled).toBe(true);
 });
 
+it('counts steps the way the editor does: a derivation the graph lacks is not a step', async () => {
+  const dangling: Route = { ...authorRoute, id: 'r-yyyyyy', label: '引用悬空的路线', steps: ['d1', 'gone', 'd2'] };
+  await open(memoryWorkspace([dangling]), createMemoryLearnerRecords('test-workspace'));
+
+  const shipped = page.getByRole('region', { name: '这个工作区带的' });
+  await expect.element(shipped.getByRole('button', { name: /引用悬空的路线/ })).toHaveTextContent('走到 C · 2 步 · 成本 5');
+  expect(container.textContent).not.toContain('3 步');
+});
+
 it('walks a workspace route like any other, from the shelf', async () => {
   await open(memoryWorkspace([authorRoute]), createMemoryLearnerRecords('test-workspace'));
 

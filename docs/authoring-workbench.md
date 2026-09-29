@@ -80,16 +80,18 @@ included with their diagnosis — in the role the orientation outline plays, wit
 independent collapse; 新建路线 sits at the bottom of the list.
 
 The centre is the route editor, top to bottom: name and description; targets and known through
-the concept picker; 按目标与已知重新求初稿; the gap panel, where every gap offers its candidate
+the concept picker; 按目标与已知重新求初稿, which asks first when it would discard steps the
+author wrote or changed; the gap panel, where every gap offers its candidate
 derivations with 补上; the order-state row, 现算 or 已写定 with 改回现算; the step table; a
 search that adds a derivation, those that can fire now first; and the save bar with the error
 count, 放弃更改 and 保存. A step-table row shows its position, the concept it concludes, what it
-needs, a parallel-derivation choice when the graph has one, its cost, move up, move down and
+needs, a parallel-derivation choice when the graph has one not already among the steps, its cost, move up, move down and
 remove, and the whole row drags; a step's own diagnosis sits on its row. The right pane is the
 route's subgraph, drawn by the route view.
 
 Every edit re-validates at once, and only root causes are listed: steps that fail only because
-another step fails are one sentence, 另有 N 步因此暂时走不了. Save stays disabled while any
+another step fails are one sentence, 另有 N 步因此暂时走不了; a cycle of steps that only wait
+on each other still names its first step as the cause. Save stays disabled while any
 error remains, so a workspace never holds a route that was invalid when saved; one that
 becomes invalid later, because the graph changed, is listed as invalid rather than repaired.
 Edits live in a draft, protected like every other draft. Accepting it is one content operation

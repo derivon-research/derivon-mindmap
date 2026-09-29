@@ -407,18 +407,54 @@ export function readRoute(graph: ManifestGraph, route: Route, place?: RoutePlace
     }
   }
 
-  // Root causes only: a step whose every missing premise some step concludes is blocked.
+  // Root causes only. A root is an unfired step missing a premise no step concludes; a step
+  // that waits on a root, directly or through other waiting steps, is blocked and counted.
+  // Steps left over wait only on each other in a cycle nothing outside starts: the first of
+  // them in list order that lies on such a cycle is a root too, and so on until none is left.
   const heads = new Set(steps.map((id) => edge(id).head));
-  let blocked = 0;
-  for (const id of unfired) {
-    const missing = edge(id).tails.filter((tail) => !closure.has(tail));
-    if (missing.every((tail) => heads.has(tail))) {
-      blocked += 1;
-      continue;
+  const missingOf = new Map(unfired.map((id) => [id, edge(id).tails.filter((tail) => !closure.has(tail))]));
+  const waitsOn = (id: string) => unfired.filter((other) => missingOf.get(id)!.includes(edge(other).head));
+  const roots: string[] = unfired.filter((id) => missingOf.get(id)!.some((tail) => !heads.has(tail)));
+  const explained = new Set(roots);
+  const explain = () => {
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const id of unfired) {
+        if (explained.has(id) || !waitsOn(id).some((other) => explained.has(other))) continue;
+        explained.add(id);
+        grew = true;
+      }
     }
+  };
+  const onCycle = (id: string) => {
+    const seen = new Set<string>();
+    const stack = waitsOn(id);
+    while (stack.length) {
+      const next = stack.pop()!;
+      if (next === id) return true;
+      if (seen.has(next) || explained.has(next)) continue;
+      seen.add(next);
+      stack.push(...waitsOn(next));
+    }
+    return false;
+  };
+  explain();
+  for (let root = unfired.find((id) => !explained.has(id) && onCycle(id)); root; root = unfired.find((id) => !explained.has(id) && onCycle(id))) {
+    roots.push(root);
+    explained.add(root);
+    explain();
+  }
+  const rootSet = new Set(roots);
+  const blocked = unfired.length - rootSet.size;
+  for (const id of unfired) {
+    if (!rootSet.has(id)) continue;
+    const missing = missingOf.get(id)!;
+    const unobtainable = missing.filter((tail) => !heads.has(tail));
     diagnostics.push({
       severity: 'warning', code: 'never-fires', derivationId: id, position: positionOf.get(id)!, missing,
-      message: `${stepName(id)}的前提${missing.filter((tail) => !heads.has(tail)).map(name).join('')}永远拿不到。`,
+      message: unobtainable.length
+        ? `${stepName(id)}的前提${unobtainable.map(name).join('')}永远拿不到。`
+        : `${stepName(id)}的前提${missing.map(name).join('')}只由互相等待的步骤得到，永远拿不到。`,
     });
   }
 
@@ -525,13 +561,14 @@ export function parallelDerivations(graph: ManifestGraph, derivationId: string):
   return graph.hyperedges.filter((edge) => edge.head === head && edge.id !== derivationId).map((edge) => edge.id);
 }
 
-/** Put `to` where `from` was; the order is kept. If `to` is already a step, `from` just goes. */
+/**
+ * Put `to` where `from` was; the position and `ordered` are kept. Like every edit it never
+ * refuses: if `to` is already a step, both entries stay, and the route carries a
+ * `duplicate-step` error until the author removes one.
+ */
 export function swapStep(route: Route, from: string, to: string): Route {
   if (from === to || !route.steps.includes(from)) return route;
-  const steps = route.steps.includes(to)
-    ? route.steps.filter((id) => id !== from)
-    : route.steps.map((id) => (id === from ? to : id));
-  return { ...route, steps };
+  return { ...route, steps: route.steps.map((id) => (id === from ? to : id)) };
 }
 
 export function removeStep(route: Route, derivationId: string): Route {
@@ -560,7 +597,9 @@ export function addStep(graph: ManifestGraph, route: Route, derivationId: string
 
 /**
  * Move a step to `toIndex` (0-based) of the display order. Moving writes the order down:
- * `steps` becomes the current display order with the step moved, and `ordered` becomes true.
+ * `steps` becomes the current display order with the step moved, followed by the entries that
+ * take no part — dangling ids and repeats — in their list order, and `ordered` becomes true.
+ * Nothing is dropped: an edit never repairs a route.
  */
 export function moveStep(graph: ManifestGraph, route: Route, derivationId: string, toIndex: number): Route {
   const steps = [...readRoute(graph, route).order];
@@ -568,7 +607,14 @@ export function moveStep(graph: ManifestGraph, route: Route, derivationId: strin
   if (from < 0) return route;
   steps.splice(from, 1);
   steps.splice(Math.max(0, Math.min(toIndex, steps.length)), 0, derivationId);
-  return { ...route, steps, ordered: true };
+  const edges = edgesById(graph);
+  const seen = new Set<string>();
+  const inert = route.steps.filter((id) => {
+    if (!edges.has(id) || seen.has(id)) return true;
+    seen.add(id);
+    return false;
+  });
+  return { ...route, steps: [...steps, ...inert], ordered: true };
 }
 
 /** "改回现算": the steps become a set again and the display order is computed. */
