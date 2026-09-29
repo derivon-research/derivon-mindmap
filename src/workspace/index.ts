@@ -1,14 +1,15 @@
 import { parseWorkspaceManifest, type ManifestGraph } from './manifest';
 
 export {
-  createConcept, createDerivation, createWorkspace, isMarkdownPath,
+  acceptWorkspaceRoute, createConcept, createDerivation, createWorkspace, deleteWorkspaceRoute, isMarkdownPath,
+  isWorkspaceRoutePath, workspaceRouteImpact,
   objectDocumentPaths, objectDocumentSource, objectSourcePath,
   orientationConceptImpact, parseWorkspaceContent, updateConceptTags, updateDerivationStructure,
   updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
   type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type CreateDerivationIntent,
   type DerivationStructure, type TextResource,
   type UpdateConceptTagsIntent, type UpdateDerivationStructureIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
-  type WorkspaceContent, type WorkspaceOrientation,
+  type WorkspaceContent, type WorkspaceOrientation, type WorkspaceRoute, type WorkspaceRouteReference,
 } from './content';
 
 export {

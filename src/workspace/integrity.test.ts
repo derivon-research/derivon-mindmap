@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ORIENTATION_SCHEMA, WORKSPACE_SCHEMA } from './index';
+import { ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, serializeRoute } from './index';
 import { parseWorkspaceContent, type WorkspaceContent } from './content';
 import {
   deleteObjects, deletionScope, isDeletionSafe, referenceImpact, repairDocumentReferences, restoreObjectDocument,
@@ -89,6 +89,32 @@ describe('the references a deletion would break', () => {
     });
     expect(referenceImpact(configured, { conceptIds: ['c-b'] }).orientation)
       .toEqual([{ conceptId: 'c-b', at: { field: 'seed.targets' } }]);
+  });
+
+  it('lists the workspace routes naming a removed object, without blocking or repairing them', () => {
+    const route = (id: string, fields: object) => ({ status: 'ready' as const, text: serializeRoute({
+      id, label: id, known: ['c-a'], targets: ['c-b'], steps: ['h-1'], ordered: false, ...fields }, 'workspace') });
+    const documents = { 'docs/concept-a/document.md': { status: 'ready' as const, text: '' },
+      'docs/concept-b/document.md': { status: 'ready' as const, text: '' },
+      'docs/concept-c/document.md': { status: 'ready' as const, text: '' },
+      'docs/derivation-1/document.md': { status: 'ready' as const, text: '' } };
+    const routed = workspace(documents, {
+      '.derivon/routes/r-aaaaaa.json': route('r-aaaaaa', {}),
+      '.derivon/routes/r-bbbbbb.json': route('r-bbbbbb', { known: ['c-c'], targets: ['c-c'], steps: [] }),
+    });
+    // Removing A takes h-1 with it, so the first route loses a known concept and its only step.
+    const impact = referenceImpact(routed, { conceptIds: ['c-a'] });
+    expect(impact.routes).toEqual([
+      { id: 'r-aaaaaa', path: '.derivon/routes/r-aaaaaa.json', label: 'r-aaaaaa', objectIds: ['c-a', 'h-1'] },
+    ]);
+    expect(isDeletionSafe(impact)).toBe(true);
+
+    const deleted = deleteObjects(routed, { plan: { conceptIds: ['c-a'] }, repairs: [], ownedFiles: {
+      'docs/concept-a': ['docs/concept-a/document.md'], 'docs/derivation-1': ['docs/derivation-1/document.md'] } });
+    expect(deleted.changes.companionMetadata ?? []).toEqual([]);
+    expect(deleted.content.routes.map((entry) => [entry.id, entry.status])).toEqual([
+      ['r-aaaaaa', 'invalid'], ['r-bbbbbb', 'ready'],
+    ]);
   });
 
   it("does not report a deleted document's references to another deleted document", () => {

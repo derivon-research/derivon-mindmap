@@ -49,6 +49,9 @@ describe('WorkspaceSource', () => {
     expect(graph.document.title).toBe('线性代数应该这样学：概念与推导图');
     expect(await bundledExampleWorkspaceSource.readDocument('docs/concept-foundation-fields/document.md'))
       .toContain('# 数域');
+    const routes = await bundledExampleWorkspaceSource.listCompanionFiles('.derivon/routes');
+    expect(routes).toContain('.derivon/routes/r-sv4d2m.json');
+    expect(await bundledExampleWorkspaceSource.readCompanionMetadata(routes[0])).toContain('"derivon.route/v1"');
     expect('commit' in bundledExampleWorkspaceSource).toBe(false);
   });
 });

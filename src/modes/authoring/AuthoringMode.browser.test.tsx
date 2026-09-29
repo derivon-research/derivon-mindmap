@@ -10,7 +10,7 @@ import { AuthoringMode } from './AuthoringMode';
 import { fakeAuthoringCommands } from '../../testing/authoringCommands';
 
 const emptyContent: WorkspaceContent = {
-  graphText: '', title: 'Test', graph: { points: [], hyperedges: [] }, documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [],
+  graphText: '', title: 'Test', graph: { points: [], hyperedges: [] }, documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, routes: [], diagnostics: [],
 };
 let container: HTMLDivElement;
 let root: Root | undefined;

@@ -1,12 +1,13 @@
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import {
-  ORIENTATION_PATH, createConcept, createDerivation, deleteObjects, deletionScope, objectSourcePath,
+  ORIENTATION_PATH, WORKSPACE_ROUTES_DIRECTORY, acceptWorkspaceRoute, createConcept, deleteWorkspaceRoute,
+  isWorkspaceRoutePath, createDerivation, deleteObjects, deletionScope, objectSourcePath,
   parseWorkspaceContent, referenceImpact, repairDocumentReferences, restoreObjectDocument,
   updateConceptTags, updateDerivationStructure, updateObjectDocument, updateObjectMetadata, updateOrientation,
   updateTagDeclarations,
   type ContentChange, type CreateConceptIntent, type CreateDerivationIntent, type DeleteObjectsIntent,
   type DeletionPlan, type ObjectRef, type OrientationConfig, type ReferenceImpact, type RepairReferencesIntent,
-  type RestoreDocumentIntent, type TagDeclaration, type TextResource, type UpdateConceptTagsIntent,
+  type RestoreDocumentIntent, type Route, type TagDeclaration, type TextResource, type UpdateConceptTagsIntent,
   type UpdateDerivationStructureIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
   type WorkspaceContent,
 } from '../workspace/index';
@@ -71,6 +72,10 @@ export type AuthoringCommands = {
   updateTagDeclarations(tags: readonly TagDeclaration[]): void;
   /** `null` removes the companion document; the workspace stays valid without one. */
   updateOrientation(config: OrientationConfig | null): void;
+  /** Write a new or edited workspace route; refuses a route carrying any error. */
+  acceptWorkspaceRoute(route: Route): void;
+  /** Remove a workspace route file, named by `WorkspaceRoute.id`; works for an invalid one too. */
+  deleteWorkspaceRoute(id: string): void;
   protectDraft(key: string, dirty: boolean): void;
 };
 
@@ -91,14 +96,25 @@ export type WorkspaceSession = {
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
+async function readCompanion(source: WorkspaceSource, path: string): Promise<TextResource | null> {
+  try {
+    const text = await source.readCompanionMetadata(path);
+    return text === null ? null : { status: 'ready', text };
+  } catch (error) { return { status: 'error', message: message(error) }; }
+}
+
+/**
+ * The graph and every companion document opening needs: the orientation configuration and
+ * each workspace route file. A route file that cannot be read is kept as an error resource
+ * and becomes an invalid route; a listing the host refuses (a symlink) fails the read.
+ */
 async function readContent(source: WorkspaceSource): Promise<WorkspaceContent> {
   const graph = await source.readGraph();
-  let orientation: TextResource | null;
-  try {
-    const text = await source.readCompanionMetadata(ORIENTATION_PATH);
-    orientation = text === null ? null : { status: 'ready', text };
-  } catch (error) { orientation = { status: 'error', message: message(error) }; }
-  return parseWorkspaceContent({ graph, documents: {}, companionMetadata: { [ORIENTATION_PATH]: orientation } });
+  const routePaths = (await source.listCompanionFiles(WORKSPACE_ROUTES_DIRECTORY)).filter(isWorkspaceRoutePath);
+  const paths = [ORIENTATION_PATH, ...routePaths];
+  const resources = await Promise.all(paths.map((path) => readCompanion(source, path)));
+  const companionMetadata = Object.fromEntries(paths.map((path, index) => [path, resources[index]]));
+  return parseWorkspaceContent({ graph, documents: {}, companionMetadata });
 }
 
 /**
@@ -400,6 +416,8 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
       updateConceptTags(intent) { assertCurrent(); accept(updateConceptTags(snapshot.content, intent)); },
       updateTagDeclarations(tags) { assertCurrent(); accept(updateTagDeclarations(snapshot.content, tags)); },
       updateOrientation(config) { assertCurrent(); accept(updateOrientation(snapshot.content, config)); },
+      acceptWorkspaceRoute(route) { assertCurrent(); accept(acceptWorkspaceRoute(snapshot.content, route)); },
+      deleteWorkspaceRoute(id) { assertCurrent(); accept(deleteWorkspaceRoute(snapshot.content, id)); },
       protectDraft(key, dirty) {
         if (disposed || snapshot.authoringEpoch !== epoch) return;
         if (dirty) drafts.add(key); else drafts.delete(key);

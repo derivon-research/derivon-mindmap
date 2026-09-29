@@ -1,15 +1,25 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { WORKSPACE_SCHEMA, orientationErrors, parseWorkspaceContent } from '../workspace/index';
+import { WORKSPACE_SCHEMA, orientationErrors, parseWorkspaceContent, type TextResource } from '../workspace/index';
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+
+function routeFiles(directory: string): Record<string, TextResource> {
+  const routes = fileURLToPath(new URL(`./${directory}/.derivon/routes`, import.meta.url));
+  if (!existsSync(routes)) return {};
+  return Object.fromEntries(readdirSync(routes).map((name) =>
+    [`.derivon/routes/${name}`, { status: 'ready', text: read(`./${directory}/.derivon/routes/${name}`) }]));
+}
 
 function workspace(directory: string) {
   return parseWorkspaceContent({
     graph: read(`./${directory}/.derivon/workspace.json`),
     documents: {},
-    companionMetadata: { '.derivon/orientation.json': { status: 'ready', text: read(`./${directory}/.derivon/orientation.json`) } },
+    companionMetadata: {
+      '.derivon/orientation.json': { status: 'ready', text: read(`./${directory}/.derivon/orientation.json`) },
+      ...routeFiles(directory),
+    },
   });
 }
 
@@ -29,6 +39,15 @@ describe.each(['replace-with', 'math-reforged'])('the %s example workspace', (di
     expect(content.orientation.status).toBe('ready');
     expect(content.orientation.status !== 'absent' && orientationErrors(content.orientation.diagnostics)).toEqual([]);
   });
+
+  it('ships only workspace routes that are valid on its graph', () => {
+    expect(content.routes.filter((route) => route.status !== 'ready')).toEqual([]);
+    expect(content.diagnostics).toEqual([]);
+  });
+});
+
+it('ships a workspace route with the math-reforged case', () => {
+  expect(workspace('math-reforged').routes.map((route) => route.status)).toContain('ready');
 });
 
 it('covers multiple targets and known initialization in the math-reforged case', () => {
