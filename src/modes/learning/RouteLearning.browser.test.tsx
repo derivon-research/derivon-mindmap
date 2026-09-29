@@ -191,7 +191,7 @@ it('walks to the end of the route and says how far along it is kept', async () =
   await page.getByRole('button', { name: '交上去' }).click();
 
   await expect.element(page.getByText('这条路线走完了')).toBeVisible();
-  expect(container.textContent).toContain('路线本身存在学习者记录里，走到哪一步也由它算出来');
+  expect(container.textContent).toContain('走到哪一步由掌握记录算出来');
 });
 
 it('lands on the same step after a workspace is reopened, because the records decide it', async () => {

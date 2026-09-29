@@ -82,15 +82,25 @@ test('carries the bundled example through every learning view the top bar offers
   await expect(page.locator('[data-derivon-mode="learning"]')).not.toHaveAttribute('data-learning-targets', '');
 
   await page.getByRole('button', { name: '选择路线' }).click();
-  // The route stage lists the learner's confirmed routes. This learner has confirmed none,
-  // and nothing is invented to fill the gap.
-  await expect(page.getByRole('heading', { name: '我的路线' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '还没有确认过路线' })).toBeVisible();
+  // The route shelf lists the route the example workspace ships. The web host has no
+  // application data directory, so there is no personal route to list, copy or create.
+  const shipped = page.getByRole('region', { name: '这个工作区带的' });
+  await expect(shipped.getByRole('button', { name: /从数域与有限元组走到奇异值分解/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '从数域与有限元组走到奇异值分解', level: 2 })).toBeVisible();
+  await expect(page.getByText('存不了自己的路线')).toBeVisible();
+  await expect(page.getByRole('button', { name: '另存为我的路线并修改' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '创建我的路线' })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('routes.png') });
+
+  // The author's route is walked like any other, with no solver and no learner records.
+  await page.getByRole('button', { name: '开始学' }).click();
+  await expect(page.locator('.learning-route')).toBeVisible();
+  await expect(page.locator('[data-derivon-mode="learning"]')).toHaveAttribute('data-learning-active-route', 'r-sv4d2m');
+  await page.getByRole('button', { name: '换一条路线' }).first().click();
 
   // Computing one goes through the create flow's questions to the route they produce, which
   // says the host cannot solve rather than inventing an order.
-  await page.getByLabel('已确认的路线').getByRole('button', { name: '创建路线' }).click();
+  await page.getByLabel('路线书架').getByRole('button', { name: '创建路线' }).click();
   // The bundled workspace ships the author's opening questions; skipping them all is the
   // shortest path to the panel that goes on to the preview.
   for (let question = 0; question < 6; question += 1) {
