@@ -32,7 +32,8 @@ the learner and the workspace.** The specification owns the layout text
 ```text
 <application data directory>/learner-records/<workspace id>/
 ├── state.json
-└── routes.json
+└── routes/
+    └── <route id>.json
 ```
 
 - **The purpose-built workspace `id` from `derivon.workspace/v1` is the key.** It is a

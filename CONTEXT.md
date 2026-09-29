@@ -20,7 +20,7 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **学习侧（learning mode）**
 
-学习者定目标、确认已知、预览路线、沿路线学习和浏览图的模式。学习侧可运行在 web 与桌面宿主，只有读取工作区内容的能力；它产生的目标属于应用状态，掌握与已确认路线写入工作区之外的学习者记录。
+学习者定目标、确认已知、预览路线、沿路线学习和浏览图的模式。学习侧可运行在 web 与桌面宿主，只有读取工作区内容的能力；它产生的目标属于应用状态，掌握与个人路线写入工作区之外的学习者记录；工作区路线在这里只读。
 
 **创作侧（authoring mode）**
 
@@ -40,7 +40,7 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **路线子图（route view）**
 
-把一条已求解的路线画成子图的视图，层次布局。它同时出现在目标确认前的路线预览屏、学习态展开后的右侧路线栏，以及创作侧对开局配置的预览；排列方向由容器决定，不构成另一种视图。路线视图不得假设自己处在学习侧。
+把一条已求解的路线画成子图的视图，层次布局。它同时出现在目标确认前的路线预览屏、学习态展开后的右侧路线栏，以及创作侧对开局配置的预览；排列方向由容器决定，不构成另一种视图。它画求解结果，也画存下来的路线——工作区路线与个人路线——两者对它没有区别。路线视图不得假设自己处在学习侧。
 
 **宿主（host）**
 
@@ -94,11 +94,11 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **工作区内容（workspace content）**
 
-由图作者提供、可被不同学习者共同读取的材料：工作区清单、对象文档、资产，以及工作区级可选伴随文档（包括开局配置）。在应用内，对工作区内容的读取和提交只能经过 `WorkspaceSource`；在应用之外，对它的变更只走脚本命令面。工作区内容不包含某位学习者的本次目标、已知、学习状态、路线记录、当前视图或对话生命周期。
+由图作者提供、可被不同学习者共同读取的材料：工作区清单、对象文档、资产，以及工作区级可选伴随文档（包括开局配置与工作区路线）。在应用内，对工作区内容的读取和提交只能经过 `WorkspaceSource`；在应用之外，对它的变更只走脚本命令面。工作区内容不包含某位学习者的本次目标、已知、学习状态、个人路线、当前视图或对话生命周期。
 
 **应用状态（application state）**
 
-应用为当前使用过程维护的状态，包括当前模式与视图、目标、求解结果、活动路线、面板状态、当前对话，以及编辑草稿和内容同步状态。目标、求解结果与活动路线不会写回工作区，也不随对话新建或释放而清除；合法的创作变更进入有效内存内容后可自动保存，不以切换模式或手动保存作为内容生效的前提。学习者的掌握与已确认路线是学习者记录，位于应用数据目录、以工作区 id 为键，不是应用状态，也不是工作区内容（见 `docs/adr/0009-persist-learner-records-outside-the-workspace.md` 与 `docs/adr/0012-learning-state-is-mastery.md`）。
+应用为当前使用过程维护的状态，包括当前模式与视图、目标、求解结果、活动路线、面板状态、当前对话，以及编辑草稿和内容同步状态。目标、求解结果与活动路线不会写回工作区，也不随对话新建或释放而清除；合法的创作变更进入有效内存内容后可自动保存，不以切换模式或手动保存作为内容生效的前提。学习者的掌握与个人路线是学习者记录，位于应用数据目录、以工作区 id 为键，不是应用状态，也不是工作区内容（见 `docs/adr/0009-persist-learner-records-outside-the-workspace.md` 与 `docs/adr/0012-learning-state-is-mastery.md`）。
 
 **学习状态（learning state）**
 
@@ -106,11 +106,27 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **学习者记录（learner record）**
 
-以学习者 + 工作区为键、存于应用数据目录的持久记录：`state.json`（学习状态，`derivon.learning/v1`）与 `routes.json`（路线记录，`derivon.routes/v1`）。它不在工作区里：不进 `WorkspaceSource`、不进清单、不参与工作区同步、也不进 `revision`。键是清单里的工作区 `id`；同 id 即同身份，复制工作区共享同一份记录。写入有两条路径——应用自身的界面与脚本命令面——被强制的是工件而不是写者，与工作区内容同形（见 `docs/adr/0009-persist-learner-records-outside-the-workspace.md` 与 `docs/adr/0011-change-workspace-content-through-the-script-command-surface.md`）。
+以学习者 + 工作区为键、存于应用数据目录的持久记录：`state.json`（学习状态，`derivon.learning/v1`）与 `routes/` 下每条一个文件的个人路线（`derivon.route/v1`）。它不在工作区里：不进 `WorkspaceSource`、不进清单、不参与工作区同步、也不进 `revision`。键是清单里的工作区 `id`；同 id 即同身份，复制工作区共享同一份记录。写入有两条路径——应用自身的界面与脚本命令面——被强制的是工件而不是写者，与工作区内容同形（见 `docs/adr/0009-persist-learner-records-outside-the-workspace.md` 与 `docs/adr/0011-change-workspace-content-through-the-script-command-surface.md`）。
 
-**路线记录（route record）**
+**路线（route）**
 
-用户确认落盘的一条已解路线：`id`、`description`、`targets`、`known`、`basis` 与引用式子图（`conceptIds` / `derivationIds` / `order` / `cost`）。多条路线并存。它在结构上是剥离了 `data` 的产品推导子图，回指清单的图，不复制任何 `data`。**它不携带任何完成标记**：路线上的完成标记显示时来自学习状态。记录里的 `known` 是那次求解的输入快照，不是活的已知集合。活动路线属于应用状态，不落盘。协议见 `docs/learner-records.md`。
+一份推导子图，加上可选的写定顺序：从哪些已知出发、走到哪些目标、经过哪些推导。顺序写定时，路线按写定的顺序走；没写定时，推导是一个集合，显示时现算执行顺序。它回指清单里的图，不复制任何 `data`，概念集合与成本都由图和推导算出而不存；**它不携带任何完成标记**：路线上的完成标记显示时来自学习状态。路线里的已知是这条路线的起点，不是活的已知集合。一条路线有错误（引用悬空、目标到不了、写定的顺序走不通）就不能保存、不能开始学；有提示（绕路、永远走不了的步骤、平行推导）不妨碍两者。一个文件就是一条路线，协议 `derivon.route/v1`，放在两个位置之一，位置决定它是工作区路线还是个人路线，此外两者没有区别。协议见 `docs/routes.md`。
+
+**工作区路线（workspace route）**
+
+放在工作区里的路线，属于工作区内容：图作者在创作侧编写，随工作区分发，所有学习者都能读，学习侧只读。它与图对不对得上，只靠载入时校验判断；对不上的标成无效并带诊断，不丢、不自动修。
+
+**个人路线（personal route）**
+
+放在学习者记录里的路线，只属于这台机器上的这位学习者，在学习侧编写。确认一次求解，就是存下一条顺序写定的个人路线；把工作区路线「另存为我的」得到的是拷贝，只记下出处，作者之后改原路线，拷贝不跟着变。它带着保存时的内容基准，基准对不上就标为与当前图不一致，不重解、不改写、不删除。
+
+**路线记录（route record，已被取代）**
+
+旧词，指原来 `routes.json` 里一条确认过的路线。现在说**个人路线**。
+
+**活动路线（active route）**
+
+学习侧当前显示、正在沿着走的那条路线，可以是工作区路线，也可以是个人路线。它属于应用状态，不落盘；重开工作区时没有活动路线。
 
 **编辑草稿（editing draft）**
 
@@ -318,8 +334,8 @@ v1 是唯一的工作区协议。v1.0.0 之前没有发布过的版本，因此�
 | `src/modes/learning/` | `src/modes/learning/index.ts` | 开局状态机、路线预览、路线学习，以及大图浏览中的学习者操作与应用状态 | 改目标/掌握行为或学习侧界面 |
 | `src/modes/authoring/` | `src/modes/authoring/index.ts` | 桌面创作工作流、编辑界面，以及大图浏览中的作者操作 | 增加创作功能或 tag 编辑；同时检查工作区提交契约 |
 | `src/modes/shared/` | `src/modes/shared/index.ts` | 两侧共用的界面构件，只依赖端口，不认识任何一侧的状态机 | 改 Agent 面板一类两侧共享的界面 |
-| `src/workspace/` | `src/workspace/index.ts` | 工作区清单、对象文档、tag、伴随文档的解析、校验与完整内容变更，不做宿主 I/O | 改工作区内容模型、引用影响规则或开局配置 |
-| `src/learner-records/` | `src/learner-records/index.ts` | 学习者记录协议（`derivon.learning/v1`、`derivon.routes/v1`）的解析、校验与规范化文本，以及按工作区 id 读写的应用侧存储；不做宿主 I/O | 改记录字段、判定约束，或按工作区 id 读写记录 |
+| `src/workspace/` | `src/workspace/index.ts` | 工作区清单、对象文档、tag、伴随文档的解析、校验与完整内容变更，以及两个位置共用的路线协议（`derivon.route/v1`）的校验、图上读法与编辑操作；不做宿主 I/O | 改工作区内容模型、引用影响规则、开局配置或路线协议 |
+| `src/learner-records/` | `src/learner-records/index.ts` | 学习状态协议（`derivon.learning/v1`）的解析、校验与规范化文本，内容基准，以及按工作区 id 读写 `state.json` 与个人路线的应用侧存储；不做宿主 I/O | 改记录字段、判定约束、个人路线的存取，或按工作区 id 读写记录 |
 | `src/ports/` | `src/ports/WorkspaceSource.ts`, `src/ports/ConversationProvider.ts`, `src/ports/RouteSolver.ts` | `WorkspaceSource`、`ConversationProvider`、`RouteSolver` 及其它小接口 | 改跨边界能力；随后检查每个实现和契约测试 |
 | `src/hosts/web/` | `src/hosts/web/index.ts` | web composition 与只读端口实现 | 改 web 能力、内置工作区加载或确定性 provider |
 | `src/hosts/desktop/` | `src/hosts/desktop/index.ts` | desktop composition、本地工作区和 Pi SDK bridge | 改本地文件、桌面 IPC 或桌面对话实现 |

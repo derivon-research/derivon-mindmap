@@ -44,20 +44,23 @@ the workspace's declared default is the same kind of record marked `data.orienta
 a judgement carries neither marker. All three share the one `status` axis and are told apart by
 `data`.
 
-**Routes persist, but a route is not learning state.** Several routes coexist in
-`derivon.routes/v1`. A route is structurally a product-derivation subgraph with all `data`
-stripped, referencing the manifest's graph. **A route carries no completion marker of any
-kind** — no step state, no cursor. `known` inside a route record is the *input snapshot of
-that solve*, frozen at confirmation, and is a different thing from the live known set derived
-from mastery; the two must never be substituted for each other.
+**Routes persist, but a route is not learning state.** Several routes coexist, one
+`derivon.route/v1` file each ([routes](../routes.md)). A route is structurally a
+product-derivation subgraph with all `data` stripped, referencing the manifest's graph. **A
+route carries no completion marker of any kind** — no step state, no cursor. `known` inside a
+route is the route's own starting point — for a confirmed one, the *input snapshot of that
+solve*, frozen at confirmation — and is a different thing from the live known set derived from
+mastery; the two must never be substituted for each other. A route an author ships with the
+workspace is the same protocol in another location — workspace content, read-only on the
+learning side — and walking it reads the same mastery.
 
 **There is no learning-progress store in this repository — 本仓不存在「学习进度」这个存储。
-What reads as progress is a display-time composition of `state.json` and `routes.json`: the
+What reads as progress is a display-time composition of `state.json` and a route: the
 current step of a route is the head concept of the first derivation in its order whose mastery
 is not `complete`.** Adding a progress field anywhere would recreate the second source of truth
 this ADR removes.
 
-**These records are not workspace content.** Mastery and confirmed routes are written outside
+**These records are not workspace content.** Mastery and personal routes are written outside
 the workspace, in the application data directory, keyed by learner and by the workspace `id`;
 they never enter `WorkspaceSource`, the manifest, workspace synchronization or the workspace
 `revision`. The location, the key and the two-writer discipline are

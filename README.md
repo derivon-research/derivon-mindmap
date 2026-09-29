@@ -324,15 +324,41 @@ v1 是唯一的工作区协议，没有旧版本需要迁移：schema 串不是 
 选项不能各自跳转。清单不为这份文档增加字段，清单版本也不随它移动；没有配置的工作区仍然有效，
 学习侧走通用入口。
 
+### 工作区路线
+
+工作区可以带几条**工作区路线**：作者写定的路线，比如「按某本教材的讲法走」。每条是一个文件
+`.derivon/routes/<路线 id>.json`，协议为 `derivon.route/v1`，随工作区分发，学习者打开工作区就能
+直接选一条走，不用自己求解。
+
+```json
+{
+  "schema": "derivon.route/v1",
+  "id": "r-ax7spq",
+  "label": "从 A 走到 B",
+  "known": ["A"],
+  "targets": ["B"],
+  "steps": ["derive-a-to-b"],
+  "ordered": true
+}
+```
+
+路线只引用清单里的概念与推导，不复制任何 `data`，也不带任何完成标记。`ordered` 为 `true` 时
+`steps` 的顺序就是路线的顺序，为 `false` 时 `steps` 是一个集合，显示时现算执行顺序。清单不为
+路线增加字段，清单版本也不随它移动。载入时每条路线都按当前的图校验：悬空引用、目标到不了、
+写定的顺序走不通的路线被标成无效并带诊断，不会被丢掉，也不会被自动修掉。字段、校验规则与
+执行顺序的算法只有一份说明，在 [`docs/routes.md`](docs/routes.md)。
+
 ### 学习者记录
 
-学习者的掌握与已确认路线不在工作区里。它们以工作区 `id` 为键存在应用数据目录下的
-`learner-records/<工作区 id>/` 里，协议分别为 `derivon.learning/v1`（`state.json`）与
-`derivon.routes/v1`（`routes.json`）。目录布局只有一份说明，与字段、约束、`basis` 的覆盖范围
-与失效行为同在 [`docs/learner-records.md`](docs/learner-records.md)。
+学习者的掌握与个人路线不在工作区里。它们以工作区 `id` 为键存在应用数据目录下的
+`learner-records/<工作区 id>/` 里：掌握是 `state.json`（`derivon.learning/v1`），个人路线是
+`routes/<路线 id>.json`，每条一个文件，与工作区路线同一个协议 `derivon.route/v1`，另外必须带
+`basis`。确认一次求解、把工作区路线「另存为我的」、自己编一条路线，得到的都是个人路线。
+目录布局只有一份说明，与字段、约束、`basis` 的覆盖范围与失效行为同在
+[`docs/learner-records.md`](docs/learner-records.md)。
 它们不进工作区清单、不进 `WorkspaceSource`、不参与工作区同步，也不进工作区的 `revision`；
 复制工作区共享同一份记录。应用自身的界面与脚本命令面是两条写入路径，但必须产出同一份
-规范的工件。路线上的完成标记只在显示时来自 `state.json`，路线记录本身不携带任何完成标记。
+规范的工件。路线上的完成标记只在显示时来自 `state.json`，路线本身不携带任何完成标记。
 
 仓库内的 v0.4.2 兼容工作区 fixture 位于 [`src/examples/replace-with`](src/examples/replace-with)，其中包含 v1 不再提供产品行为的旧 replacement 数据；原生路线验收 fixture 位于 [`src-tauri/tests/fixtures/complete-workspace`](src-tauri/tests/fixtures/complete-workspace)。
 
