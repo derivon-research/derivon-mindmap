@@ -39,6 +39,16 @@ export {
   type OrientationDiagnostic, type OrientationOption, type OrientationQuestion, type OrientationSeed,
 } from './orientation';
 
+export {
+  ROUTE_SCHEMA, WORKSPACE_ROUTES_DIRECTORY,
+  addStep, copyAsPersonal, decodeRoute, draftFromSolution, executableOrder, isRouteFileName, isRouteId, moveStep,
+  newRoute, parallelDerivations, readRoute, removeStep, routeFileName, routeObjectIds, serializeRoute, stepCandidates,
+  swapStep, useComputedOrder, workspaceRoutePath,
+  type Route, type RouteDecoding, type RouteDiagnostic, type RouteDiagnosticCode, type RouteFileIssue,
+  type RouteFileIssueCode, type RouteGap, type RouteLateNeed, type RouteLocation, type RoutePlace, type RouteReading,
+  type StepCandidate,
+} from './route';
+
 /** The graph as product state sees it. */
 export type WorkspaceGraph = ManifestGraph;
 
