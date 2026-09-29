@@ -57,7 +57,7 @@ an accepted route is held with its graph signature, task submissions record the 
 they were checked against, affected routes block until a new preview is accepted, stale tasks must
 be submitted again without clearing unrelated progress, and deleted targets are reported without
 being replaced. That session-local, cursor-and-task-submission model is superseded by
-[ADR-0012](adr/0012-learning-state-is-mastery.md): mastery records and confirmed routes live in
+[ADR-0012](adr/0012-learning-state-is-mastery.md): mastery records and personal routes live in
 [learner records](learner-records.md) outside the workspace, and a route's current step is derived
 from mastery rather than stored. #98–#103 replace the implementation; the content-version checks
 above survive as the record and route `basis` semantics. Schema-upgrade consent is not
@@ -288,11 +288,16 @@ the application data directory, keyed by the workspace `id`, and are described i
 [learner records](learner-records.md)
 ([ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md)).
 What used to be called progress is not stored: a route's current step is derived at display time
-from the mastery record and the route record ([ADR-0012](adr/0012-learning-state-is-mastery.md)).
-Which routes a content change affects is decided by `basis`: a record or route whose stored `basis`
-no longer matches is marked stale and kept, while unrelated records keep counting. Only a
-route-affecting graph change—order, cost, topology, or reachability—makes a route inconsistent
-with the current graph; label, description, tag, and unrelated graph changes do not. Targets and
+from the mastery record and the route ([ADR-0012](adr/0012-learning-state-is-mastery.md)).
+Workspace routes are not learner records: they are an author's content in `.derivon/routes/`,
+synchronized like the orientation configuration, and a learner walking one writes only mastery
+([routes](routes.md)).
+Which records a content change affects is decided by `basis`: a record or personal route whose
+stored `basis` no longer matches is marked stale and kept, while unrelated records keep counting.
+A personal route's basis covers the manifest entries of exactly the objects it names, so an edit
+to one of those entries marks it inconsistent with the current graph and an edit anywhere else
+does not. A workspace route carries no basis; effective content re-validates every one of them
+against each new graph, and one that stops validating becomes invalid rather than stale. Targets and
 known concepts are solve inputs, not records: targets are application state, and known is derived
 from `complete` mastery records. Neither is written into workspace content.
 

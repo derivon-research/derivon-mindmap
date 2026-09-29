@@ -74,8 +74,13 @@ modes. Learning receives effective content and learner-state callbacks, not a so
 an authoring command capability. Desktop folder selection carries only path/name; content
 creation and subsequent saves use this port.
 
-Opening acquires only the graph and `.derivon/orientation.json`, with revision checks
-bracketing acquisition and at most three attempts. It does not read any object documents.
+Opening acquires only the graph, `.derivon/orientation.json` and the workspace routes in
+`.derivon/routes/`, with revision checks bracketing acquisition and at most three attempts.
+Routes are found by listing that one companion directory: a read capability every
+`WorkspaceSource` offers, the built-in web source included, that reports only the direct child
+files of a directory under `.derivon/` as workspace-relative paths, refuses a symlink rather
+than following one, and reports an absent directory as an empty list. Which of those files are
+routes, and how each is read, is [routes](routes.md). It does not read any object documents.
 A bad manifest fails opening; unread document bodies are not silently diagnosed as missing.
 
 Objects persist only `document.md` and assets (ADR-0008). `WorkspaceReader.readDocuments`
@@ -117,12 +122,14 @@ Workspace content belongs behind this port. A learner's targets and solve result
 application state and must not be added to `WorkspaceSource`, companion metadata, or a
 workspace commit.
 
-Learner records — mastery (`derivon.learning/v1`) and confirmed routes (`derivon.routes/v1`) —
+Learner records — mastery (`derivon.learning/v1`) and personal routes (`derivon.route/v1`) —
 are neither workspace content nor a separate outbound interface. They are files in the
 application data directory, keyed by the workspace `id`, written by the application and by the
 script command surface from one shared specification. Because they are not workspace content,
 `WorkspaceSource` exposes no storage location for them, a workspace commit can never carry one,
-and they are absent from workspace synchronization and from the workspace `revision`. See
+and they are absent from workspace synchronization and from the workspace `revision`. A
+workspace route is the same route protocol stored as workspace content, and is therefore the
+opposite case: it is read and committed through this port like any companion document. See
 [learner records](learner-records.md),
 [ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) and
 [ADR-0012](adr/0012-learning-state-is-mastery.md).

@@ -125,6 +125,12 @@ Solving is a host capability behind `src/ports/RouteSolver.ts`. The desktop host
 through `derivon-core` over the existing `solve_route` command. A host without a solver
 says so; no preview invents a route. Web solving arrives with #49.
 
+The route view that draws a solve here also draws stored routes: the workspace routes an author
+ships in `.derivon/routes/` and a learner's personal routes. They are the same protocol,
+`derivon.route/v1`, in two locations, and the view does not know which side it is on
+([routes](routes.md)). Orientation does not yet pick a workspace route; an action for that
+would change this protocol and is left open.
+
 ## Deletion
 
 `orientationConceptImpact(content, conceptIds)` reports every place the configuration names
