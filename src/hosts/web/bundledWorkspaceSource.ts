@@ -7,6 +7,13 @@ const exampleDocuments = import.meta.glob('../../examples/math-reforged/docs/**/
   query: '?raw',
 }) as Record<string, () => Promise<string>>;
 
+// Companion documents are read at opening, so the route files are bundled eagerly.
+const exampleRoutes = import.meta.glob('../../examples/math-reforged/.derivon/routes/*.json', {
+  import: 'default',
+  query: '?raw',
+  eager: true,
+}) as Record<string, string>;
+
 export type BundledWorkspace = {
   graph: string;
   documents?: Readonly<Record<string, string | (() => Promise<string>)>>;
@@ -45,8 +52,14 @@ export function createBundledWorkspaceSource(bundle: BundledWorkspace): Workspac
 export const bundledExampleWorkspaceSource = createBundledWorkspaceSource({
   graph: exampleGraph,
   // The bundled workspace ships an orientation configuration, so the web build opens into
-  // the author's questions.
-  companionMetadata: { '.derivon/orientation.json': exampleOrientation },
+  // the author's questions, and workspace routes a learner can walk as they are.
+  companionMetadata: {
+    '.derivon/orientation.json': exampleOrientation,
+    ...Object.fromEntries(Object.entries(exampleRoutes).map(([path, text]) => [
+      path.replace('../../examples/math-reforged/', ''),
+      text,
+    ])),
+  },
   documents: Object.fromEntries(Object.entries(exampleDocuments).map(([path, content]) => [
     path.replace('../../examples/math-reforged/', ''),
     content,

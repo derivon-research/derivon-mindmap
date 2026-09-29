@@ -1,0 +1,35 @@
+{
+  "schema": "derivon.route/v1",
+  "id": "r-sv4d2m",
+  "label": "从数域与有限元组走到奇异值分解",
+  "description": "一条学习成本较低的走法，顺序按图现算。",
+  "known": [
+    "foundation-fields",
+    "finite-tuple"
+  ],
+  "targets": [
+    "svd"
+  ],
+  "steps": [
+    "given-fields",
+    "def-vector",
+    "subspace-test",
+    "linear-map-def",
+    "inner-def",
+    "norm-cs",
+    "linear-combination-def",
+    "operator-def",
+    "orthogonality-def",
+    "span-minimal",
+    "dependence",
+    "basis-criterion",
+    "gram-schmidt",
+    "adjoint-riesz",
+    "self-adjoint-def",
+    "spectral-self-adjoint",
+    "normal-classes",
+    "singular-values-spectral",
+    "svd-step"
+  ],
+  "ordered": false
+}

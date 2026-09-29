@@ -29,7 +29,7 @@ function props(over: Partial<LearningModeProps> & Pick<LearningModeProps, 'conte
 
 it('retains an unchanged hidden overview and invalidates changed topology until return', async () => {
   const first: WorkspaceContent = { graphText: '', title: 'First', graph: { points: [{ id: 'first', data: { label: 'First', document: 'docs/first' } }], hyperedges: [] },
-    documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [] };
+    documents: {}, companionMetadata: {}, tags: [], orientation: { status: 'absent' }, routes: [], diagnostics: [] };
   const latest: WorkspaceContent = { ...first, graph: { points: [{ id: 'latest', data: { label: 'Latest', document: 'docs/latest' } }], hyperedges: [] } };
   root = createRoot(container);
   act(() => root?.render(<LearningMode {...props({ content: first, targetIds: ['first'] })} />));

@@ -14,7 +14,8 @@ import {
 } from './manifest';
 import {
   findObject, isMarkdownPath, objectDocumentSource, orientationConceptImpact, parseWorkspaceContent,
-  updateObjectDocument, updateOrientation, type ContentChange, type WorkspaceContent,
+  updateObjectDocument, updateOrientation, workspaceRouteImpact,
+  type ContentChange, type WorkspaceContent, type WorkspaceRouteReference,
 } from './content';
 import {
   applyReferenceRepairs, documentReferences, objectDocumentHref,
@@ -69,6 +70,12 @@ export type ReferenceImpact = {
   readonly unreadable: readonly { readonly path: string; readonly message: string }[];
   readonly uncertain: readonly { readonly documentPath: string; readonly uncertainty: ReferenceUncertainty }[];
   readonly orientation: readonly OrientationConceptReference[];
+  /**
+   * Workspace routes naming a removed concept or derivation (including the derivations that go
+   * with a concept). They become invalid after the deletion; they neither block it nor are
+   * repaired by it — the routes view is where they are fixed.
+   */
+  readonly routes: readonly WorkspaceRouteReference[];
   /** False whenever a source could not be analysed. A deletion may not be called safe then. */
   readonly complete: boolean;
 };
@@ -113,6 +120,7 @@ export function referenceImpact(content: WorkspaceContent, plan: DeletionPlan): 
     unreadable,
     uncertain,
     orientation: orientationConceptImpact(content, scope.concepts.map(({ id }) => id)),
+    routes: workspaceRouteImpact(content, [...removed]),
     complete: unread.length === 0 && unreadable.length === 0 && uncertain.length === 0,
   };
 }
