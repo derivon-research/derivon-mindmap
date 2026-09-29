@@ -19,6 +19,7 @@ import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createGeneratedWorkspaceGraph } from '../../../benchmarks/fixtures/generated-workspace';
 import type { WorkspaceSource } from '../../ports/WorkspaceSource';
+import { createMemoryWorkspaceSource } from '../../testing/memoryWorkspaceSource';
 import { openWorkspaceSession, type WorkspaceSession } from '../../synchronization';
 import { createMemoryLearnerRecords } from '../../testing/learnerRecordStore';
 import { fixtureRouteSolver } from '../../testing/routeSolver';
@@ -30,16 +31,7 @@ const BUDGET_MS = 200;
 
 /** A source with no I/O cost of its own, so what is measured is the application's work. */
 function memorySource(graph: string, documents: Record<string, string>): WorkspaceSource {
-  const files = new Map<string, string>([['.derivon/workspace.json', graph], ...Object.entries(documents)]);
-  return {
-    async readGraph() { return files.get('.derivon/workspace.json')!; },
-    async readDocument(path) {
-      if (!files.has(path)) throw new Error(`Missing: ${path}`);
-      return files.get(path)!;
-    },
-    async readAsset() { throw new Error('no assets'); },
-    async readCompanionMetadata() { return null; },
-  };
+  return createMemoryWorkspaceSource(graph, { documents }).source;
 }
 
 let container: HTMLDivElement;

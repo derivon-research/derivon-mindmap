@@ -56,6 +56,7 @@ pub fn run() {
             workspace::read_workspace_source_companion_metadata,
             workspace::workspace_source_revision,
             workspace::list_workspace_source_owned_files,
+            workspace::list_workspace_source_companion_files,
             workspace::commit_workspace_source_changes,
             conversation::conversation_request,
         ])

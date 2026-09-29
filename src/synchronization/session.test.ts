@@ -1,41 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceCommit, WritableWorkspaceSource } from '../ports/WorkspaceSource';
+import { createMemoryWorkspaceSource } from '../testing/memoryWorkspaceSource';
 import { createConcept, createWorkspace } from '../workspace/index';
 import { openWorkspaceSession } from './index';
 
 function memorySource(graph = createWorkspace({ id: 'test-workspace', title: 'Test' }).content.graphText) {
-  const files = new Map<string, string>([['.derivon/workspace.json', graph]]);
-  const assets = new Map<string, Uint8Array>();
-  const commits: WorkspaceCommit[] = [];
-  const source: WritableWorkspaceSource = {
-    async readGraph() { return files.get('.derivon/workspace.json')!; },
-    async readDocument(path) {
-      if (!files.has(path)) throw new Error(`Missing: ${path}`);
-      return files.get(path)!;
-    },
-    async readAsset(path) {
-      const bytes = assets.get(path);
-      if (!bytes) throw new Error(`Missing: ${path}`);
-      return new Uint8Array(bytes);
-    },
-    async readCompanionMetadata(path) { return files.get(path) ?? null; },
-    async listOwnedFiles(directory) {
-      return [...files.keys(), ...assets.keys()].filter((path) => path.startsWith(`${directory}/`)).sort();
-    },
-    async commit(changes) {
-      commits.push(changes);
-      if (changes.graph !== undefined) files.set('.derivon/workspace.json', changes.graph);
-      for (const change of [...changes.documents ?? [], ...changes.companionMetadata ?? []]) {
-        if (change.content === null) files.delete(change.path);
-        else files.set(change.path, change.content);
-      }
-      for (const change of changes.assets ?? []) {
-        if (change.content === null) assets.delete(change.path);
-        else assets.set(change.path, new Uint8Array(change.content));
-      }
-    },
-  };
-  return { source, files, assets, commits };
+  return createMemoryWorkspaceSource(graph);
 }
 
 afterEach(() => vi.useRealTimers());

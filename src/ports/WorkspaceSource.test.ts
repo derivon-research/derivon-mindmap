@@ -24,6 +24,25 @@ describe('WorkspaceSource', () => {
     expect('listOwnedFiles' in source).toBe(false);
   });
 
+  it('lists the direct child files of a bundled companion directory', async () => {
+    const source = createBundledWorkspaceSource({
+      graph: '{}',
+      companionMetadata: {
+        '.derivon/orientation.json': '{}',
+        '.derivon/routes/r-bbbbbb.json': '{}',
+        '.derivon/routes/r-aaaaaa.json': '{}',
+        '.derivon/routes/nested/r-cccccc.json': '{}',
+      },
+    });
+
+    expect(await source.listCompanionFiles('.derivon/routes'))
+      .toEqual(['.derivon/routes/r-aaaaaa.json', '.derivon/routes/r-bbbbbb.json']);
+    expect(await source.listCompanionFiles('.derivon/absent')).toEqual([]);
+    for (const directory of ['.derivon', 'docs', '.derivon/../docs', '.derivon/routes/', '/etc']) {
+      await expect(source.listCompanionFiles(directory)).rejects.toThrow('companion directory');
+    }
+  });
+
   it('opens the fixed web example through the same read port', async () => {
     const graph = JSON.parse(await bundledExampleWorkspaceSource.readGraph());
 
