@@ -17,7 +17,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createGeneratedWorkspaceGraph } from '../../../benchmarks/fixtures/generated-workspace';
-import type { WorkspaceCommit, WritableWorkspaceSource } from '../../ports/WorkspaceSource';
+import type { WritableWorkspaceSource } from '../../ports/WorkspaceSource';
+import { createMemoryWorkspaceSource } from '../../testing/memoryWorkspaceSource';
 import { openWorkspaceSession, type WorkspaceSession } from '../../synchronization';
 import { AuthoringMode } from './AuthoringMode';
 
@@ -25,25 +26,7 @@ const BUDGET_MS = 200;
 
 /** A source with no I/O cost of its own, so what is measured is the application's work. */
 function memorySource(graph: string, documents: Record<string, string>): WritableWorkspaceSource {
-  const files = new Map<string, string>([['.derivon/workspace.json', graph], ...Object.entries(documents)]);
-  return {
-    async readGraph() { return files.get('.derivon/workspace.json')!; },
-    async readDocument(path) {
-      if (!files.has(path)) throw new Error(`Missing: ${path}`);
-      return files.get(path)!;
-    },
-    async readAsset() { throw new Error('no assets'); },
-    async readCompanionMetadata() { return null; },
-    async listOwnedFiles(directory) {
-      return [...files.keys()].filter((path) => path.startsWith(`${directory}/`)).sort();
-    },
-    async commit(changes: WorkspaceCommit) {
-      if (changes.graph !== undefined) files.set('.derivon/workspace.json', changes.graph);
-      for (const change of changes.documents ?? []) {
-        if (change.content === null) files.delete(change.path); else files.set(change.path, change.content);
-      }
-    },
-  };
+  return createMemoryWorkspaceSource(graph, { documents }).source;
 }
 
 let container: HTMLDivElement;

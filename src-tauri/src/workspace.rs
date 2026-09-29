@@ -1339,6 +1339,74 @@ pub async fn list_workspace_source_owned_files(
     .map_err(|error| format!("workspace owned file inventory task failed: {error}"))?
 }
 
+// The direct child files of one companion directory under `.derivon`, as workspace-relative
+// paths. Workspace routes live one file each in `.derivon/routes/`, so opening a workspace
+// needs to know which files are there before it can read them. The listing is one level
+// deep: a subdirectory is not a companion file and is skipped. A symlink anywhere on the way,
+// the directory itself or one of its entries, is refused rather than followed, and a
+// directory that does not exist is an empty listing, not a failure.
+fn companion_files_for_directory(root: &Path, directory: &str) -> Result<Vec<String>, String> {
+    let relative = validate_companion_metadata_path(directory)?;
+    if relative.components().count() < 2 {
+        return Err(format!(
+            "`{directory}` is not a companion directory inside `.derivon`"
+        ));
+    }
+    let canonical_root = fs::canonicalize(root)
+        .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
+    let mut target = canonical_root.clone();
+    for component in relative.components() {
+        target.push(component);
+        let metadata = match fs::symlink_metadata(&target) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(format!("cannot inspect {}: {error}", target.display())),
+        };
+        if metadata.file_type().is_symlink() {
+            return Err(format!(
+                "workspace companion directory path contains symlink {}",
+                target.display()
+            ));
+        }
+        if !metadata.is_dir() {
+            return Err(format!("workspace path `{directory}` is not a directory"));
+        }
+    }
+    let entries = fs::read_dir(&target)
+        .map_err(|error| format!("cannot read {}: {error}", target.display()))?;
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("cannot read workspace entry: {error}"))?;
+        let path = entry.path();
+        let kind = entry
+            .file_type()
+            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
+        if kind.is_symlink() {
+            return Err(format!(
+                "workspace companion directory contains symlink {}",
+                path.display()
+            ));
+        }
+        if kind.is_file() {
+            files.push(workspace_source_relative_name(&canonical_root, &path)?.replace('\\', "/"));
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+#[tauri::command]
+pub async fn list_workspace_source_companion_files(
+    root_path: String,
+    directory: String,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        companion_files_for_directory(Path::new(&root_path), &directory)
+    })
+    .await
+    .map_err(|error| format!("workspace companion file listing task failed: {error}"))?
+}
+
 fn read_workspace_asset_bytes(root: &Path, relative_path: &str) -> Result<Vec<u8>, String> {
     let canonical_root = fs::canonicalize(root)
         .map_err(|error| format!("cannot resolve workspace root {}: {error}", root.display()))?;
@@ -2921,6 +2989,73 @@ mod tests {
         let error = owned_files_for_directory(root.path(), "docs/concept-a").unwrap_err();
         assert!(error.contains("symlink"), "{error}");
         assert!(root.path().join("docs/concept-b/document.md").exists());
+    }
+
+    #[test]
+    fn companion_listing_names_only_the_direct_child_files_of_the_directory() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".derivon/routes/nested")).unwrap();
+        fs::write(root.path().join(MANIFEST_PATH), "{}").unwrap();
+        fs::write(root.path().join(".derivon/orientation.json"), "{}").unwrap();
+        fs::write(root.path().join(".derivon/routes/r-bbbbbb.json"), "{}").unwrap();
+        fs::write(root.path().join(".derivon/routes/r-aaaaaa.json"), "{}").unwrap();
+        fs::write(root.path().join(".derivon/routes/nested/r-cccccc.json"), "{}").unwrap();
+
+        assert_eq!(
+            companion_files_for_directory(root.path(), ".derivon/routes").unwrap(),
+            vec![
+                ".derivon/routes/r-aaaaaa.json".to_owned(),
+                ".derivon/routes/r-bbbbbb.json".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn companion_listing_of_an_absent_directory_is_empty() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(companion_files_for_directory(root.path(), ".derivon/routes")
+            .unwrap()
+            .is_empty());
+        fs::create_dir_all(root.path().join(".derivon")).unwrap();
+        assert!(companion_files_for_directory(root.path(), ".derivon/routes")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn companion_listing_refuses_a_directory_outside_derivon() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".derivon/routes")).unwrap();
+        fs::create_dir_all(root.path().join("docs")).unwrap();
+        fs::write(root.path().join(MANIFEST_PATH), "{}").unwrap();
+
+        for directory in ["", ".", ".derivon", "docs", "../", "/etc", ".derivon/../docs", MANIFEST_PATH] {
+            assert!(
+                companion_files_for_directory(root.path(), directory).is_err(),
+                "{directory}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn companion_listing_refuses_a_symlinked_entry_or_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("r-aaaaaa.json"), "{}").unwrap();
+        fs::create_dir_all(root.path().join(".derivon/routes")).unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("r-aaaaaa.json"),
+            root.path().join(".derivon/routes/r-aaaaaa.json"),
+        )
+        .unwrap();
+        let error = companion_files_for_directory(root.path(), ".derivon/routes").unwrap_err();
+        assert!(error.contains("symlink"), "{error}");
+
+        fs::remove_dir_all(root.path().join(".derivon/routes")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join(".derivon/routes")).unwrap();
+        let error = companion_files_for_directory(root.path(), ".derivon/routes").unwrap_err();
+        assert!(error.contains("symlink"), "{error}");
     }
 
     #[test]

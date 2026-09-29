@@ -1,4 +1,4 @@
-import type { WorkspaceSource } from '../../ports/WorkspaceSource';
+import { companionFilesIn, type WorkspaceSource } from '../../ports/WorkspaceSource';
 import exampleGraph from '../../examples/math-reforged/.derivon/workspace.json?raw';
 import exampleOrientation from '../../examples/math-reforged/.derivon/orientation.json?raw';
 
@@ -35,6 +35,9 @@ export function createBundledWorkspaceSource(bundle: BundledWorkspace): Workspac
     },
     async readCompanionMetadata(path) {
       return bundle.companionMetadata?.[path] ?? null;
+    },
+    async listCompanionFiles(directory) {
+      return companionFilesIn(Object.keys(bundle.companionMetadata ?? {}), directory);
     },
   };
 }
