@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import type { RouteRecord } from '../learner-records';
 import type { RouteSolution, RouteSolver } from '../ports/RouteSolver';
 import type { GraphView } from '../rendering';
-import { conceptTags, type WorkspaceGraph } from '../workspace/index';
+import { conceptTags, type RouteReading, type WorkspaceGraph } from '../workspace/index';
 
 export type RoutePreview =
   /** The host offers no solver. */
@@ -137,5 +137,22 @@ export function routeGraphView(
     hyperedges: graph.hyperedges.filter((edge) => derivations.has(edge.id)).map((edge) => ({
       id: edge.id, tails: edge.tails, head: edge.head, weight: edge.weight, marks: [],
     })),
+  };
+}
+
+/**
+ * A route read on the graph (`readRoute`) as the solved-route view model, so a workspace or
+ * personal route renders through the same subgraph and step list as a solve. `reachable` is
+ * the route being valid; nothing was searched, so it claims no optimality and no blocks.
+ */
+export function routeSolutionOfReading(reading: RouteReading): RouteSolution {
+  return {
+    reachable: reading.errors === 0,
+    conceptIds: [...reading.conceptIds],
+    derivationIds: [...reading.order],
+    order: [...reading.order],
+    cost: reading.cost,
+    provenOptimal: false,
+    blocked: [],
   };
 }
