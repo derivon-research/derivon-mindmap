@@ -15,6 +15,7 @@ describe('desktop WorkspaceSource', () => {
       ['docs/concept-a/document.md', document],
       ['assets/diagram.png', asset],
       ['.derivon/orientation.json', companion],
+      ['.derivon/routes/r-aaaaaa.json', '{}\n'],
     ]);
     const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
       const path = command === 'read_workspace_source_graph'
@@ -30,6 +31,9 @@ describe('desktop WorkspaceSource', () => {
         return files.get(path) ?? null;
       }
       if (command === 'workspace_source_revision') return 'revision-1';
+      if (command === 'list_workspace_source_companion_files') {
+        return [...files.keys()].filter((name) => name.startsWith(`${args?.directory as string}/`)).sort();
+      }
       if (command === 'list_workspace_source_owned_files') {
         return [...files.keys()].filter((name) => name.startsWith(`${args?.directory as string}/`)).sort();
       }
@@ -58,6 +62,10 @@ describe('desktop WorkspaceSource', () => {
     expect(await source.listOwnedFiles('docs/concept-a')).toEqual(['docs/concept-a/document.md']);
     expect(invoke).toHaveBeenLastCalledWith('list_workspace_source_owned_files', {
       rootPath: '/projects/example', directory: 'docs/concept-a',
+    });
+    expect(await source.listCompanionFiles('.derivon/routes')).toEqual(['.derivon/routes/r-aaaaaa.json']);
+    expect(invoke).toHaveBeenLastCalledWith('list_workspace_source_companion_files', {
+      rootPath: '/projects/example', directory: '.derivon/routes',
     });
     const committedRevision = await source.commit({
       expectedRevision: 'revision-1',

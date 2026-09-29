@@ -14,26 +14,28 @@ application has no action that writes it yet** — how mastery is evidenced is s
 explored, and inventing a button for it now would decide that exploration by accident. The script
 command surface landed in `derivon-research/skills#6`: `read-learner-record` and
 `write-learner-record` compute the application data directory path themselves from the workspace
-`id`, and read or replace one record file with no client running.
+`id`, and read or replace one record file with no client running. Personal routes — one file
+per route, replacing the single `routes.json` — are specified by
+[#153](https://github.com/derivon-research/derivon-mindmap/issues/153).
 Domain terms are defined in [CONTEXT.md](../CONTEXT.md); the decisions are
 [ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) (where they live) and
 [ADR-0012](adr/0012-learning-state-is-mastery.md) (what they are).
 
 A learner record is everything the application remembers about one learner in one workspace
-that is not workspace content. There are two files, and they answer two different questions:
+that is not workspace content. It answers two different questions, in two kinds of file:
 
 - `state.json`, protocol `derivon.learning/v1` — **mastery**: for each concept and each
   derivation, has this learner reached it?
-- `routes.json`, protocol `derivon.routes/v1` — **routes**: which routes did this learner
-  confirm, and what graph did each one solve against?
+- `routes/<route id>.json`, protocol `derivon.route/v1` — **personal routes**: one file per
+  route this learner confirmed, copied or built, each saved against the graph it names.
 
-Both are written beside each other but read and replaced independently. Deleting one leaves
-the other complete and readable.
+Every file is written beside the others but read and replaced independently. Deleting one
+leaves the rest complete and readable.
 
-Both are read the same way: a `schema` string that is not the file's own is an unreadable file,
-and a key the protocol does not define — at the top level, inside a record, or inside a route —
-is reported rather than ignored. Free-form state belongs in a record's `data`, namespaced by its
-writer.
+Every file is read the same way: a `schema` string that is not the file's own is an unreadable
+file, and a key the protocol does not define — at the top level, inside a record, or inside a
+route — is reported rather than ignored. Free-form state belongs in a record's `data`,
+namespaced by its writer.
 
 ## Where they live
 
@@ -42,7 +44,8 @@ writer.
 └── learner-records/
     └── <workspace id>/
         ├── state.json
-        └── routes.json
+        └── routes/
+            └── <route id>.json
 ```
 
 `<application data directory>` is the application's data directory — the Tauri app-data
@@ -67,15 +70,15 @@ Rules the layout depends on:
    there is no fallback branch and no path-derived key.
 4. **Any index from `id` to the last path it was seen at is application startup state**, kept
    with the existing recent-workspaces storage. It is not part of this directory and not part
-   of either protocol. It exists only to *notice* a hand-edited id or the same id appearing at
+   of any protocol. It exists only to *notice* a hand-edited id or the same id appearing at
    a new path and to offer migration, never to lose a record silently.
 5. **Learner records are not workspace content.** They are absent from `WorkspaceSource`, from
    `.derivon/workspace.json`, from workspace synchronization and from the workspace `revision`.
    Nothing in `.derivon/`, no companion document, and no manifest field points at them. A
    workspace commit can never carry one.
 6. **Missing directories are missing records, not errors.** `state.json` absent means this
-   learner has assessed nothing here; `routes.json` absent means they have confirmed no route.
-   A reader reports both as empty, and a writer creates the directory on first write.
+   learner has assessed nothing here; `routes/` absent or empty means they have no personal
+   route. A reader reports both as empty, and a writer creates the directory on first write.
 
 ## `derivon.learning/v1` — `state.json`
 
@@ -194,9 +197,9 @@ its records are these, and this is the **only** place they are defined:
 The two-domain prefixes are what keeps a file's record from ever colliding with an entry's. Both
 writers digest the same bytes, so a manifest rewritten with the same values — different
 indentation, different key order — keeps every judgement alive, while any changed value retires
-the judgement whose object changed. A `derivon.routes/v1` record's `basis` covers exactly these
-records for every concept and derivation it names in `conceptIds` and `derivationIds`, and nothing
-else.
+the judgement whose object changed. A personal route's `basis` is a **route basis**: the manifest
+entry record alone — no document files — for every object the route names, and nothing else;
+which objects those are is fixed in [routes](routes.md#basis).
 
 ### Invalidation: mark, keep, never re-decide
 
@@ -214,59 +217,38 @@ there is no `invalid` status. The rule is:
 - A stale record does not silently count as complete. Where it mattered — a route step, a
   known concept — it is reported and the learner decides what to do next.
 
-## `derivon.routes/v1` — `routes.json`
+## Personal routes — `routes/<route id>.json`
 
-A route is a solved subgraph a learner confirmed. Structurally it is a product derivation
-subgraph with all `data` stripped; it references the manifest's graph and copies none of it.
+A personal route is a `derivon.route/v1` file in the learner record. The protocol — shape,
+validation, execution order, `basis` coverage, editing — is specified once, in
+[routes](routes.md), for both of its locations; this section fixes only what being a learner
+record adds.
 
-```json
-{
-  "schema": "derivon.routes/v1",
-  "routes": [
-    {
-      "id": "r-k7f3q2",
-      "description": "从向量的线性无关走到 SVD",
-      "targets": ["c-svd"],
-      "known": ["c-span"],
-      "basis": "<hash>",
-      "conceptIds": ["c-span", "c-rank", "c-svd"],
-      "derivationIds": ["h-rank", "h-svd"],
-      "order": ["h-rank", "h-svd"],
-      "cost": 2
-    }
-  ]
-}
-```
-
-- `schema` is `derivon.routes/v1`; any other string is unreadable, and unknown top-level keys
-  are reported. `routes` is an array because **several routes coexist**.
-- `id` is `r-` plus six characters from the same alphabet and the same generation as an object
-  id (`23456789abcdefghjkmnpqrstvwxyz`), unique within the file and never reused.
-- `description` is the user-facing name of this route, written when it is confirmed.
-- `targets` and `known` are concept ids. `known` is **the input snapshot of that solve** — see
-  the distinction below.
-- `basis` covers the manifest entries of every concept and derivation the route references
-  (the objects named in `conceptIds` and `derivationIds`), and nothing else, so an unrelated
-  graph edit does not invalidate the route.
-- `conceptIds`, `derivationIds`, `order` and `cost` are the subgraph: the concepts and
-  derivations it uses, the executable order of the derivations, and the solved cost. They are
-  references into the manifest, never copies of object `data`. `cost` is in the same unit and
-  precision as a manifest `weight` (at most one decimal place), and is the cost the solve
-  reported; a route is only written when that solve reported a finite one.
+- **One file per route**, `routes/<id>.json`, where `<id>` is the route's own `id`. Several
+  routes coexist as several files, and writing, replacing or deleting one never reads or
+  rewrites another.
+- **`basis` is required and `basedOn` is optional** in this location; a workspace route may
+  carry neither.
 
 Rules the format depends on:
 
-1. **Only a confirmed route is written.** A preview is not persisted; leaving the preview
-   screen leaves no record.
+1. **Only a confirmed or saved route is written.** A preview is not persisted; leaving the
+   preview screen leaves no file. Confirming a solve writes a new personal route with
+   `ordered: true` and the solve's executable order as `steps`. A route the learner copies from
+   the workspace or builds in the editor is written when they save it, and not before.
 2. **A route carries no completion marker of any kind.** There is no step state, no cursor, no
    per-derivation flag. Everything about *how far along* a route the learner is comes from
    `state.json` at display time.
 3. **A route whose `basis` no longer matches is reported as inconsistent with the current
-   graph.** It is not re-solved, not edited, and not deleted automatically. Deleting a route is
+   graph.** It is not re-solved, not edited, and not deleted automatically. It is also
+   validated on load like any route, and an invalid one cannot be started. Deleting a route is
    a separate, explicit learner action and never touches `state.json`.
-4. **The active route is session state, not a record.** Which confirmed route is currently
-   shown is application state, like the current view; reopening a workspace starts with none
-   selected and the learner picks one.
+4. **Editing is the learner's, and saving recomputes `basis`.** An edited route is saved with
+   the basis of the graph at save time. A copy of a workspace route records the original's id
+   in `basedOn` and never follows later edits of it.
+5. **The active route is session state, not a record.** Which route is currently shown —
+   personal or workspace — is application state, like the current view; reopening a workspace
+   starts with none selected and the learner picks one.
 
 ## Two derived values, one stored nothing
 
@@ -277,7 +259,7 @@ These two are computed, never stored, and the distinction is the point of this d
   a `complete` record with `data.selfReported: true`, and the application derives the set on
   read ([#101](https://github.com/derivon-research/derivon-mindmap/issues/101)).
 - **The current step of a route = the head concept of the first derivation in that route's
-  `order` whose mastery is not `complete`.** There is no cursor. "Next" means "this step's
+  [display order](routes.md#display-order) whose mastery is not `complete`.** There is no cursor. "Next" means "this step's
   judgement passed", not "add one to a number". A step is identified by the concept its
   derivation concludes, so a concept appearing twice along one route is one position reached
   once, and a concept reached on another route is reached here too. A `complete` record that no
@@ -285,7 +267,7 @@ These two are computed, never stored, and the distinction is the point of this d
   learner returns to it, with the record kept as evidence.
 
 Because of that: **there is no learning-progress store in this repository.** What looks like
-progress is `state.json` composed with `routes.json` at display time. Adding a progress field
+progress is `state.json` composed with a route — personal or workspace — at display time. Adding a progress field
 anywhere would create a second source of truth for the same fact.
 
 ### `known` is an input snapshot, not the live known set
@@ -295,25 +277,29 @@ not be collapsed:
 
 - **the live known set** is derived from mastery right now (`complete` records), and it is
   what a *new* solve is given as input;
-- **`known` in a route record** is the input that *that* solve was given, frozen at
-  confirmation time.
+- **`known` in a route** is that route's own starting point: for a confirmed route, the input
+  its solve was given, frozen at confirmation time; for a route an author or learner edited,
+  whatever they set it to.
 
 Mastery can change afterwards. A concept can become complete later, or an old judgement can
-become stale. The route record still states what it was solved from, so the route stays
+become stale. The route still states what it starts from, so the route stays
 explainable. Re-reading a route must never substitute the current known set for its stored
 `known`, and a new solve uses the live set, never a route's stored one.
 
 ## Who writes
 
-The **artifact is enforced; the writer is not.** There is one specification — this document —
-and two write paths, exactly as workspace content has two write paths and one specification
+The **artifact is enforced; the writer is not.** There is one specification — this document,
+with [routes](routes.md) for the route files — and two write paths, exactly as workspace content has two write paths and one specification
 ([ADR-0011](adr/0011-change-workspace-content-through-the-script-command-surface.md)):
 
-- the application's own learning actions ("I know it", handing in a judgement, confirming a
-  route), implemented in the client, and
+- the application's own learning actions ("I know it", handing in a judgement, confirming,
+  copying, editing or deleting a personal route), implemented in the client, and
 - the script command surface, which computes the same `<application data directory>` path and
-  can read and write records with no client running: `read-learner-record` and
-  `write-learner-record`, each with the capability of its own name.
+  can read and write records with no client running: `state.json` whole, and personal routes one
+  by id — list, read, write, delete — under the capabilities `read-learner-record` and
+  `write-learner-record`. A route write is validated against [routes](routes.md) and refused if
+  it carries an error, and its `basis` is computed by the command, as the application computes
+  it.
 
 Both must produce a file the same reader accepts. Neither is the reference implementation for
 the other, and neither may carry a second, application-only semantic. The command surface
@@ -322,7 +308,8 @@ what makes the artifact a **category** of the surface rather than a corner of it
 declares its category, and a mode's tool set is the intersection of what it grants and what each
 command declares (`derivon-research/skills#5`, `#6`).
 
-Write discipline follows ADR-0011: a write carries a precondition — the revision, or the
-`basis`, of what it read — and replaces the file atomically (temporary file adjacent to the
-target, then rename). A losing precondition refuses cleanly. This is compare-and-swap on the
-file, not a lock and not a cross-file transaction.
+Write discipline follows ADR-0011: a write carries a precondition — the byte digest of the one
+file it read, or that the file is absent when it creates one — and replaces the file atomically
+(temporary file adjacent to the target, then rename); a delete carries the same precondition. A
+losing precondition refuses cleanly. This is compare-and-swap on one file, not a lock and not a
+cross-file transaction: two personal routes are two files and never contend.

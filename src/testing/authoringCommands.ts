@@ -24,6 +24,8 @@ export function fakeAuthoringCommands(overrides: Partial<AuthoringCommands> = {}
     updateConceptTags: vi.fn(),
     updateTagDeclarations: vi.fn(),
     updateOrientation: vi.fn(),
+    acceptWorkspaceRoute: vi.fn(),
+    deleteWorkspaceRoute: vi.fn(),
     protectDraft: vi.fn(),
     ...overrides,
   };

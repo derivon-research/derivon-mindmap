@@ -107,7 +107,7 @@ describe('desktop workspace entry workflow', () => {
     const opened = await createDesktopWorkspaceActions(graphReader(graphs), null).openRecentWorkspace('/tmp/graph');
     expect(opened.learnerRecordMigration).toBeUndefined();
     expect(typeof opened.learnerRecords!.readLearningState).toBe('function');
-    expect(typeof opened.learnerRecords!.writeRoutes).toBe('function');
+    expect(typeof opened.learnerRecords!.writeRoute).toBe('function');
   });
 });
 

@@ -4,6 +4,7 @@ import { page } from 'vitest/browser';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
 import type { AuthoringCommands } from '../../synchronization';
+import { fakeAuthoringCommands } from '../../testing/authoringCommands';
 import type { WorkspaceContent } from '../../workspace/index';
 import { AuthoringMode } from './AuthoringMode';
 
@@ -30,7 +31,7 @@ it('opens the overview, selects neighbourhood objects, and opens the selected ob
       [`${item.data.document}/document.md`, { status: 'ready' as const, text: 'Body' }],
       [`${item.data.document}/index.html`, { status: 'ready' as const, text: '<p>Body</p>' }],
     ])),
-    companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [] };
+    companionMetadata: {}, tags: [], orientation: { status: 'absent' }, routes: [], diagnostics: [] };
   container = document.createElement('div'); container.style.cssText = 'width:1100px;height:700px'; document.body.append(container);
   root = createRoot(container);
   await act(async () => root!.render(<AuthoringMode workspace={{ id: 'test', name: 'Relations' }} content={content} selectedConceptId={null} onSelectConcept={vi.fn()} />));
@@ -88,16 +89,11 @@ function structureContent(): WorkspaceContent {
   return { title: 'Structure', graphText: '', graph: { points, hyperedges },
     documents: Object.fromEntries([...points, ...hyperedges].map((item) =>
       [`${item.data.document}/document.md`, { status: 'ready' as const, text: 'Body' }])),
-    companionMetadata: {}, tags: [], orientation: { status: 'absent' }, diagnostics: [] };
+    companionMetadata: {}, tags: [], orientation: { status: 'absent' }, routes: [], diagnostics: [] };
 }
 
 function commands(overrides: Partial<AuthoringCommands> = {}): AuthoringCommands {
-  return {
-    createConcept: vi.fn(() => ''), createDerivation: vi.fn(() => ''), updateDocument: vi.fn(),
-    repairReferences: vi.fn(), restoreDocument: vi.fn(), deletionPreview: vi.fn(), deleteObjects: vi.fn(),
-    updateObjectMetadata: vi.fn(), updateDerivationStructure: vi.fn(), updateConceptTags: vi.fn(),
-    updateTagDeclarations: vi.fn(), updateOrientation: vi.fn(), protectDraft: vi.fn(), ...overrides,
-  };
+  return fakeAuthoringCommands(overrides);
 }
 
 async function renderStructure(authoring?: AuthoringCommands) {

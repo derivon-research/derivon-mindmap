@@ -4,7 +4,6 @@ import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { GraphRendererProps } from '../../rendering';
 import type { LearningModeProps } from '../../app/host';
-import type { RouteRecord } from '../../learner-records';
 import { routeBasis } from '../../learner-records/basis';
 import type { ConversationProvider } from '../../ports/ConversationProvider';
 import type { RouteSolver } from '../../ports/RouteSolver';
@@ -12,7 +11,7 @@ import { createMemoryLearnerRecords } from '../../testing/learnerRecordStore';
 import { createMemoryObjectFiles } from '../../testing/memoryObjectFiles';
 import { objectMasteryBasis } from './objectBasis';
 import { fixtureRouteSolver } from '../../testing/routeSolver';
-import { WORKSPACE_SCHEMA, parseWorkspaceContent, type WorkspaceContent } from '../../workspace/index';
+import { WORKSPACE_SCHEMA, parseWorkspaceContent, type Route, type WorkspaceContent } from '../../workspace/index';
 
 vi.mock('../../rendering', () => ({ GraphRenderer: ({ view, onEvent }: GraphRendererProps) => <div>
   <span>{view.kind} 图</span>
@@ -95,10 +94,9 @@ async function createWalker(
   concepts: { a: { status: 'complete', basis: 'a'.repeat(64), data: { selfReported: true } } },
   derivations: {},
 }) {
-  const record: RouteRecord = {
-    id: 'r-aaaaaa', description: '走到 C', targets: ['c'], known: ['a'],
+  const record: Route = {
+    id: 'r-aaaaaa', label: '走到 C', known: ['a'], targets: ['c'], steps: ['d1', 'd2'], ordered: true,
     basis: await routeBasis(workspace().graph, ['a', 'b', 'c', 'd1', 'd2']),
-    conceptIds: ['a', 'b', 'c'], derivationIds: ['d1', 'd2'], order: ['d1', 'd2'], cost: 5,
   };
   return { store: createMemoryLearnerRecords('test-workspace', { routes: [record], state: mastery }).store, record };
 }
@@ -193,7 +191,7 @@ it('walks to the end of the route and says how far along it is kept', async () =
   await page.getByRole('button', { name: '交上去' }).click();
 
   await expect.element(page.getByText('这条路线走完了')).toBeVisible();
-  expect(container.textContent).toContain('路线本身存在学习者记录里，走到哪一步也由它算出来');
+  expect(container.textContent).toContain('走到哪一步由掌握记录算出来');
 });
 
 it('lands on the same step after a workspace is reopened, because the records decide it', async () => {
@@ -212,7 +210,7 @@ it('lands on the same step after a workspace is reopened, because the records de
 });
 
 it('shows no completion at all when state.json is gone, and keeps the route readable', async () => {
-  // routes.json alone: the route is intact and there is no mastery to mark it with.
+  // The route file alone: the route is intact and there is no mastery to mark it with.
   walker = { ...walker, store: createMemoryLearnerRecords('test-workspace', { routes: [walker.record] }).store };
   await render();
 
@@ -368,7 +366,7 @@ it('keeps walking a route the graph has moved on from, and reports the mismatch 
   await expect.element(page.getByText(/另一版图/)).toBeVisible();
 });
 
-it('keeps a route whose target is gone readable, and never replaces or drops it', async () => {
+it('stops walking a route whose target is gone, and keeps it listed rather than replacing or dropping it', async () => {
   const initial = workspace();
   const changed = {
     ...initial,
@@ -385,9 +383,14 @@ it('keeps a route whose target is gone readable, and never replaces or drops it'
   await act(async () => root?.render(<Harness content={changed} />));
   await act(async () => { await Promise.resolve(); });
 
-  // The record still holds its own order; the step the graph no longer has is simply not drawn.
+  // The route no longer fits the graph, so it cannot be walked; it goes back on the shelf,
+  // marked, exactly as saved.
+  await expect.element(page.getByRole('heading', { name: '走到 C' })).toBeVisible();
   await expect.element(page.getByText(/另一版图/)).toBeVisible();
-  await expect.element(page.getByText('第 1 / 1 步')).toBeVisible();
+  expect(container.textContent).toContain('与当前图不符');
+  expect(container.querySelector('.learning-route')).toBeNull();
+  const stored = await walker.store.readRoute('r-aaaaaa');
+  expect(stored).toMatchObject({ presence: 'present', status: 'ready', route: walker.record });
 });
 
 it('does not ask the host to solve again for content that parsed to the same graph', async () => {

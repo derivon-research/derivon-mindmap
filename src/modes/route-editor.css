@@ -1,0 +1,77 @@
+.route-editor { flex: 1; min-width: 0; min-height: 0; display: flex; background: #fff; }
+.route-editor-main { flex: 1.2; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 24px; overflow-y: auto; }
+.route-editor-graph { flex: 1; min-width: 0; display: flex; border-left: 1px solid var(--app-line); }
+.route-editor-graph > * { flex: 1; min-width: 0; }
+.route-editor button { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 9px; border: 1px solid var(--app-line); background: #fff; color: var(--app-ink); font: inherit; font-size: 12.5px; cursor: pointer; }
+.route-editor button:disabled { color: var(--app-muted); cursor: not-allowed; }
+.route-editor-flex { flex: 1; }
+
+.route-editor-head { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--app-line); }
+.route-editor-title { margin: 0; padding: 2px 0; border: 0; border-bottom: 1px dashed transparent; background: none; color: var(--app-ink); font: inherit; font-size: 18px; font-weight: 600; }
+.route-editor-description { margin: 0; padding: 2px 0; border: 0; border-bottom: 1px dashed transparent; background: none; color: var(--app-muted); font: inherit; font-size: 13px; }
+input.route-editor-title:hover, input.route-editor-title:focus,
+input.route-editor-description:hover, input.route-editor-description:focus { border-bottom-color: var(--app-line); outline: none; }
+.route-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.route-editor-danger { color: #b91c1c !important; }
+.route-editor-confirm { display: inline-flex; align-items: center; gap: 6px; color: #9a3412; font-size: 12.5px; }
+
+.route-editor-ends { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.route-editor-ends-read { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; font-size: 13px; }
+.route-editor-ends-read dt { color: var(--app-muted); }
+.route-editor-ends-read dd { margin: 0; }
+
+.route-editor-solver { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--app-muted); font-size: 12px; }
+.route-editor-solver em { font-style: normal; color: #9a3412; }
+.route-editor-solver.is-unavailable { padding: 6px 10px; border: 1px dashed var(--app-line); }
+.route-editor-failure { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 10px; border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; font-size: 13px; }
+
+.route-editor-problems { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border: 1px solid #f0c9c5; background: #fdf4f3; font-size: 13px; }
+.route-editor-problems p { margin: 0; }
+.route-editor-problems p.is-error { color: #9b2a21; }
+.route-editor-problems p.is-warning { color: #9a3412; }
+.route-editor-gaps { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0 0 0 10px; list-style: none; }
+.route-editor-gaps li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.route-editor-gaps em { color: var(--app-muted); font-size: 12px; }
+.route-editor-blocked { color: var(--app-muted); font-size: 12px; }
+
+.route-editor-order { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; color: var(--app-muted); font-size: 12.5px; }
+.route-editor-order strong { color: var(--app-ink); }
+
+.route-editor-steps { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--app-line); }
+.route-editor-steps li { display: flex; align-items: center; gap: 10px; padding: 7px 6px; border-bottom: 1px solid var(--app-line); background: #fff; font-size: 13.5px; }
+.route-editor-steps li.is-error { background: #fdf4f3; }
+.route-editor-steps li.is-warning { background: #fffbeb; }
+.route-editor-steps li[draggable="true"] { cursor: grab; }
+.route-editor-grip { flex: 0 0 auto; color: #b5bac2; }
+.route-editor-step-index { width: 22px; flex: 0 0 auto; color: var(--app-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.route-editor-step-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.route-editor-step-main small { color: var(--app-muted); font-size: 12px; }
+.route-editor-step-main em { font-size: 12px; font-style: normal; }
+.route-editor-step-main em.is-error { color: #b91c1c; }
+.route-editor-step-main em.is-warning { color: #9a3412; }
+.route-editor-steps select { max-width: 180px; font: inherit; font-size: 12px; }
+.route-editor-parallels { color: var(--app-muted); font-size: 12px; }
+.route-editor-step-weight { width: 40px; flex: 0 0 auto; color: var(--app-muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.route-editor-step-tools { display: flex; gap: 3px; }
+.route-editor-step-tools button { min-height: 24px; padding: 2px 5px; }
+.route-editor-empty { margin: 0; color: var(--app-muted); font-size: 13px; }
+
+.route-editor-search { display: flex; flex-direction: column; gap: 4px; }
+.route-editor-search input { width: min(320px, 100%); padding: 5px 9px; border: 1px dashed var(--app-line); background: transparent; font: inherit; font-size: 13px; }
+.route-editor-search ul { width: min(420px, 100%); margin: 0; padding: 0; list-style: none; border: 1px solid var(--app-line); }
+.route-editor-search li + li { border-top: 1px solid var(--app-line); }
+.route-editor-search li > button { width: 100%; flex-direction: column; align-items: flex-start; border: 0; text-align: left; }
+.route-editor-search li > button:hover { background: #f1f5f9; }
+.route-editor-search small { color: var(--app-muted); font-size: 11.5px; }
+.route-editor-search li.route-editor-empty { padding: 6px 9px; }
+
+.route-editor-savebar { position: sticky; bottom: -24px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; padding: 10px 0; border-top: 1px solid var(--app-line); background: #fff; }
+.route-editor-tally { color: var(--app-muted); font-size: 12px; }
+.route-editor-tally.is-error { color: #b91c1c; }
+.route-editor .route-editor-primary:not(:disabled) { border-color: #087f5b; background: #087f5b; color: #fff; }
+
+@media (max-width: 900px) {
+  .route-editor { flex-direction: column; overflow-y: auto; }
+  .route-editor-main { overflow: visible; }
+  .route-editor-graph { min-height: 280px; border-left: 0; border-top: 1px solid var(--app-line); }
+}

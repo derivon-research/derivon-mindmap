@@ -1,15 +1,18 @@
 import { parseWorkspaceManifest, type ManifestGraph } from './manifest';
 
 export {
-  createConcept, createDerivation, createWorkspace, isMarkdownPath,
+  acceptWorkspaceRoute, createConcept, createDerivation, createWorkspace, deleteWorkspaceRoute, isMarkdownPath,
+  isWorkspaceRoutePath, workspaceRouteImpact,
   objectDocumentPaths, objectDocumentSource, objectSourcePath,
   orientationConceptImpact, parseWorkspaceContent, updateConceptTags, updateDerivationStructure,
   updateObjectDocument, updateObjectMetadata, updateOrientation, updateTagDeclarations,
   type ContentChange, type ContentDiagnostic, type CreateConceptIntent, type CreateDerivationIntent,
   type DerivationStructure, type TextResource,
   type UpdateConceptTagsIntent, type UpdateDerivationStructureIntent, type UpdateDocumentIntent, type UpdateMetadataIntent,
-  type WorkspaceContent, type WorkspaceOrientation,
+  type WorkspaceContent, type WorkspaceOrientation, type WorkspaceRoute, type WorkspaceRouteReference,
 } from './content';
+
+export { errorMessage } from './resource';
 
 export {
   documentReferences, isBrokenReference, objectDocumentHref, resolveWorkspaceReference,
@@ -38,6 +41,16 @@ export {
   type OrientationAction, type OrientationActionOp, type OrientationConceptReference, type OrientationConfig,
   type OrientationDiagnostic, type OrientationOption, type OrientationQuestion, type OrientationSeed,
 } from './orientation';
+
+export {
+  ROUTE_SCHEMA, WORKSPACE_ROUTES_DIRECTORY,
+  addStep, canStartRoute, copyAsPersonal, decodeRoute, draftFromSolution, executableOrder, isRouteFileName, isRouteId,
+  moveStep, newRoute, parallelDerivations, readRoute, refuseRouteErrors, removeStep, returnToComputedOrder, routeFileName,
+  routeFileStem, routeIdOfFileName, routeObjectIds, sameRoute, serializeRoute, stepCandidates, swapStep, workspaceRoutePath,
+  type Route, type RouteDecoding, type RouteDiagnostic, type RouteDiagnosticCode, type RouteFileIssue,
+  type RouteFileIssueCode, type RouteGap, type RouteLateNeed, type RouteLocation, type RoutePlace, type RouteReading,
+  type StepCandidate,
+} from './route';
 
 /** The graph as product state sees it. */
 export type WorkspaceGraph = ManifestGraph;

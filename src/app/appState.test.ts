@@ -21,6 +21,7 @@ const workspace: WorkspaceHandle = {
     readDocument: async () => '',
     readAsset: async () => new Uint8Array(),
     readCompanionMetadata: async () => null,
+    listCompanionFiles: async () => [],
   },
 };
 

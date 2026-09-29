@@ -70,6 +70,35 @@ Orientation edits live in a draft until explicitly accepted, and a configuration
 error cannot be accepted at all. Creating the configuration is a centre-view action, so the
 outline never owns it. See [orientation](orientation.md).
 
+### The routes view
+
+A fourth centre view, 路线, sits beside 对象, 图浏览 and 开局, for the workspace routes in
+`.derivon/routes/`. Like 开局 it is neither a mode nor an object: routes are not search results
+and not a kind in the 新建 dialogue. The left pane lists the workspace's routes — name, step
+count, cost, whether the order is written, and whether the route has errors, invalid ones
+included with their diagnosis — in the role the orientation outline plays, with its own
+independent collapse; 新建路线 sits at the bottom of the list.
+
+The centre is the route editor, top to bottom: name and description; targets and known through
+the concept picker; 按目标与已知重新求初稿, which asks first when it would discard steps the
+author wrote or changed; the gap panel, where every gap offers its candidate
+derivations with 补上; the order-state row, 现算 or 已写定 with 改回现算; the step table; a
+search that adds a derivation, those that can fire now first; and the save bar with the error
+count, 放弃更改 and 保存. A step-table row shows its position, the concept it concludes, what it
+needs, a parallel-derivation choice when the graph has one not already among the steps, its cost, move up, move down and
+remove, and the whole row drags; a step's own diagnosis sits on its row. The right pane is the
+route's subgraph, drawn by the route view.
+
+Every edit re-validates at once, and only root causes are listed: steps that fail only because
+another step fails are one sentence, 另有 N 步因此暂时走不了; a cycle of steps that only wait
+on each other still names its first step as the cause. Save stays disabled while any
+error remains, so a workspace never holds a route that was invalid when saved; one that
+becomes invalid later, because the graph changed, is listed as invalid rather than repaired.
+Edits live in a draft, protected like every other draft. Accepting it is one content operation
+that writes `.derivon/routes/<id>.json` and nothing else; deleting a route removes that file.
+The editor is the same component the learning side uses for personal routes, and it does not
+know which side it is on. See [routes](routes.md).
+
 ### Object metadata
 
 An object's own properties sit above its document, one per line and in the same quiet
@@ -95,8 +124,10 @@ object's title row opens it. No graph view deletes anything (ADR-0002).
 
 Opening it assembles the plan before offering anything: the derivations that cannot survive
 losing an endpoint, every file the host reports under each removed directory, the
-cross-document links and shared images that would be broken, and the places the orientation
-configuration names the concept. The file list comes from the host inventory rather than
+cross-document links and shared images that would be broken, the places the orientation
+configuration names the concept, and the workspace routes that name a removed object and will
+become invalid. Those routes are reported, not repaired and not blocking: they are fixed in the
+routes view. The file list comes from the host inventory rather than
 from the document text, so an asset the body no longer mentions is in it; nothing outside
 those directories ever is. The plan states what it found and does not explain itself: a file
 list is a file list, and the rules behind it are documented here, not repeated on screen.
@@ -140,7 +171,7 @@ orientation configuration. Repairs are offered per reference and named: 改指�
 删除引用. Each is confirmed before it is applied, each is a complete content change on the
 shared save path, and none of them is applied while an unapplied draft would be overwritten.
 
-Document drafts, the orientation draft and the Agent conversation survive centre-view and mode changes. Merely selecting
+Document drafts, the orientation draft, a route draft and the Agent conversation survive centre-view and mode changes. Merely selecting
 an object in the graph does not mount its document editor or parse its body. The last opened
 document stays mounted while the graph is visible, until another document is explicitly opened.
 The simulated Agent is labelled and never invokes a model or executes its plans.

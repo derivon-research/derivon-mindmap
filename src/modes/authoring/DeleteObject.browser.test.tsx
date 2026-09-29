@@ -4,7 +4,7 @@ import { page } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AuthoringCommands, DeletionPreview } from '../../synchronization';
 import {
-  ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, parseWorkspaceContent, referenceImpact,
+  ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, parseWorkspaceContent, referenceImpact, serializeRoute,
   type TextResource, type WorkspaceContent,
 } from '../../workspace/index';
 import { DeleteObject } from './DeleteObject';
@@ -156,6 +156,24 @@ it('takes the concept out of the orientation configuration only as a confirmed p
   expect(authoring.deleteObjects).toHaveBeenCalledWith({
     plan: { conceptIds: ['c-b'] }, repairs: [], repairOrientation: true,
   });
+});
+
+it('lists the workspace routes the deletion will invalidate, without blocking it or offering a repair', async () => {
+  const route = { id: 'r-aaaaaa', label: '数域到向量空间', known: ['c-a'], targets: ['c-b'], steps: ['h-1'], ordered: false };
+  const workspace = linked({ '.derivon/routes/r-aaaaaa.json': { status: 'ready', text: serializeRoute(route, 'workspace') } });
+  const impact = referenceImpact(workspace, { conceptIds: ['c-b'] });
+  const authoring = commands(() => ({ impact: { ...impact, incoming: [] }, ownedFiles }));
+  render(workspace, authoring);
+
+  const routes = page.getByRole('region', { name: '工作区路线引用' });
+  await expect.element(routes).toBeInTheDocument();
+  await expect.element(routes).toHaveTextContent('数域到向量空间');
+  await expect.element(routes).toHaveTextContent('将失效');
+  expect(container.textContent).toContain('1 条工作区路线失效');
+  await expect.element(page.getByRole('button', { name: '执行完整删除方案' })).toBeEnabled();
+  await page.getByRole('button', { name: '执行完整删除方案' }).click();
+  await page.getByRole('button', { name: '确认删除「向量空间」' }).click();
+  expect(authoring.deleteObjects).toHaveBeenCalledWith({ plan: { conceptIds: ['c-b'] }, repairs: [] });
 });
 
 it('keeps the object and its management entry when the deletion fails', async () => {

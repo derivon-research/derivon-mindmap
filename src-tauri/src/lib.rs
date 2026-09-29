@@ -40,6 +40,8 @@ pub fn run() {
             crash_report::read_crash_report,
             learner_records::read_learner_record,
             learner_records::write_learner_record,
+            learner_records::delete_learner_route,
+            learner_records::list_learner_routes,
             solve_route,
             workspace::choose_workspace,
             workspace::choose_workspace_source_directory,
@@ -56,6 +58,7 @@ pub fn run() {
             workspace::read_workspace_source_companion_metadata,
             workspace::workspace_source_revision,
             workspace::list_workspace_source_owned_files,
+            workspace::list_workspace_source_companion_files,
             workspace::commit_workspace_source_changes,
             conversation::conversation_request,
         ])

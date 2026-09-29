@@ -7,12 +7,16 @@ import {
   type WorkspaceManifest,
 } from './manifest';
 import { introducedReferenceProblems } from './references';
-import type { ContentDiagnostic, TextResource } from './resource';
+import { comparePaths, errorMessage, isDirectChild, type ContentDiagnostic, type TextResource } from './resource';
 import {
   ORIENTATION_PATH, orientationConceptReferences, orientationErrors, parseOrientationConfig,
   serializeOrientationConfig, validateOrientationConfig,
   type OrientationConceptReference, type OrientationConfig, type OrientationDiagnostic,
 } from './orientation';
+import {
+  WORKSPACE_ROUTES_DIRECTORY, decodeRoute, isRouteFileName, readRoute, refuseRouteErrors, routeFileName, routeFileStem,
+  serializeRoute, workspaceRoutePath, type Route, type RouteFileIssue, type RouteReading,
+} from './route';
 
 export type { ContentDiagnostic, TextResource };
 
@@ -26,6 +30,36 @@ export type WorkspaceOrientation =
   | { readonly status: 'ready'; readonly config: OrientationConfig; readonly diagnostics: readonly OrientationDiagnostic[] }
   | { readonly status: 'invalid'; readonly message: string; readonly config: OrientationConfig | null; readonly diagnostics: readonly OrientationDiagnostic[] };
 
+/**
+ * One file of `.derivon/routes/` as effective content sees it. `id` is the file name without
+ * `.json`, so every route file can be named and deleted even when it cannot be read. `ready`
+ * means the route validates on the current graph (warnings are in `reading.diagnostics`);
+ * `invalid` keeps whatever could be read — the decoded route and its reading when the file
+ * decoded, the file issues when it did not — and `message` says why in one line. Nothing is
+ * dropped, re-solved or repaired on load (`docs/routes.md`).
+ */
+export type WorkspaceRoute =
+  | {
+    readonly status: 'ready'; readonly id: string; readonly path: string;
+    readonly route: Route; readonly reading: RouteReading;
+  }
+  | {
+    readonly status: 'invalid'; readonly id: string; readonly path: string; readonly message: string;
+    /** Why the file could not be decoded; empty when it decoded and failed on the graph. */
+    readonly issues: readonly RouteFileIssue[];
+    readonly route: Route | null;
+    readonly reading: RouteReading | null;
+  };
+
+/** A workspace route that names objects a deletion removes, and so becomes invalid with it. */
+export type WorkspaceRouteReference = {
+  readonly id: string;
+  readonly path: string;
+  readonly label: string;
+  /** The removed concepts and derivations the route names, in `known`, `targets` or `steps`. */
+  readonly objectIds: readonly string[];
+};
+
 export type WorkspaceContent = {
   readonly graphText: string;
   readonly graph: ManifestGraph;
@@ -37,6 +71,8 @@ export type WorkspaceContent = {
   readonly assets?: Readonly<Record<string, Uint8Array>>;
   readonly companionMetadata: Readonly<Record<string, TextResource | null>>;
   readonly orientation: WorkspaceOrientation;
+  /** Every route file in `.derivon/routes/`, by path; derived from `companionMetadata`. */
+  readonly routes: readonly WorkspaceRoute[];
   readonly diagnostics: readonly ContentDiagnostic[];
 };
 
@@ -86,8 +122,6 @@ export type UpdateConceptTagsIntent = {
 
 const SUPPORTED_IMAGE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-z0-9]+$/i;
 
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
-
 function copyAssets(assets: Readonly<Record<string, Uint8Array>> | undefined): Record<string, Uint8Array> {
   return Object.fromEntries(Object.entries(assets ?? {}).map(([path, bytes]) => [path, new Uint8Array(bytes)]));
 }
@@ -124,13 +158,48 @@ function readOrientation(
   try {
     config = parseOrientationConfig(resource.text);
   } catch (error) {
-    return { status: 'invalid', message: message(error), config: null, diagnostics: [] };
+    return { status: 'invalid', message: errorMessage(error), config: null, diagnostics: [] };
   }
   const diagnostics = validateOrientationConfig(config, graph, tags);
   const errors = orientationErrors(diagnostics);
   return errors.length
     ? { status: 'invalid', message: `开局配置有 ${errors.length} 处会影响路线的问题`, config, diagnostics }
     : { status: 'ready', config, diagnostics };
+}
+
+/** Whether a companion path is a workspace route file: a direct `.json` child of the routes directory. */
+export function isWorkspaceRoutePath(path: string): boolean {
+  return isDirectChild(path, WORKSPACE_ROUTES_DIRECTORY) && isRouteFileName(path.slice(WORKSPACE_ROUTES_DIRECTORY.length + 1));
+}
+
+function readWorkspaceRoute(path: string, resource: TextResource, graph: ManifestGraph): WorkspaceRoute {
+  const fileName = path.slice(WORKSPACE_ROUTES_DIRECTORY.length + 1);
+  const id = routeFileStem(fileName);
+  if (resource.status === 'error') {
+    return { status: 'invalid', id, path, message: resource.message,
+      issues: [{ code: 'unreadable', message: resource.message }], route: null, reading: null };
+  }
+  const decoded = decodeRoute(resource.text);
+  if (!decoded.route) {
+    return { status: 'invalid', id, path, message: `路线文件读不懂：${decoded.issues.map((issue) => issue.message).join('；')}`,
+      issues: decoded.issues, route: null, reading: null };
+  }
+  const route = decoded.route;
+  const reading = readRoute(graph, route, { location: 'workspace', fileName });
+  if (!reading.errors) return { status: 'ready', id, path, route, reading };
+  const first = reading.diagnostics.find((diagnostic) => diagnostic.severity === 'error')!;
+  return { status: 'invalid', id, path, issues: [], route, reading,
+    message: `路线「${route.label || id}」有 ${reading.errors} 处错误：${first.message}` };
+}
+
+function readWorkspaceRoutes(
+  companionMetadata: Readonly<Record<string, TextResource | null>>,
+  graph: ManifestGraph,
+): WorkspaceRoute[] {
+  return Object.entries(companionMetadata)
+    .filter((entry): entry is [string, TextResource] => entry[1] !== null && isWorkspaceRoutePath(entry[0]))
+    .sort(([left], [right]) => comparePaths(left, right))
+    .map(([path, resource]) => readWorkspaceRoute(path, resource, graph));
 }
 
 export function parseWorkspaceContent(input: {
@@ -143,11 +212,15 @@ export function parseWorkspaceContent(input: {
   const documents = { ...input.documents };
   const companionMetadata = { ...input.companionMetadata };
   const orientation = readOrientation(companionMetadata[ORIENTATION_PATH], parsed.manifest.graph, parsed.manifest.tags);
+  const routes = readWorkspaceRoutes(companionMetadata, parsed.manifest.graph);
   const diagnostics = [
     ...Object.entries({ ...documents, ...companionMetadata }).flatMap(([path, resource]) =>
       resource?.status === 'error' ? [{ path, message: resource.message }] : []),
     ...(orientation.status === 'invalid' && companionMetadata[ORIENTATION_PATH]?.status === 'ready'
       ? [{ path: ORIENTATION_PATH, message: orientation.message }] : []),
+    // An unreadable route file is already reported above as the resource error it is.
+    ...routes.flatMap((route) => route.status === 'invalid' && companionMetadata[route.path]?.status === 'ready'
+      ? [{ path: route.path, message: route.message }] : []),
   ];
   return {
     graphText: input.graph,
@@ -158,6 +231,7 @@ export function parseWorkspaceContent(input: {
     assets: copyAssets(input.assets),
     companionMetadata,
     orientation,
+    routes,
     diagnostics,
   };
 }
@@ -408,4 +482,58 @@ export function orientationConceptImpact(
   if (!config) return [];
   const removed = new Set(conceptIds);
   return orientationConceptReferences(config).filter((reference) => removed.has(reference.conceptId));
+}
+
+/** Re-derive effective content from new companion documents, keeping everything else. */
+function withCompanionMetadata(content: WorkspaceContent, companionMetadata: Record<string, TextResource | null>): WorkspaceContent {
+  return parseWorkspaceContent({ graph: content.graphText, documents: content.documents, assets: content.assets, companionMetadata });
+}
+
+/**
+ * Accept a new or edited workspace route: writes `.derivon/routes/<id>.json` and nothing
+ * else. A route carrying any error — a shape error at the workspace location, or a graph
+ * error on the current graph — is refused, so a workspace never holds a route that was
+ * invalid when it was saved. Warnings do not refuse.
+ */
+export function acceptWorkspaceRoute(content: WorkspaceContent, route: Route): ContentChange {
+  const text = serializeRoute(route, 'workspace');
+  const reading = readRoute(content.graph, route, { location: 'workspace', fileName: routeFileName(route.id) });
+  refuseRouteErrors(reading, '路线无法保存：');
+  const path = workspaceRoutePath(route.id);
+  return {
+    content: withCompanionMetadata(content, { ...content.companionMetadata, [path]: { status: 'ready', text } }),
+    changes: { companionMetadata: [{ path, content: text }] },
+  };
+}
+
+/**
+ * Delete a workspace route by the id its file is named with (`WorkspaceRoute.id`), so an
+ * invalid or unreadable route file can be removed too. Removes that one file.
+ */
+export function deleteWorkspaceRoute(content: WorkspaceContent, id: string): ContentChange {
+  const route = content.routes.find((candidate) => candidate.id === id);
+  if (!route) throw new Error(`未找到工作区路线: ${id}`);
+  const companionMetadata = { ...content.companionMetadata };
+  delete companionMetadata[route.path];
+  return {
+    content: withCompanionMetadata(content, companionMetadata),
+    changes: { companionMetadata: [{ path: route.path, content: null }] },
+  };
+}
+
+/**
+ * The workspace routes that name any of `objectIds` — concepts in `known` or `targets`,
+ * derivations in `steps` — for a deletion plan. A route file that did not decode names nothing.
+ */
+export function workspaceRouteImpact(
+  content: WorkspaceContent,
+  objectIds: readonly string[],
+): readonly WorkspaceRouteReference[] {
+  const removed = new Set(objectIds);
+  return content.routes.flatMap((entry) => {
+    if (!entry.route) return [];
+    const named = [...new Set([...entry.route.known, ...entry.route.targets, ...entry.route.steps])]
+      .filter((id) => removed.has(id));
+    return named.length ? [{ id: entry.id, path: entry.path, label: entry.route.label, objectIds: named }] : [];
+  });
 }

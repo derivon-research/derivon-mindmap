@@ -1,41 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceCommit, WritableWorkspaceSource } from '../ports/WorkspaceSource';
-import { createConcept, createWorkspace } from '../workspace/index';
+import { createMemoryWorkspaceSource } from '../testing/memoryWorkspaceSource';
+import { createConcept, createDerivation, createWorkspace, newRoute, serializeRoute } from '../workspace/index';
 import { openWorkspaceSession } from './index';
 
 function memorySource(graph = createWorkspace({ id: 'test-workspace', title: 'Test' }).content.graphText) {
-  const files = new Map<string, string>([['.derivon/workspace.json', graph]]);
-  const assets = new Map<string, Uint8Array>();
-  const commits: WorkspaceCommit[] = [];
-  const source: WritableWorkspaceSource = {
-    async readGraph() { return files.get('.derivon/workspace.json')!; },
-    async readDocument(path) {
-      if (!files.has(path)) throw new Error(`Missing: ${path}`);
-      return files.get(path)!;
-    },
-    async readAsset(path) {
-      const bytes = assets.get(path);
-      if (!bytes) throw new Error(`Missing: ${path}`);
-      return new Uint8Array(bytes);
-    },
-    async readCompanionMetadata(path) { return files.get(path) ?? null; },
-    async listOwnedFiles(directory) {
-      return [...files.keys(), ...assets.keys()].filter((path) => path.startsWith(`${directory}/`)).sort();
-    },
-    async commit(changes) {
-      commits.push(changes);
-      if (changes.graph !== undefined) files.set('.derivon/workspace.json', changes.graph);
-      for (const change of [...changes.documents ?? [], ...changes.companionMetadata ?? []]) {
-        if (change.content === null) files.delete(change.path);
-        else files.set(change.path, change.content);
-      }
-      for (const change of changes.assets ?? []) {
-        if (change.content === null) assets.delete(change.path);
-        else assets.set(change.path, new Uint8Array(change.content));
-      }
-    },
-  };
-  return { source, files, assets, commits };
+  return createMemoryWorkspaceSource(graph);
 }
 
 afterEach(() => vi.useRealTimers());
@@ -124,6 +93,50 @@ describe('application-scoped workspace synchronization', () => {
       expect(files.has(`${directory}/index.html`)).toBe(false);
       expect(files.get(`${directory}/document.md`)).toBe(`${markdown}Changed\n`);
     } finally { reopened.dispose(); }
+  });
+
+  it('opens every workspace route file, and saves or deletes a route as one route file', async () => {
+    vi.useFakeTimers();
+    let content = createWorkspace({ id: 'test-workspace', title: 'Routes' }).content;
+    content = createConcept(createConcept(content, { label: 'A' }).content, { label: 'B' }).content;
+    const [a, b] = content.graph.points.map(({ id }) => id);
+    const derivation = createDerivation(content, { tails: [a], head: b, weight: 1 });
+    const route = { ...newRoute('r-aaaaaa', { label: 'A 到 B', known: [a], targets: [b] }), steps: [derivation.objectId] };
+    const { source, files, commits } = memorySource(derivation.content.graphText);
+    files.set('.derivon/routes/r-bbbbbb.json', serializeRoute({ ...route, id: 'r-bbbbbb' }, 'workspace'));
+    files.set('.derivon/routes/r-cccccc.json', 'unused');
+    files.set('.derivon/routes/r-dddddd.json.partial', '{}');
+    const read = source.readCompanionMetadata.bind(source);
+    source.readCompanionMetadata = async (path) => {
+      if (path.endsWith('r-cccccc.json')) throw new Error('读不出');
+      return read(path);
+    };
+    const session = await openWorkspaceSession(source, { authoring: source, autosaveDelayMs: 50 });
+    try {
+      const opened = session.reader.getSnapshot().content;
+      expect(opened.routes.map((entry) => [entry.id, entry.status])).toEqual([['r-bbbbbb', 'ready'], ['r-cccccc', 'invalid']]);
+      expect(opened.diagnostics).toEqual([{ path: '.derivon/routes/r-cccccc.json', message: '读不出' }]);
+
+      session.authoring!.acceptWorkspaceRoute(route);
+      session.authoring!.deleteWorkspaceRoute('r-cccccc');
+      expect(() => session.authoring!.acceptWorkspaceRoute({ ...route, id: 'r-eeeeee', steps: [] })).toThrow(/路线无法保存/);
+      expect(session.reader.getSnapshot().content.routes.map((entry) => entry.id)).toEqual(['r-aaaaaa', 'r-bbbbbb']);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(commits).toEqual([
+        { companionMetadata: [{ path: '.derivon/routes/r-aaaaaa.json', content: serializeRoute(route, 'workspace') }] },
+        { companionMetadata: [{ path: '.derivon/routes/r-cccccc.json', content: null }] },
+      ]);
+      const reopened = await openWorkspaceSession(source);
+      expect(reopened.reader.getSnapshot().content.routes.map((entry) => [entry.id, entry.status]))
+        .toEqual([['r-aaaaaa', 'ready'], ['r-bbbbbb', 'ready']]);
+      reopened.dispose();
+    } finally { session.dispose(); }
+  });
+
+  it('fails to open a workspace whose routes directory the host refuses to list', async () => {
+    const { source } = memorySource();
+    source.listCompanionFiles = async () => { throw new Error('workspace companion directory contains symlink'); };
+    await expect(openWorkspaceSession(source)).rejects.toThrow(/symlink/);
   });
 
   it('previews a complete accepted concept before automatic persistence and reopens it intact', async () => {

@@ -43,6 +43,9 @@ export function createDesktopWorkspaceSource(
     readCompanionMetadata(relativePath) {
       return invoke('read_workspace_source_companion_metadata', { rootPath, relativePath });
     },
+    listCompanionFiles(directory) {
+      return invoke<readonly string[]>('list_workspace_source_companion_files', { rootPath, directory });
+    },
     revision() {
       return invoke('workspace_source_revision', { rootPath });
     },

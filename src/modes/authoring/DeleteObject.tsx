@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Compass, FileText, GitBranch, HardDrive, Image, Trash2, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Compass, FileText, GitBranch, HardDrive, Image, Route, Trash2, Undo2, X } from 'lucide-react';
 import {
   deletionBlockers, isMarkdownPath, objectSourcePath,
   type DeletionPlan, type ObjectRef, type ReferenceImpact, type ReferenceRepairChoice, type WorkspaceContent,
@@ -140,7 +140,8 @@ function summarize({ impact, ownedFiles }: DeletionPreview): string {
   return `${impact.scope.concepts.length} 个概念 · ${impact.scope.derivations.length} 条推导 · `
     + `${files.length} 个文件（其中 ${assets} 个资产）`
     + (impact.incoming.length ? ` · ${impact.incoming.length} 处引用修正` : '')
-    + (impact.orientation.length ? ` · ${impact.orientation.length} 处开局配置修正` : '');
+    + (impact.orientation.length ? ` · ${impact.orientation.length} 处开局配置修正` : '')
+    + (impact.routes.length ? ` · ${impact.routes.length} 条工作区路线失效` : '');
 }
 
 function DeletionPlanReport({ content, preview, repairs, repairOrientation, disabled, onRepair, onRepairOrientation, onOpenObject }: {
@@ -250,6 +251,18 @@ function DeletionPlanReport({ content, preview, repairs, repairOrientation, disa
           : <button type="button" disabled={disabled} onClick={() => onRepairOrientation(true)}>一并从开局配置里去掉</button>}
       </div>
     </section>}
+
+    {impact.routes.length > 0 && <section aria-label="工作区路线引用">
+      <h3><Route size={14} />工作区路线<small>{impact.routes.length}</small></h3>
+      <p>删除后这些路线会失效。删除不会改动它们，也不因此受阻；到「路线」视图里修。</p>
+      <ul className="document-reference-list">
+        {impact.routes.map((item) => <li key={item.path}>
+          <span className="document-reference-status is-uncertain">将失效</span>
+          <span>{item.label || item.id}</span>
+          <span>{item.objectIds.map((id) => routeObjectName(content, id)).join('、')}</span>
+        </li>)}
+      </ul>
+    </section>}
   </div>;
 }
 
@@ -264,6 +277,12 @@ function SourceLink({ content, documentPath, onOpenObject }: {
   return <span className="document-reference-actions">
     <button type="button" onClick={() => onOpenObject(object)}>去修这份文档</button>
   </span>;
+}
+
+/** A removed object as a route names it: concepts by label, derivations by what they conclude. */
+function routeObjectName(content: WorkspaceContent, id: string): string {
+  const kind = content.graph.points.some((point) => point.id === id) ? 'concept' : 'derivation';
+  return `「${objectLabel(content, { kind, id })}」`;
 }
 
 function orientationWhere(at: ReferenceImpact['orientation'][number]['at']): string {

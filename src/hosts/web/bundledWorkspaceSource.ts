@@ -1,4 +1,4 @@
-import type { WorkspaceSource } from '../../ports/WorkspaceSource';
+import { companionFilesIn, type WorkspaceSource } from '../../ports/WorkspaceSource';
 import exampleGraph from '../../examples/math-reforged/.derivon/workspace.json?raw';
 import exampleOrientation from '../../examples/math-reforged/.derivon/orientation.json?raw';
 
@@ -6,6 +6,13 @@ const exampleDocuments = import.meta.glob('../../examples/math-reforged/docs/**/
   import: 'default',
   query: '?raw',
 }) as Record<string, () => Promise<string>>;
+
+// Companion documents are read at opening, so the route files are bundled eagerly.
+const exampleRoutes = import.meta.glob('../../examples/math-reforged/.derivon/routes/*.json', {
+  import: 'default',
+  query: '?raw',
+  eager: true,
+}) as Record<string, string>;
 
 export type BundledWorkspace = {
   graph: string;
@@ -36,14 +43,23 @@ export function createBundledWorkspaceSource(bundle: BundledWorkspace): Workspac
     async readCompanionMetadata(path) {
       return bundle.companionMetadata?.[path] ?? null;
     },
+    async listCompanionFiles(directory) {
+      return companionFilesIn(Object.keys(bundle.companionMetadata ?? {}), directory);
+    },
   };
 }
 
 export const bundledExampleWorkspaceSource = createBundledWorkspaceSource({
   graph: exampleGraph,
   // The bundled workspace ships an orientation configuration, so the web build opens into
-  // the author's questions.
-  companionMetadata: { '.derivon/orientation.json': exampleOrientation },
+  // the author's questions, and workspace routes a learner can walk as they are.
+  companionMetadata: {
+    '.derivon/orientation.json': exampleOrientation,
+    ...Object.fromEntries(Object.entries(exampleRoutes).map(([path, text]) => [
+      path.replace('../../examples/math-reforged/', ''),
+      text,
+    ])),
+  },
   documents: Object.fromEntries(Object.entries(exampleDocuments).map(([path, content]) => [
     path.replace('../../examples/math-reforged/', ''),
     content,

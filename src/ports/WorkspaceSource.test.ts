@@ -24,12 +24,34 @@ describe('WorkspaceSource', () => {
     expect('listOwnedFiles' in source).toBe(false);
   });
 
+  it('lists the direct child files of a bundled companion directory', async () => {
+    const source = createBundledWorkspaceSource({
+      graph: '{}',
+      companionMetadata: {
+        '.derivon/orientation.json': '{}',
+        '.derivon/routes/r-bbbbbb.json': '{}',
+        '.derivon/routes/r-aaaaaa.json': '{}',
+        '.derivon/routes/nested/r-cccccc.json': '{}',
+      },
+    });
+
+    expect(await source.listCompanionFiles('.derivon/routes'))
+      .toEqual(['.derivon/routes/r-aaaaaa.json', '.derivon/routes/r-bbbbbb.json']);
+    expect(await source.listCompanionFiles('.derivon/absent')).toEqual([]);
+    for (const directory of ['.derivon', 'docs', '.derivon/../docs', '.derivon/routes/', '/etc']) {
+      await expect(source.listCompanionFiles(directory)).rejects.toThrow('companion directory');
+    }
+  });
+
   it('opens the fixed web example through the same read port', async () => {
     const graph = JSON.parse(await bundledExampleWorkspaceSource.readGraph());
 
     expect(graph.document.title).toBe('线性代数应该这样学：概念与推导图');
     expect(await bundledExampleWorkspaceSource.readDocument('docs/concept-foundation-fields/document.md'))
       .toContain('# 数域');
+    const routes = await bundledExampleWorkspaceSource.listCompanionFiles('.derivon/routes');
+    expect(routes).toContain('.derivon/routes/r-sv4d2m.json');
+    expect(await bundledExampleWorkspaceSource.readCompanionMetadata(routes[0])).toContain('"derivon.route/v1"');
     expect('commit' in bundledExampleWorkspaceSource).toBe(false);
   });
 });

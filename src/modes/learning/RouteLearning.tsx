@@ -132,7 +132,7 @@ export function RouteLearning({
             : <div className="learning-route-done">
               <h2>这条路线走完了</h2>
               <p>{steps.length} 步{solution.cost === null ? '' : `，总学习成本 ${solution.cost}`}。
-                路线本身存在学习者记录里，走到哪一步也由它算出来 —— 每一步的判定都在里面。</p>
+                走到哪一步由掌握记录算出来 —— 每一步的判定都在学习者记录里。</p>
               <div className="learning-text-actions">
                 <button type="button" onClick={onSwitchRoute}>换一条路线</button>
               </div>

@@ -1,0 +1,35 @@
+{
+  "schema": "derivon.route/v1",
+  "id": "r-sv4d2m",
+  "label": "从数域与有限元组走到奇异值分解",
+  "description": "顺序写定：先讲完向量空间、张成与基，再讲线性映射和内积，最后经自伴算子走到奇异值分解。谱定理这一步取自伴算子的版本；图里还有一条从正规算子出发的平行推导，前置更多。",
+  "known": [
+    "foundation-fields",
+    "finite-tuple"
+  ],
+  "targets": [
+    "svd"
+  ],
+  "steps": [
+    "given-fields",
+    "def-vector",
+    "subspace-test",
+    "linear-combination-def",
+    "span-minimal",
+    "dependence",
+    "basis-criterion",
+    "linear-map-def",
+    "operator-def",
+    "inner-def",
+    "norm-cs",
+    "orthogonality-def",
+    "gram-schmidt",
+    "adjoint-riesz",
+    "self-adjoint-def",
+    "spectral-self-adjoint",
+    "normal-classes",
+    "singular-values-spectral",
+    "svd-step"
+  ],
+  "ordered": true
+}

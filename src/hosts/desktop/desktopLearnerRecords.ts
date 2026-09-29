@@ -27,6 +27,12 @@ export function createDesktopLearnerRecordFiles(invoke: DesktopInvoke = tauriInv
         expectedVersion: precondition.presence === 'present' ? precondition.version : null,
       });
     },
+    async deleteRoute(workspaceId, routeId, version) {
+      await invoke<null>('delete_learner_route', { workspaceId, routeId, expectedVersion: version });
+    },
+    listRoutes(workspaceId) {
+      return invoke<string[]>('list_learner_routes', { workspaceId });
+    },
   };
 }
 

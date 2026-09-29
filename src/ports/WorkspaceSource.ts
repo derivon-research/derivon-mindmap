@@ -1,10 +1,37 @@
+import { comparePaths, isDirectChild } from '../workspace/resource';
+
 export interface WorkspaceSource {
   readGraph(): Promise<string>;
   readDocument(path: string): Promise<string>;
   readAsset(path: string): Promise<Uint8Array>;
   readCompanionMetadata(path: string): Promise<string | null>;
+  /**
+   * The files directly inside one companion directory under `.derivon` (for example
+   * `.derivon/routes`), as sorted workspace-relative paths. Opening a workspace needs this to
+   * find companion documents stored one file each, such as workspace routes.
+   *
+   * The contract: the directory must be strictly inside `.derivon`; only direct child files
+   * are reported, never a subdirectory or anything below one; a symlink, whether the
+   * directory, an entry in it, or a directory on the way to it, is refused rather than
+   * followed; and a directory that does not exist is an empty listing, not a failure.
+   */
+  listCompanionFiles(directory: string): Promise<readonly string[]>;
   /** Opaque content observation token; absent for immutable sources. Not an atomic filesystem snapshot. */
   revision?(): Promise<string>;
+}
+
+/**
+ * `listCompanionFiles` for a source that holds its files as a set of paths rather than a
+ * filesystem: the bundled web workspace and the in-memory test source. It refuses the same
+ * directories the desktop host refuses; symlinks cannot occur in a path set.
+ */
+export function companionFilesIn(paths: Iterable<string>, directory: string): string[] {
+  const segments = directory.split('/');
+  if (segments.length < 2 || segments[0] !== '.derivon'
+    || segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    throw new Error(`\`${directory}\` is not a companion directory inside \`.derivon\``);
+  }
+  return [...new Set(paths)].filter((path) => isDirectChild(path, directory)).sort(comparePaths);
 }
 
 export type WorkspaceTextChange = {

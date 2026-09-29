@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LearningModeProps } from '../../app/host';
 import {
-  addRoute, conceptSources, EMPTY_MASTERY, readMastery, readRoutes, removeRoute, routeIsStale,
-  routeRecord, writeJudgements, writeMastery,
-  type MasteryReading, type MasterySource, type MasteryWrite, type RouteList,
+  conceptSources, confirmedRoute, EMPTY_MASTERY, readMastery, writeJudgements, writeMastery,
+  type MasteryReading, type MasterySource, type MasteryWrite,
 } from '../../learner-records';
-import { generateObjectId } from '../../workspace/index';
+import { canStartRoute, errorMessage, type Route, type RouteReading } from '../../workspace/index';
 import { labelOf } from '../ConceptPicker';
+import { RouteEditor } from '../RouteEditor';
 import { GraphBrowse } from './GraphBrowse';
 import './learning.css';
 import { objectMasteryBasis, type ObjectBasisReader } from './objectBasis';
@@ -20,12 +20,19 @@ import { RouteLearning } from './RouteLearning';
 import { RoutePreviewView } from './RoutePreviewView';
 import { RouteShelf } from './RouteShelf';
 import { routeProgress, stepBasis, stepStanding, useStepBases, type FreshJudgement, type RouteProgress } from './routeProgress';
-import { routeSolutionOf, routeSteps, type RouteStep, useRoutePreview } from '../routePreview';
+import { routeSolutionOfReading, routeSteps, type RouteStep, useRoutePreview } from '../routePreview';
 import { initialRouteWalk, revealDefinition } from './state';
+import { usePersonalRouteDrafts } from './usePersonalRouteDrafts';
 
-const NO_ROUTES: RouteList = { routes: [], issue: null };
-const NOTHING_STALE: ReadonlySet<string> = new Set();
 const NO_STEPS: readonly RouteStep[] = [];
+
+/** A route that can be walked now, wherever it lives. */
+type WalkableRoute = {
+  readonly routeId: string;
+  readonly route: Route;
+  readonly reading: RouteReading;
+  readonly stale: boolean;
+};
 
 /**
  * The learning side. One mode, five screens: orientation, the route preview, the confirmed
@@ -33,10 +40,11 @@ const NO_STEPS: readonly RouteStep[] = [];
  * business — the top bar switches between them — so this component dispatches rather than
  * deciding.
  *
- * The route stage is two screens rather than one: with no active route it lists the learner's
- * confirmed routes and lets them choose, and with one it walks it. Which route that is lives
- * in the application, because a confirmed route is a record and this component does not own
- * the store it lives in.
+ * The route stage is two screens rather than one: with no active route it is the shelf — the
+ * routes the workspace ships and the learner's personal routes, where the learner chooses one,
+ * copies an author's route to make it their own, or edits their own — and with one it walks it.
+ * Which route that is lives in the application, as an id that names one route in either group.
+ * Editing a personal route writes the learner records and never the workspace.
  *
  * Targets stay application state, because they are one solve's input. **Known does not**: it
  * is the set of concepts with a `complete` record, read from and written back to the learner
@@ -146,7 +154,7 @@ export function LearningMode({
       const basis = await Promise.all(claims.map(async (conceptId) => ({ conceptId, basis: await conceptBasis(conceptId, '自述'), source })));
       setMastery(await writeMastery(learnerRecords, { claimed: basis, withdrawn }));
     } catch (error) {
-      setKnownError(error instanceof Error ? error.message : String(error));
+      setKnownError(errorMessage(error));
     } finally {
       setPending(null);
     }
@@ -182,48 +190,38 @@ export function LearningMode({
   const [panels, setPanels] = useState<PanelLayout>(DEFAULT_PANELS);
   const [walk, setWalk] = useState(initialRouteWalk);
 
-  const [listed, setListed] = useState<RouteList>(NO_ROUTES);
-  const [stale, setStale] = useState<ReadonlySet<string>>(NOTHING_STALE);
   /** The create flow's second step: the route the questions produced. Not a place of its own. */
   const [reviewing, setReviewing] = useState(false);
   const [writing, setWriting] = useState(false);
-  const [writeError, setWriteError] = useState<string | null>(null);
+  const personal = usePersonalRouteDrafts({
+    learnerRecords, graph, workspaceRoutes: content.routes, activeRouteId, onSelectRoute,
+  });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   /** The judgement just written, with its basis, until the route's bases are checked again. */
   const [fresh, setFresh] = useState<FreshJudgement | null>(null);
 
-  // A host with no application data directory has no records at all: confirming then leaves a
-  // route that lives only in this session, and the screen says so rather than pretending.
-  useEffect(() => {
-    if (!learnerRecords) { setListed(NO_ROUTES); return; }
-    let cancelled = false;
-    void readRoutes(learnerRecords).then((value) => { if (!cancelled) setListed(value); });
-    return () => { cancelled = true; };
-  }, [learnerRecords]);
-
-  // Staleness is derived on read, never written: a route whose basis no longer matches the
-  // graph is reported and kept, not re-solved and not deleted.
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all(listed.routes.map(async (record) => ({
-      id: record.id,
-      stale: await routeIsStale(graph, record),
-    }))).then((entries) => {
-      if (!cancelled) setStale(new Set(entries.filter((entry) => entry.stale).map((entry) => entry.id)));
-    });
-    return () => { cancelled = true; };
-  }, [graph, listed]);
-
   const solved = preview.status === 'ready' && preview.solution.reachable ? preview.solution : null;
-  const activeRecord = listed.routes.find((route) => route.id === activeRouteId) ?? null;
+  // Only a route that can be started can be walked: an invalid one stays on the shelf, marked.
+  // A new route's id is unique across both groups, so one id names one route.
+  const activeRoute: WalkableRoute | null = useMemo(() => {
+    if (activeRouteId === null) return null;
+    const workspaceRoute = content.routes.find((route) => route.id === activeRouteId);
+    if (workspaceRoute && canStartRoute(workspaceRoute)) {
+      return { routeId: workspaceRoute.id, route: workspaceRoute.route, reading: workspaceRoute.reading, stale: false };
+    }
+    const own = personal.standings.find((route) => route.routeId === activeRouteId);
+    return own?.status === 'ready' && canStartRoute(own)
+      ? { routeId: own.routeId, route: own.route, reading: own.reading, stale: own.stale } : null;
+  }, [activeRouteId, content.routes, personal.standings]);
+  const activeSolution = useMemo(() => activeRoute ? routeSolutionOfReading(activeRoute.reading) : null, [activeRoute]);
 
   // The route being walked, one step per derivation in the record's order, and where the
   // learner has got to on it. Neither is state: the steps come from the record and the graph,
   // and progress comes from the mastery records, so both survive a reopening.
-  const steps = useMemo(() => activeRecord
-    ? routeSteps(graph, routeSolutionOf(activeRecord))
-    : NO_STEPS, [activeRecord, graph]);
+  const steps = useMemo(() => activeSolution
+    ? routeSteps(graph, activeSolution)
+    : NO_STEPS, [activeSolution, graph]);
   const concepts = mastery?.state.concepts ?? EMPTY_MASTERY.concepts;
   const stepBases = useStepBases(content, steps, concepts, ownerReader);
   const progress: RouteProgress = useMemo(() => routeProgress(steps,
@@ -241,47 +239,28 @@ export function LearningMode({
   // Leaving the create flow drops its second step, so coming back starts from the questions.
   useEffect(() => { if (view !== 'orientation') setReviewing(false); }, [view]);
 
-  const writeRoutes = async (change: () => Promise<RouteList>) => {
-    setWriteError(null);
-    try {
-      setListed(await change());
-    } catch (error) {
-      setWriteError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
   const confirmRoute = async () => {
     if (!solved || !learnerRecords) return;
     setWriting(true);
-    setWriteError(null);
-    try {
-      const record = await routeRecord({
-        id: generateObjectId('r', listed.routes.map((route) => route.id)),
-        // The name is derived, not asked for: a route is not edited, so there is nowhere a
-        // learner could change it, and the starting point is what tells two routes apart.
-        description: `从 ${liveKnownIds.length ? liveKnownIds.map((id) => labelOf(graph, id)).join('、') : '零'} 走到 ${targetIds.map((id) => labelOf(graph, id)).join('、')}`,
-        graph,
-        solution: solved,
-        targets: targetIds,
-        known: liveKnownIds,
-      });
-      setListed(await addRoute(learnerRecords, record));
-      onConfirmRoute(record.id);
-    } catch (error) {
-      setWriteError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setWriting(false);
-    }
+    const route = confirmedRoute({
+      id: personal.newRouteId(),
+      // The name is derived, not asked for: the starting point is what tells two confirmed
+      // routes apart, and the learner can rename it later.
+      label: `从 ${liveKnownIds.length ? liveKnownIds.map((id) => labelOf(graph, id)).join('、') : '零'} 走到 ${targetIds.map((id) => labelOf(graph, id)).join('、')}`,
+      solution: solved,
+      targets: targetIds,
+      known: liveKnownIds,
+    });
+    if (await personal.confirm(route)) onConfirmRoute(route.id);
+    setWriting(false);
   };
 
-  const deleteRoute = (routeId: string) => {
-    if (!learnerRecords) return;
-    void writeRoutes(async () => {
-      const next = await removeRoute(learnerRecords, routeId);
-      if (activeRouteId === routeId) onSelectRoute(null);
-      return next;
-    });
-  };
+  const editor = personal.draft && learnerRecords
+    ? <RouteEditor active={active} graph={graph} tags={content.tags} route={personal.draft} dirty={personal.dirty}
+      routeSolver={routeSolver} onChange={personal.change} onSave={personal.save} onDiscard={personal.close}
+      onDelete={personal.draftSaved ? personal.removeDraft : undefined} deletePrompt="删除这条路线？掌握记录不动"
+      actions={!personal.dirty && <button type="button" onClick={personal.close}>不改了</button>} />
+    : null;
 
   /**
    * The learner handed in this step's verification. What that records is a judgement about the
@@ -313,7 +292,7 @@ export function LearningMode({
       setFresh({ content, conceptId: step.conceptId, basis });
       setMastery(reading);
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : String(error));
+      setSubmitError(errorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -326,11 +305,10 @@ export function LearningMode({
     ? { kind: 'set-targets', conceptIds: targetIds.filter((id) => id !== conceptId) }
     : { kind: 'add-targets', conceptIds: [conceptId] });
 
-  const shelfRoutes = listed.routes.map((record) => ({ record, stale: stale.has(record.id) }));
   // The route stage is two screens, chosen by whether a route is active — never by the view
   // alone, so a route being walked can never stay on screen under another view.
-  const picker = view === 'route' && activeRecord === null;
-  const walking = view === 'route' && activeRecord !== null;
+  const picker = view === 'route' && activeRoute === null;
+  const walking = view === 'route' && activeRoute !== null;
 
   return <section className="learning-workbench" data-derivon-mode="learning" data-learning-view={view}
     data-learning-targets={targetIds.join(' ')} data-learning-known={liveKnownIds.join(' ')}
@@ -347,7 +325,7 @@ export function LearningMode({
     {view === 'orientation' && (reviewing
       ? <RoutePreviewView active={active} graph={content.graph} tags={content.tags}
         preview={preview} targetIds={targetIds} knownIds={knownIds} confirming={writing}
-        confirmError={writeError === null ? null : `路线没能存下来：${writeError}`}
+        confirmError={personal.writeError === null ? null : `路线没能存下来：${personal.writeError}`}
         confirmBlocked={learnerRecords ? null : '这个宿主没有应用数据目录，确认的路线无处可存，所以先不让确认。'}
         onConfirm={() => { void confirmRoute(); }}
         onBackToOrientation={() => setReviewing(false)} onBrowse={() => onEnterView('browse')} />
@@ -356,14 +334,18 @@ export function LearningMode({
         preview={preview} onIntent={intent} onEnterPreview={() => setReviewing(true)}
         readAsset={readAsset} readDocuments={readDocuments} />)}
 
-    {picker && <RouteShelf active={active} graph={graph} routes={shelfRoutes} issue={listed.issue}
-      error={writeError} onStart={onSelectRoute} onDelete={deleteRoute}
+    {picker && <RouteShelf active={active} graph={graph} workspaceRoutes={content.routes}
+      personal={learnerRecords ? { routes: personal.standings, issue: personal.issue } : null}
+      error={personal.writeError} selected={personal.selection} editor={editor}
+      onSelect={personal.select}
+      onStart={onSelectRoute} onCopy={personal.copy} onEdit={personal.edit}
+      onDelete={(routeId) => { void personal.remove(routeId); }} onCreate={() => personal.create(liveKnownIds)}
       onNewRoute={() => onEnterView('orientation')} />}
 
-    {walking && activeRecord && <RouteLearning active={active} content={content}
-      solution={routeSolutionOf(activeRecord)} steps={steps} progress={progress}
-      targetIds={[...activeRecord.targets]} knownIds={[...activeRecord.known]}
-      knownSources={knownSources} stale={stale.has(activeRecord.id)}
+    {walking && activeRoute && activeSolution && <RouteLearning active={active} content={content}
+      solution={activeSolution} steps={steps} progress={progress}
+      targetIds={[...activeRoute.route.targets]} knownIds={[...activeRoute.route.known]}
+      knownSources={knownSources} stale={activeRoute.stale}
       revealed={walk.revealed} onReveal={(id) => setWalk((current) => revealDefinition(current, id))}
       onSubmit={(step) => { void submitTask(step); }} submitting={submitting} submitError={submitError}
       panels={panels} onPanels={setPanels} onKnow={know}

@@ -5,6 +5,7 @@ import type { TagDeclaration, WorkspaceGraph } from '../../workspace/index';
 import { labelOf } from '../ConceptPicker';
 import { RetainedGraph } from '../RetainedGraph';
 import { routeGraphView, routeSteps, type RoutePreview } from '../routePreview';
+import { premisesText } from '../routeText';
 import { RouteSummary } from './RouteSummary';
 
 export type RoutePreviewViewProps = {
@@ -103,7 +104,7 @@ function RouteBody({ graph, tags, solution, targetIds, knownIds }: {
         <span className="learning-step-index">{step.index}</span>
         <span className="learning-step-label">{step.label}</span>
         <span className="learning-step-because">
-          {step.requires.length ? `需要 ${step.requires.map((id) => labelOf(graph, id)).join(' + ')}` : '不需要前提'}
+          {premisesText(graph, step.requires)}
         </span>
         <span className="learning-step-weight">{step.weight}</span>
       </li>)}

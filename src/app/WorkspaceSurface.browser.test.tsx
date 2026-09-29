@@ -37,6 +37,7 @@ function fixture() {
     readAsset: async () => bytes,
     revision: async () => revision,
     listOwnedFiles: async () => [],
+    listCompanionFiles: async () => [],
     commit,
   };
   const workspace: WorkspaceHandle = { id: 'test', name: 'Test', source, authoringSource: source };
@@ -106,6 +107,7 @@ function turnFixture() {
     readAsset: async () => new Uint8Array(),
     revision: async () => revision,
     listOwnedFiles: async () => [],
+    listCompanionFiles: async () => [],
     commit,
   };
   return {

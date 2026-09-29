@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, createConcept, createDerivation, createWorkspace, emptyOrientationConfig,
+  ORIENTATION_SCHEMA, WORKSPACE_SCHEMA, acceptWorkspaceRoute, deleteWorkspaceRoute, newRoute, serializeRoute,
+  workspaceRouteImpact, type Route, createConcept, createDerivation, createWorkspace, emptyOrientationConfig,
   objectDocumentSource, orientationConceptImpact, parseWorkspaceContent, updateConceptTags,
   updateDerivationStructure, updateObjectDocument, updateOrientation, updateTagDeclarations,
   type OrientationConfig, type WorkspaceContent,
@@ -401,5 +402,133 @@ describe('the orientation configuration as workspace content', () => {
       { conceptId: b, at: { field: 'action', questionId: 'why', optionId: 'o' } },
     ]);
     expect(orientationConceptImpact(configured, ['other'])).toEqual([]);
+  });
+});
+
+describe('workspace routes as workspace content', () => {
+  /** A → B → C, one derivation each; the route walks from A to C. */
+  const workspace = () => {
+    let content = createWorkspace({ id: 'test-workspace', title: 'T' }).content;
+    for (const label of ['A', 'B', 'C']) content = createConcept(content, { label }).content;
+    const ab = createDerivation(content, { tails: [idOf(content, 'A')], head: idOf(content, 'B'), weight: 1 });
+    const bc = createDerivation(ab.content, { tails: [idOf(content, 'B')], head: idOf(content, 'C'), weight: 2 });
+    return { content: bc.content, ab: ab.objectId, bc: bc.objectId };
+  };
+  const route = ({ content, ab, bc }: ReturnType<typeof workspace>, id = 'r-aaaaaa'): Route => ({
+    ...newRoute(id, { label: 'A 到 C', known: [idOf(content, 'A')], targets: [idOf(content, 'C')] }),
+    steps: [bc, ab],
+  });
+  const withFiles = (content: WorkspaceContent, files: Record<string, { status: 'ready'; text: string } | { status: 'error'; message: string }>) =>
+    parseWorkspaceContent({ graph: content.graphText, documents: content.documents, companionMetadata: files });
+
+  it('has no routes without a routes directory, and the workspace stays valid', () => {
+    const { content } = workspace();
+    expect(content.routes).toEqual([]);
+    expect(content.diagnostics).toEqual([]);
+  });
+
+  it('reads every route file as ready or invalid, never dropping one, and ignores what is not a route file', () => {
+    const fixture = workspace();
+    const good = route(fixture);
+    const dangling = { ...route(fixture, 'r-bbbbbb'), steps: [...good.steps, 'gone'] };
+    const content = withFiles(fixture.content, {
+      '.derivon/routes/r-aaaaaa.json': { status: 'ready', text: serializeRoute(good, 'workspace') },
+      '.derivon/routes/r-bbbbbb.json': { status: 'ready', text: serializeRoute(dangling, 'workspace') },
+      '.derivon/routes/r-cccccc.json': { status: 'ready', text: '{ not json' },
+      '.derivon/routes/r-dddddd.json': { status: 'error', message: '权限不足' },
+      '.derivon/routes/r-eeeeee.json.tmp': { status: 'ready', text: '{}' },
+      '.derivon/routes/old/r-ffffff.json': { status: 'ready', text: '{}' },
+    });
+
+    expect(content.routes.map((entry) => [entry.id, entry.status])).toEqual([
+      ['r-aaaaaa', 'ready'], ['r-bbbbbb', 'invalid'], ['r-cccccc', 'invalid'], ['r-dddddd', 'invalid'],
+    ]);
+    const [ready, invalid, unparseable, unreadable] = content.routes;
+    // The written set is shown in its executable order, computed on this graph.
+    expect(ready.status === 'ready' && ready.reading.order).toEqual([fixture.ab, fixture.bc]);
+    expect(invalid.route).toEqual(dangling);
+    expect(invalid.reading?.diagnostics.map((item) => item.code)).toContain('dangling-derivation');
+    expect(unparseable.route).toBeNull();
+    expect(unparseable.status === 'invalid' && unparseable.issues.map((issue) => issue.code)).toEqual(['unreadable']);
+    expect(unreadable.status === 'invalid' && unreadable.message).toBe('权限不足');
+    // Every invalid route is one workspace diagnostic, at its own file.
+    expect(content.diagnostics.map((item) => item.path).sort()).toEqual([
+      '.derivon/routes/r-bbbbbb.json', '.derivon/routes/r-cccccc.json', '.derivon/routes/r-dddddd.json',
+    ]);
+    expect(content.diagnostics.find((item) => item.path.endsWith('r-bbbbbb.json'))!.message).toContain('gone');
+  });
+
+  it('reports a route whose file name does not match its id as invalid', () => {
+    const fixture = workspace();
+    const content = withFiles(fixture.content, {
+      '.derivon/routes/r-zzzzzz.json': { status: 'ready', text: serializeRoute(route(fixture), 'workspace') },
+    });
+    expect(content.routes[0].status).toBe('invalid');
+    expect(content.routes[0].reading?.diagnostics.map((item) => item.code)).toEqual(['id-mismatch']);
+  });
+
+  it('accepts a route by writing its one file, without touching the manifest', () => {
+    const fixture = workspace();
+    const change = acceptWorkspaceRoute(fixture.content, route(fixture));
+    expect(change.changes).toEqual({ companionMetadata: [
+      { path: '.derivon/routes/r-aaaaaa.json', content: serializeRoute(route(fixture), 'workspace') },
+    ] });
+    expect(change.content.graphText).toBe(fixture.content.graphText);
+    expect(change.content.routes.map((entry) => [entry.id, entry.status, entry.route])).toEqual([
+      ['r-aaaaaa', 'ready', route(fixture)],
+    ]);
+    // Accepting it again replaces the file rather than adding a second route.
+    const renamed = acceptWorkspaceRoute(change.content, { ...route(fixture), label: '改名' });
+    expect(renamed.content.routes.map((entry) => entry.route?.label)).toEqual(['改名']);
+  });
+
+  it('refuses a route carrying an error, and accepts one carrying only warnings', () => {
+    const fixture = workspace();
+    const unreached = { ...route(fixture), steps: [fixture.ab] };
+    expect(() => acceptWorkspaceRoute(fixture.content, unreached)).toThrow(/路线无法保存/);
+    expect(() => acceptWorkspaceRoute(fixture.content, { ...route(fixture), basis: '0'.repeat(64) })).toThrow(/basis/);
+    expect(() => acceptWorkspaceRoute(fixture.content, { ...route(fixture), label: ' ' })).toThrow();
+    expect(fixture.content.routes).toEqual([]);
+
+    // A second way to the same conclusion is a warning, not a refusal.
+    const parallel = createDerivation(fixture.content, { tails: [idOf(fixture.content, 'A')], head: idOf(fixture.content, 'B'), weight: 3 });
+    const both = { ...route({ ...fixture, content: parallel.content }), steps: [fixture.ab, parallel.objectId, fixture.bc] };
+    const accepted = acceptWorkspaceRoute(parallel.content, both).content.routes[0];
+    expect(accepted.status).toBe('ready');
+    expect(accepted.reading!.warnings).toBeGreaterThan(0);
+  });
+
+  it('deletes a route by removing its file, an invalid or unreadable one included', () => {
+    const fixture = workspace();
+    const content = withFiles(fixture.content, {
+      '.derivon/routes/r-aaaaaa.json': { status: 'ready', text: serializeRoute(route(fixture), 'workspace') },
+      '.derivon/routes/notes.json': { status: 'ready', text: '{ not json' },
+    });
+    const deleted = deleteWorkspaceRoute(content, 'notes');
+    expect(deleted.changes).toEqual({ companionMetadata: [{ path: '.derivon/routes/notes.json', content: null }] });
+    expect(deleted.content.routes.map((entry) => entry.id)).toEqual(['r-aaaaaa']);
+    expect(deleted.content.diagnostics).toEqual([]);
+    expect(deleteWorkspaceRoute(deleted.content, 'r-aaaaaa').content.routes).toEqual([]);
+    expect(() => deleteWorkspaceRoute(deleted.content, 'notes')).toThrow(/notes/);
+  });
+
+  it('re-validates routes against every new graph: one the graph breaks becomes invalid, not repaired', () => {
+    const fixture = workspace();
+    const accepted = acceptWorkspaceRoute(fixture.content, route(fixture)).content;
+    const rewired = updateDerivationStructure(accepted, {
+      derivationId: fixture.bc, tails: [idOf(accepted, 'A')], head: idOf(accepted, 'B'), weight: 2 }).content;
+    expect(rewired.routes[0].status).toBe('invalid');
+    expect(rewired.routes[0].route).toEqual(route(fixture));
+    expect(rewired.routes[0].reading?.diagnostics.map((item) => item.code)).toContain('target-unreached');
+    expect(rewired.diagnostics.map((item) => item.path)).toEqual(['.derivon/routes/r-aaaaaa.json']);
+  });
+
+  it('reports which workspace routes name a set of removed objects', () => {
+    const fixture = workspace();
+    const content = acceptWorkspaceRoute(fixture.content, route(fixture)).content;
+    expect(workspaceRouteImpact(content, [idOf(content, 'A'), fixture.ab, 'other'])).toEqual([
+      { id: 'r-aaaaaa', path: '.derivon/routes/r-aaaaaa.json', label: 'A 到 C', objectIds: [idOf(content, 'A'), fixture.ab] },
+    ]);
+    expect(workspaceRouteImpact(content, [idOf(content, 'B')])).toEqual([]);
   });
 });

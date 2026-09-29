@@ -17,6 +17,7 @@
  * learner owns their own claim and the workspace's default, not a judgement the application
  * made.
  */
+import { errorMessage } from '../workspace/index';
 import type { LearningState, MasteryRecord } from './protocol';
 import type { LearnerRecordStore } from './store';
 
@@ -66,8 +67,6 @@ export function conceptSources(state: LearningState): ReadonlyMap<string, Master
   return sources;
 }
 
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
 export async function readMastery(store: LearnerRecordStore): Promise<MasteryReading> {
   try {
     const stored = await store.readLearningState();
@@ -75,7 +74,7 @@ export async function readMastery(store: LearnerRecordStore): Promise<MasteryRea
       ? { state: stored.state, presence: 'present', issue: null }
       : { state: EMPTY_MASTERY, presence: 'missing', issue: null };
   } catch (error) {
-    return { state: EMPTY_MASTERY, presence: 'present', issue: messageOf(error) };
+    return { state: EMPTY_MASTERY, presence: 'present', issue: errorMessage(error) };
   }
 }
 

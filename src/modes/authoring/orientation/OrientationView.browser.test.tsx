@@ -90,7 +90,7 @@ it('maintains an orientation configuration through the shared content operations
   expect(answer.textContent).toBe('要看懂一篇论文');
   await act(async () => answer.click());
   await expect.element(page.getByText('初始路线')).toBeVisible();
-  await page.getByRole('button', { name: '路线', exact: true }).click();
+  await page.getByRole('group', { name: '开局视图' }).getByRole('button', { name: '路线', exact: true }).click();
   await expect.element(page.getByText('路线子图')).toBeVisible();
 });
 

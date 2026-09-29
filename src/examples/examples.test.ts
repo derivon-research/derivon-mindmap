@@ -1,15 +1,32 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { WORKSPACE_SCHEMA, orientationErrors, parseWorkspaceContent } from '../workspace/index';
+import {
+  WORKSPACE_SCHEMA,
+  orientationErrors,
+  parallelDerivations,
+  parseWorkspaceContent,
+  serializeRoute,
+  type TextResource,
+} from '../workspace/index';
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+
+function routeFiles(directory: string): Record<string, TextResource> {
+  const routes = fileURLToPath(new URL(`./${directory}/.derivon/routes`, import.meta.url));
+  if (!existsSync(routes)) return {};
+  return Object.fromEntries(readdirSync(routes).map((name) =>
+    [`.derivon/routes/${name}`, { status: 'ready', text: read(`./${directory}/.derivon/routes/${name}`) }]));
+}
 
 function workspace(directory: string) {
   return parseWorkspaceContent({
     graph: read(`./${directory}/.derivon/workspace.json`),
     documents: {},
-    companionMetadata: { '.derivon/orientation.json': { status: 'ready', text: read(`./${directory}/.derivon/orientation.json`) } },
+    companionMetadata: {
+      '.derivon/orientation.json': { status: 'ready', text: read(`./${directory}/.derivon/orientation.json`) },
+      ...routeFiles(directory),
+    },
   });
 }
 
@@ -29,6 +46,26 @@ describe.each(['replace-with', 'math-reforged'])('the %s example workspace', (di
     expect(content.orientation.status).toBe('ready');
     expect(content.orientation.status !== 'absent' && orientationErrors(content.orientation.diagnostics)).toEqual([]);
   });
+
+  it('ships only workspace routes that read as ready, with no errors or warnings, in canonical form', () => {
+    expect(content.routes.filter((route) => route.status !== 'ready')).toEqual([]);
+    expect(content.diagnostics).toEqual([]);
+    for (const shipped of content.routes) {
+      if (shipped.status !== 'ready') continue;
+      expect(shipped.reading.errors).toBe(0);
+      expect(shipped.reading.diagnostics).toEqual([]);
+      expect(serializeRoute(shipped.route, 'workspace')).toBe(read(`./${directory}/${shipped.path}`));
+    }
+  });
+});
+
+it('ships an ordered workspace route with a parallel derivation in the math-reforged case', () => {
+  const content = workspace('math-reforged');
+  const demo = content.routes.filter((route) => route.status === 'ready'
+    && route.route.ordered
+    && route.reading.orderSource === 'written'
+    && route.route.steps.some((step) => parallelDerivations(content.graph, step).length > 0));
+  expect(demo.length).toBeGreaterThan(0);
 });
 
 it('covers multiple targets and known initialization in the math-reforged case', () => {
