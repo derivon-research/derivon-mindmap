@@ -263,9 +263,13 @@ export function LearningMode({
     setWriting(true);
     setWriteError(null);
     try {
-      // A new id is unique among this learner's routes, so one id names one route.
+      // A new id is unique among this learner's routes and the workspace's, so one id names one
+      // route wherever it is seen.
       const route = confirmedRoute({
-        id: generateObjectId('r', listed.routes.flatMap((entry) => (entry.routeId === null ? [] : [entry.routeId]))),
+        id: generateObjectId('r', [
+          ...listed.routes.flatMap((entry) => (entry.routeId === null ? [] : [entry.routeId])),
+          ...content.routes.map((entry) => entry.id),
+        ]),
         // The name is derived, not asked for: the starting point is what tells two confirmed
         // routes apart, and the learner can rename it later.
         label: `从 ${liveKnownIds.length ? liveKnownIds.map((id) => labelOf(graph, id)).join('、') : '零'} 走到 ${targetIds.map((id) => labelOf(graph, id)).join('、')}`,
