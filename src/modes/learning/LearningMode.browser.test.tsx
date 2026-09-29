@@ -72,11 +72,12 @@ it('shows the view the application asked for, and only that one', async () => {
   expect(container.querySelector('[data-derivon-mode="learning"]')?.getAttribute('data-learning-view')).toBe('orientation');
 });
 
-it('shows the confirmed routes rather than inventing one when none is active', async () => {
+it('shows the route shelf rather than inventing a route when none is active', async () => {
   root = createRoot(container);
   act(() => root?.render(<LearningMode {...props({ content: content(), targetIds: ['b'], view: 'route' })} />));
-  await expect.element(page.getByText('我的路线')).toBeVisible();
-  expect(container.textContent).toContain('还没有确认过路线');
+  await expect.element(page.getByRole('heading', { name: '这个工作区带的' })).toBeVisible();
+  expect(container.textContent).toContain('这个工作区没有带路线');
+  expect(container.textContent).toContain('还没有可以走的路线');
 });
 
 it('leaves the application state that came from a mode switch alone', async () => {

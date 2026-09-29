@@ -115,7 +115,7 @@ it('shows every confirmed route when none is active, and starts the one the lear
   const onSelectRoute = vi.fn();
   await render({ records, onSelectRoute });
 
-  await expect.element(page.getByText('我的路线')).toBeVisible();
+  await expect.element(page.getByRole('heading', { name: '我的', exact: true })).toBeVisible();
   expect(container.textContent).toContain('第一条');
   expect(container.textContent).toContain('第二条');
   await page.getByRole('button', { name: /第一条/ }).click();
@@ -132,10 +132,13 @@ it('deletes a route on an explicit action, leaving mastery alone', async () => {
   await render({ records });
 
   await expect.element(page.getByRole('heading', { name: '第一条' })).toBeVisible();
-  await page.getByRole('button', { name: '删除这条路线' }).click();
+  await page.getByRole('button', { name: '修改', exact: true }).click();
+  await page.getByRole('button', { name: '删除路线' }).click();
+  await expect.element(page.getByText('删除这条路线？掌握记录不动')).toBeVisible();
   await page.getByRole('button', { name: '删除', exact: true }).click();
   await act(async () => { await Promise.resolve(); });
   expect(records.routes()).toEqual([]);
+  await expect.element(page.getByText('还没有我的路线')).toBeVisible();
   expect(records.stateText()).toBe(masteryBefore);
 });
 
@@ -212,10 +215,11 @@ it('says a delete that never reached the file instead of quietly keeping the rou
   });
   await render({ records });
 
-  await page.getByRole('button', { name: '删除这条路线' }).click();
+  await page.getByRole('button', { name: '修改', exact: true }).click();
+  await page.getByRole('button', { name: '删除路线' }).click();
   await page.getByRole('button', { name: '删除', exact: true }).click();
   await act(async () => { await Promise.resolve(); });
-  await expect.element(page.getByText(/这次修改没能落盘/)).toBeVisible();
+  await expect.element(page.getByRole('alert').getByText(/学习者记录已被其他写入方更新/)).toBeVisible();
   expect(records.routes().map((route) => route.id)).toEqual(['r-aaaaaa']);
 });
 
@@ -228,12 +232,12 @@ it('lists an unreadable route file as unreadable instead of dropping it or calli
   await expect.element(page.getByRole('heading', { name: 'r-bbbbbb.json' })).toBeVisible();
   expect(container.textContent).toContain('读不出来');
   expect(container.textContent).toContain('schema 必须为 derivon.route/v1');
-  expect(container.textContent).not.toContain('还没有确认过路线');
+  expect(container.textContent).not.toContain('还没有我的路线');
   expect(page.getByRole('button', { name: '开始学' }).elements()).toHaveLength(0);
   expect(records.routeText('r-bbbbbb')).toBe('{"schema":"derivon.routes/v1","routes":[]}');
 });
 
-it('has one way back to creating a route, and no way to edit an existing one', async () => {
+it('goes back to the create flow for a route computed from questions', async () => {
   const records = createMemoryLearnerRecords('test-workspace', { routes: [record('r-aaaaaa', '第一条')] });
   const onEnterView = vi.fn();
   await render({ records, onEnterView });
