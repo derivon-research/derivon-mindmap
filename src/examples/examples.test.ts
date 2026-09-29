@@ -1,7 +1,14 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { WORKSPACE_SCHEMA, orientationErrors, parseWorkspaceContent, type TextResource } from '../workspace/index';
+import {
+  WORKSPACE_SCHEMA,
+  orientationErrors,
+  parallelDerivations,
+  parseWorkspaceContent,
+  serializeRoute,
+  type TextResource,
+} from '../workspace/index';
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
 
@@ -40,14 +47,25 @@ describe.each(['replace-with', 'math-reforged'])('the %s example workspace', (di
     expect(content.orientation.status !== 'absent' && orientationErrors(content.orientation.diagnostics)).toEqual([]);
   });
 
-  it('ships only workspace routes that are valid on its graph', () => {
+  it('ships only workspace routes that read as ready, with no errors or warnings, in canonical form', () => {
     expect(content.routes.filter((route) => route.status !== 'ready')).toEqual([]);
     expect(content.diagnostics).toEqual([]);
+    for (const shipped of content.routes) {
+      if (shipped.status !== 'ready') continue;
+      expect(shipped.reading.errors).toBe(0);
+      expect(shipped.reading.diagnostics).toEqual([]);
+      expect(serializeRoute(shipped.route, 'workspace')).toBe(read(`./${directory}/${shipped.path}`));
+    }
   });
 });
 
-it('ships a workspace route with the math-reforged case', () => {
-  expect(workspace('math-reforged').routes.map((route) => route.status)).toContain('ready');
+it('ships an ordered workspace route with a parallel derivation in the math-reforged case', () => {
+  const content = workspace('math-reforged');
+  const demo = content.routes.filter((route) => route.status === 'ready'
+    && route.route.ordered
+    && route.reading.orderSource === 'written'
+    && route.route.steps.some((step) => parallelDerivations(content.graph, step).length > 0));
+  expect(demo.length).toBeGreaterThan(0);
 });
 
 it('covers multiple targets and known initialization in the math-reforged case', () => {
