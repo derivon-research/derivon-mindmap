@@ -17,9 +17,9 @@ export type AppState = {
   /** The learning stage or view showing; the top bar switches it, so the application owns it. */
   readonly learningView: LearningView;
   /**
-   * Which confirmed route the route stage is showing. Session state, like the view above:
-   * reopening a workspace starts with none, and the learner picks one from `routes.json`.
-   * The record itself is the persisted fact; this is only which one is on screen.
+   * Which route the route stage is showing. Session state, like the view above:
+   * reopening a workspace starts with none, and the learner picks one of their routes.
+   * The route file is the persisted fact; this is only which one is on screen.
    */
   readonly learningActiveRouteId: string | null;
   /** The selection already handed to learning, so a return trip does not re-carry it. */

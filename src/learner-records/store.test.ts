@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTempLearnerRecordFiles } from '../testing/learnerRecordFiles';
 import type { LearnerRecordFiles } from '../ports/LearnerRecordFiles';
-import { LEARNING_SCHEMA, ROUTES_SCHEMA, parseLearningState, parseRoutesState } from './protocol';
+import { LEARNING_SCHEMA, parseLearningState } from './protocol';
 import { createLearnerRecordStore } from './store';
 
 const basis = 'a'.repeat(64);
@@ -12,12 +12,9 @@ const state = {
   concepts: { 'c-k7f3q2': { status: 'complete' as const, basis, data: { selfReported: true } } },
   derivations: {},
 };
-const routes = {
-  routes: [{
-    id: 'r-k7f3q2', description: '走到 SVD', targets: ['c-b'], known: [],
-    basis, conceptIds: ['c-a', 'c-b'], derivationIds: ['h-ab'], order: ['h-ab'], cost: 1,
-  }],
-};
+const route = (id: string) => ({
+  id, label: '走到 B', known: [], targets: ['c-b'], steps: ['h-ab'], ordered: true, basis,
+});
 
 let root: string;
 let files: LearnerRecordFiles;
@@ -50,14 +47,6 @@ describe('the learner record store', () => {
     expect(JSON.parse(text).schema).toBe(LEARNING_SCHEMA);
   });
 
-  it('writes a routes.json the protocol validator accepts', async () => {
-    const store = createLearnerRecordStore(files, 'math-reforged');
-    await store.writeRoutes(routes, { presence: 'missing' });
-    const text = await readFile(path.join(root, 'learner-records/math-reforged/routes.json'), 'utf8');
-    expect(parseRoutesState(text)).toEqual(routes);
-    expect(JSON.parse(text).schema).toBe(ROUTES_SCHEMA);
-  });
-
   it('refuses to write a record its own validator rejects, leaving the file alone', async () => {
     const store = createLearnerRecordStore(files, 'math-reforged');
     await expect(store.writeLearningState(
@@ -77,13 +66,33 @@ describe('the learner record store', () => {
       .resolves.toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('keeps the two files independent', async () => {
+  it('keeps state.json and every route file independent', async () => {
     const store = createLearnerRecordStore(files, 'math-reforged');
     await store.writeLearningState(state, { presence: 'missing' });
-    await store.writeRoutes(routes, { presence: 'missing' });
+    await store.writeRoute(route('r-aaaaaa'), { presence: 'missing' });
+    const second = await store.writeRoute(route('r-bbbbbb'), { presence: 'missing' });
     await rm(path.join(root, 'learner-records/math-reforged/state.json'));
-    await expect(store.readRoutes()).resolves.toEqual({ presence: 'present', state: routes, version: expect.any(String) });
+    await store.deleteRoute('r-bbbbbb', second);
     await expect(store.readLearningState()).resolves.toEqual({ presence: 'missing' });
+    expect((await store.listRoutes()).map((entry) => entry.status === 'ready' && entry.route))
+      .toEqual([route('r-aaaaaa')]);
+  });
+
+  it('refuses a personal route without a basis before touching a file', async () => {
+    const store = createLearnerRecordStore(files, 'math-reforged');
+    const { basis: _basis, ...unsaved } = route('r-aaaaaa');
+    await expect(store.writeRoute(unsaved, { presence: 'missing' })).rejects.toThrow(/basis/);
+    await expect(store.listRoutes()).resolves.toEqual([]);
+  });
+
+  it('lists an unreadable route file as unreadable instead of dropping it', async () => {
+    const store = createLearnerRecordStore(files, 'math-reforged');
+    await store.writeRoute(route('r-aaaaaa'), { presence: 'missing' });
+    await writeFile(path.join(root, 'learner-records/math-reforged/routes/r-bbbbbb.json'), '{"schema":"derivon.routes/v1"}');
+    await writeFile(path.join(root, 'learner-records/math-reforged/routes/notes.txt'), 'not a route');
+    expect((await store.listRoutes()).map((entry) => [entry.fileName, entry.status])).toEqual([
+      ['r-aaaaaa.json', 'ready'], ['r-bbbbbb.json', 'unreadable'],
+    ]);
   });
 
   it('reports an unreadable record instead of treating it as empty', async () => {

@@ -30,6 +30,8 @@ describe('reading mastery', () => {
     const unreadable = createLearnerRecordStore({
       read: async () => ({ presence: 'present', text: '{"schema":"derivon.learning/v2"}', version: 'v' }),
       write: async () => 'v',
+      deleteRoute: async () => {},
+      listRoutes: async () => [],
     }, 'math-reforged');
     const reading = await readMastery(unreadable);
     expect(reading.state).toEqual(EMPTY_MASTERY);
@@ -96,6 +98,8 @@ describe('writing a self-report', () => {
     const unreadable = createLearnerRecordStore({
       read: async () => ({ presence: 'present', text: '{ not json', version: 'v' }),
       write: async () => 'v',
+      deleteRoute: async () => {},
+      listRoutes: async () => [],
     }, 'math-reforged');
     await expect(writeMastery(unreadable, { claimed: [{ conceptId: 'c-a', basis, source: 'selfReported' }], withdrawn: [] }))
       .rejects.toThrow(/JSON/);
@@ -122,9 +126,9 @@ describe('writing a self-report', () => {
 
   it('does not touch the file when the write changes nothing', async () => {
     await writeMastery(store, { claimed: [{ conceptId: 'c-a', basis, source: 'selfReported' }], withdrawn: [] });
-    const before = await readFile(tempLearnerRecordPath(root, 'math-reforged', 'state'), 'utf8');
+    const before = await readFile(tempLearnerRecordPath(root, 'math-reforged', { kind: 'state' }), 'utf8');
     await writeMastery(store, { claimed: [{ conceptId: 'c-a', basis, source: 'selfReported' }], withdrawn: [] });
-    expect(await readFile(tempLearnerRecordPath(root, 'math-reforged', 'state'), 'utf8')).toBe(before);
+    expect(await readFile(tempLearnerRecordPath(root, 'math-reforged', { kind: 'state' }), 'utf8')).toBe(before);
   });
 });
 
@@ -132,6 +136,7 @@ describe('writing a self-report', () => {
 function interleaveOnce(inner: LearnerRecordFiles, other: LearnerRecordFiles, content: string): LearnerRecordFiles {
   let armed = true;
   return {
+    ...inner,
     read: (workspaceId, file) => inner.read(workspaceId, file),
     async write(workspaceId, file, text, precondition) {
       if (armed) {
@@ -146,6 +151,7 @@ function interleaveOnce(inner: LearnerRecordFiles, other: LearnerRecordFiles, co
 /** Files whose compare-and-swap never holds, so a retry loop would not terminate. */
 function alwaysConflictingFiles(inner: LearnerRecordFiles): LearnerRecordFiles {
   return {
+    ...inner,
     read: (workspaceId, file) => inner.read(workspaceId, file),
     async write() { throw new Error('学习者记录已被其他写入方更新（state.json）'); },
   };
@@ -224,9 +230,9 @@ describe('writing a judgement', () => {
 
   it('does not touch the file when the judgement changes nothing', async () => {
     await writeJudgements(store, { concepts: { 'c-a': { status: 'complete', basis } } });
-    const before = await readFile(tempLearnerRecordPath(root, 'math-reforged', 'state'), 'utf8');
+    const before = await readFile(tempLearnerRecordPath(root, 'math-reforged', { kind: 'state' }), 'utf8');
     await writeJudgements(store, { concepts: { 'c-a': { status: 'complete', basis } } });
-    expect(await readFile(tempLearnerRecordPath(root, 'math-reforged', 'state'), 'utf8')).toBe(before);
+    expect(await readFile(tempLearnerRecordPath(root, 'math-reforged', { kind: 'state' }), 'utf8')).toBe(before);
   });
 
   it('re-reads and retries when another writer moved the file under it', async () => {

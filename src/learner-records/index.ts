@@ -1,21 +1,20 @@
 /**
- * Learner records: the two protocols that persist outside the workspace
- * (`derivon.learning/v1`, `derivon.routes/v1`) and the application-side store that reads and
+ * Learner records: the mastery protocol (`derivon.learning/v1`), personal routes (the
+ * `derivon.route/v1` files kept beside it), and the application-side store that reads and
  * replaces them under the workspace id. Host I/O stays behind
  * `src/ports/LearnerRecordFiles.ts`; the normative specification is
- * [learner records](../../docs/learner-records.md).
+ * [learner records](../../docs/learner-records.md), with [routes](../../docs/routes.md) for the
+ * route protocol itself.
  */
 export {
-  LEARNING_SCHEMA, ROUTES_SCHEMA, isRouteId,
-  parseLearningState, parseRoutesState, serializeLearningState, serializeRoutesState,
-  validateLearningState, validateRoutesState,
+  LEARNING_SCHEMA,
+  parseLearningState, serializeLearningState, validateLearningState,
   type LearnerRecordIssue, type LearningState, type MasteryRecord, type MasteryStatus,
-  type RouteRecord, type RoutesState,
 } from './protocol';
 
 export {
   createLearnerRecordStore,
-  type LearnerRecordStore, type StoredLearningState, type StoredRoutes,
+  type LearnerRecordStore, type StoredLearningState, type StoredPersonalRoute, type StoredPersonalRouteRead,
 } from './store';
 
 export { masteryBasis, routeBasis, type BasisFile } from './basis';
@@ -25,5 +24,7 @@ export {
   type JudgementWrite,
   type MasteryClaim, type MasteryReading, type MasterySource, type MasteryWrite,
 } from './mastery';
-export { routeIsStale, routeRecord, type ConfirmRouteInput } from './routeRecord';
-export { addRoute, readRoutes, removeRoute, type RouteList } from './routesFile';
+export {
+  canStartPersonalRoute, confirmedRoute, personalRouteIsStale, readPersonalRoutes, savePersonalRoute, withRouteBasis,
+  type ConfirmRouteInput, type PersonalRouteStanding,
+} from './personalRoutes';
