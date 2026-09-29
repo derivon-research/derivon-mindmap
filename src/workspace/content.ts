@@ -7,15 +7,15 @@ import {
   type WorkspaceManifest,
 } from './manifest';
 import { introducedReferenceProblems } from './references';
-import type { ContentDiagnostic, TextResource } from './resource';
+import { comparePaths, errorMessage, isDirectChild, type ContentDiagnostic, type TextResource } from './resource';
 import {
   ORIENTATION_PATH, orientationConceptReferences, orientationErrors, parseOrientationConfig,
   serializeOrientationConfig, validateOrientationConfig,
   type OrientationConceptReference, type OrientationConfig, type OrientationDiagnostic,
 } from './orientation';
 import {
-  WORKSPACE_ROUTES_DIRECTORY, decodeRoute, isRouteFileName, readRoute, routeFileName, serializeRoute,
-  workspaceRoutePath, type Route, type RouteFileIssue, type RouteReading,
+  WORKSPACE_ROUTES_DIRECTORY, decodeRoute, isRouteFileName, readRoute, refuseRouteErrors, routeFileName, routeFileStem,
+  serializeRoute, workspaceRoutePath, type Route, type RouteFileIssue, type RouteReading,
 } from './route';
 
 export type { ContentDiagnostic, TextResource };
@@ -122,8 +122,6 @@ export type UpdateConceptTagsIntent = {
 
 const SUPPORTED_IMAGE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-z0-9]+$/i;
 
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
-
 function copyAssets(assets: Readonly<Record<string, Uint8Array>> | undefined): Record<string, Uint8Array> {
   return Object.fromEntries(Object.entries(assets ?? {}).map(([path, bytes]) => [path, new Uint8Array(bytes)]));
 }
@@ -160,7 +158,7 @@ function readOrientation(
   try {
     config = parseOrientationConfig(resource.text);
   } catch (error) {
-    return { status: 'invalid', message: message(error), config: null, diagnostics: [] };
+    return { status: 'invalid', message: errorMessage(error), config: null, diagnostics: [] };
   }
   const diagnostics = validateOrientationConfig(config, graph, tags);
   const errors = orientationErrors(diagnostics);
@@ -171,14 +169,12 @@ function readOrientation(
 
 /** Whether a companion path is a workspace route file: a direct `.json` child of the routes directory. */
 export function isWorkspaceRoutePath(path: string): boolean {
-  const prefix = `${WORKSPACE_ROUTES_DIRECTORY}/`;
-  const name = path.slice(prefix.length);
-  return path.startsWith(prefix) && !name.includes('/') && isRouteFileName(name);
+  return isDirectChild(path, WORKSPACE_ROUTES_DIRECTORY) && isRouteFileName(path.slice(WORKSPACE_ROUTES_DIRECTORY.length + 1));
 }
 
 function readWorkspaceRoute(path: string, resource: TextResource, graph: ManifestGraph): WorkspaceRoute {
   const fileName = path.slice(WORKSPACE_ROUTES_DIRECTORY.length + 1);
-  const id = fileName.slice(0, -'.json'.length);
+  const id = routeFileStem(fileName);
   if (resource.status === 'error') {
     return { status: 'invalid', id, path, message: resource.message,
       issues: [{ code: 'unreadable', message: resource.message }], route: null, reading: null };
@@ -202,7 +198,7 @@ function readWorkspaceRoutes(
 ): WorkspaceRoute[] {
   return Object.entries(companionMetadata)
     .filter((entry): entry is [string, TextResource] => entry[1] !== null && isWorkspaceRoutePath(entry[0]))
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .sort(([left], [right]) => comparePaths(left, right))
     .map(([path, resource]) => readWorkspaceRoute(path, resource, graph));
 }
 
@@ -502,10 +498,7 @@ function withCompanionMetadata(content: WorkspaceContent, companionMetadata: Rec
 export function acceptWorkspaceRoute(content: WorkspaceContent, route: Route): ContentChange {
   const text = serializeRoute(route, 'workspace');
   const reading = readRoute(content.graph, route, { location: 'workspace', fileName: routeFileName(route.id) });
-  if (reading.errors) {
-    throw new Error(`路线无法保存：\n${reading.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')
-      .slice(0, 4).map((diagnostic) => diagnostic.message).join('\n')}`);
-  }
+  refuseRouteErrors(reading, '路线无法保存：');
   const path = workspaceRoutePath(route.id);
   return {
     content: withCompanionMetadata(content, { ...content.companionMetadata, [path]: { status: 'ready', text } }),

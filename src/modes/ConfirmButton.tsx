@@ -1,3 +1,4 @@
+import { Trash2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import './route-editor.css';
 
@@ -40,4 +41,20 @@ export function ConfirmButton({
       onClick={() => { setArmed(false); onConfirm(); }}>{confirmLabel}</button>
     <button type="button" onClick={() => setArmed(false)}>算了</button>
   </span>;
+}
+
+/**
+ * Deleting a route asks twice, and the question says what deleting does not touch. Every place
+ * that deletes a route file — the editor, an unreadable file, the shelf — uses this one control.
+ */
+export function DeleteRouteButton({ prompt, disabled, onDelete, iconOnly = false, className }: {
+  readonly prompt: string; readonly disabled?: boolean; readonly onDelete: () => void;
+  /** A compact trigger showing only the icon, named for assistive technology. */
+  readonly iconOnly?: boolean;
+  readonly className?: string;
+}) {
+  return <ConfirmButton danger disabled={disabled} prompt={prompt} groupLabel="确认删除路线" confirmLabel="删除"
+    onConfirm={onDelete} className={className} {...iconOnly ? { label: '删除这条路线', title: prompt } : {}}>
+    <Trash2 size={14} aria-hidden={iconOnly || undefined} />{!iconOnly && '删除路线'}
+  </ConfirmButton>;
 }

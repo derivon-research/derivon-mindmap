@@ -6,11 +6,11 @@ import type { GraphRendererProps } from '../rendering';
 import type { RouteSolver } from '../ports/RouteSolver';
 import { fixtureRouteSolver } from '../testing/routeSolver';
 import {
-  WORKSPACE_SCHEMA, newRoute, parseWorkspaceContent, serializeRoute, type Route, type WorkspaceContent,
+  WORKSPACE_SCHEMA, newRoute, parseWorkspaceContent, sameRoute, serializeRoute, type Route, type WorkspaceContent,
 } from '../workspace/index';
 
 vi.mock('../rendering', () => ({ GraphRenderer: ({ view }: GraphRendererProps) => <div>路线子图 {view.concepts.length} 个概念</div> }));
-import { RouteEditor, sameRoute, type RouteEditorProps } from './RouteEditor';
+import { RouteEditor, type RouteEditorProps } from './RouteEditor';
 
 let container: HTMLDivElement;
 let root: Root | undefined;

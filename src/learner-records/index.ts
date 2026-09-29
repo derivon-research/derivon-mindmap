@@ -25,6 +25,6 @@ export {
   type MasteryClaim, type MasteryReading, type MasterySource, type MasteryWrite,
 } from './mastery';
 export {
-  canStartPersonalRoute, confirmedRoute, personalRouteIsStale, readPersonalRoutes, savePersonalRoute, withRouteBasis,
+  confirmedRoute, personalRouteIsStale, readPersonalRoutes, savePersonalRoute, withRouteBasis,
   type ConfirmRouteInput, type PersonalRouteStanding,
 } from './personalRoutes';

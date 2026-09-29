@@ -307,9 +307,6 @@
   color: var(--app-muted);
 }
 .route-shelf-delete:hover { border-color: var(--app-line); color: #9b2638; }
-.route-shelf-confirm { display: flex; align-items: center; gap: 6px; color: var(--app-muted); font-size: 12px; }
-.route-shelf-confirm button { padding: 4px 9px; border: 1px solid var(--app-line); border-radius: 6px; background: #fff; font-size: 12px; }
-.route-shelf-confirm button.is-danger { border-color: #e3b4b4; color: #9b2638; }
 
 .learning-rail-switch {
   padding: 2px 7px;

@@ -1,15 +1,16 @@
-import { AlertTriangle, ArrowDown, ArrowUp, GripVertical, Save, Trash2, Undo2, Wand2, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, GripVertical, Save, Undo2, Wand2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RouteSolver } from '../ports/RouteSolver';
 import {
-  addStep, draftFromSolution, moveStep, parallelDerivations, readRoute, removeStep, stepCandidates, swapStep,
-  useComputedOrder as computedOrder,
+  addStep, draftFromSolution, errorMessage, moveStep, parallelDerivations, readRoute, removeStep, returnToComputedOrder,
+  stepCandidates, swapStep,
   type Route, type RouteDiagnostic, type RouteReading, type TagDeclaration, type WorkspaceGraph,
 } from '../workspace/index';
 import { ConceptPicker, labelOf } from './ConceptPicker';
-import { ConfirmButton } from './ConfirmButton';
+import { ConfirmButton, DeleteRouteButton } from './ConfirmButton';
 import { RetainedGraph } from './RetainedGraph';
 import { routeGraphView, routeSolutionOfReading } from './routePreview';
+import { premisesText, routeTally } from './routeText';
 import './route-editor.css';
 
 export type RouteEditorProps = {
@@ -60,7 +61,7 @@ export function RouteEditor({
     setFailure('');
     setBusy(true);
     try { await action(); } catch (error) {
-      setFailure(error instanceof Error ? error.message : String(error));
+      setFailure(errorMessage(error));
     } finally { setBusy(false); }
   };
 
@@ -82,7 +83,7 @@ export function RouteEditor({
         </>}
         {(actions || onDelete) && <div className="route-editor-actions">
           {actions}
-          {onDelete && <DeleteButton prompt={deletePrompt ?? '删除这条路线？'} disabled={busy}
+          {onDelete && <DeleteRouteButton prompt={deletePrompt ?? '删除这条路线？'} disabled={busy}
             onDelete={() => void attempt(onDelete)} />}
         </div>}
       </header>
@@ -106,7 +107,7 @@ export function RouteEditor({
       <p className="route-editor-order">
         顺序：{reading.orderSource === 'written'
           ? <><strong>已写定</strong><span>按写下的顺序走</span>
-            {edit && <button type="button" onClick={() => edit(computedOrder(route))}>改回现算</button>}</>
+            {edit && <button type="button" onClick={() => edit(returnToComputedOrder(route))}>改回现算</button>}</>
           : <><strong>现算</strong><span>没有写定顺序，按执行顺序显示{edit ? '；移动任一步即写定' : ''}</span></>}
       </p>
 
@@ -133,22 +134,10 @@ export function RouteEditor({
   </section>;
 }
 
-/** Whether two routes are the same document: what a caller's `dirty` compares. */
-export function sameRoute(left: Route, right: Route | null | undefined): boolean {
-  if (!right) return false;
-  const text = (route: Route) => JSON.stringify([route.id, route.label, route.description ?? '', route.known, route.targets,
-    route.steps, route.ordered, route.basedOn ?? null, route.basis ?? null]);
-  return text(left) === text(right);
-}
-
 function describe(route: Route, description: string): Route {
   const next: { -readonly [Key in keyof Route]: Route[Key] } = { ...route, description };
   if (!description) delete next.description;
   return next;
-}
-
-function routeTally(reading: RouteReading): string {
-  return `${reading.order.length} 步 · 成本 ${reading.cost} · 顺序${reading.orderSource === 'written' ? '已写定' : '现算'}`;
 }
 
 function derivationOf(graph: WorkspaceGraph, id: string) {
@@ -158,8 +147,7 @@ function derivationOf(graph: WorkspaceGraph, id: string) {
 /** "需要 A + B", the reason a step sits where it does. */
 function needsOf(graph: WorkspaceGraph, id: string): string {
   const edge = derivationOf(graph, id);
-  if (!edge) return '图里没有这条推导';
-  return edge.tails.length ? `需要 ${edge.tails.map((tail) => labelOf(graph, tail)).join(' + ')}` : '不需要前提';
+  return edge ? premisesText(graph, edge.tails) : '图里没有这条推导';
 }
 
 function titleOf(graph: WorkspaceGraph, id: string): string {
@@ -195,7 +183,7 @@ function DraftFromSolver({ graph, route, routeSolver, onDraft }: {
       onDraft(next);
       setState(solution.reachable ? { status: 'idle' } : { status: 'note', note: '求解器到不了全部目标，初稿只含它找到的推导。' });
     } catch (error) {
-      setState({ status: 'note', note: `求解失败：${error instanceof Error ? error.message : String(error)}` });
+      setState({ status: 'note', note: `求解失败：${errorMessage(error)}` });
     }
   };
   // Steps the author wrote or changed — anything but the last draft, untouched — are lost to a
@@ -315,19 +303,4 @@ function StepSearch({ graph, route, onAdd }: {
       {!candidates.length && <li className="route-editor-empty">没有匹配的推导</li>}
     </ul>}
   </div>;
-}
-
-/** Deleting asks twice, and the question says what it does not touch. */
-function DeleteButton({ prompt, disabled, onDelete }: { readonly prompt: string; readonly disabled: boolean; readonly onDelete: () => void }) {
-  const [armed, setArmed] = useState(false);
-  if (!armed) {
-    return <button type="button" className="route-editor-danger" disabled={disabled} onClick={() => setArmed(true)}>
-      <Trash2 size={14} />删除路线
-    </button>;
-  }
-  return <span className="route-editor-confirm" role="group" aria-label="确认删除路线">
-    {prompt}
-    <button type="button" className="route-editor-danger" onClick={() => { setArmed(false); onDelete(); }}>删除</button>
-    <button type="button" onClick={() => setArmed(false)}>算了</button>
-  </span>;
 }

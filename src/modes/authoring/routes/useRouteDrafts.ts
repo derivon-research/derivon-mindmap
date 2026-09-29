@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AuthoringCommands } from '../../../synchronization';
 import {
-  generateObjectId, newRoute, readRoute,
+  generateObjectId, newRoute, readRoute, sameRoute,
   type Route, type RouteReading, type WorkspaceContent, type WorkspaceRoute,
 } from '../../../workspace/index';
-import { sameRoute } from '../../RouteEditor';
 
 /** One line of the route list: a saved route, a saved route with unsaved edits, or a new one. */
 export type RouteListEntry = {
@@ -69,16 +68,17 @@ export function useRouteDrafts(
   const selected = entries.find((entry) => entry.id === selectedId) ?? null;
   const route = selected ? drafts.get(selected.id) ?? savedRoute(selected.id) : null;
 
-  // Every unfinished draft is protected under its own key; a key is released once its draft is gone.
+  // Every unfinished draft is protected under its own key; a key is released once its draft is
+  // gone. Reconciling against what is already protected makes a rerun with the same keys a no-op.
   const protectedKeys = useRef(new Set<string>());
-  const dirtyKeys = entries.filter((entry) => entry.dirty).map((entry) => `${workspaceId}:route:${entry.id}`).join('\n');
+  const draftKeys = useMemo(() => new Set(entries.filter((entry) => entry.dirty).map((entry) => `${workspaceId}:route:${entry.id}`)),
+    [entries, workspaceId]);
   useEffect(() => {
     if (!authoring) return;
-    const now = new Set(dirtyKeys ? dirtyKeys.split('\n') : []);
-    for (const key of protectedKeys.current) if (!now.has(key)) authoring.protectDraft(key, false);
-    for (const key of now) if (!protectedKeys.current.has(key)) authoring.protectDraft(key, true);
-    protectedKeys.current = now;
-  }, [authoring, dirtyKeys]);
+    for (const key of protectedKeys.current) if (!draftKeys.has(key)) authoring.protectDraft(key, false);
+    for (const key of draftKeys) if (!protectedKeys.current.has(key)) authoring.protectDraft(key, true);
+    protectedKeys.current = new Set(draftKeys);
+  }, [authoring, draftKeys]);
   useEffect(() => () => {
     for (const key of protectedKeys.current) authoring?.protectDraft(key, false);
     protectedKeys.current = new Set();

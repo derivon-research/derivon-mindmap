@@ -1,3 +1,5 @@
+import { comparePaths, isDirectChild } from '../workspace/resource';
+
 export interface WorkspaceSource {
   readGraph(): Promise<string>;
   readDocument(path: string): Promise<string>;
@@ -29,10 +31,7 @@ export function companionFilesIn(paths: Iterable<string>, directory: string): st
     || segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
     throw new Error(`\`${directory}\` is not a companion directory inside \`.derivon\``);
   }
-  const prefix = `${directory}/`;
-  return [...new Set(paths)]
-    .filter((path) => path.startsWith(prefix) && !path.slice(prefix.length).includes('/'))
-    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  return [...new Set(paths)].filter((path) => isDirectChild(path, directory)).sort(comparePaths);
 }
 
 export type WorkspaceTextChange = {

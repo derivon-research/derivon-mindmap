@@ -13,7 +13,7 @@
  */
 import type { LearnerRecordFiles, LearnerRecordWritePrecondition } from '../ports/LearnerRecordFiles';
 import {
-  decodeRoute, isRouteFileName, isRouteId, serializeRoute,
+  decodeRoute, errorMessage, isRouteFileName, routeFileName, routeIdOfFileName, serializeRoute,
   type Route, type RouteFileIssue,
 } from '../workspace/index';
 import { parseLearningState, serializeLearningState, type LearningState } from './protocol';
@@ -64,14 +64,6 @@ export type LearnerRecordStore = {
   deleteRoute(routeId: string, version: string): Promise<void>;
 };
 
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
-/** `r-k7f3q2.json` → `r-k7f3q2`; any other name has no id. */
-function routeIdOfFileName(fileName: string): string | null {
-  const stem = fileName.endsWith('.json') ? fileName.slice(0, -'.json'.length) : '';
-  return isRouteId(stem) ? stem : null;
-}
-
 export function createLearnerRecordStore(
   files: LearnerRecordFiles,
   workspaceId: string,
@@ -90,7 +82,7 @@ export function createLearnerRecordStore(
     } catch (error) {
       return {
         presence: 'present', status: 'unreadable', fileName, routeId, version: null,
-        issues: [{ code: 'unreadable', message: messageOf(error) }],
+        issues: [{ code: 'unreadable', message: errorMessage(error) }],
       };
     }
     if (read.presence === 'missing') return { presence: 'missing' };
@@ -123,7 +115,7 @@ export function createLearnerRecordStore(
       });
     },
     readRoute(routeId) {
-      return readRouteFile(`${routeId}.json`);
+      return readRouteFile(routeFileName(routeId));
     },
     async writeRoute(route, precondition) {
       return files.write(workspaceId, { kind: 'route', id: route.id }, serializeRoute(route, 'personal'), precondition);

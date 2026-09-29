@@ -58,6 +58,20 @@ export function routeFileName(id: string): string {
 }
 
 /**
+ * The inverse of `routeFileName` for any route file name: the name without `.json`, whether or
+ * not that is a route id. It is what names a route file that cannot be read.
+ */
+export function routeFileStem(fileName: string): string {
+  return fileName.endsWith('.json') ? fileName.slice(0, -'.json'.length) : fileName;
+}
+
+/** The route id a file name stands for — `r-k7f3q2.json` → `r-k7f3q2` — or null for any other name. */
+export function routeIdOfFileName(fileName: string): string | null {
+  const stem = routeFileStem(fileName);
+  return isRouteFileName(fileName) && isRouteId(stem) ? stem : null;
+}
+
+/**
  * Whether a direct child of a routes directory is a route file: its name ends in `.json`.
  * Any other name, such as a temporary file a crashed replacement left behind, is inert.
  */
@@ -154,14 +168,9 @@ export function decodeRoute(text: string): RouteDecoding {
   };
 }
 
-/**
- * Canonical text of `route` stored at `location`: two-space JSON, keys in protocol order, an
- * empty `description` left out. This is the write guard: it throws for a route that would
- * decode as unreadable or that carries a shape error at `location`. Graph errors need the
- * graph and are the caller's to refuse, from `readRoute(...).errors`.
- */
-export function serializeRoute(route: Route, location: RouteLocation): string {
-  const encoded = {
+/** The file's value: keys in protocol order, an empty `description` and absent fields left out. */
+function encodeRoute(route: Route) {
+  return {
     schema: ROUTE_SCHEMA,
     id: route.id,
     label: route.label,
@@ -173,12 +182,53 @@ export function serializeRoute(route: Route, location: RouteLocation): string {
     ...(route.basedOn === undefined ? {} : { basedOn: route.basedOn }),
     ...(route.basis === undefined ? {} : { basis: route.basis }),
   };
-  const refusals = [
-    ...fileIssues(encoded).map((issue) => issue.message),
+}
+
+const canonicalText = (route: Route) => `${JSON.stringify(encodeRoute(route), null, 2)}\n`;
+
+/**
+ * Whether two routes are the same document: their canonical texts are equal. This is what an
+ * editing draft's "dirty" compares, and it never throws, whatever the drafts hold.
+ */
+export function sameRoute(left: Route, right: Route | null | undefined): boolean {
+  return right !== null && right !== undefined && canonicalText(left) === canonicalText(right);
+}
+
+/** How many reasons a refusal lists; the rest are in the diagnosis the editor shows. */
+const REFUSAL_REASONS = 4;
+
+function refuse(reasons: readonly string[], heading?: string): void {
+  if (!reasons.length) return;
+  throw new Error([...heading ? [heading] : [], ...reasons.slice(0, REFUSAL_REASONS)].join('\n'));
+}
+
+/**
+ * The refusal every save of a route makes: throws, naming the first errors of `reading`, when
+ * it has any. Warnings never refuse. `heading`, when given, is the first line of the message.
+ */
+export function refuseRouteErrors(reading: RouteReading, heading?: string): void {
+  refuse(reading.diagnostics.filter((diagnostic) => diagnostic.severity === 'error').map((diagnostic) => diagnostic.message), heading);
+}
+
+/**
+ * Canonical text of `route` stored at `location`: two-space JSON, keys in protocol order, an
+ * empty `description` left out. This is the write guard: it throws for a route that would
+ * decode as unreadable or that carries a shape error at `location`. Graph errors need the
+ * graph and are the caller's to refuse, with `refuseRouteErrors`.
+ */
+export function serializeRoute(route: Route, location: RouteLocation): string {
+  refuse([
+    ...fileIssues(encodeRoute(route)).map((issue) => issue.message),
     ...shapeDiagnostics(route, { location }).map((diagnostic) => diagnostic.message),
-  ];
-  if (refusals.length) throw new Error(refusals.slice(0, 4).join('\n'));
-  return `${JSON.stringify(encoded, null, 2)}\n`;
+  ]);
+  return canonicalText(route);
+}
+
+/** A route can be started — walked on the learning side — exactly when it was read and has no error. */
+export function canStartRoute<Entry extends { readonly route?: Route | null; readonly reading?: RouteReading | null }>(
+  entry: Entry,
+): entry is Entry & { readonly route: Route; readonly reading: RouteReading } {
+  return Boolean(entry.route) && Boolean(entry.reading) && entry.reading!.errors === 0;
 }
 
 // ------------------------------------------------------------------ layer two: the route on a graph
@@ -618,7 +668,7 @@ export function moveStep(graph: ManifestGraph, route: Route, derivationId: strin
 }
 
 /** "改回现算": the steps become a set again and the display order is computed. */
-export function useComputedOrder(route: Route): Route {
+export function returnToComputedOrder(route: Route): Route {
   return { ...route, ordered: false };
 }
 

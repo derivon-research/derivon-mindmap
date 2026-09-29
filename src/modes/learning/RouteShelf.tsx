@@ -1,10 +1,14 @@
-import { ArrowRight, Copy, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
-import { canStartPersonalRoute, type PersonalRouteStanding } from '../../learner-records';
+import { ArrowRight, Copy, Pencil, Plus } from 'lucide-react';
+import { useMemo, type ReactNode } from 'react';
+import type { PersonalRouteStanding } from '../../learner-records';
+import { DeleteRouteButton } from '../ConfirmButton';
 import { RetainedGraph } from '../RetainedGraph';
 import { routeGraphView, routeSolutionOfReading, routeSteps } from '../routePreview';
+import { premisesText, routeTally } from '../routeText';
 import { labelOf } from '../ConceptPicker';
-import type { Route, RouteReading, WorkspaceGraph, WorkspaceRoute } from '../../workspace/index';
+import {
+  canStartRoute, routeFileName, type Route, type RouteReading, type WorkspaceGraph, type WorkspaceRoute,
+} from '../../workspace/index';
 
 /**
  * The learner's own routes, or `null` on a host with nowhere to keep them. Then the shelf
@@ -70,12 +74,12 @@ export const personalEntryKey = (fileName: string) => `personal:${fileName}`;
 
 function workspaceEntry(route: WorkspaceRoute): ShelfEntry {
   return {
-    key: workspaceEntryKey(route.id), group: 'workspace', name: route.route?.label || `${route.id}.json`,
+    key: workspaceEntryKey(route.id), group: 'workspace', name: route.route?.label || routeFileName(route.id),
     routeId: route.id, route: route.route, reading: route.reading,
     problems: route.status === 'invalid' && !route.route
       ? (route.issues.length ? route.issues.map((issue) => issue.message) : [route.message])
       : [],
-    stale: false, startable: route.status === 'ready' && route.reading.errors === 0, deletable: false,
+    stale: false, startable: canStartRoute(route), deletable: false,
   };
 }
 
@@ -84,7 +88,7 @@ function personalEntry(route: PersonalRouteStanding): ShelfEntry {
     ? {
       key: personalEntryKey(route.fileName), group: 'personal', name: route.route.label || route.fileName,
       routeId: route.routeId, route: route.route, reading: route.reading, problems: [],
-      stale: route.stale, startable: canStartPersonalRoute(route), deletable: false,
+      stale: route.stale, startable: canStartRoute(route), deletable: false,
     }
     : {
       key: personalEntryKey(route.fileName), group: 'personal', name: route.fileName,
@@ -107,9 +111,9 @@ export function RouteShelf({
   graph, workspaceRoutes, personal, error, active, selected: selectedKey, onSelect, editor,
   onStart, onCopy, onEdit, onDelete, onCreate, onNewRoute,
 }: RouteShelfProps) {
-  const shipped = useMemo(() => workspaceRoutes.map(workspaceEntry), [workspaceRoutes]);
+  const workspaceEntries = useMemo(() => workspaceRoutes.map(workspaceEntry), [workspaceRoutes]);
   const own = useMemo(() => personal?.routes.map(personalEntry) ?? [], [personal]);
-  const selected = [...shipped, ...own].find((entry) => entry.key === selectedKey) ?? shipped[0] ?? own[0];
+  const selected = [...workspaceEntries, ...own].find((entry) => entry.key === selectedKey) ?? workspaceEntries[0] ?? own[0];
   const labelOfWorkspaceRoute = (routeId: string) => workspaceRoutes.find((route) => route.id === routeId)?.route?.label;
 
   return <div className="route-shelf">
@@ -119,8 +123,8 @@ export function RouteShelf({
 
       <section className="route-shelf-group" aria-label="这个工作区带的">
         <h2>这个工作区带的</h2>
-        <p>{shipped.length ? groupSummary(shipped) : '这个工作区没有带路线'}</p>
-        <EntryList graph={graph} entries={shipped} selected={selected?.key} onSelect={onSelect} />
+        <p>{workspaceEntries.length ? groupSummary(workspaceEntries) : '这个工作区没有带路线'}</p>
+        <EntryList graph={graph} entries={workspaceEntries} selected={selected?.key} onSelect={onSelect} />
       </section>
 
       <section className="route-shelf-group" aria-label="我的">
@@ -180,7 +184,7 @@ function EntryList({ graph, entries, selected, onSelect }: {
           </span>
           {entry.route && entry.reading && <span className="route-shelf-meta">
             走到 {entry.route.targets.map((id) => labelOf(graph, id)).join('、')}
-            {' · '}{entry.reading.order.length} 步 · 成本 {entry.reading.cost}
+            {' · '}{routeTally(entry.reading)}
           </span>}
         </button>
       </li>;
@@ -206,7 +210,8 @@ function EntryDetail({ graph, entry, active, canCopy, basedOnLabel, onStart, onC
           <p>这个路线文件读不出来，所以不能开始学。它被列了出来，没有被当成不存在，也没有被改写。</p>
         </div>
         {entry.deletable && entry.routeId !== null && <div className="route-shelf-detail-actions">
-          <DeleteRouteButton routeId={entry.routeId} onDelete={onDelete} />
+          <DeleteRouteButton iconOnly className="route-shelf-delete" prompt="删除？掌握记录不动"
+            onDelete={() => onDelete(entry.routeId!)} />
         </div>}
       </header>
       <ul className="route-shelf-stale-note" role="alert">
@@ -227,7 +232,7 @@ function EntryDetail({ graph, entry, active, canCopy, basedOnLabel, onStart, onC
         <p>
           {entry.group === 'workspace' ? '这个工作区带的 · ' : '我的 · '}
           走到 {route.targets.map((id) => labelOf(graph, id)).join('、')}
-          {' · '}{reading.order.length} 步 · 成本 {reading.cost}
+          {' · '}{routeTally(reading)}
         </p>
         {route.basedOn && <p className="route-shelf-based-on">
           改自这个工作区带的「{basedOnLabel ?? route.basedOn}」{basedOnLabel === null ? '（工作区里已经没有这条路线）' : ''}
@@ -268,26 +273,10 @@ function EntryDetail({ graph, entry, active, canCopy, basedOnLabel, onStart, onC
         <span className="learning-step-index">{step.index}</span>
         <span className="learning-step-label">{step.label}</span>
         <span className="learning-step-because">
-          {step.requires.length ? `需要 ${step.requires.map((id) => labelOf(graph, id)).join(' + ')}` : '不需要前提'}
+          {premisesText(graph, step.requires)}
         </span>
         <span className="learning-step-weight">{step.weight}</span>
       </li>)}
     </ol>
   </section>;
-}
-
-/** Deleting is explicit and confirmed, and the copy says what it does not touch. */
-function DeleteRouteButton({ routeId, onDelete }: { readonly routeId: string; readonly onDelete: (routeId: string) => void }) {
-  const [armed, setArmed] = useState(false);
-  if (!armed) {
-    return <button type="button" className="route-shelf-delete" aria-label="删除这条路线"
-      title="删除这条路线（不动掌握记录）" onClick={() => setArmed(true)}>
-      <Trash2 size={15} aria-hidden="true" />
-    </button>;
-  }
-  return <span className="route-shelf-confirm" role="group" aria-label="确认删除路线">
-    删除？掌握记录不动
-    <button type="button" className="is-danger" onClick={() => onDelete(routeId)}>删除</button>
-    <button type="button" onClick={() => setArmed(false)}>算了</button>
-  </span>;
 }

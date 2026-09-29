@@ -1,6 +1,6 @@
 import type { WorkspaceSource, WritableWorkspaceSource } from '../ports/WorkspaceSource';
 import {
-  ORIENTATION_PATH, WORKSPACE_ROUTES_DIRECTORY, acceptWorkspaceRoute, createConcept, deleteWorkspaceRoute,
+  ORIENTATION_PATH, WORKSPACE_ROUTES_DIRECTORY, acceptWorkspaceRoute, createConcept, deleteWorkspaceRoute, errorMessage,
   isWorkspaceRoutePath, createDerivation, deleteObjects, deletionScope, objectSourcePath,
   parseWorkspaceContent, referenceImpact, repairDocumentReferences, restoreObjectDocument,
   updateConceptTags, updateDerivationStructure, updateObjectDocument, updateObjectMetadata, updateOrientation,
@@ -94,13 +94,11 @@ export type WorkspaceSession = {
   dispose(): void;
 };
 
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
-
 async function readCompanion(source: WorkspaceSource, path: string): Promise<TextResource | null> {
   try {
     const text = await source.readCompanionMetadata(path);
     return text === null ? null : { status: 'ready', text };
-  } catch (error) { return { status: 'error', message: message(error) }; }
+  } catch (error) { return { status: 'error', message: errorMessage(error) }; }
 }
 
 /**
@@ -227,7 +225,7 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
         if (before !== generation) return;
         installContent(next);
       } catch (error) {
-        if (!disposed && beforeWrite === writeGeneration) publish({ error: message(error) });
+        if (!disposed && beforeWrite === writeGeneration) publish({ error: errorMessage(error) });
       }
     })();
     try { await checkingExternalChange; }
@@ -271,7 +269,7 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
             while (cursor < missing.length) {
               const path = missing[cursor++];
               try { resources[path] = { status: 'ready', text: await source.readDocument(path) }; }
-              catch (error) { resources[path] = { status: 'error', message: message(error) }; }
+              catch (error) { resources[path] = { status: 'error', message: errorMessage(error) }; }
             }
           }
           const readers: Promise<void>[] = [];
@@ -331,7 +329,7 @@ export async function openWorkspaceSession(source: WorkspaceSource, options: {
           if (source.revision && revision === undefined) throw new Error('版本化工作区提交未返回写入版本');
           acceptedRevision = revision ?? acceptedRevision;
         } catch (error) {
-          publish({ saveState: 'error', error: message(error) });
+          publish({ saveState: 'error', error: errorMessage(error) });
           return;
         }
         queue.shift();

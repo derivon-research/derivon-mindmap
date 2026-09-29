@@ -11,7 +11,7 @@
 import type { RouteSolution } from '../ports/RouteSolver';
 import type { LearnerRecordWritePrecondition } from '../ports/LearnerRecordFiles';
 import {
-  draftFromSolution, newRoute, readRoute, routeObjectIds,
+  draftFromSolution, newRoute, readRoute, refuseRouteErrors, routeObjectIds,
   type ManifestGraph, type Route, type RouteReading,
 } from '../workspace/index';
 import { routeBasis } from './basis';
@@ -64,17 +64,14 @@ export async function savePersonalRoute(
 ): Promise<{ readonly route: Route; readonly version: string }> {
   const saved = await withRouteBasis(graph, route);
   const reading = readRoute(graph, saved, { location: 'personal' });
-  if (reading.errors > 0) {
-    throw new Error(reading.diagnostics.filter((item) => item.severity === 'error')
-      .slice(0, 4).map((item) => item.message).join('\n'));
-  }
+  refuseRouteErrors(reading);
   return { route: saved, version: await store.writeRoute(saved, precondition) };
 }
 
 /**
  * A listed personal route as the learning side shows it. A readable file is also read on the
  * graph — with its file name, so an id that does not match the name is an error — and checked
- * for staleness. It can be started exactly when it is `ready` with no error.
+ * for staleness. Whether it can be started is `canStartRoute`, as for a workspace route.
  */
 export type PersonalRouteStanding =
   | (Extract<StoredPersonalRoute, { status: 'ready' }> & {
@@ -95,9 +92,4 @@ export async function readPersonalRoutes(
       stale: await personalRouteIsStale(graph, entry.route),
     };
   }));
-}
-
-/** Whether a listed route can be walked: readable, and valid on the current graph. */
-export function canStartPersonalRoute(standing: PersonalRouteStanding): boolean {
-  return standing.status === 'ready' && standing.reading.errors === 0;
 }

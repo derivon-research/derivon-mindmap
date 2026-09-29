@@ -12,6 +12,8 @@ export {
   type WorkspaceContent, type WorkspaceOrientation, type WorkspaceRoute, type WorkspaceRouteReference,
 } from './content';
 
+export { errorMessage } from './resource';
+
 export {
   documentReferences, isBrokenReference, objectDocumentHref, resolveWorkspaceReference,
   type DocumentReferenceItem, type DocumentReferenceReport, type ReferenceRepairAction, type ReferenceStatus,
@@ -42,9 +44,9 @@ export {
 
 export {
   ROUTE_SCHEMA, WORKSPACE_ROUTES_DIRECTORY,
-  addStep, copyAsPersonal, decodeRoute, draftFromSolution, executableOrder, isRouteFileName, isRouteId, moveStep,
-  newRoute, parallelDerivations, readRoute, removeStep, routeFileName, routeObjectIds, serializeRoute, stepCandidates,
-  swapStep, useComputedOrder, workspaceRoutePath,
+  addStep, canStartRoute, copyAsPersonal, decodeRoute, draftFromSolution, executableOrder, isRouteFileName, isRouteId,
+  moveStep, newRoute, parallelDerivations, readRoute, refuseRouteErrors, removeStep, returnToComputedOrder, routeFileName,
+  routeFileStem, routeIdOfFileName, routeObjectIds, sameRoute, serializeRoute, stepCandidates, swapStep, workspaceRoutePath,
   type Route, type RouteDecoding, type RouteDiagnostic, type RouteDiagnosticCode, type RouteFileIssue,
   type RouteFileIssueCode, type RouteGap, type RouteLateNeed, type RouteLocation, type RoutePlace, type RouteReading,
   type StepCandidate,

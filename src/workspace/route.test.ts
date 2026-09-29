@@ -4,7 +4,7 @@ import {
   ROUTE_SCHEMA,
   addStep, copyAsPersonal, decodeRoute, draftFromSolution, isRouteFileName, isRouteId, moveStep, newRoute,
   parallelDerivations, readRoute, removeStep, routeObjectIds, serializeRoute, stepCandidates, swapStep,
-  useComputedOrder, workspaceRoutePath,
+  returnToComputedOrder, routeFileStem, routeIdOfFileName, sameRoute, workspaceRoutePath,
   type Route, type RouteDiagnosticCode, type RoutePlace,
 } from './route';
 
@@ -111,6 +111,16 @@ describe('derivon.route/v1 files', () => {
     expect(isRouteId('r-k7f3q2')).toBe(true);
     expect(isRouteId('r-k7f3q0')).toBe(false);
     expect(isRouteId('c-k7f3q2')).toBe(false);
+    expect(routeIdOfFileName('r-k7f3q2.json')).toBe('r-k7f3q2');
+    expect(routeIdOfFileName('notes.json')).toBeNull();
+    expect(routeFileStem('notes.json')).toBe('notes');
+  });
+
+  it('counts two routes as the same document exactly when their canonical texts agree', () => {
+    expect(sameRoute(route({ description: '' }), route())).toBe(true);
+    expect(sameRoute(route({ label: '' }), route({ label: '' }))).toBe(true);
+    expect(sameRoute(route(), route({ steps: ['h-sub', 'h-space', 'h-thm'] }))).toBe(false);
+    expect(sameRoute(route(), null)).toBe(false);
   });
 });
 
@@ -245,7 +255,7 @@ describe('editing a route', () => {
     const moved = moveStep(graph, route({ steps: ['h-extra', 'h-space', 'h-sub', 'h-thm'] }), 'h-extra', 3);
     expect(moved).toMatchObject({ ordered: true, steps: ['h-space', 'h-sub', 'h-thm', 'h-extra'] });
     expect(readRoute(graph, moved).orderSource).toBe('written');
-    const computed = useComputedOrder(moved);
+    const computed = returnToComputedOrder(moved);
     expect(computed).toEqual({ ...moved, ordered: false });
     expect(readRoute(graph, computed).orderSource).toBe('computed');
   });

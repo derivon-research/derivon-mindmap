@@ -174,8 +174,7 @@ it('lists a route that no longer fits the graph, and one that cannot be read, wi
 it('keeps the route list collapse apart from the relations pane', async () => {
   await open();
   const tab = (name: string) => page.getByRole('group', { name: '创作视图' }).getByRole('button', { name, exact: true }).click();
-  const pane = () => container.querySelector('.authoring-context-pane')!;
-  const collapsed = () => pane().classList.contains('is-collapsed');
+  const collapsed = () => container.querySelector('[data-derivon-mode="authoring"]')!.getAttribute('data-relations-open') === 'false';
   await tab('图浏览');
   const relations = collapsed();
   await tab('路线');
