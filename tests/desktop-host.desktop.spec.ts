@@ -34,6 +34,44 @@ const emptyGraphManifest = () => JSON.stringify({
   graph: { points: [], hyperedges: [] },
 });
 
+/** Which learner record file a command is about, as `learner_records.rs` deserializes it. */
+type LearnerRecordFile = { kind: 'state' } | { kind: 'route'; id: string };
+const ROUTE_ID = /^r-[23456789abcdefghjkmnpqrstvwxyz]{6}$/;
+const digest = (text: string) => createHash('sha256').update(text).digest('hex');
+
+function learnerRecordPath(workspaceId: string, file: LearnerRecordFile): string {
+  const records = path.join(recordsDirectory, workspaceId);
+  if (file.kind === 'state') return path.join(records, 'state.json');
+  if (!ROUTE_ID.test(file.id)) throw new Error(`\`${file.id}\` is not a route id`);
+  return path.join(records, 'routes', `${file.id}.json`);
+}
+
+async function readIfPresent(target: string): Promise<string | null> {
+  try { return await readFile(target, 'utf8'); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+/** A write or a delete carries the version it read (null for an absent file); any other refuses. */
+async function checkRecordPrecondition(target: string, expectedVersion: string | null): Promise<void> {
+  const current = await readIfPresent(target);
+  if ((current === null ? null : digest(current)) !== expectedVersion) {
+    throw new Error(`${target} changed since it was read; re-read the learner record before writing`);
+  }
+}
+
+/** The direct child files of a directory, sorted: subdirectories skipped, an absent directory empty. */
+async function listDirectChildFiles(absolute: string, name: (file: string) => string): Promise<string[]> {
+  try {
+    const entries = await readdir(absolute, { withFileTypes: true });
+    return entries.filter((entry) => entry.isFile()).map((entry) => name(entry.name)).sort();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
 test.beforeEach(async ({ page }) => {
   /* The chosen folder's own name becomes the workspace id the create flow writes, and an id
    * may not carry uppercase, so the fixture directory is named the way the protocol requires. */
@@ -49,28 +87,34 @@ test.beforeEach(async ({ page }) => {
   // synchronization and both modes run unchanged; persistence survives a browser reload.
   await page.exposeFunction('__nativeWorkspaceInvoke', async (command: string, args?: {
     rootPath: string; relativePath?: string;
-    workspaceId?: string; file?: string; text?: string; directory?: string;
+    workspaceId?: string; file?: LearnerRecordFile; routeId?: string; expectedVersion?: string | null;
+    text?: string; directory?: string;
     changes?: { graph?: string; createOnly?: boolean; documents: Array<{ path: string; content: string | null }>; assets?: Array<{ path: string; content: number[] | null }> };
   }) => {
     if (command.startsWith('plugin:event|')) return 0;
     // The learner records live under the application data directory, keyed by workspace id;
     // the workspace `id` is the folder's own name, exactly as the create flow writes it.
+    // Same layout and compare-and-swap as `src-tauri/src/learner_records.rs`.
     if (command === 'read_learner_record') {
-      const target = path.join(recordsDirectory, args!.workspaceId!, `${args!.file}.json`);
-      try {
-        const text = await readFile(target, 'utf8');
-        return { text, version: createHash('sha256').update(text).digest('hex') };
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { text: null, version: null };
-        throw error;
-      }
+      const text = await readIfPresent(learnerRecordPath(args!.workspaceId!, args!.file!));
+      return text === null ? { text: null, version: null } : { text, version: digest(text) };
     }
     if (command === 'write_learner_record') {
       const text = args!.text!;
-      const target = path.join(recordsDirectory, args!.workspaceId!, `${args!.file}.json`);
+      const target = learnerRecordPath(args!.workspaceId!, args!.file!);
+      await checkRecordPrecondition(target, args!.expectedVersion ?? null);
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, text);
-      return createHash('sha256').update(text).digest('hex');
+      return digest(text);
+    }
+    if (command === 'delete_learner_route') {
+      const target = learnerRecordPath(args!.workspaceId!, { kind: 'route', id: args!.routeId! });
+      await checkRecordPrecondition(target, args!.expectedVersion!);
+      await rm(target);
+      return null;
+    }
+    if (command === 'list_learner_routes') {
+      return listDirectChildFiles(path.join(recordsDirectory, args!.workspaceId!, 'routes'), (name) => name);
     }
     // The Pi companion is a separate process behind the same IPC boundary; only its
     // catalog is substituted, so the shared conversation pane runs unchanged.
@@ -101,6 +145,10 @@ test.beforeEach(async ({ page }) => {
         throw error;
       }
       return found;
+    }
+    if (command === 'list_workspace_source_companion_files') {
+      const relative = args!.directory!;
+      return listDirectChildFiles(path.join(directory, relative), (name) => `${relative}/${name}`);
     }
     if (command === 'read_workspace_source_graph') return readFile(path.join(directory, manifestPath), 'utf8');
     if (command === 'read_workspace_source_document') return readFile(path.join(directory, args.relativePath!), 'utf8');
