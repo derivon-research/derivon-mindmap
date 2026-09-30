@@ -25,7 +25,7 @@ const run = promisify(execFile);
  * application's sessions.
  */
 const SKILLS_REPOSITORY = 'derivon-research/skills';
-const SKILLS_REVISION = '28b22cefd9fba0536a85694bbfbc67d904107de9';
+const SKILLS_REVISION = 'bf47e2fd42c929cf39d3eecf9b274efa8067f6ce';
 const BASE_SKILLS = ['derivon-mindmap', 'derivon-cli'];
 
 /** Where the Tauri bundle picks the seed up from. Mirrors `dist-companion/`. */
