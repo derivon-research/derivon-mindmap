@@ -216,7 +216,7 @@ mode asks for, not the limit of what a session can hold.
   the artifact. Isolation outside this process is what would make it a guarantee; it is not built
   ([#123](https://github.com/derivon-research/derivon-mindmap/issues/123)).
 - The capability words and the rule that a session holds the intersection of command → capability
-  and mode → capability have one owner — ADR-0011 and `CONTEXT.md` — so do not restate them here
+  and mode → capability have one owner — ADR-0011 and `GLOSSARY.md` — so do not restate them here
   and do not keep a second list in the companion. *Which tools a mode holds* is a different axis
   from *what a command may change*, and the glossary owns both words.
 - The learning session holds no write **capability**: “learning mode cannot edit” is structural for

@@ -5,7 +5,7 @@ content operation and shared session boundary described below. The remaining cas
 capabilities are still planned unless explicitly identified as delivered. This design introduces
 no on-disk protocol change.
 
-Domain terms are defined in [CONTEXT.md](../CONTEXT.md). The load-bearing decisions are
+Domain terms are defined in [GLOSSARY.md](../GLOSSARY.md). The load-bearing decisions are
 [mode-independent synchronization](adr/0004-synchronize-workspace-content-independently-of-modes.md)
 and [deletion with owned documents](adr/0005-delete-owned-documents-with-their-objects.md).
 Learning state has its own boundary outside the workspace, keyed by workspace identity, in

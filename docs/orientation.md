@@ -1,6 +1,6 @@
 # Orientation
 
-Status: implemented by #57 and #58. Domain terms are defined in [CONTEXT.md](../CONTEXT.md);
+Status: implemented by #57 and #58. Domain terms are defined in [GLOSSARY.md](../GLOSSARY.md);
 the protocol naming decision is [ADR-0007](adr/0007-name-the-workspace-protocol-after-the-artifact.md).
 
 Orientation is the entry process: a learner opens a workspace, and leaves this stage with

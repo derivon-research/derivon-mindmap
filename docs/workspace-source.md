@@ -61,7 +61,7 @@ That per-file preflight and revision comparison are not protection against an un
 | web, remote | `src/hosts/web/remoteWorkspaceSource.ts` | Type boundary only. No transport, endpoint, account, or credentials are implemented in this phase. |
 | desktop, local filesystem | `src/hosts/desktop/index.ts` plus Tauri workspace commands | Read and commit. Filesystem paths exist only in this binding. |
 
-The port lives at `src/ports/WorkspaceSource.ts`, following the v1 module map in `CONTEXT.md`. The web binding implements `WorkspaceSource`, not `WritableWorkspaceSource`, and does not import the desktop binding or browser filesystem APIs. Desktop code must be imported only from its desktop host entry point. The legacy workspace path stays a separate write path during this expand phase — its API and callers are unchanged, though the files it writes now go through the same replacement as a commit; later tickets move its callers behind a port.
+The port lives at `src/ports/WorkspaceSource.ts`, following the v1 module map in `GLOSSARY.md`. The web binding implements `WorkspaceSource`, not `WritableWorkspaceSource`, and does not import the desktop binding or browser filesystem APIs. Desktop code must be imported only from its desktop host entry point. The legacy workspace path stays a separate write path during this expand phase — its API and callers are unchanged, though the files it writes now go through the same replacement as a commit; later tickets move its callers behind a port.
 
 ## Content And Synchronization
 

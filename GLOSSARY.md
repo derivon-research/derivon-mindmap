@@ -318,7 +318,7 @@ v1 是唯一的工作区协议。v1.0.0 之前没有发布过的版本，因此�
 
 - 数学模型中的 point、hyperedge、tail、head、closure、mathematical derivation、set cost、tree cost、depth cost 与 bracket：[derivon-research/paper](https://github.com/derivon-research/paper#readme)。
 - 图协议 `derivon.graph/v1`：[derivon-research/derivon 的 graph format](https://github.com/derivon-research/derivon/blob/main/docs/src/graph-format.md)。
-- problem pressure 与 problem-led derivation 等创作方法：[derivon-research/skills 的 context](https://github.com/derivon-research/skills/blob/main/CONTEXT.md)。
+- problem pressure 与 problem-led derivation 等创作方法：[derivon-research/skills 的 GLOSSARY](https://github.com/derivon-research/skills/blob/main/GLOSSARY.md)。
 
 同一个英文词 `derivation` 同时出现在数学模型、产品语意和创作方法中；讨论时必须加上“数学模型”“产品”或“problem-led”限定。产品推导是一条拥有问题引入与推导过程的概念关系；mathematical derivation 遵循 paper 的定义，不能把两者互换。
 

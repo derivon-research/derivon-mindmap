@@ -186,7 +186,7 @@ describe('workspace I/O', () => {
         .filter((target) => target.startsWith('ports/WorkspaceSource') || target.startsWith('hosts/'));
       if (reached.length) offenders.push(`${module} → ${reached.join(', ')}`);
     }
-    // CONTEXT.md: 工作区 I/O 不得进入 src/modes/ 或 src/rendering/. A mode asks the shared
+    // GLOSSARY.md: 工作区 I/O 不得进入 src/modes/ 或 src/rendering/. A mode asks the shared
     // authoring commands for a content change; it never holds a source or a host adapter.
     expect(offenders).toEqual([]);
   });

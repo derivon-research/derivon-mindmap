@@ -12,7 +12,7 @@ document editor. See [new object](#new-object).
 
 - Selecting a concept in the overview enters its one-step neighbourhood.
 - Selecting a different concept in the neighbourhood selects it and changes the neighbourhood
-  focus, as specified in CONTEXT.md.
+  focus, as specified in GLOSSARY.md.
 - Selecting a derivation selects that derivation without changing the neighbourhood focus.
   Its own joint premises and result appear in the relations pane.
 - Clicking an already-selected neighbourhood object opens its document editor. An activation

@@ -1,7 +1,7 @@
 # Routes
 
 Status: specified by [#153](https://github.com/derivon-research/derivon-mindmap/issues/153).
-Domain terms are defined in [CONTEXT.md](../CONTEXT.md); the protocol is named after the
+Domain terms are defined in [GLOSSARY.md](../GLOSSARY.md); the protocol is named after the
 artifact per [ADR-0007](adr/0007-name-the-workspace-protocol-after-the-artifact.md).
 
 **This document is the one specification of `derivon.route/v1`.** The application and the

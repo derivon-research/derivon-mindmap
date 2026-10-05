@@ -21,7 +21,7 @@ const SURFACE_SCRIPT = ['scripts', SURFACE_SCRIPT_NAME] as const;
  *
  * The command surface holds command → capability; this table holds mode → capability; a
  * session receives the intersection. The words themselves have one owner — ADR-0011 and
- * `CONTEXT.md` — so this is the only place the client spells them, and there is no second
+ * `GLOSSARY.md` — so this is the only place the client spells them, and there is no second
  * command list: every tool is derived from `--capabilities`.
  */
 export type Grant = {

@@ -1,4 +1,4 @@
-/** The two application modes, as the conversation layer sees them. See CONTEXT.md. */
+/** The two application modes, as the conversation layer sees them. See GLOSSARY.md. */
 export type ConversationMode = 'learning' | 'authoring';
 
 export type ConversationModel = {

@@ -7,7 +7,7 @@ import type { ConversationEvent, ToolCallStatus } from '../../ports/Conversation
  * knows how a turn grows: which part a delta lands in, which part a tool call updates,
  * where an error goes. The pane renders a part; it does not decide what a part is.
  *
- * See CONTEXT.md, 会话回合.
+ * See GLOSSARY.md, 会话回合.
  */
 export type TurnStatus = 'streaming' | 'done' | 'error' | 'stopped';
 

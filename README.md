@@ -2,7 +2,7 @@
 
 Derivon Mindmap 是一个本地优先的知识图谱编辑器，用加权有向 B-超图表达概念、联合前提、推导、替代方案和学习成本。它将可视化图编辑、对象级 Markdown 文档、路线求解和静态发布组织在同一个普通文件夹工作区中。
 
-> 版本范围：本 README 的用户说明对应当前已发布的 v0.4.2。`main` 正在进行 v1.0.0 重写；v1 是运行在 web 与桌面宿主上的一个应用，学习侧在两个宿主都可用，创作侧只在桌面可用。重写期术语与目标模块边界以 [`CONTEXT.md`](CONTEXT.md) 为准。
+> 版本范围：本 README 的用户说明对应当前已发布的 v0.4.2。`main` 正在进行 v1.0.0 重写；v1 是运行在 web 与桌面宿主上的一个应用，学习侧在两个宿主都可用，创作侧只在桌面可用。重写期术语与目标模块边界以 [`GLOSSARY.md`](GLOSSARY.md) 为准。
 
 - 在线版：<https://mindmap.derivon.net/>
 - 桌面版：[GitHub Releases](https://github.com/derivon-research/derivon-mindmap/releases/latest)
@@ -157,7 +157,7 @@ npm run dev
 
 数学模型中的 point、hyperedge、tail、head、closure、mathematical derivation 与成本由 [`derivon-research/paper`](https://github.com/derivon-research/paper#readme) 定义；CLI 接受的 `derivon.graph/v1` 图协议以 [`derivon-research/derivon` 的 graph format](https://github.com/derivon-research/derivon/blob/main/docs/src/graph-format.md) 为准。本仓库不另写一套定义。
 
-Mindmap 自己拥有学习侧与创作侧共有的产品语意。产品推导是概念之间的一条关系，拥有问题引入、推导过程和对象文档；求解时它投影为一个 hyperedge，但不等于 core 数学模型中的 mathematical derivation。概念、产品推导、对象文档和 tag 的规范词义见 [`CONTEXT.md`](CONTEXT.md#本仓库拥有的产品词汇)，盘上结构见下文“工作区格式”。
+Mindmap 自己拥有学习侧与创作侧共有的产品语意。产品推导是概念之间的一条关系，拥有问题引入、推导过程和对象文档；求解时它投影为一个 hyperedge，但不等于 core 数学模型中的 mathematical derivation。概念、产品推导、对象文档和 tag 的规范词义见 [`GLOSSARY.md`](GLOSSARY.md#本仓库拥有的产品词汇)，盘上结构见下文“工作区格式”。
 
 替换视图是当前 v0.4.2 的旧能力；v1 不再提供它的新增、编辑或显示路径，而以 point 上的 tag 支持组织和筛选。不了解这些边界时，优先使用 `derivon-cli` 和 `derivon-mindmap` Skills，不要按普通有向图直觉批量改写 manifest。
 
