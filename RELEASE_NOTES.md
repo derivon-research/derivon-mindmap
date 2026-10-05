@@ -1,6 +1,6 @@
 # Next Demo Release
 
-> Historical pre-v1 release record. Replacement-view descriptions below document shipped v0.x behavior, not v1 product capabilities; see [`CONTEXT.md`](CONTEXT.md) for the v1 boundary.
+> Historical pre-v1 release record. Replacement-view descriptions below document shipped v0.x behavior, not v1 product capabilities; see [`GLOSSARY.md`](GLOSSARY.md) for the v1 boundary.
 
 ## Agent integration
 

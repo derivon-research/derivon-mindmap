@@ -17,7 +17,7 @@ command surface landed in `derivon-research/skills#6`: `read-learner-record` and
 `id`, and read or replace one record file with no client running. Personal routes — one file
 per route, replacing the single `routes.json` — are specified by
 [#153](https://github.com/derivon-research/derivon-mindmap/issues/153).
-Domain terms are defined in [CONTEXT.md](../CONTEXT.md); the decisions are
+Domain terms are defined in [GLOSSARY.md](../GLOSSARY.md); the decisions are
 [ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) (where they live) and
 [ADR-0012](adr/0012-learning-state-is-mastery.md) (what they are).
 

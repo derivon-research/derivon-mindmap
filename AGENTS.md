@@ -23,7 +23,7 @@ The five canonical roles, each label string equal to its name. See
 ### Domain docs
 
 Single-context. Before naming or changing product concepts, derivations, object documents,
-tags, or replacement compatibility, read `CONTEXT.md` and `docs/agents/domain.md`.
+tags, or replacement compatibility, read `GLOSSARY.md` and `docs/agents/domain.md`.
 
 ## Dev shell
 
