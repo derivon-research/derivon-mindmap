@@ -66,3 +66,14 @@ shared term, defer to the artifact that owns it:
 
 Do not restate a term owned elsewhere. Link to its source instead. If two sources appear to
 disagree, that is a real defect: surface it rather than picking one.
+
+## Recorded decisions
+
+Before treating a design question as open, check whether one of these indexes already settles
+it. Read the index; open a record only when its one-line title bears on the question.
+
+| Scope | Index |
+| --- | --- |
+| Product semantics, protocols, application architecture | `docs/adr/README.md` in this repo |
+| Authoring methodology | `docs/adr/README.md` in `derivon-research/skills` |
+| Strategy, scope and schedule | *Decisions so far* in the open `wayfinder:map` issue of `derivon-research/planning` (private) |

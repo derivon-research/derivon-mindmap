@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
-This directory is a **log**, not a description of the current system. Read this file before
-adding or changing an ADR.
+This directory is a **log**, not a description of the current system. To find a decision,
+read the index below. Before adding or changing an ADR, also read the rules after it.
 
 | Question | Answered by |
 | --- | --- |
@@ -12,6 +12,29 @@ adding or changing an ADR.
 
 An ADR that drifts into one of the other three loses the only thing it can carry. This is why
 the bodies stay short and the reasoning stays here.
+
+## Index
+
+Read this table, then the one to three ADRs it points at. Never all of them.
+
+| # | Decision | Status |
+| --- | --- | --- |
+| [0001](0001-whole-window-mode-switching.md) | Modes are mutually exclusive whole-window subtrees, switched from the top bar | accepted |
+| [0002](0002-authoring-does-not-connect-by-gesture.md) | Hyperedges are created from a form; authoring has no drag-to-connect | accepted |
+| [0003](0003-the-overview-is-not-meant-to-be-readable.md) | The whole-graph overview is for orientation, not reading; one force layout | accepted |
+| [0004](0004-synchronize-workspace-content-independently-of-modes.md) | One synchronization module owns workspace content, independent of the visible mode | accepted |
+| [0005](0005-delete-owned-documents-with-their-objects.md) | Deleting an object deletes its owned documents and assets, after reference analysis | accepted |
+| [0006](0006-the-overview-does-not-track-authoring-changes-live.md) | The overview does not animate authoring changes; no incremental force simulation | accepted |
+| [0007](0007-name-the-workspace-protocol-after-the-artifact.md) | The workspace manifest is `derivon.workspace/v1`, named for the artifact not the writer | accepted |
+| [0008](0008-persist-markdown-not-rendered-pages.md) | An object document is `document.md` plus assets; no rendered second source of truth | accepted |
+| [0009](0009-persist-learner-records-outside-the-workspace.md) | Learner records live in the application data directory, keyed by workspace `id` | accepted ⚠ |
+| [0010](0010-pi-sdk-companion-process.md) | One Node companion owns the Pi SDK; the webview holds no credentials | accepted ⚠ |
+| [0011](0011-change-workspace-content-through-the-script-command-surface.md) | Writes go through the script command surface; the boundary is artifact enforcement | accepted ⚠ |
+| [0012](0012-learning-state-is-mastery.md) | Learning state is concept and derivation mastery; targets and known are solve inputs | accepted |
+| [0013](0013-who-owns-the-user-level-skills-root.md) | The application installs the base skills into `~/.derivon/skills/`, and only seeds them | accepted |
+| [0014](0014-concept-names-may-repeat.md) | Concept names may repeat; a description and an optional qualifier tell them apart | accepted |
+
+⚠ marks a body that was rewritten in place; its original is in git history. See *Known debt*.
 
 ## Rules
 
@@ -93,31 +116,11 @@ An ADR that fails any of the three is noise that makes the real ones harder to f
 Next is **max + 1**. Numbers are never reused and **never renumbered** — `GLOSSARY.md`,
 `docs/`, and other repositories link ADRs by number.
 
-## Index
-
-Read this table, then the one to three ADRs it points at. Never all of them.
-
-| # | Decision | Status |
-| --- | --- | --- |
-| [0001](0001-whole-window-mode-switching.md) | Modes are mutually exclusive whole-window subtrees, switched from the top bar | accepted |
-| [0002](0002-authoring-does-not-connect-by-gesture.md) | Hyperedges are created from a form; authoring has no drag-to-connect | accepted |
-| [0003](0003-the-overview-is-not-meant-to-be-readable.md) | The whole-graph overview is for orientation, not reading; one force layout | accepted |
-| [0004](0004-synchronize-workspace-content-independently-of-modes.md) | One synchronization module owns workspace content, independent of the visible mode | accepted |
-| [0005](0005-delete-owned-documents-with-their-objects.md) | Deleting an object deletes its owned documents and assets, after reference analysis | accepted |
-| [0006](0006-the-overview-does-not-track-authoring-changes-live.md) | The overview does not animate authoring changes; no incremental force simulation | accepted |
-| [0007](0007-name-the-workspace-protocol-after-the-artifact.md) | The workspace manifest is `derivon.workspace/v1`, named for the artifact not the writer | accepted |
-| [0008](0008-persist-markdown-not-rendered-pages.md) | An object document is `document.md` plus assets; no rendered second source of truth | accepted |
-| [0009](0009-persist-learner-records-outside-the-workspace.md) | Learner records live in the application data directory, keyed by workspace `id` | accepted ⚠ |
-| [0010](0010-pi-sdk-companion-process.md) | One Node companion owns the Pi SDK; the webview holds no credentials | accepted ⚠ |
-| [0011](0011-change-workspace-content-through-the-script-command-surface.md) | Writes go through the script command surface; the boundary is artifact enforcement | accepted ⚠ |
-| [0012](0012-learning-state-is-mastery.md) | Learning state is concept and derivation mastery; targets and known are solve inputs | accepted |
-| [0013](0013-who-owns-the-user-level-skills-root.md) | The application installs the base skills into `~/.derivon/skills/`, and only seeds them | accepted |
-
-⚠ marks a body that was rewritten in place; its original is in git history. See *Known debt*.
+A new ADR gets its index row in the same change; `npm run test:adr-index` fails otherwise.
 
 ## Baseline
 
-**ADR-0001 through ADR-0013 are the frozen baseline**: the accepted decisions as of the commit
+**ADR-0001 through ADR-0014 are the frozen baseline**: the accepted decisions as of the commit
 that adds this file. From here the rules above hold — new decisions are appended, existing
 bodies are not rewritten.
 
