@@ -27,14 +27,20 @@ Read this table, then the one to three ADRs it points at. Never all of them.
 | [0006](0006-the-overview-does-not-track-authoring-changes-live.md) | The overview does not animate authoring changes; no incremental force simulation | accepted |
 | [0007](0007-name-the-workspace-protocol-after-the-artifact.md) | The workspace manifest is `derivon.workspace/v1`, named for the artifact not the writer | accepted |
 | [0008](0008-persist-markdown-not-rendered-pages.md) | An object document is `document.md` plus assets; no rendered second source of truth | accepted |
-| [0009](0009-persist-learner-records-outside-the-workspace.md) | Learner records live in the application data directory, keyed by workspace `id` | accepted ⚠ |
-| [0010](0010-pi-sdk-companion-process.md) | One Node companion owns the Pi SDK; the webview holds no credentials | accepted ⚠ |
-| [0011](0011-change-workspace-content-through-the-script-command-surface.md) | Writes go through the script command surface; the boundary is artifact enforcement | accepted ⚠ |
+| [0009](0009-keep-learning-state-session-local-until-shaped.md) | Learning state stays in the session until its persisted shape is known | superseded by 0015 |
+| [0010](0010-pi-sdk-companion-process.md) | One Node companion owns the Pi SDK; the webview holds no credentials | superseded by 0016 |
+| [0011](0011-change-workspace-content-through-the-script-command-surface.md) | Writes go through the script command surface; inside the client the boundary is a capability limit, and the application and the agent never write concurrently | superseded by 0018 |
 | [0012](0012-learning-state-is-mastery.md) | Learning state is concept and derivation mastery; targets and known are solve inputs | accepted |
 | [0013](0013-who-owns-the-user-level-skills-root.md) | The application installs the base skills into `~/.derivon/skills/`, and only seeds them | accepted |
 | [0014](0014-concept-names-may-repeat.md) | Concept names may repeat; a description and an optional qualifier tell them apart | accepted |
+| [0015](0015-persist-learner-records-outside-the-workspace.md) | Learner records live in the application data directory, keyed by workspace `id` | accepted |
+| [0016](0016-the-companion-owns-its-model-configuration.md) | The companion owns its model configuration; the machine's Pi configuration is not reused | superseded by 0017 |
+| [0017](0017-the-companion-loads-the-operators-own-extensions.md) | One Node companion owns the Pi SDK and its model configuration; the operator's extensions run with the operator's credentials | accepted |
+| [0018](0018-the-application-and-the-agent-write-optimistically.md) | The application and the agent write optimistically; ordering and command preconditions carry the safety | superseded by 0019 |
+| [0019](0019-modes-grant-tools-and-a-guard-refuses-forbidden-writes.md) | Modes grant the tools they need; a `tool_call` guard refuses the writes a mode must not perform | superseded by 0020 |
+| [0020](0020-the-write-boundary-is-artifact-enforcement.md) | Writes go through the script command surface; the boundary is artifact enforcement, not a mode's tool set | accepted |
 
-⚠ marks a body that was rewritten in place; its original is in git history. See *Known debt*.
+A superseded row is history: read the ADR its status names instead.
 
 ## Rules
 
@@ -127,16 +133,9 @@ bodies are not rewritten.
 A frozen baseline does not mean the directory never changes. Editorial repair (a typo, a dead
 link, a status line) is always allowed. What is frozen is each ADR's **decision and reasoning**.
 
-## Known debt
+## Repaired debt
 
-Three ADRs carry an in-place rewrite. Each should be split into a superseded original plus one
-or more new ADRs, in one deliberate change:
-
-- **ADR-0009** — superseded its own session-local phase (*Status*).
-- **ADR-0010** — the configuration and diagnostics sections were rewritten (*Status*).
-- **ADR-0011** — rewritten three times; the original ("a mode's tool set is a capability
-  limit") is in `18dd4fc`. This is where the lost reasoning matters most.
-
-The baseline is frozen, not correct. Repairing this is a bounded correction, not a new
-decision: restore the original body from git, mark it superseded, and give each replacement its
-own number. Do not do it opportunistically — a partial repair is another palimpsest.
+ADR-0009, ADR-0010 and ADR-0011 were rewritten in place before this file existed. Each original
+body is restored from git under its own number, and every rewrite is a new ADR in the order it
+happened: 0009 → 0015; 0010 → 0016 → 0017; 0011 → 0018 → 0019 → 0020. A status paragraph that
+carried an argument became the new ADR's *Why this replaces* section.

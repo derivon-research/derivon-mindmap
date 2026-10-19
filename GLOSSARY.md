@@ -64,7 +64,7 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **模型配置（model configuration）**
 
-本应用自己的 `models.json` 与 `auth.json`，放在**用户级配置根 `~/.derivon/`** 下（Windows `%USERPROFILE%\.derivon\`；三平台同名同形，Linux 不跟 `$XDG_CONFIG_HOME`），语法与 Pi 一致。同一根下还有 `selected-models.json`（每个模式选中的模型）与 `skills/`（#104、#122）、`extensions/`（#121，用户自己的 Pi 扩展；项目级扩展在 `<workspace>/.derivon/extensions`，项目受信任才载入）、`bin/`（会话里那个 node，#129），布局见 `docs/agents/pi-runtime.md`；学习者记录不在这里（它们是应用数据）。它们是这个应用的文件：companion 不读也不写 `~/.pi/`，不要求装 Pi CLI。**面板能选到什么，是这两个文件的函数，除此之外什么都不算数**——本机环境变量、Google ADC、AWS profile 提供的凭证一律不采纳。这条不是"传了自己的路径"就自动成立的，需要按凭证归属显式过滤，理由与机制记在 `docs/adr/0010-pi-sdk-companion-process.md`。
+本应用自己的 `models.json` 与 `auth.json`，放在**用户级配置根 `~/.derivon/`** 下（Windows `%USERPROFILE%\.derivon\`；三平台同名同形，Linux 不跟 `$XDG_CONFIG_HOME`），语法与 Pi 一致。同一根下还有 `selected-models.json`（每个模式选中的模型）与 `skills/`（#104、#122）、`extensions/`（#121，用户自己的 Pi 扩展；项目级扩展在 `<workspace>/.derivon/extensions`，项目受信任才载入）、`bin/`（会话里那个 node，#129），布局见 `docs/agents/pi-runtime.md`；学习者记录不在这里（它们是应用数据）。它们是这个应用的文件：companion 不读也不写 `~/.pi/`，不要求装 Pi CLI。**面板能选到什么，是这两个文件的函数，除此之外什么都不算数**——本机环境变量、Google ADC、AWS profile 提供的凭证一律不采纳。这条不是"传了自己的路径"就自动成立的，需要按凭证归属显式过滤，理由与机制记在 `docs/adr/0017-the-companion-loads-the-operators-own-extensions.md`。
 
 **诊断（diagnosis）**
 
@@ -98,7 +98,7 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **应用状态（application state）**
 
-应用为当前使用过程维护的状态，包括当前模式与视图、目标、求解结果、活动路线、面板状态、当前对话，以及编辑草稿和内容同步状态。目标、求解结果与活动路线不会写回工作区，也不随对话新建或释放而清除；合法的创作变更进入有效内存内容后可自动保存，不以切换模式或手动保存作为内容生效的前提。学习者的掌握与个人路线是学习者记录，位于应用数据目录、以工作区 id 为键，不是应用状态，也不是工作区内容（见 `docs/adr/0009-persist-learner-records-outside-the-workspace.md` 与 `docs/adr/0012-learning-state-is-mastery.md`）。
+应用为当前使用过程维护的状态，包括当前模式与视图、目标、求解结果、活动路线、面板状态、当前对话，以及编辑草稿和内容同步状态。目标、求解结果与活动路线不会写回工作区，也不随对话新建或释放而清除；合法的创作变更进入有效内存内容后可自动保存，不以切换模式或手动保存作为内容生效的前提。学习者的掌握与个人路线是学习者记录，位于应用数据目录、以工作区 id 为键，不是应用状态，也不是工作区内容（见 `docs/adr/0015-persist-learner-records-outside-the-workspace.md` 与 `docs/adr/0012-learning-state-is-mastery.md`）。
 
 **学习状态（learning state）**
 
@@ -106,7 +106,7 @@ Derivon Mindmap 这个单一产品及其共享的状态转换和界面结构。�
 
 **学习者记录（learner record）**
 
-以学习者 + 工作区为键、存于应用数据目录的持久记录：`state.json`（学习状态，`derivon.learning/v1`）与 `routes/` 下每条一个文件的个人路线（`derivon.route/v1`）。它不在工作区里：不进 `WorkspaceSource`、不进清单、不参与工作区同步、也不进 `revision`。键是清单里的工作区 `id`；同 id 即同身份，复制工作区共享同一份记录。写入有两条路径——应用自身的界面与脚本命令面——被强制的是工件而不是写者，与工作区内容同形（见 `docs/adr/0009-persist-learner-records-outside-the-workspace.md` 与 `docs/adr/0011-change-workspace-content-through-the-script-command-surface.md`）。
+以学习者 + 工作区为键、存于应用数据目录的持久记录：`state.json`（学习状态，`derivon.learning/v1`）与 `routes/` 下每条一个文件的个人路线（`derivon.route/v1`）。它不在工作区里：不进 `WorkspaceSource`、不进清单、不参与工作区同步、也不进 `revision`。键是清单里的工作区 `id`；同 id 即同身份，复制工作区共享同一份记录。写入有两条路径——应用自身的界面与脚本命令面——被强制的是工件而不是写者，与工作区内容同形（见 `docs/adr/0015-persist-learner-records-outside-the-workspace.md` 与 `docs/adr/0020-the-write-boundary-is-artifact-enforcement.md`）。
 
 **路线（route）**
 

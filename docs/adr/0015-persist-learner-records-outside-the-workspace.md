@@ -2,13 +2,15 @@
 
 ## Status
 
-Accepted. Supersedes the session-local phase of this ADR's original decision; the shape is
-now known ([#92](https://github.com/derivon-research/derivon-mindmap/issues/92), see
-[ADR-0012](0012-learning-state-is-mastery.md) for what the state is).
+Accepted. Supersedes [ADR-0009](0009-keep-learning-state-session-local-until-shaped.md).
+
+## Why this replaces ADR-0009
+
+The session-local phase has ended: the shape is known ([#92](https://github.com/derivon-research/derivon-mindmap/issues/92); see [ADR-0012](0012-learning-state-is-mastery.md) for what the state is).
 
 ## Context
 
-This ADR originally kept all learning state in the application session until its persisted
+[ADR-0009](0009-keep-learning-state-session-local-until-shaped.md) kept all learning state in the application session until its persisted
 shape was informed by real use. That deferral has ended: the shape is worked out, and the
 protocols are specified in [learner records](../learner-records.md). What remains is where the
 records live and what key identifies them.
@@ -60,7 +62,7 @@ can carry one, and no workspace write changes one.
 
 **The artifact is enforced; the writer is not.** The application's own learning actions write
 records, and so does the script command surface, which computes the same path and runs with no
-client. That is the shape [ADR-0011](0011-change-workspace-content-through-the-script-command-surface.md)
+client. That is the shape [ADR-0020](0020-the-write-boundary-is-artifact-enforcement.md)
 gives workspace content — two write paths, one specification — applied to a second artifact
 outside the workspace. Conflicts use the same discipline: a write carries the revision or
 `basis` it read and replaces the file atomically, and a losing precondition refuses. This is

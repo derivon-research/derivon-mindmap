@@ -2,7 +2,7 @@
 
 This guide records how the desktop Pi companion is extended after the first streaming
 slice. The architecture is fixed by
-[ADR-0010](../adr/0010-pi-sdk-companion-process.md).
+[ADR-0017](../adr/0017-the-companion-loads-the-operators-own-extensions.md).
 
 ## Layers
 
@@ -36,11 +36,11 @@ slice. The architecture is fixed by
 
 `derivon_root` in `src-tauri/src/conversation.rs` is the only place that spells the
 user-level root (`workspace.rs` spells the different, workspace-local `.derivon`); the
-companion receives the directory and does not know where it came from. ADR-0010 records
+companion receives the directory and does not know where it came from. ADR-0017 records
 why it is one root on every platform rather than each platform's own convention.
 
 - **Learner records are not here.** They are application data, keyed by workspace, and
-  stay in the app-data directory ([learner records](../learner-records.md), ADR-0009).
+  stay in the app-data directory ([learner records](../learner-records.md), ADR-0015).
 - **The old location is not read.** Before this root existed the two files were read from
   `app_config_dir()`; nothing reads that directory now, and there is no migration — a
   configuration left there produces the ordinary “no `models.json`” diagnosis, which names
@@ -69,7 +69,7 @@ come from sits behind it. Extend it there, not at the call sites.
 - A provider is offered only when `ModelRuntime.getProviderAuthStatus` attributes its
   credential to one of those files (`stored`, `models_json_key`, `models_json_command`).
   `environment` and `fallback` are refused: they mean the operator's machine configured
-  it, not this application. See ADR-0010.
+  it, not this application. See ADR-0017.
 - The catalog store Pi can persist is held in memory, so no `models-store.json` is written.
   This application never refreshes a catalog over the network (`allowModelNetwork` is left
   off), and the root is meant to hold the operator's files and nothing else. Pi's own
@@ -216,7 +216,7 @@ mode asks for, not the limit of what a session can hold.
   the artifact. Isolation outside this process is what would make it a guarantee; it is not built
   ([#123](https://github.com/derivon-research/derivon-mindmap/issues/123)).
 - The capability words and the rule that a session holds the intersection of command → capability
-  and mode → capability have one owner — ADR-0011 and `GLOSSARY.md` — so do not restate them here
+  and mode → capability have one owner — ADR-0020 and `GLOSSARY.md` — so do not restate them here
   and do not keep a second list in the companion. *Which tools a mode holds* is a different axis
   from *what a command may change*, and the glossary owns both words.
 - The learning session holds no write **capability**: “learning mode cannot edit” is structural for
@@ -261,7 +261,7 @@ diagnostic, but a `description is required`, an unreadable file or a name collis
 the operator on stderr under `[skills]` — the surface's own notes stay under `[command surface]`.
 - **Every tool is derived from `--capabilities`.** A granted command becomes one custom tool
 whose parameters come from that command's own `argv` and `stdin` declarations in camel case,
-with the workspace root supplied by the companion — never a parameter, since ADR-0011 fixes it
+with the workspace root supplied by the companion — never a parameter, since ADR-0020 fixes it
 for the session. The schema is plain JSON Schema rather than a TypeBox one, which Pi accepts and
 which keeps `typebox` out of this application's dependencies; a command that reads a document on
 stdin gets one free-form object parameter, because the surface publishes a schema *name* and a
@@ -342,8 +342,8 @@ with it. There are two roots — the user-level `<root>/extensions`, and the pro
   installed is usable and not merely present — and an extension that registers `write` or `bash`
   puts it in the session. That is the point rather than a leak: the client's tool set is not a
   capability limit, and the boundary that holds is the artifact
-  ([ADR-0011](../adr/0011-change-workspace-content-through-the-script-command-surface.md),
-  [ADR-0010](../adr/0010-pi-sdk-companion-process.md)). The learning session's guard reads tool
+  ([ADR-0020](../adr/0020-the-write-boundary-is-artifact-enforcement.md),
+  [ADR-0017](../adr/0017-the-companion-loads-the-operators-own-extensions.md)). The learning session's guard reads tool
   names and arguments and not their origin, so it fences an extension's `write` exactly as it would
   fence Pi's.
 - **One load serves one session.** Pi binds a runtime's actions when the session is built, so two
@@ -376,7 +376,7 @@ thin shell, not a family of tools and not a structured operation table.
 - **The graph is the session's, twice over.** The manifest's `graph` is sent to the CLI on stdin,
   and `--input` — the one global option that would read a graph from a file — is refused before
   anything runs. The workspace is the session's own, closed over when the tool is built, the same
-  as every command tool's workspace root (ADR-0011).
+  as every command tool's workspace root (ADR-0020).
 - **Both modes hold it, and it has no capability.** `derivon` is a stateless processor that never
   writes a file — even `point add` and `apply` print their result — so a call changes nothing and
   there is no capability to intersect. That it changes nothing is what puts it outside the command
@@ -410,7 +410,7 @@ relative path in a command therefore resolves inside it: only the arguments a wr
 lands on are inspected (redirections, `tee`, `rm`, `mv`, `cp`'s destination, `sed -i`, `dd of=`, and
 the like), while reads that merely name the workspace are left alone. Everything an interpreter, an
 editor or an unfamiliar quoting can do is outside it, which is what "a guard is a fence, not a
-sandbox" means in practice (ADR-0011).
+sandbox" means in practice (ADR-0020).
 
 PowerShell has its own rule rather than a shared one, because its write forms are cmdlets: a target
 is a positional argument or a named path parameter, and each form declares which of those it writes
@@ -421,7 +421,7 @@ would let the short one through. A parameter it does not know how to read become
 is refused, which is the safe side. Its edge is the vocabulary: a cmdlet outside that table is not
 seen at all — the same edge the POSIX rule has, where `/bin/rm` is not the word `rm`. It is the same
 fence and no more: a script run by an interpreter, another provider, or an encoding this does not
-know is outside it, and real isolation is the OS or container boundary ADR-0011 defers to
+know is outside it, and real isolation is the OS or container boundary ADR-0020 defers to
 ([#123](https://github.com/derivon-research/derivon-mindmap/issues/123)).
 
 So is the command surface itself: a granted command is an arbitrary script the operator installed
@@ -453,7 +453,7 @@ operator's PATH; on Windows, where a symlink needs a privilege an installer does
 `node.cmd` that forwards. Never a copy: the runtime is about 110 MB and it already ships beside
 the companion. A file the operator put there is left alone and named in a diagnostic; a shim that
 could not be written is a diagnostic too.
-- **ADR-0010 holds here as everywhere else.** The companion neither reads nor falls back to
+- **ADR-0017 holds here as everywhere else.** The companion neither reads nor falls back to
 `~/.pi/`, and the runtime a session gets is the application's own, not the machine's. The shim is
 the only thing the companion writes under the root besides `selected-models.json`.
 
@@ -468,7 +468,7 @@ above says so and the session stays usable.
 
 Both modes also hold `read`, which is how the model inspects the documents it is working on, and
 `derivon`, which is how it reads and queries the graph (above). The
-modes differ in what a *write* may do, and that is a different axis (ADR-0011) — the learning
+modes differ in what a *write* may do, and that is a different axis (ADR-0020) — the learning
 session's shell is not taken away for it.
 
 ## Environment isolation
@@ -483,7 +483,7 @@ It is not a sandbox for the operator's own extensions either. An extension runs 
 process, which holds the resolved credentials of the model the session is on; the
 allowlist stops it from reading the environment and nothing stops it from reading what
 `ModelRuntime` resolved. That is the operator's own code with the operator's own
-credentials, inside the local trust boundary ([ADR-0010](../adr/0010-pi-sdk-companion-process.md)).
+credentials, inside the local trust boundary ([ADR-0017](../adr/0017-the-companion-loads-the-operators-own-extensions.md)).
 
 ## Security follow-up
 

@@ -9,7 +9,7 @@ Domain terms are defined in [GLOSSARY.md](../GLOSSARY.md). The load-bearing deci
 [mode-independent synchronization](adr/0004-synchronize-workspace-content-independently-of-modes.md)
 and [deletion with owned documents](adr/0005-delete-owned-documents-with-their-objects.md).
 Learning state has its own boundary outside the workspace, keyed by workspace identity, in
-[ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) and
+[ADR-0015](adr/0015-persist-learner-records-outside-the-workspace.md) and
 [ADR-0012](adr/0012-learning-state-is-mastery.md); the protocols are in
 [learner records](learner-records.md).
 The [current WorkspaceSource contract](workspace-source.md) remains the description of
@@ -199,7 +199,7 @@ or arbitrary-file existence guarantee is claimed.
   the one it deferred once the writer stops. The same policy covers the lazy reads that go
   through the poll's check (`flush`, and a `readChecked` whose token has moved), so an unsettled
   workspace publishes nothing there either and the read's own error is what its caller sees.
-  "Files are the source of truth" ([ADR-0011](adr/0011-change-workspace-content-through-the-script-command-surface.md))
+  "Files are the source of truth" ([ADR-0020](adr/0020-the-write-boundary-is-artifact-enforcement.md))
   makes external writes ordinary, so sustained change is an expected condition on the poll path,
   not a defect to announce.
 - Only "never settled" is deferred. A read that fails for any other reason — an unparseable
@@ -286,7 +286,7 @@ when a user submits a nonempty search query. Existing unowned files are not remo
 Learner records are not application/session state and are not workspace content. They persist in
 the application data directory, keyed by the workspace `id`, and are described in
 [learner records](learner-records.md)
-([ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md)).
+([ADR-0015](adr/0015-persist-learner-records-outside-the-workspace.md)).
 What used to be called progress is not stored: a route's current step is derived at display time
 from the mastery record and the route ([ADR-0012](adr/0012-learning-state-is-mastery.md)).
 Workspace routes are not learner records: they are an author's content in `.derivon/routes/`,

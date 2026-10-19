@@ -1,7 +1,7 @@
 # LLM 配置（桌面版 Agent 面板）
 
 面向操作者的说明：桌面应用里的学习/创作 Agent 面板使用哪个 LLM、在哪儿配置。
-架构依据见 [ADR-0010](adr/0010-pi-sdk-companion-process.md) 与
+架构依据见 [ADR-0017](adr/0017-the-companion-loads-the-operators-own-extensions.md) 与
 [docs/agents/pi-runtime.md](agents/pi-runtime.md)。
 
 ## 结论速览
@@ -120,7 +120,7 @@ companion 起不来时，那里显示的是它退出前打印的内容，而不�
 
 **这是你自己的代码，跑在 companion 进程里**，而那个进程持有已解析的模型凭据。它能做的事不由应用
 限制：环境变量被清空（只留 `PATH` / `HOME` / `TMPDIR` / `LANG` / `LC_ALL`），但凭据本身拦不住。和
-编辑器插件一样，它在本机信任边界之内（ADR-0010）。
+编辑器插件一样，它在本机信任边界之内（ADR-0017）。
 
 **项目级扩展要项目受信任才载入。** 应用不弹窗问你：信任是一个你自己写的文件，与 Pi 的 `trust.json`
 同形——绝对路径作键，`true` 表示信任。
@@ -139,7 +139,7 @@ companion 起不来时，那里显示的是它退出前打印的内容，而不�
 
 ## 已知限制（截至本文写作）
 
-- 凭证是明文 JSON 文件，无 OS 钥匙串集成（ADR-0010 的安全后续项）。
+- 凭证是明文 JSON 文件，无 OS 钥匙串集成（ADR-0017 的安全后续项）。
 - Companion 不授予 `write` / `edit`：`read` 与平台 shell 由模式授予，其余内建工具只能来自你装的
   扩展。系统提示固定。
 - 扩展**加载时**的工作目录是 `~/.derivon/` 而不是工作区：Pi 的发现器固定会读 `<cwd>/.pi/extensions`，
