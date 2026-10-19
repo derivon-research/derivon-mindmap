@@ -12,7 +12,7 @@
  *
  * A write is a read-modify-replace under the file version it read, so a write from the script
  * command surface in between loses cleanly and is retried once
- * ([ADR-0009](../../docs/adr/0009-persist-learner-records-outside-the-workspace.md)). A
+ * ([ADR-0015](../../docs/adr/0015-persist-learner-records-outside-the-workspace.md)). A
  * judgement is never overwritten by a claim and never withdrawn by a "take it back": the
  * learner owns their own claim and the workspace's default, not a judgement the application
  * made.

@@ -18,7 +18,7 @@ command surface landed in `derivon-research/skills#6`: `read-learner-record` and
 per route, replacing the single `routes.json` — are specified by
 [#153](https://github.com/derivon-research/derivon-mindmap/issues/153).
 Domain terms are defined in [GLOSSARY.md](../GLOSSARY.md); the decisions are
-[ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md) (where they live) and
+[ADR-0015](adr/0015-persist-learner-records-outside-the-workspace.md) (where they live) and
 [ADR-0012](adr/0012-learning-state-is-mastery.md) (what they are).
 
 A learner record is everything the application remembers about one learner in one workspace
@@ -290,7 +290,7 @@ explainable. Re-reading a route must never substitute the current known set for 
 
 The **artifact is enforced; the writer is not.** There is one specification — this document,
 with [routes](routes.md) for the route files — and two write paths, exactly as workspace content has two write paths and one specification
-([ADR-0011](adr/0011-change-workspace-content-through-the-script-command-surface.md)):
+([ADR-0020](adr/0020-the-write-boundary-is-artifact-enforcement.md)):
 
 - the application's own learning actions ("I know it", handing in a judgement, confirming,
   copying, editing or deleting a personal route), implemented in the client, and
@@ -308,7 +308,7 @@ what makes the artifact a **category** of the surface rather than a corner of it
 declares its category, and a mode's tool set is the intersection of what it grants and what each
 command declares (`derivon-research/skills#5`, `#6`).
 
-Write discipline follows ADR-0011: a write carries a precondition — the byte digest of the one
+Write discipline follows ADR-0020: a write carries a precondition — the byte digest of the one
 file it read, or that the file is absent when it creates one — and replaces the file atomically
 (temporary file adjacent to the target, then rename); a delete carries the same precondition. A
 losing precondition refuses cleanly. This is compare-and-swap on one file, not a lock and not a

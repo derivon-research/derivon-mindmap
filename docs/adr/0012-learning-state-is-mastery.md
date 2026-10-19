@@ -64,7 +64,7 @@ this ADR removes.
 the workspace, in the application data directory, keyed by learner and by the workspace `id`;
 they never enter `WorkspaceSource`, the manifest, workspace synchronization or the workspace
 `revision`. The location, the key and the two-writer discipline are
-[ADR-0009](0009-persist-learner-records-outside-the-workspace.md)'s decision, and the field-level
+[ADR-0015](0015-persist-learner-records-outside-the-workspace.md)'s decision, and the field-level
 protocol is [learner records](../learner-records.md).
 
 **This is now a description of the code, not only a decision about what should exist.** Every
@@ -89,6 +89,6 @@ read back from the records rather than kept anywhere.
   distinguishable in the data; showing them as the same thing would hide the source marker.
 - A content change invalidates the affected judgements and leaves the rest alone. The learner
   returns to the earliest stale step; unrelated records keep counting.
-- Because records live outside the workspace ([ADR-0009](0009-persist-learner-records-outside-the-workspace.md)),
+- Because records live outside the workspace ([ADR-0015](0015-persist-learner-records-outside-the-workspace.md)),
   deleting a route never touches mastery, and deleting `state.json` leaves every route complete
   and readable with no completion shown.

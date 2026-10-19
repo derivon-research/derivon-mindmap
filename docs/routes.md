@@ -7,7 +7,7 @@ artifact per [ADR-0007](adr/0007-name-the-workspace-protocol-after-the-artifact.
 **This document is the one specification of `derivon.route/v1`.** The application and the
 script command surface in `derivon-research/skills` each implement a reader, a validator and a
 writer for it, and neither is the reference for the other
-([ADR-0011](adr/0011-change-workspace-content-through-the-script-command-surface.md)). Both
+([ADR-0020](adr/0020-the-write-boundary-is-artifact-enforcement.md)). Both
 must accept and refuse the same files, and report the same diagnostic codes for the same
 steps. Diagnostic messages are free text and are not part of the protocol.
 
@@ -135,7 +135,7 @@ JSON text that decodes to the same value.
 - A personal route is not workspace content: no `WorkspaceSource`, no workspace
   synchronization, no workspace `revision`, and no workspace commit can carry one. The
   learning side writes only here, never into the workspace
-  ([ADR-0009](adr/0009-persist-learner-records-outside-the-workspace.md)).
+  ([ADR-0015](adr/0015-persist-learner-records-outside-the-workspace.md)).
 - Confirming a solved route writes a new personal route: `ordered: true`, `steps` in the
   solve's executable order, `label` the name given at confirmation. A preview is never
   written; only a confirmed or explicitly saved route is.
